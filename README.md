@@ -20,8 +20,8 @@ FUNDED__a novel learning framework for building vulnerability detection models, 
   * [Results](#results)
 * [Data collection module](#data-collection-module)
   * [Structure1](#structure1)
-  * [source1](#source1)
-  * [Results1](#results1)
+  * [Prepare data](#Prepare data)
+  * [Train your own ensemble classifier](#Train your own ensemble classifier)
 * [License](#license)
 * [Contact](#contact)
 * [Acknowledgements](#acknowledgements)
@@ -69,9 +69,9 @@ $ CUDA_VISIBLE_DEVICES=2 python train.py RGIN GraphBinaryClassification ../data/
 <br/><br/>
 ## GNN Detection module
 
-This part contains GNN Detection model' relevant sourcecode structure and partial sample data set.
+This part contains GNN Detection model' relevant source code structure and partial sample data set.
 
-### Dection Structure
+### Detection Structure
 ``` 
 ├── LICENSE
 ├── README.md                       <- The top-level README for developers using this project.
@@ -151,7 +151,7 @@ This part contains GNN Detection model' relevant sourcecode structure and partia
 ```
 ### Data Preprocessing
 
-To construct the AST, we use Soot for Java, ANTLR for Swift, Php and Joern for C/C++.
+To construct the AST, we use Soot for Java, ANTLR for Swift, PHP and joern for C/C++.
 
 The details are in EdgesGenerationAndDataPreprocess folders.
 
@@ -186,7 +186,7 @@ For example, under ```data/data/CWE-399``` and ```data/data/CWE-362``` are avail
 ### Results
 Example results of training  on the sample dataset CWE-399.
 Saved Model checkpoint at 60 epochs.
- 
+
 Dataset parameters: {
 ```
  "max_nodes_per_batch": 16,
@@ -194,7 +194,7 @@ Dataset parameters: {
  "add_self_loop_edges": true, 
  "tie_fwd_bkwd_edges": true,
  "threshold_for_classification": 0.5
- ```
+```
  }
 
 Model parameters: {
@@ -225,7 +225,7 @@ Model parameters: {
  "graph_aggregation_num_heads": 16, 
  "graph_aggregation_hidden_layers": [128], 
  "graph_aggregation_dropout_rate": 0.2
- ```
+```
  }
 
 ```
@@ -247,8 +247,26 @@ CP  | Accuracy = 0.857 | precision = 0.875 | recall = 0.875 | f1 = 0.875 |TPR = 
 ## Data collection module
 
 ### Structure1
-### source1
-### Results1
+
+~~~
+├── EnsembleLearning.py
+├── InputData_New.py                       
+├── stopwords.txt
+~~~
+
+### Prepare data
+
+- extract features from commit,then 
+
+### Train your own ensemble classifier
+
+- use ***InputData_New.py*** to train your own ensemble model
+
+> Warning: Replace the path with your own data
+
+~~~
+python InputData_New.py 
+~~~
 
 
 ## Authors
