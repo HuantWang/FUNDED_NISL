@@ -15,7 +15,7 @@ static int array_counting = 0;
 int array_result[1000000][2];
 SeqList seqList;
 
-char* itoa(int num,char* str,int radix)
+char* itoagood1(int num,char* str,int radix)
 {
     char index[]="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";//索引表
     unsigned unum;//存放要转换的整数的绝对值,转换的整数可能是负数
@@ -54,15 +54,15 @@ char* itoa(int num,char* str,int radix)
     return str;//返回转换后的字符串
 }
 
-void addASTnode(CXCursor cursor, CXCursor parent);
+void addASTnodegood2(CXCursor cursor, CXCursor parent);
 
-void DealWithArray(int i, int count);
+void DealWithArraybad1(int i, int count);
 
 DataType Initial(DataType type);
 
 int OutoutUpdateSeqlist(CXCursor cursor, CXCursor parent, int numbering);
 
-void AddSiblingNode(PSeqList pSeqList, int list_length,int counts);
+void AddSiblingNodebad2(PSeqList pSeqList, int list_length,int counts);
 
 //void AddBinaryOperator(PSeqList pSeqList,int list_length);
 
@@ -86,7 +86,7 @@ void type(SeqList *pList, int max, int counts);
 
 void addnode(int max, int counts);
 
-bool printKindSpelling(CXCursor cursor) {
+bool printKindSpellingbad3(CXCursor cursor) {
     enum CXCursorKind curKind = clang_getCursorKind(cursor);
     const char *curkindSpelling = clang_getCString(
             clang_getCursorKindSpelling(curKind));
@@ -94,7 +94,7 @@ bool printKindSpelling(CXCursor cursor) {
     return true;
 }
 
-char *printbinspelling(CXCursor cursor) {
+char *printbinspellinggood3(CXCursor cursor) {
     enum CXCursorKind curKind = clang_getCursorKind(cursor);
     const char *curkindSpelling = clang_getCString(
             clang_getCursorKindSpelling(curKind));
@@ -756,6 +756,264 @@ void Addguarded_by(PSeqList pSeqList, int list_Length,int count) {
                                 DataType dataType_03;
                                 Initial(dataType_03);
                                 dataType_03.list_data = pSeqList->array[k].parentNode;
+                                if (strcmp(printbinspelling(pSeqList->array[Find(&seqList, dataType_03)].list_data),
+                                           "IfStmt") == 0) {
+                                    break;
+                                } else {
+                                    if (!pSeqList->array[k].haschild &&
+                                        (strcmp(printSpelling(pSeqList->array[k].list_data), "") != 0)) {
+                                        char *testing02 = printSpelling(pSeqList->array[k].list_data);
+                                        for (int i = 0; i < countingStr; i++) {
+                                            if (StorageString[i] == *testing02) {
+                                                int secondifstmt = k;
+                                                array_result[array_counting][0] = ifstmt;
+                                                array_result[array_counting][1] = secondifstmt;
+                                                array_counting++;
+                                                FILE* fp;
+                                                char url[100] = {};
+                                                char urls[100] = {"/home/fenghui/LLVM5.0/build/1w三边边类型/"};
+
+                                                itoa(count,url,10);
+                                                strcat(url, ".txt");
+                                                strcat(urls, url);
+
+                                                /*打开文本文件以写入内容*/
+                                                fp = fopen(urls, "a");
+                                                if (!fp)
+                                                {
+                                                    perror("cannot open file");
+                                                    //exit(-1);
+                                                }
+
+                                                /*把二维数组的内容写入文件*/
+                                                fprintf(fp,"guarded;");
+
+                                                fclose(fp);
+                                            }
+                                        }
+                                    }
+                                }
+
+                            }
+                        }
+                        counting++;
+                    }
+            }
+        }
+            free(StorageString);
+        }
+    }
+
+}
+
+//void Addguarded_by(PSeqList pSeqList, int list_Length) {
+//    assert(pSeqList);//判断指针是否为空
+//    if (pSeqList->size == 0) {
+//        printf("线性表为空\n");
+//    }
+//    for (int i = 0; i <= list_Length; i++) {
+//        if (strcmp(printbinspelling(pSeqList->array[i].list_data), "IfStmt") == 0) {
+//            printf("guarded_by:%d\n",i);
+//        }
+//    }
+//}
+
+void InitSerialization(CXCursor t1) {
+//测试Insert,Erase,Remove,RemoveALL函数
+    /*test1(&seqList);*/
+    /*test2(&seqList);*/
+    DataType dataType_1st;
+    dataType_1st.list_data = t1;
+    InitSeqList(&seqList);
+    PushBack(&seqList, dataType_1st);//在首部加入1
+    int ret = Find(&seqList, dataType_1st);
+}
+
+void AddComputeEdge(PSeqList pSeqList, int list_Length,int count) {
+    assert(pSeqList);//判断指针是否为空
+    if (pSeqList->size == 0) {
+        printf("线性表为空\n");
+    }
+
+    for (int i = 0; i <= list_Length; i++) {
+        if (strcmp(printbinspelling(pSeqList->array[i].list_data), "BinaryOperator") == 0) {
+            //printf("BinaryOperator is:%d\n", i);
+            //拼凑一个结构体
+            DataType dataType;
+            Initial(dataType);
+            dataType.list_data = pSeqList->array[i].parentNode;
+            //在链表中查找元素
+            int firstelement = Find(&seqList, dataType);
+            for (int j = firstelement; j <= list_Length; j++) {
+                DataType dataType1;
+                Initial(dataType1);
+                dataType1.list_data = pSeqList->array[j].parentNode;
+                int parentpos = Find(&seqList, dataType1);
+                if ((strcmp(printbinspelling(pSeqList->array[parentpos].list_data), "BinaryOperator") == 0)
+                    && checkSim(pSeqList->array[j].parentNode, pSeqList->array[i].list_data)) {
+                    int secondelement = j;
+                    array_result[array_counting][0] = firstelement;
+                    array_result[array_counting][1] = secondelement;
+                    array_counting++;
+                    FILE* fp;
+                    char url[100] = {};
+                    char urls[100] = {"/home/fenghui/LLVM5.0/build/1w三边边类型/"};
+
+                    itoa(count,url,10);
+                    strcat(url, ".txt");
+                    strcat(urls, url);
+
+                    /*打开文本文件以写入内容*/
+                    fp = fopen(urls, "a");
+                    if (!fp)
+                    {
+                        perror("cannot open file");
+                        //exit(-1);
+                    }
+
+                    /*把二维数组的内容写入文件*/
+                    fprintf(fp,"compute_from;");
+
+                    fclose(fp);
+                }
+
+            }
+//
+            // Find(pSeqList,pSeqList->array[i].parentNode);
+            // array_result[array_counting][0] = pSeqList->array[i].parentNode;
+        }
+    }
+}
+
+void AddSiblingNode(PSeqList pSeqList, int list_Length,int count) {
+    assert(pSeqList);//判断指针是否为空
+    if (pSeqList->size == 0) {
+        printf("线性表为空\n");
+    }
+
+    for (int i = 0; i <= list_Length; i++) {
+        if (!pSeqList->array[i].haschild) {
+            for (int j = i + 1; j <= list_Length; j++) {
+                if (!pSeqList->array[j].haschild) {
+                    if (checkSim(pSeqList->array[i].parentNode, pSeqList->array[j].parentNode)) {
+                        array_result[array_counting][0] = i;//-77106
+                        array_result[array_counting][1] = j;//-77106
+                        array_counting++;
+                        FILE* fp;
+                        char url[100] = {};
+                        char urls[100] = {"/home/fenghui/LLVM5.0/build/1w三边边类型/"};
+
+                        itoa(count,url,10);
+                        strcat(url, ".txt");
+                        strcat(urls, url);
+
+                        /*打开文本文件以写入内容*/
+                        fp = fopen(urls, "a");
+                        if (!fp)
+                        {
+                            perror("cannot open file");
+                            //exit(-1);
+                        }
+
+                        /*把二维数组的内容写入文件*/
+                        fprintf(fp,"next_token;");
+
+                        fclose(fp);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+//void AddBinaryOperator(PSeqList pSeqList,int list_length){
+//  assert(pSeqList);//判断指针是否为空
+//  if (pSeqList->size == 0)
+//  {
+//      printf("线性表为空\n");
+//  }
+//  for(int z=0;z<=list_length;z++){
+
+//  }
+//}
+
+
+bool checkSim(CXCursor node, CXCursor parentNode) {
+    if (node.xdata != parentNode.xdata) {
+        return false;
+    } else if (node.kind != parentNode.kind) {
+        return false;
+    } else if (node.data[0] != parentNode.data[0]) {
+        return false;
+    } else if (node.data[1] != parentNode.data[1]) {
+        return false;
+    } else if (node.data[2] != parentNode.data[2]) {
+        return false;
+    }
+    return true;
+}
+
+void DealWithArray(int array_Length, int count) {
+//    memset(array_result,0, sizeof(array_result));
+    printf("The array_length is:%d\n", array_Length);
+    int max = 0;
+    FILE* fp;
+    int i, j;
+    char url[100] = {};
+    char urls[100] = {"/home/fenghui/LLVM5.0/build/1w七边邻接表/"};
+    itoa(count,url,10);
+    strcat(url, ".txt");
+    strcat(urls, url);
+
+    /*打开文本文件以写入内容*/
+    fp = fopen(urls, "w");
+    if (!fp)
+    {
+        perror("cannot open file");
+        //exit(-1);
+    }
+
+    /*把二维数组的内容写入文件*/
+    for (int i = 0; i <= array_Length; i++) {
+        fprintf(fp, "(%d,%d);", array_result[i][0], array_result[i][1]);
+    }
+    fclose(fp);
+
+
+    //PareseMatrix(array_result, array_Length + 1, max + 1, count);
+}
+
+
+void Init_Serialization(CXCursor t1) {//测试Insert,Erase,Remove,RemoveALL函数
+    /*test1(&seqList);*/
+    /*test2(&seqList);*/
+    DataType dataType_1st;
+    dataType_1st.list_data = t1;
+    InitSeqList(&seqList);
+    PushBack(&seqList, dataType_1st);//在首部加入1
+    int ret = Find(&seqList, dataType_1st);
+//    printf("AST node Numbering:%d\n", ret);
+//    PrintSeqList(seqList);
+//    Erase(seqList, 3);//删除下标3位置上的元素
+//    PrintSeqList(seqList);
+//    Insert(seqList, 3, 2);
+//    Insert(seqList, 3, 2);
+//    PrintSeqList(seqList);
+//    Remove(seqList, 2);//删除第一个 2
+//    PrintSeqList(seqList);
+//    RemoveAll(seqList, 2);//删除所有的 2
+//    PrintSeqList(seqList);
+}
+
+
+void test(){
+    if(i > 1){
+        i++;
+    }
+    else{
+        i--;
+    }
+}= pSeqList->array[k].parentNode;
                                 if (strcmp(printbinspelling(pSeqList->array[Find(&seqList, dataType_03)].list_data),
                                            "IfStmt") == 0) {
                                     break;
