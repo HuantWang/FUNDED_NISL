@@ -1,4 +1,4 @@
-# NISL_2021TIFS
+# FUNDED
 
 This is a code repository for the paper "Combining Graph-based Learning with Automated Data Collection for Code Vulnerability Detection" [arxiv](https://www.nwu.edu.cn/)
 
