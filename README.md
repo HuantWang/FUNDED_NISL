@@ -66,13 +66,12 @@ $ pip install -r requirements.txt
 $ cd FUNDED/cli
 $ CUDA_VISIBLE_DEVICES=2 python train.py RGIN GraphBinaryClassification ../data/data/CWE-399
 ```
+<br/><br/>
 ## GNN Detection model
 
-This part contains GNN Detection model' relevant sourcecode and sample data set.
+This part contains GNN Detection model' relevant sourcecode structure and partial sample data set.
 
 ### Dection Structure
-
-This part is the model training code.
 ``` 
 ├── LICENSE
 ├── README.md                       <- The top-level README for developers using this project.
@@ -150,16 +149,11 @@ This part is the model training code.
 │   └── └── __init__.py	
 └────── __init__.py
 ```
-<br/>
-<br/>
-<br/>
-
 ### Data Preprocessing
 
 To construct the AST, we use Soot for Java, ANTLR for Swift, Php and Joern for C/C++.
 
 The details are in EdgesGenerationAndDataPreprocess folders.
-
 
 ### Dataset
 
@@ -249,6 +243,7 @@ Loading data from ../data/data/tem_CWE-399/new/cdfg.
 Restoring best model state from trained_model/RGIN_GraphBinaryClassification__2020-10-21_15-08-32_best.pkl.
 CP  | Accuracy = 0.857 | precision = 0.875 | recall = 0.875 | f1 = 0.875 |TPR = 0.875 | FPR = 0.167 | TNR = 0.833 | FNR = 0.125 | 0.29 graphs/s
 ```
+<br/><br/>
 ## Data collection model
 
 ### Structure1
