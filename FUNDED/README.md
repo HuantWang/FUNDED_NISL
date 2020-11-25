@@ -55,7 +55,7 @@ $ pip install -r requirements.txt
 
 #### 3) Run the testcase
 ``` console
-$ cd /2021_TIFS/FUNDED/cli
+$ cd cli
 $ CUDA_VISIBLE_DEVICES=2 python train.py RGIN GraphBinaryClassification ../data/data/CWE-399
 ```
 
