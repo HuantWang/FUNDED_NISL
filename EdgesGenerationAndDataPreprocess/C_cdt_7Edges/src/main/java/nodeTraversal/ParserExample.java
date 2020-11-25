@@ -31,17 +31,16 @@ public class ParserExample {
         int batchsize = 10;
         int batchnum_lastrun = 0;
         File file = new File(sourceFilePath);
-//        String storeFilePath = file.getAbsolutePath().split("\\\\out")[0] + "\\7_edges";
         File[] fs = file.listFiles();
 
-        //遍历得到count,方便查看处理速度
+        
         if (fs != null) {
             int count = 0;
             for (File f : fs) {
                 count++;
             }
 
-            //控制遍历过的文件.
+           
             int line_count = 0;
             int batchnum_now = 0;
 
@@ -58,7 +57,7 @@ public class ParserExample {
                     if (!f.isDirectory()) {
                         try {
 
-                            //读入内容
+                           
                             FileContent fileContent = FileContent.createForExternalFileLocation(f.toString());
                             Map definedSymbols = new HashMap();
                             String[] includePaths = new String[0];
@@ -76,8 +75,6 @@ public class ParserExample {
                                     if (decl instanceof CPPASTFunctionDefinition) {
                                         String funcName = decl.getRawSignature().split("\n")[0].replaceAll("\r", "")
                                                 .replaceAll("\n", "");
-//
-//                                            String saveName = f.toString().split("\\\\")[f.toString().split("\\\\").length - 1];
                                         String savepath = storeFilePath + "\\" + f.getName() + "_func_" + (++funcNum) + "_" + UUID.randomUUID() + ".txt";
 
                                         if (!(bad.matcher(funcName).matches()) && (!good.matcher(funcName).matches())) {
@@ -95,7 +92,7 @@ public class ParserExample {
                                         int label = 1;
 
 
-                                        //append:true表示追加.
+                                        //append:true
                                         FileWriter fw = new FileWriter(new File(savepath));
                                         BufferedWriter bw = new BufferedWriter(fw);
 
