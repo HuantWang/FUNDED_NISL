@@ -146,7 +146,7 @@ This part is the model training code.
 This part is the data preprocess code.
 
 ```
- cdt 和joern数据处理部分(需要加吗？)
+ The details are in EdgesGenerationAndDataPreprocess folders  
 ```
 
 
