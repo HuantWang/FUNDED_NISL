@@ -13,14 +13,14 @@ FUNDED__a novel learning framework for building vulnerability detection models, 
      * [Software](#software)
      * [Python Libraries](#python-libraries)
   * [Setup](#setup)
-* [GNN Detection model](GNN Detection model)
+* [GNN Detection model](#GNN Detection model)
   * [Structure](#structure)
   * [Dataset](#dataset)
   * [Results](#results)
-* [Data collection model](Data collection model)
-  * [Structure](#structure_data)
-  * [source](#source)
-  * [Results](#results_data)
+* [Data collection model](#Data collection model)
+  * [Structure1](#structure_data)
+  * [source1](#source)
+  * [Results1](#results_data)
 * [License](#license)
 * [Contact](#contact)
 * [Acknowledgements](#acknowledgements)
@@ -65,8 +65,8 @@ $ pip install -r requirements.txt
 $ cd FUNDED/cli
 $ CUDA_VISIBLE_DEVICES=2 python train.py RGIN GraphBinaryClassification ../data/data/CWE-399
 ```
-
-## Structure
+## GNN Detection model
+### Structure
 
 ---
 This part is the model training code.
@@ -185,7 +185,7 @@ For example, under ```data/data/CWE-399``` and ```data/data/CWE-362``` are avail
 |362 | e831aff3-bd88-4ef7-a5b0-2d87e1b20fbe.c$$$0 |    0   | 6,8 2,8 4,6,9 (6,9,0)(1,5,1)(1,4,2) ... |
 |  | ...|    ...   | ... |
 
-## Results
+### Results
 Example results of training  on the sample dataset CWE-399.
 Saved Model checkpoint at 60 epochs.
  
@@ -245,6 +245,12 @@ Loading data from ../data/data/tem_CWE-399/new/cdfg.
 Restoring best model state from trained_model/RGIN_GraphBinaryClassification__2020-10-21_15-08-32_best.pkl.
 CP  | Accuracy = 0.857 | precision = 0.875 | recall = 0.875 | f1 = 0.875 |TPR = 0.875 | FPR = 0.167 | TNR = 0.833 | FNR = 0.125 | 0.29 graphs/s
 ```
+## Data collection model
+
+---
+### Structure1
+### source1
+### Results1
 
 ## Authors
 * **Huanting Wang**, **Guixin Ye**, **Zhanyong Tang**, **Songfang Huang**, **Dingyi Fang**, **Yansong Feng**, **Lizhong Bian**, **Zheng Wang**
