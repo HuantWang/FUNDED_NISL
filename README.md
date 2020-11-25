@@ -1,12 +1,11 @@
 # NISL_2021TIFS
----
+
 This code is code repository for the paper "Combining Graph-based Learning with Automated Data Collection for Code Vulnerability Detection" [arxiv](https://www.nwu.edu.cn/)
 
 FUNDED__a novel learning framework for building vulnerability detection models, which leverages the advances in graph neural networks (GNNs) to develop a novel graph-based learning method to capture and reason about the program’s control, data, and call dependencies.
 
 
 ## Contents
----
 
 * [Getting Started](#getting-started)
   * [Prerequisites](#prerequisites)
@@ -28,7 +27,7 @@ FUNDED__a novel learning framework for building vulnerability detection models, 
 * [Acknowledgements](#acknowledgements)
 
 ## Getting Started
----
+
 These instructions will get you a copy of the project up and running on your local machine for development and testing purposes.
 
 ### Prerequisites
@@ -73,7 +72,6 @@ This part contains GNN Detection model' relevant sourcecode and sample data set.
 
 ### Dection Structure
 
----
 This part is the model training code.
 ``` 
 ├── LICENSE
@@ -158,7 +156,6 @@ This part is the model training code.
 
 ### Data Preprocessing
 
----
 To construct the AST, we use Soot for Java, ANTLR for Swift, Php and Joern for C/C++.
 
 The details are in EdgesGenerationAndDataPreprocess folders.
@@ -254,10 +251,10 @@ CP  | Accuracy = 0.857 | precision = 0.875 | recall = 0.875 | f1 = 0.875 |TPR = 
 ```
 ## Data collection model
 
----
 ### Structure1
 ### source1
 ### Results1
+
 
 ## Authors
 * **Huanting Wang**, **Guixin Ye**, **Zhanyong Tang**, **Songfang Huang**, **Dingyi Fang**, **Yansong Feng**, **Lizhong Bian**, **Zheng Wang**
