@@ -31,6 +31,8 @@ Install the necessary dependencies before running the project:
 ##### Software:
 * [joern](https://joern.io/)
 * [Python (==3.7)](https://www.python.org/)
+* [Soot](https://soot-oss.github.io/soot/)
+* [Antlr](https://github.com/antlr/antlr4)
 ##### Python Libraries:
 * [tensorflow (>=2.0.0)](https://tensorflow.google.cn/)
 * [numpy](https://numpy.org/)
@@ -146,7 +148,7 @@ This part is the model training code.
 This part is the data preprocess code.
 
 ```
- The details are in EdgesGenerationAndDataPreprocess folders  
+To construct the AST, we use Soot for Java, ANTLR for Swift, Php and Joern for C/C++.The details are in EdgesGenerationAndDataPreprocess folders.
 ```
 
 
