@@ -1,4 +1,4 @@
-# 2020_TIFS
+# NISL_TIFS2021
 ---
 This code is code repository for the paper "Combining Graph-based Learning with Automated Data Collection for Code Vulnerability Detection" [arxiv](https://www.nwu.edu.cn/)
 
@@ -45,7 +45,7 @@ This section gives the steps, explanations and examples for getting the project 
 #### 1) Clone this repo
 
 ``` console
-$ git clone git@github.com:xiao1i/2021_TIFS.git
+$ git clone git@github.com:xiao1i//NISL_TIFS2021.git
 ```
 
 #### 2) Install Prerequisites
