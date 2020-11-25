@@ -14,9 +14,9 @@ FUNDED__a novel learning framework for building vulnerability detection models, 
      * [Python Libraries](#python-libraries)
   * [Setup](#setup)
 * [GNN Detection model](#gnn-detection-model)
-  * [Structure](#structure)
-     * [Dection](#dection)
-     * [Data Preprocessing](#data-preprocessing)
+  
+  * [Dection](#dection)
+  * [Data Preprocessing](#data-preprocessing)
   * [Dataset](#dataset)
   * [Results](#results)
 * [Data collection model](#data-collection-model)
@@ -68,9 +68,8 @@ $ cd FUNDED/cli
 $ CUDA_VISIBLE_DEVICES=2 python train.py RGIN GraphBinaryClassification ../data/data/CWE-399
 ```
 ## GNN Detection model
-### Structure
-This part contains model training source code and data preprocessing source code.
-##### Dection
+This part contains GNN Detection model' relevant sourcecode and sample data set.
+### Dection
 
 ---
 This part is the model training code.
@@ -154,7 +153,7 @@ This part is the model training code.
 <br/>
 <br/>
 <br/>
-##### Data Preprocessing
+### Data Preprocessing
 This part is the data preprocess code.
 
 ```
