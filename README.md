@@ -15,7 +15,7 @@ FUNDED__a novel learning framework for building vulnerability detection models, 
   * [Setup](#setup)
 * [GNN Detection model](#gnn-detection-model)
   
-  * [Dection](#dection)
+  * [Dection Structure](#dection-structure)
   * [Data Preprocessing](#data-preprocessing)
   * [Dataset](#dataset)
   * [Results](#results)
@@ -68,8 +68,10 @@ $ cd FUNDED/cli
 $ CUDA_VISIBLE_DEVICES=2 python train.py RGIN GraphBinaryClassification ../data/data/CWE-399
 ```
 ## GNN Detection model
+
 This part contains GNN Detection model' relevant sourcecode and sample data set.
-### Dection
+
+### Dection Structure
 
 ---
 This part is the model training code.
@@ -153,12 +155,13 @@ This part is the model training code.
 <br/>
 <br/>
 <br/>
-### Data Preprocessing
-This part is the data preprocess code.
 
-```
-To construct the AST, we use Soot for Java, ANTLR for Swift, Php and Joern for C/C++.The details are in EdgesGenerationAndDataPreprocess folders.
-```
+### Data Preprocessing
+
+---
+To construct the AST, we use Soot for Java, ANTLR for Swift, Php and Joern for C/C++.
+
+The details are in EdgesGenerationAndDataPreprocess folders.
 
 
 ### Dataset
