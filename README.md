@@ -47,7 +47,7 @@ This section gives the steps, explanations and examples for getting the project 
 #### 1) Clone this repo
 
 ``` console
-$ git clone git@github.com:xiao1i//NISL_TIFS2021.git
+$ git clone git@github.com:FrancisWangH/NISL_TIFS2021.git
 ```
 
 #### 2) Install Prerequisites
