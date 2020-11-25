@@ -1,6 +1,6 @@
 # NISL_2021TIFS
 
-This code is code repository for the paper "Combining Graph-based Learning with Automated Data Collection for Code Vulnerability Detection" [arxiv](https://www.nwu.edu.cn/)
+This is a code repository for the paper "Combining Graph-based Learning with Automated Data Collection for Code Vulnerability Detection" [arxiv](https://www.nwu.edu.cn/)
 
 FUNDED__a novel learning framework for building vulnerability detection models, which leverages the advances in graph neural networks (GNNs) to develop a novel graph-based learning method to capture and reason about the program’s control, data, and call dependencies.
 
