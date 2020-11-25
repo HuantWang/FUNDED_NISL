@@ -1,0 +1,2773 @@
+-----label-----
+1
+-----code-----
+static wpt_status dxeRXFrameReady
+(
+   WLANDXE_CtrlBlkType     *dxeCtxt,
+   WLANDXE_ChannelCBType   *channelEntry,
+   wpt_uint32               chStat
+)
+{
+   wpt_status                status = eWLAN_PAL_STATUS_SUCCESS;
+   WLANDXE_DescCtrlBlkType  *currentCtrlBlk = NULL;
+   WLANDXE_DescType         *currentDesc    = NULL;
+   wpt_uint32                descCtrl;
+   wpt_int32                 frameCount = 0;
+
+   wpt_uint32                descLoop;
+   wpt_uint32                invalidatedFound = 0;
+
+   HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,
+            "%s Enter", __func__);
+
+   /* Sanity Check */
+   if((NULL == dxeCtxt) || (NULL == channelEntry))
+   {
+      HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,
+               "dxeRXFrameReady Channel Entry is not valid");
+      return eWLAN_PAL_STATUS_E_INVAL;
+   }
+
+   frameCount = dxeRXFrameRouteUpperLayer(dxeCtxt, channelEntry);
+
+   if(0 > frameCount)
+   {
+      HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,
+               "dxeRXFrameReady RX frame route fail");
+      return eWLAN_PAL_STATUS_E_INVAL;
+   }
+
+   if((0 == frameCount) &&
+      ((WLANDXE_POWER_STATE_BMPS == dxeCtxt->hostPowerState) ||
+       (WLANDXE_POWER_STATE_FULL == dxeCtxt->hostPowerState)))
+   {
+      /* None of the frame handled and CH is not enabled
+       * RX CH wrap around happen and No RX free frame
+       * RX side should wait till new free frame available in the pool
+       * Do not try reload driver at here*/
+      if(!(chStat & WLANDXE_CH_CTRL_EN_MASK))
+      {
+         HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,
+                  "dxeRXFrameReady %s RING Wrapped, RX Free Low 0x%x",
+                  channelType[channelEntry->channelType], chStat);
+         channelEntry->numFragmentCurrentChain = 0;
+         return eWLAN_PAL_STATUS_SUCCESS;
+      }
+
+      currentCtrlBlk = channelEntry->headCtrlBlk;
+      currentDesc    = currentCtrlBlk->linkedDesc;
+      descCtrl       = currentDesc->descCtrl.ctrl;
+
+      if(WLANDXE_POWER_STATE_BMPS != dxeCtxt->hostPowerState)
+      {
+          HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,
+                   "RX ISR called but no frame handled PWS %d, channel %s",
+                   (int)dxeCtxt->hostPowerState,
+                   channelType[channelEntry->channelType]);
+      }
+
+      /* Current interupt empty and previous interrupt also empty
+       * detected successive empty interrupt
+       * or first interrupt empty, this should not happen */
+      if(0 == channelEntry->numFragmentCurrentChain)
+      {
+         dxeChannelMonitor("RX Ready", channelEntry);
+         dxeDescriptorDump(channelEntry, channelEntry->headCtrlBlk->linkedDesc, 0);
+         dxeChannelRegisterDump(channelEntry, "RX successive empty interrupt");
+         dxeChannelAllDescDump(channelEntry, channelEntry->channelType);
+
+         /* Abnormal interrupt detected, try to find not validated descriptor */
+         for(descLoop = 0; descLoop < channelEntry->numDesc; descLoop++)
+         {
+            if(!(WLANDXE_U32_SWAP_ENDIAN(descCtrl) & WLANDXE_DESC_CTRL_VALID))
+            {
+               HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,
+                        "Found Invalidated Descriptor %d", (int)descLoop);
+               if(eWLAN_PAL_STATUS_SUCCESS == wpalIsPacketLocked(currentCtrlBlk->xfrFrame))
+               {
+                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,
+                           "Packet locked, Resync Host and HW");
+                  channelEntry->headCtrlBlk = currentCtrlBlk;
+                  invalidatedFound = 1;
+                  break;
+               }
+               else
+               {
+                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,
+                           "Packet Not Locked, cannot transfer frame");
+               }
+            }
+            currentCtrlBlk = (WLANDXE_DescCtrlBlkType *)currentCtrlBlk->nextCtrlBlk;
+            currentDesc    = currentCtrlBlk->linkedDesc;
+            descCtrl       = currentDesc->descCtrl.ctrl;
+         }
+
+         /* Invalidated descriptor found, and that is not head descriptor
+          * This means HW/SW descriptor miss match happen, and we may recover with just resync
+          * Try re-sync here */
+         if((invalidatedFound) && (0 != descLoop))
+         {
+            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,
+                     "Found New Sync location with HW, handle frames from there");
+            frameCount = dxeRXFrameRouteUpperLayer(dxeCtxt, channelEntry);
+            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,
+                     "re-sync routed %d frames to upper layer", (int)frameCount);
+            channelEntry->numFragmentCurrentChain = frameCount;
+         }
+         /* Successive Empty interrupt
+          * But this case, first descriptor also invalidated, then it means head descriptor
+          * is linked with already handled RX frame, then could not unlock RX frame
+          * This is just Out of RX buffer pool, not need to anything here */
+         else if((invalidatedFound) && (0 == descLoop))
+         {
+            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,
+                     "Out of RX Low resource, and INT came in, do nothing till get RX resource");
+         }
+         /* Critical error, reload driver */
+         else
+         {
+            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,
+                     "Could not found invalidated descriptor");
+            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,
+                     "RX successive empty interrupt, Could not find invalidated DESC reload driver");
+            dxeCtxt->driverReloadInProcessing = eWLAN_PAL_TRUE;
+            wpalWlanReload();
+         }
+      }
+   }
+   channelEntry->numFragmentCurrentChain = frameCount;
+   HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,
+            "%s Exit", __func__);
+   return status;
+}
+-----children-----
+1,2
+1,3
+1,4
+2,3
+4,5
+4,6
+4,7
+4,8
+6,7
+6,8
+7,8
+9,10
+9,11
+12,13
+12,14
+13,14
+15,16
+15,17
+18,19
+18,20
+19,20
+21,22
+23,24
+23,25
+23,26
+23,27
+23,28
+23,29
+23,30
+23,31
+23,32
+23,33
+23,34
+23,35
+23,36
+23,37
+23,38
+24,25
+25,26
+25,27
+26,27
+28,29
+28,30
+30,31
+31,32
+33,34
+34,35
+34,36
+35,36
+37,38
+37,39
+37,40
+40,41
+41,42
+43,44
+44,45
+44,46
+45,46
+47,48
+47,49
+47,50
+50,51
+51,52
+53,54
+54,55
+54,56
+55,56
+57,58
+59,60
+60,61
+60,62
+61,62
+63,64
+63,65
+65,66
+67,68
+68,69
+68,70
+69,70
+71,72
+73,74
+74,75
+74,76
+75,76
+77,78
+77,79
+79,80
+81,82
+82,83
+82,84
+82,85
+82,86
+82,87
+83,84
+85,86
+87,88
+90,91
+92,93
+92,94
+93,94
+93,95
+94,95
+95,96
+95,97
+96,97
+98,99
+100,101
+101,102
+101,103
+102,103
+104,105
+106,107
+106,108
+107,108
+108,109
+108,110
+108,111
+108,112
+109,110
+111,112
+113,114
+116,117
+117,118
+119,120
+120,121
+120,122
+121,122
+123,124
+123,125
+123,126
+124,125
+126,127
+128,129
+130,131
+130,132
+131,132
+131,133
+133,134
+135,136
+135,137
+136,137
+137,138
+137,139
+137,140
+137,141
+138,139
+140,141
+142,143
+145,146
+146,147
+148,149
+148,150
+149,150
+149,151
+150,151
+151,152
+151,153
+153,154
+155,156
+156,157
+156,158
+157,158
+158,159
+158,160
+159,160
+161,162
+161,163
+162,163
+165,166
+166,167
+166,168
+167,168
+169,170
+169,171
+170,171
+173,174
+173,175
+173,176
+173,177
+173,178
+173,179
+174,175
+174,176
+175,176
+176,177
+177,178
+177,179
+178,179
+180,181
+182,183
+182,184
+182,185
+183,184
+184,185
+184,186
+184,187
+184,188
+184,189
+184,190
+185,186
+187,188
+189,190
+192,193
+192,194
+193,194
+195,196
+195,197
+196,197
+199,200
+201,202
+202,203
+202,204
+203,204
+203,205
+204,205
+208,209
+209,210
+211,212
+212,213
+212,214
+213,214
+215,216
+215,217
+216,217
+219,220
+220,221
+220,222
+221,222
+223,224
+223,225
+224,225
+227,228
+228,229
+228,230
+229,230
+231,232
+231,233
+232,233
+232,234
+233,234
+237,238
+237,239
+238,239
+238,240
+239,240
+241,242
+241,243
+242,243
+245,246
+246,247
+247,248
+247,249
+247,250
+247,251
+247,252
+247,253
+248,249
+250,251
+252,253
+255,256
+255,257
+256,257
+256,258
+259,260
+259,261
+260,261
+263,264
+263,265
+264,265
+266,267
+266,268
+267,268
+270,271
+270,272
+271,272
+271,273
+273,274
+273,275
+274,275
+277,278
+277,279
+277,280
+277,281
+277,282
+277,283
+278,279
+279,280
+279,281
+279,282
+280,281
+283,284
+285,286
+286,287
+286,288
+286,289
+286,290
+287,288
+289,290
+291,292
+291,293
+292,293
+292,294
+293,294
+298,299
+299,300
+299,301
+299,302
+300,301
+302,303
+305,306
+306,307
+306,308
+306,309
+307,308
+309,310
+311,312
+311,313
+312,313
+315,316
+315,317
+315,318
+315,319
+316,317
+317,318
+317,319
+318,319
+321,322
+321,323
+322,323
+324,325
+324,326
+325,326
+328,329
+329,330
+331,332
+331,333
+331,334
+331,335
+332,333
+332,334
+333,334
+334,335
+335,336
+335,337
+336,337
+336,338
+337,338
+339,340
+341,342
+343,344
+343,345
+344,345
+345,346
+345,347
+345,348
+345,349
+345,350
+346,347
+348,349
+350,351
+353,354
+353,355
+354,355
+354,356
+357,358
+359,360
+359,361
+359,362
+360,361
+360,362
+361,362
+363,364
+363,365
+364,365
+366,367
+366,368
+367,368
+370,371
+370,372
+370,373
+370,374
+371,372
+372,373
+372,374
+372,375
+372,376
+373,374
+375,376
+377,378
+380,381
+381,382
+381,383
+382,383
+382,384
+383,384
+386,387
+388,389
+389,390
+389,391
+390,391
+394,395
+395,396
+396,397
+396,398
+396,399
+396,400
+397,398
+399,400
+401,402
+404,405
+405,406
+405,407
+406,407
+408,409
+408,410
+409,410
+409,411
+410,411
+412,413
+414,415
+414,416
+415,416
+418,419
+419,420
+419,421
+420,421
+422,423
+422,424
+423,424
+426,427
+427,428
+427,429
+428,429
+430,431
+430,432
+431,432
+431,433
+432,433
+436,437
+436,438
+436,439
+437,438
+437,439
+438,439
+439,440
+441,442
+442,443
+442,444
+444,445
+446,447
+446,448
+446,449
+446,450
+447,448
+448,449
+448,450
+448,451
+448,452
+449,450
+451,452
+453,454
+456,457
+457,458
+457,459
+458,459
+460,461
+460,462
+460,463
+461,462
+463,464
+465,466
+467,468
+468,469
+468,470
+468,471
+468,472
+468,473
+469,470
+471,472
+473,474
+476,477
+476,478
+477,478
+477,479
+480,481
+482,483
+483,484
+483,485
+484,485
+484,486
+485,486
+488,489
+490,491
+490,492
+490,493
+491,492
+491,493
+492,493
+493,494
+495,496
+496,497
+496,498
+498,499
+500,501
+501,502
+502,503
+502,504
+502,505
+502,506
+503,504
+505,506
+507,508
+510,511
+510,512
+510,513
+510,514
+511,512
+512,513
+512,514
+512,515
+512,516
+513,514
+515,516
+517,518
+520,521
+521,522
+521,523
+521,524
+521,525
+522,523
+524,525
+526,527
+529,530
+530,531
+530,532
+531,532
+531,533
+532,533
+535,536
+537,538
+538,539
+539,540
+541,542
+542,543
+542,544
+543,544
+543,545
+544,545
+547,548
+549,550
+550,551
+550,552
+550,553
+550,554
+550,555
+551,552
+553,554
+555,556
+558,559
+560,561
+561,562
+-----nextToken-----
+3,5,8,10,11,14,16,17,20,22,27,29,32,36,38,39,42,46,48,49,52,56,58,62,64,66,70,72,76,78,80,84,86,88,89,91,97,99,103,105,110,112,114,115,118,122,125,127,129,132,134,139,141,143,144,147,152,154,160,163,164,168,171,172,179,181,186,188,190,191,194,197,198,200,205,206,207,210,214,217,218,222,225,226,230,234,235,236,240,243,244,249,251,253,254,257,258,261,262,265,268,269,272,275,276,281,282,284,288,290,294,295,296,297,301,303,304,308,310,313,314,319,320,323,326,327,330,338,340,342,347,349,351,352,355,356,358,362,365,368,369,374,376,378,379,384,385,387,391,392,393,398,400,402,403,407,411,413,416,417,421,424,425,429,433,434,435,440,443,445,450,452,454,455,459,462,464,466,470,472,474,475,478,479,481,486,487,489,494,497,499,504,506,508,509,514,516,518,519,523,525,527,528,533,534,536,540,545,546,548,552,554,556,557,559,562
+-----computeFrom-----
+93,94
+93,95
+95,96
+95,97
+101,102
+101,103
+120,121
+120,122
+131,132
+131,133
+149,150
+149,151
+151,152
+151,153
+156,157
+156,158
+158,159
+158,160
+166,167
+166,168
+177,178
+177,179
+202,203
+202,204
+212,213
+212,214
+220,221
+220,222
+228,229
+228,230
+238,239
+238,240
+271,272
+271,273
+317,318
+317,319
+321,322
+321,323
+335,336
+335,337
+360,361
+360,362
+381,382
+381,383
+389,390
+389,391
+405,406
+405,407
+419,420
+419,421
+427,428
+427,429
+437,438
+437,439
+442,443
+442,444
+457,458
+457,459
+483,484
+483,485
+491,492
+491,493
+496,497
+496,498
+530,531
+530,532
+542,543
+542,544
+-----guardedBy-----
+154,489
+160,240
+171,533
+172,262
+243,261
+244,262
+276,487
+275,486
+368,387
+-----guardedByNegation-----
+440,494
+445,499
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;NamedTypeSpecifier;Name;FunctionDeclarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ReturnStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;LiteralExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ReturnStatement;IdExpression;Name;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;LiteralExpression;IdExpression;Name;UnaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ArraySubscriptExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ReturnStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IfStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;FieldReference;IdExpression;Name;Name;ArraySubscriptExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;LiteralExpression;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;CompoundStatement;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BreakStatement;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;Pointer;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IfStatement;BinaryExpression;UnaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;LiteralExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;BinaryExpression;UnaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;LiteralExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+static wpt_status dxeRXFrameReady(   WLANDXE_CtrlBlkType     *dxeCtxt,   WLANDXE_ChannelCBType   *channelEntry,   wpt_uint32               chStat){   wpt_status                status = eWLAN_PAL_STATUS_SUCCESS;   WLANDXE_DescCtrlBlkType  *currentCtrlBlk = NULL;   WLANDXE_DescType         *currentDesc    = NULL;   wpt_uint32                descCtrl;   wpt_int32                 frameCount = 0;   wpt_uint32                descLoop;   wpt_uint32                invalidatedFound = 0;   HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,            "%s Enter", __func__);   /* Sanity Check */   if((NULL == dxeCtxt) || (NULL == channelEntry))   {      HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,               "dxeRXFrameReady Channel Entry is not valid");      return eWLAN_PAL_STATUS_E_INVAL;   }   frameCount = dxeRXFrameRouteUpperLayer(dxeCtxt, channelEntry);   if(0 > frameCount)   {      HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,               "dxeRXFrameReady RX frame route fail");      return eWLAN_PAL_STATUS_E_INVAL;   }   if((0 == frameCount) &&      ((WLANDXE_POWER_STATE_BMPS == dxeCtxt->hostPowerState) ||       (WLANDXE_POWER_STATE_FULL == dxeCtxt->hostPowerState)))   {      /* None of the frame handled and CH is not enabled       * RX CH wrap around happen and No RX free frame       * RX side should wait till new free frame available in the pool       * Do not try reload driver at here*/      if(!(chStat & WLANDXE_CH_CTRL_EN_MASK))      {         HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                  "dxeRXFrameReady %s RING Wrapped, RX Free Low 0x%x",                  channelType[channelEntry->channelType], chStat);         channelEntry->numFragmentCurrentChain = 0;         return eWLAN_PAL_STATUS_SUCCESS;      }      currentCtrlBlk = channelEntry->headCtrlBlk;      currentDesc    = currentCtrlBlk->linkedDesc;      descCtrl       = currentDesc->descCtrl.ctrl;      if(WLANDXE_POWER_STATE_BMPS != dxeCtxt->hostPowerState)      {          HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,                   "RX ISR called but no frame handled PWS %d, channel %s",                   (int)dxeCtxt->hostPowerState,                   channelType[channelEntry->channelType]);      }      /* Current interupt empty and previous interrupt also empty       * detected successive empty interrupt       * or first interrupt empty, this should not happen */      if(0 == channelEntry->numFragmentCurrentChain)      {         dxeChannelMonitor("RX Ready", channelEntry);         dxeDescriptorDump(channelEntry, channelEntry->headCtrlBlk->linkedDesc, 0);         dxeChannelRegisterDump(channelEntry, "RX successive empty interrupt");         dxeChannelAllDescDump(channelEntry, channelEntry->channelType);         /* Abnormal interrupt detected, try to find not validated descriptor */         for(descLoop = 0; descLoop < channelEntry->numDesc; descLoop++)         {            if(!(WLANDXE_U32_SWAP_ENDIAN(descCtrl) & WLANDXE_DESC_CTRL_VALID))            {               HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                        "Found Invalidated Descriptor %d", (int)descLoop);               if(eWLAN_PAL_STATUS_SUCCESS == wpalIsPacketLocked(currentCtrlBlk->xfrFrame))               {                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet locked, Resync Host and HW");                  channelEntry->headCtrlBlk = currentCtrlBlk;                  invalidatedFound = 1;                  break;               }               else               {                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet Not Locked, cannot transfer frame");               }            }            currentCtrlBlk = (WLANDXE_DescCtrlBlkType *)currentCtrlBlk->nextCtrlBlk;            currentDesc    = currentCtrlBlk->linkedDesc;            descCtrl       = currentDesc->descCtrl.ctrl;         }         /* Invalidated descriptor found, and that is not head descriptor          * This means HW/SW descriptor miss match happen, and we may recover with just resync          * Try re-sync here */         if((invalidatedFound) && (0 != descLoop))         {            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Found New Sync location with HW, handle frames from there");            frameCount = dxeRXFrameRouteUpperLayer(dxeCtxt, channelEntry);            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "re-sync routed %d frames to upper layer", (int)frameCount);            channelEntry->numFragmentCurrentChain = frameCount;         }         /* Successive Empty interrupt          * But this case, first descriptor also invalidated, then it means head descriptor          * is linked with already handled RX frame, then could not unlock RX frame          * This is just Out of RX buffer pool, not need to anything here */         else if((invalidatedFound) && (0 == descLoop))         {            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Out of RX Low resource, and INT came in, do nothing till get RX resource");         }         /* Critical error, reload driver */         else         {            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Could not found invalidated descriptor");            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "RX successive empty interrupt, Could not find invalidated DESC reload driver");            dxeCtxt->driverReloadInProcessing = eWLAN_PAL_TRUE;            wpalWlanReload();         }      }   }   channelEntry->numFragmentCurrentChain = frameCount;   HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,            "%s Exit", __func__);   return status;}
+static wpt_status
+wpt_status
+dxeRXFrameReady(   WLANDXE_CtrlBlkType     *dxeCtxt,   WLANDXE_ChannelCBType   *channelEntry,   wpt_uint32               chStat)
+dxeRXFrameReady
+WLANDXE_CtrlBlkType     *dxeCtxt
+WLANDXE_CtrlBlkType
+WLANDXE_CtrlBlkType
+*dxeCtxt
+*
+dxeCtxt
+WLANDXE_ChannelCBType   *channelEntry
+WLANDXE_ChannelCBType
+WLANDXE_ChannelCBType
+*channelEntry
+*
+channelEntry
+wpt_uint32               chStat
+wpt_uint32
+wpt_uint32
+chStat
+chStat
+{   wpt_status                status = eWLAN_PAL_STATUS_SUCCESS;   WLANDXE_DescCtrlBlkType  *currentCtrlBlk = NULL;   WLANDXE_DescType         *currentDesc    = NULL;   wpt_uint32                descCtrl;   wpt_int32                 frameCount = 0;   wpt_uint32                descLoop;   wpt_uint32                invalidatedFound = 0;   HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,            "%s Enter", __func__);   /* Sanity Check */   if((NULL == dxeCtxt) || (NULL == channelEntry))   {      HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,               "dxeRXFrameReady Channel Entry is not valid");      return eWLAN_PAL_STATUS_E_INVAL;   }   frameCount = dxeRXFrameRouteUpperLayer(dxeCtxt, channelEntry);   if(0 > frameCount)   {      HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,               "dxeRXFrameReady RX frame route fail");      return eWLAN_PAL_STATUS_E_INVAL;   }   if((0 == frameCount) &&      ((WLANDXE_POWER_STATE_BMPS == dxeCtxt->hostPowerState) ||       (WLANDXE_POWER_STATE_FULL == dxeCtxt->hostPowerState)))   {      /* None of the frame handled and CH is not enabled       * RX CH wrap around happen and No RX free frame       * RX side should wait till new free frame available in the pool       * Do not try reload driver at here*/      if(!(chStat & WLANDXE_CH_CTRL_EN_MASK))      {         HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                  "dxeRXFrameReady %s RING Wrapped, RX Free Low 0x%x",                  channelType[channelEntry->channelType], chStat);         channelEntry->numFragmentCurrentChain = 0;         return eWLAN_PAL_STATUS_SUCCESS;      }      currentCtrlBlk = channelEntry->headCtrlBlk;      currentDesc    = currentCtrlBlk->linkedDesc;      descCtrl       = currentDesc->descCtrl.ctrl;      if(WLANDXE_POWER_STATE_BMPS != dxeCtxt->hostPowerState)      {          HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,                   "RX ISR called but no frame handled PWS %d, channel %s",                   (int)dxeCtxt->hostPowerState,                   channelType[channelEntry->channelType]);      }      /* Current interupt empty and previous interrupt also empty       * detected successive empty interrupt       * or first interrupt empty, this should not happen */      if(0 == channelEntry->numFragmentCurrentChain)      {         dxeChannelMonitor("RX Ready", channelEntry);         dxeDescriptorDump(channelEntry, channelEntry->headCtrlBlk->linkedDesc, 0);         dxeChannelRegisterDump(channelEntry, "RX successive empty interrupt");         dxeChannelAllDescDump(channelEntry, channelEntry->channelType);         /* Abnormal interrupt detected, try to find not validated descriptor */         for(descLoop = 0; descLoop < channelEntry->numDesc; descLoop++)         {            if(!(WLANDXE_U32_SWAP_ENDIAN(descCtrl) & WLANDXE_DESC_CTRL_VALID))            {               HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                        "Found Invalidated Descriptor %d", (int)descLoop);               if(eWLAN_PAL_STATUS_SUCCESS == wpalIsPacketLocked(currentCtrlBlk->xfrFrame))               {                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet locked, Resync Host and HW");                  channelEntry->headCtrlBlk = currentCtrlBlk;                  invalidatedFound = 1;                  break;               }               else               {                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet Not Locked, cannot transfer frame");               }            }            currentCtrlBlk = (WLANDXE_DescCtrlBlkType *)currentCtrlBlk->nextCtrlBlk;            currentDesc    = currentCtrlBlk->linkedDesc;            descCtrl       = currentDesc->descCtrl.ctrl;         }         /* Invalidated descriptor found, and that is not head descriptor          * This means HW/SW descriptor miss match happen, and we may recover with just resync          * Try re-sync here */         if((invalidatedFound) && (0 != descLoop))         {            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Found New Sync location with HW, handle frames from there");            frameCount = dxeRXFrameRouteUpperLayer(dxeCtxt, channelEntry);            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "re-sync routed %d frames to upper layer", (int)frameCount);            channelEntry->numFragmentCurrentChain = frameCount;         }         /* Successive Empty interrupt          * But this case, first descriptor also invalidated, then it means head descriptor          * is linked with already handled RX frame, then could not unlock RX frame          * This is just Out of RX buffer pool, not need to anything here */         else if((invalidatedFound) && (0 == descLoop))         {            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Out of RX Low resource, and INT came in, do nothing till get RX resource");         }         /* Critical error, reload driver */         else         {            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Could not found invalidated descriptor");            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "RX successive empty interrupt, Could not find invalidated DESC reload driver");            dxeCtxt->driverReloadInProcessing = eWLAN_PAL_TRUE;            wpalWlanReload();         }      }   }   channelEntry->numFragmentCurrentChain = frameCount;   HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,            "%s Exit", __func__);   return status;}
+wpt_status                status = eWLAN_PAL_STATUS_SUCCESS;
+wpt_status                status = eWLAN_PAL_STATUS_SUCCESS;
+wpt_status
+wpt_status
+status = eWLAN_PAL_STATUS_SUCCESS
+status
+= eWLAN_PAL_STATUS_SUCCESS
+eWLAN_PAL_STATUS_SUCCESS
+eWLAN_PAL_STATUS_SUCCESS
+WLANDXE_DescCtrlBlkType  *currentCtrlBlk = NULL;
+WLANDXE_DescCtrlBlkType  *currentCtrlBlk = NULL;
+WLANDXE_DescCtrlBlkType
+WLANDXE_DescCtrlBlkType
+*currentCtrlBlk = NULL
+*
+currentCtrlBlk
+= NULL
+NULL
+NULL
+WLANDXE_DescType         *currentDesc    = NULL;
+WLANDXE_DescType         *currentDesc    = NULL;
+WLANDXE_DescType
+WLANDXE_DescType
+*currentDesc    = NULL
+*
+currentDesc
+= NULL
+NULL
+NULL
+wpt_uint32                descCtrl;
+wpt_uint32                descCtrl;
+wpt_uint32
+wpt_uint32
+descCtrl
+descCtrl
+wpt_int32                 frameCount = 0;
+wpt_int32                 frameCount = 0;
+wpt_int32
+wpt_int32
+frameCount = 0
+frameCount
+= 0
+0
+wpt_uint32                descLoop;
+wpt_uint32                descLoop;
+wpt_uint32
+wpt_uint32
+descLoop
+descLoop
+wpt_uint32                invalidatedFound = 0;
+wpt_uint32                invalidatedFound = 0;
+wpt_uint32
+wpt_uint32
+invalidatedFound = 0
+invalidatedFound
+= 0
+0
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,            "%s Enter", __func__);
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,            "%s Enter", __func__)
+HDXE_MSG
+HDXE_MSG
+eWLAN_MODULE_DAL_DATA
+eWLAN_MODULE_DAL_DATA
+eWLAN_PAL_TRACE_LEVEL_INFO_LOW
+eWLAN_PAL_TRACE_LEVEL_INFO_LOW
+"%s Enter"
+__func__
+__func__
+if((NULL == dxeCtxt) || (NULL == channelEntry))   {      HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,               "dxeRXFrameReady Channel Entry is not valid");      return eWLAN_PAL_STATUS_E_INVAL;   }
+(NULL == dxeCtxt) || (NULL == channelEntry)
+(NULL == dxeCtxt)
+NULL == dxeCtxt
+NULL
+NULL
+dxeCtxt
+dxeCtxt
+(NULL == channelEntry)
+NULL == channelEntry
+NULL
+NULL
+channelEntry
+channelEntry
+{      HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,               "dxeRXFrameReady Channel Entry is not valid");      return eWLAN_PAL_STATUS_E_INVAL;   }
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,               "dxeRXFrameReady Channel Entry is not valid");
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,               "dxeRXFrameReady Channel Entry is not valid")
+HDXE_MSG
+HDXE_MSG
+eWLAN_MODULE_DAL_DATA
+eWLAN_MODULE_DAL_DATA
+eWLAN_PAL_TRACE_LEVEL_ERROR
+eWLAN_PAL_TRACE_LEVEL_ERROR
+"dxeRXFrameReady Channel Entry is not valid"
+return eWLAN_PAL_STATUS_E_INVAL;
+eWLAN_PAL_STATUS_E_INVAL
+eWLAN_PAL_STATUS_E_INVAL
+frameCount = dxeRXFrameRouteUpperLayer(dxeCtxt, channelEntry);
+frameCount = dxeRXFrameRouteUpperLayer(dxeCtxt, channelEntry)
+frameCount
+frameCount
+dxeRXFrameRouteUpperLayer(dxeCtxt, channelEntry)
+dxeRXFrameRouteUpperLayer
+dxeRXFrameRouteUpperLayer
+dxeCtxt
+dxeCtxt
+channelEntry
+channelEntry
+if(0 > frameCount)   {      HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,               "dxeRXFrameReady RX frame route fail");      return eWLAN_PAL_STATUS_E_INVAL;   }
+0 > frameCount
+0
+frameCount
+frameCount
+{      HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,               "dxeRXFrameReady RX frame route fail");      return eWLAN_PAL_STATUS_E_INVAL;   }
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,               "dxeRXFrameReady RX frame route fail");
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,               "dxeRXFrameReady RX frame route fail")
+HDXE_MSG
+HDXE_MSG
+eWLAN_MODULE_DAL_DATA
+eWLAN_MODULE_DAL_DATA
+eWLAN_PAL_TRACE_LEVEL_ERROR
+eWLAN_PAL_TRACE_LEVEL_ERROR
+"dxeRXFrameReady RX frame route fail"
+return eWLAN_PAL_STATUS_E_INVAL;
+eWLAN_PAL_STATUS_E_INVAL
+eWLAN_PAL_STATUS_E_INVAL
+if((0 == frameCount) &&      ((WLANDXE_POWER_STATE_BMPS == dxeCtxt->hostPowerState) ||       (WLANDXE_POWER_STATE_FULL == dxeCtxt->hostPowerState)))   {      /* None of the frame handled and CH is not enabled       * RX CH wrap around happen and No RX free frame       * RX side should wait till new free frame available in the pool       * Do not try reload driver at here*/      if(!(chStat & WLANDXE_CH_CTRL_EN_MASK))      {         HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                  "dxeRXFrameReady %s RING Wrapped, RX Free Low 0x%x",                  channelType[channelEntry->channelType], chStat);         channelEntry->numFragmentCurrentChain = 0;         return eWLAN_PAL_STATUS_SUCCESS;      }      currentCtrlBlk = channelEntry->headCtrlBlk;      currentDesc    = currentCtrlBlk->linkedDesc;      descCtrl       = currentDesc->descCtrl.ctrl;      if(WLANDXE_POWER_STATE_BMPS != dxeCtxt->hostPowerState)      {          HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,                   "RX ISR called but no frame handled PWS %d, channel %s",                   (int)dxeCtxt->hostPowerState,                   channelType[channelEntry->channelType]);      }      /* Current interupt empty and previous interrupt also empty       * detected successive empty interrupt       * or first interrupt empty, this should not happen */      if(0 == channelEntry->numFragmentCurrentChain)      {         dxeChannelMonitor("RX Ready", channelEntry);         dxeDescriptorDump(channelEntry, channelEntry->headCtrlBlk->linkedDesc, 0);         dxeChannelRegisterDump(channelEntry, "RX successive empty interrupt");         dxeChannelAllDescDump(channelEntry, channelEntry->channelType);         /* Abnormal interrupt detected, try to find not validated descriptor */         for(descLoop = 0; descLoop < channelEntry->numDesc; descLoop++)         {            if(!(WLANDXE_U32_SWAP_ENDIAN(descCtrl) & WLANDXE_DESC_CTRL_VALID))            {               HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                        "Found Invalidated Descriptor %d", (int)descLoop);               if(eWLAN_PAL_STATUS_SUCCESS == wpalIsPacketLocked(currentCtrlBlk->xfrFrame))               {                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet locked, Resync Host and HW");                  channelEntry->headCtrlBlk = currentCtrlBlk;                  invalidatedFound = 1;                  break;               }               else               {                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet Not Locked, cannot transfer frame");               }            }            currentCtrlBlk = (WLANDXE_DescCtrlBlkType *)currentCtrlBlk->nextCtrlBlk;            currentDesc    = currentCtrlBlk->linkedDesc;            descCtrl       = currentDesc->descCtrl.ctrl;         }         /* Invalidated descriptor found, and that is not head descriptor          * This means HW/SW descriptor miss match happen, and we may recover with just resync          * Try re-sync here */         if((invalidatedFound) && (0 != descLoop))         {            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Found New Sync location with HW, handle frames from there");            frameCount = dxeRXFrameRouteUpperLayer(dxeCtxt, channelEntry);            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "re-sync routed %d frames to upper layer", (int)frameCount);            channelEntry->numFragmentCurrentChain = frameCount;         }         /* Successive Empty interrupt          * But this case, first descriptor also invalidated, then it means head descriptor          * is linked with already handled RX frame, then could not unlock RX frame          * This is just Out of RX buffer pool, not need to anything here */         else if((invalidatedFound) && (0 == descLoop))         {            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Out of RX Low resource, and INT came in, do nothing till get RX resource");         }         /* Critical error, reload driver */         else         {            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Could not found invalidated descriptor");            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "RX successive empty interrupt, Could not find invalidated DESC reload driver");            dxeCtxt->driverReloadInProcessing = eWLAN_PAL_TRUE;            wpalWlanReload();         }      }   }
+(0 == frameCount) &&      ((WLANDXE_POWER_STATE_BMPS == dxeCtxt->hostPowerState) ||       (WLANDXE_POWER_STATE_FULL == dxeCtxt->hostPowerState))
+(0 == frameCount)
+0 == frameCount
+0
+frameCount
+frameCount
+((WLANDXE_POWER_STATE_BMPS == dxeCtxt->hostPowerState) ||       (WLANDXE_POWER_STATE_FULL == dxeCtxt->hostPowerState))
+(WLANDXE_POWER_STATE_BMPS == dxeCtxt->hostPowerState) ||       (WLANDXE_POWER_STATE_FULL == dxeCtxt->hostPowerState)
+(WLANDXE_POWER_STATE_BMPS == dxeCtxt->hostPowerState)
+WLANDXE_POWER_STATE_BMPS == dxeCtxt->hostPowerState
+WLANDXE_POWER_STATE_BMPS
+WLANDXE_POWER_STATE_BMPS
+dxeCtxt->hostPowerState
+dxeCtxt
+dxeCtxt
+hostPowerState
+(WLANDXE_POWER_STATE_FULL == dxeCtxt->hostPowerState)
+WLANDXE_POWER_STATE_FULL == dxeCtxt->hostPowerState
+WLANDXE_POWER_STATE_FULL
+WLANDXE_POWER_STATE_FULL
+dxeCtxt->hostPowerState
+dxeCtxt
+dxeCtxt
+hostPowerState
+{      /* None of the frame handled and CH is not enabled       * RX CH wrap around happen and No RX free frame       * RX side should wait till new free frame available in the pool       * Do not try reload driver at here*/      if(!(chStat & WLANDXE_CH_CTRL_EN_MASK))      {         HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                  "dxeRXFrameReady %s RING Wrapped, RX Free Low 0x%x",                  channelType[channelEntry->channelType], chStat);         channelEntry->numFragmentCurrentChain = 0;         return eWLAN_PAL_STATUS_SUCCESS;      }      currentCtrlBlk = channelEntry->headCtrlBlk;      currentDesc    = currentCtrlBlk->linkedDesc;      descCtrl       = currentDesc->descCtrl.ctrl;      if(WLANDXE_POWER_STATE_BMPS != dxeCtxt->hostPowerState)      {          HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,                   "RX ISR called but no frame handled PWS %d, channel %s",                   (int)dxeCtxt->hostPowerState,                   channelType[channelEntry->channelType]);      }      /* Current interupt empty and previous interrupt also empty       * detected successive empty interrupt       * or first interrupt empty, this should not happen */      if(0 == channelEntry->numFragmentCurrentChain)      {         dxeChannelMonitor("RX Ready", channelEntry);         dxeDescriptorDump(channelEntry, channelEntry->headCtrlBlk->linkedDesc, 0);         dxeChannelRegisterDump(channelEntry, "RX successive empty interrupt");         dxeChannelAllDescDump(channelEntry, channelEntry->channelType);         /* Abnormal interrupt detected, try to find not validated descriptor */         for(descLoop = 0; descLoop < channelEntry->numDesc; descLoop++)         {            if(!(WLANDXE_U32_SWAP_ENDIAN(descCtrl) & WLANDXE_DESC_CTRL_VALID))            {               HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                        "Found Invalidated Descriptor %d", (int)descLoop);               if(eWLAN_PAL_STATUS_SUCCESS == wpalIsPacketLocked(currentCtrlBlk->xfrFrame))               {                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet locked, Resync Host and HW");                  channelEntry->headCtrlBlk = currentCtrlBlk;                  invalidatedFound = 1;                  break;               }               else               {                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet Not Locked, cannot transfer frame");               }            }            currentCtrlBlk = (WLANDXE_DescCtrlBlkType *)currentCtrlBlk->nextCtrlBlk;            currentDesc    = currentCtrlBlk->linkedDesc;            descCtrl       = currentDesc->descCtrl.ctrl;         }         /* Invalidated descriptor found, and that is not head descriptor          * This means HW/SW descriptor miss match happen, and we may recover with just resync          * Try re-sync here */         if((invalidatedFound) && (0 != descLoop))         {            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Found New Sync location with HW, handle frames from there");            frameCount = dxeRXFrameRouteUpperLayer(dxeCtxt, channelEntry);            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "re-sync routed %d frames to upper layer", (int)frameCount);            channelEntry->numFragmentCurrentChain = frameCount;         }         /* Successive Empty interrupt          * But this case, first descriptor also invalidated, then it means head descriptor          * is linked with already handled RX frame, then could not unlock RX frame          * This is just Out of RX buffer pool, not need to anything here */         else if((invalidatedFound) && (0 == descLoop))         {            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Out of RX Low resource, and INT came in, do nothing till get RX resource");         }         /* Critical error, reload driver */         else         {            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Could not found invalidated descriptor");            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "RX successive empty interrupt, Could not find invalidated DESC reload driver");            dxeCtxt->driverReloadInProcessing = eWLAN_PAL_TRUE;            wpalWlanReload();         }      }   }
+if(!(chStat & WLANDXE_CH_CTRL_EN_MASK))      {         HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                  "dxeRXFrameReady %s RING Wrapped, RX Free Low 0x%x",                  channelType[channelEntry->channelType], chStat);         channelEntry->numFragmentCurrentChain = 0;         return eWLAN_PAL_STATUS_SUCCESS;      }
+!(chStat & WLANDXE_CH_CTRL_EN_MASK)
+(chStat & WLANDXE_CH_CTRL_EN_MASK)
+chStat & WLANDXE_CH_CTRL_EN_MASK
+chStat
+chStat
+WLANDXE_CH_CTRL_EN_MASK
+WLANDXE_CH_CTRL_EN_MASK
+{         HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                  "dxeRXFrameReady %s RING Wrapped, RX Free Low 0x%x",                  channelType[channelEntry->channelType], chStat);         channelEntry->numFragmentCurrentChain = 0;         return eWLAN_PAL_STATUS_SUCCESS;      }
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                  "dxeRXFrameReady %s RING Wrapped, RX Free Low 0x%x",                  channelType[channelEntry->channelType], chStat);
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                  "dxeRXFrameReady %s RING Wrapped, RX Free Low 0x%x",                  channelType[channelEntry->channelType], chStat)
+HDXE_MSG
+HDXE_MSG
+eWLAN_MODULE_DAL_DATA
+eWLAN_MODULE_DAL_DATA
+eWLAN_PAL_TRACE_LEVEL_ERROR
+eWLAN_PAL_TRACE_LEVEL_ERROR
+"dxeRXFrameReady %s RING Wrapped, RX Free Low 0x%x"
+channelType[channelEntry->channelType]
+channelType
+channelType
+channelEntry->channelType
+channelEntry
+channelEntry
+channelType
+chStat
+chStat
+channelEntry->numFragmentCurrentChain = 0;
+channelEntry->numFragmentCurrentChain = 0
+channelEntry->numFragmentCurrentChain
+channelEntry
+channelEntry
+numFragmentCurrentChain
+0
+return eWLAN_PAL_STATUS_SUCCESS;
+eWLAN_PAL_STATUS_SUCCESS
+eWLAN_PAL_STATUS_SUCCESS
+currentCtrlBlk = channelEntry->headCtrlBlk;
+currentCtrlBlk = channelEntry->headCtrlBlk
+currentCtrlBlk
+currentCtrlBlk
+channelEntry->headCtrlBlk
+channelEntry
+channelEntry
+headCtrlBlk
+currentDesc    = currentCtrlBlk->linkedDesc;
+currentDesc    = currentCtrlBlk->linkedDesc
+currentDesc
+currentDesc
+currentCtrlBlk->linkedDesc
+currentCtrlBlk
+currentCtrlBlk
+linkedDesc
+descCtrl       = currentDesc->descCtrl.ctrl;
+descCtrl       = currentDesc->descCtrl.ctrl
+descCtrl
+descCtrl
+currentDesc->descCtrl.ctrl
+currentDesc->descCtrl
+currentDesc
+currentDesc
+descCtrl
+ctrl
+if(WLANDXE_POWER_STATE_BMPS != dxeCtxt->hostPowerState)      {          HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,                   "RX ISR called but no frame handled PWS %d, channel %s",                   (int)dxeCtxt->hostPowerState,                   channelType[channelEntry->channelType]);      }
+WLANDXE_POWER_STATE_BMPS != dxeCtxt->hostPowerState
+WLANDXE_POWER_STATE_BMPS
+WLANDXE_POWER_STATE_BMPS
+dxeCtxt->hostPowerState
+dxeCtxt
+dxeCtxt
+hostPowerState
+{          HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,                   "RX ISR called but no frame handled PWS %d, channel %s",                   (int)dxeCtxt->hostPowerState,                   channelType[channelEntry->channelType]);      }
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,                   "RX ISR called but no frame handled PWS %d, channel %s",                   (int)dxeCtxt->hostPowerState,                   channelType[channelEntry->channelType]);
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,                   "RX ISR called but no frame handled PWS %d, channel %s",                   (int)dxeCtxt->hostPowerState,                   channelType[channelEntry->channelType])
+HDXE_MSG
+HDXE_MSG
+eWLAN_MODULE_DAL_DATA
+eWLAN_MODULE_DAL_DATA
+eWLAN_PAL_TRACE_LEVEL_INFO_LOW
+eWLAN_PAL_TRACE_LEVEL_INFO_LOW
+"RX ISR called but no frame handled PWS %d, channel %s"
+(int)dxeCtxt->hostPowerState
+int
+int
+
+dxeCtxt->hostPowerState
+dxeCtxt
+dxeCtxt
+hostPowerState
+channelType[channelEntry->channelType]
+channelType
+channelType
+channelEntry->channelType
+channelEntry
+channelEntry
+channelType
+if(0 == channelEntry->numFragmentCurrentChain)      {         dxeChannelMonitor("RX Ready", channelEntry);         dxeDescriptorDump(channelEntry, channelEntry->headCtrlBlk->linkedDesc, 0);         dxeChannelRegisterDump(channelEntry, "RX successive empty interrupt");         dxeChannelAllDescDump(channelEntry, channelEntry->channelType);         /* Abnormal interrupt detected, try to find not validated descriptor */         for(descLoop = 0; descLoop < channelEntry->numDesc; descLoop++)         {            if(!(WLANDXE_U32_SWAP_ENDIAN(descCtrl) & WLANDXE_DESC_CTRL_VALID))            {               HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                        "Found Invalidated Descriptor %d", (int)descLoop);               if(eWLAN_PAL_STATUS_SUCCESS == wpalIsPacketLocked(currentCtrlBlk->xfrFrame))               {                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet locked, Resync Host and HW");                  channelEntry->headCtrlBlk = currentCtrlBlk;                  invalidatedFound = 1;                  break;               }               else               {                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet Not Locked, cannot transfer frame");               }            }            currentCtrlBlk = (WLANDXE_DescCtrlBlkType *)currentCtrlBlk->nextCtrlBlk;            currentDesc    = currentCtrlBlk->linkedDesc;            descCtrl       = currentDesc->descCtrl.ctrl;         }         /* Invalidated descriptor found, and that is not head descriptor          * This means HW/SW descriptor miss match happen, and we may recover with just resync          * Try re-sync here */         if((invalidatedFound) && (0 != descLoop))         {            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Found New Sync location with HW, handle frames from there");            frameCount = dxeRXFrameRouteUpperLayer(dxeCtxt, channelEntry);            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "re-sync routed %d frames to upper layer", (int)frameCount);            channelEntry->numFragmentCurrentChain = frameCount;         }         /* Successive Empty interrupt          * But this case, first descriptor also invalidated, then it means head descriptor          * is linked with already handled RX frame, then could not unlock RX frame          * This is just Out of RX buffer pool, not need to anything here */         else if((invalidatedFound) && (0 == descLoop))         {            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Out of RX Low resource, and INT came in, do nothing till get RX resource");         }         /* Critical error, reload driver */         else         {            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Could not found invalidated descriptor");            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "RX successive empty interrupt, Could not find invalidated DESC reload driver");            dxeCtxt->driverReloadInProcessing = eWLAN_PAL_TRUE;            wpalWlanReload();         }      }
+0 == channelEntry->numFragmentCurrentChain
+0
+channelEntry->numFragmentCurrentChain
+channelEntry
+channelEntry
+numFragmentCurrentChain
+{         dxeChannelMonitor("RX Ready", channelEntry);         dxeDescriptorDump(channelEntry, channelEntry->headCtrlBlk->linkedDesc, 0);         dxeChannelRegisterDump(channelEntry, "RX successive empty interrupt");         dxeChannelAllDescDump(channelEntry, channelEntry->channelType);         /* Abnormal interrupt detected, try to find not validated descriptor */         for(descLoop = 0; descLoop < channelEntry->numDesc; descLoop++)         {            if(!(WLANDXE_U32_SWAP_ENDIAN(descCtrl) & WLANDXE_DESC_CTRL_VALID))            {               HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                        "Found Invalidated Descriptor %d", (int)descLoop);               if(eWLAN_PAL_STATUS_SUCCESS == wpalIsPacketLocked(currentCtrlBlk->xfrFrame))               {                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet locked, Resync Host and HW");                  channelEntry->headCtrlBlk = currentCtrlBlk;                  invalidatedFound = 1;                  break;               }               else               {                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet Not Locked, cannot transfer frame");               }            }            currentCtrlBlk = (WLANDXE_DescCtrlBlkType *)currentCtrlBlk->nextCtrlBlk;            currentDesc    = currentCtrlBlk->linkedDesc;            descCtrl       = currentDesc->descCtrl.ctrl;         }         /* Invalidated descriptor found, and that is not head descriptor          * This means HW/SW descriptor miss match happen, and we may recover with just resync          * Try re-sync here */         if((invalidatedFound) && (0 != descLoop))         {            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Found New Sync location with HW, handle frames from there");            frameCount = dxeRXFrameRouteUpperLayer(dxeCtxt, channelEntry);            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "re-sync routed %d frames to upper layer", (int)frameCount);            channelEntry->numFragmentCurrentChain = frameCount;         }         /* Successive Empty interrupt          * But this case, first descriptor also invalidated, then it means head descriptor          * is linked with already handled RX frame, then could not unlock RX frame          * This is just Out of RX buffer pool, not need to anything here */         else if((invalidatedFound) && (0 == descLoop))         {            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Out of RX Low resource, and INT came in, do nothing till get RX resource");         }         /* Critical error, reload driver */         else         {            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Could not found invalidated descriptor");            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "RX successive empty interrupt, Could not find invalidated DESC reload driver");            dxeCtxt->driverReloadInProcessing = eWLAN_PAL_TRUE;            wpalWlanReload();         }      }
+dxeChannelMonitor("RX Ready", channelEntry);
+dxeChannelMonitor("RX Ready", channelEntry)
+dxeChannelMonitor
+dxeChannelMonitor
+"RX Ready"
+channelEntry
+channelEntry
+dxeDescriptorDump(channelEntry, channelEntry->headCtrlBlk->linkedDesc, 0);
+dxeDescriptorDump(channelEntry, channelEntry->headCtrlBlk->linkedDesc, 0)
+dxeDescriptorDump
+dxeDescriptorDump
+channelEntry
+channelEntry
+channelEntry->headCtrlBlk->linkedDesc
+channelEntry->headCtrlBlk
+channelEntry
+channelEntry
+headCtrlBlk
+linkedDesc
+0
+dxeChannelRegisterDump(channelEntry, "RX successive empty interrupt");
+dxeChannelRegisterDump(channelEntry, "RX successive empty interrupt")
+dxeChannelRegisterDump
+dxeChannelRegisterDump
+channelEntry
+channelEntry
+"RX successive empty interrupt"
+dxeChannelAllDescDump(channelEntry, channelEntry->channelType);
+dxeChannelAllDescDump(channelEntry, channelEntry->channelType)
+dxeChannelAllDescDump
+dxeChannelAllDescDump
+channelEntry
+channelEntry
+channelEntry->channelType
+channelEntry
+channelEntry
+channelType
+for(descLoop = 0; descLoop < channelEntry->numDesc; descLoop++)         {            if(!(WLANDXE_U32_SWAP_ENDIAN(descCtrl) & WLANDXE_DESC_CTRL_VALID))            {               HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                        "Found Invalidated Descriptor %d", (int)descLoop);               if(eWLAN_PAL_STATUS_SUCCESS == wpalIsPacketLocked(currentCtrlBlk->xfrFrame))               {                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet locked, Resync Host and HW");                  channelEntry->headCtrlBlk = currentCtrlBlk;                  invalidatedFound = 1;                  break;               }               else               {                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet Not Locked, cannot transfer frame");               }            }            currentCtrlBlk = (WLANDXE_DescCtrlBlkType *)currentCtrlBlk->nextCtrlBlk;            currentDesc    = currentCtrlBlk->linkedDesc;            descCtrl       = currentDesc->descCtrl.ctrl;         }
+descLoop = 0;
+descLoop = 0
+descLoop
+descLoop
+0
+descLoop < channelEntry->numDesc
+descLoop
+descLoop
+channelEntry->numDesc
+channelEntry
+channelEntry
+numDesc
+descLoop++
+descLoop
+descLoop
+{            if(!(WLANDXE_U32_SWAP_ENDIAN(descCtrl) & WLANDXE_DESC_CTRL_VALID))            {               HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                        "Found Invalidated Descriptor %d", (int)descLoop);               if(eWLAN_PAL_STATUS_SUCCESS == wpalIsPacketLocked(currentCtrlBlk->xfrFrame))               {                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet locked, Resync Host and HW");                  channelEntry->headCtrlBlk = currentCtrlBlk;                  invalidatedFound = 1;                  break;               }               else               {                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet Not Locked, cannot transfer frame");               }            }            currentCtrlBlk = (WLANDXE_DescCtrlBlkType *)currentCtrlBlk->nextCtrlBlk;            currentDesc    = currentCtrlBlk->linkedDesc;            descCtrl       = currentDesc->descCtrl.ctrl;         }
+if(!(WLANDXE_U32_SWAP_ENDIAN(descCtrl) & WLANDXE_DESC_CTRL_VALID))            {               HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                        "Found Invalidated Descriptor %d", (int)descLoop);               if(eWLAN_PAL_STATUS_SUCCESS == wpalIsPacketLocked(currentCtrlBlk->xfrFrame))               {                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet locked, Resync Host and HW");                  channelEntry->headCtrlBlk = currentCtrlBlk;                  invalidatedFound = 1;                  break;               }               else               {                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet Not Locked, cannot transfer frame");               }            }
+!(WLANDXE_U32_SWAP_ENDIAN(descCtrl) & WLANDXE_DESC_CTRL_VALID)
+(WLANDXE_U32_SWAP_ENDIAN(descCtrl) & WLANDXE_DESC_CTRL_VALID)
+WLANDXE_U32_SWAP_ENDIAN(descCtrl) & WLANDXE_DESC_CTRL_VALID
+WLANDXE_U32_SWAP_ENDIAN(descCtrl)
+WLANDXE_U32_SWAP_ENDIAN
+WLANDXE_U32_SWAP_ENDIAN
+descCtrl
+descCtrl
+WLANDXE_DESC_CTRL_VALID
+WLANDXE_DESC_CTRL_VALID
+{               HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                        "Found Invalidated Descriptor %d", (int)descLoop);               if(eWLAN_PAL_STATUS_SUCCESS == wpalIsPacketLocked(currentCtrlBlk->xfrFrame))               {                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet locked, Resync Host and HW");                  channelEntry->headCtrlBlk = currentCtrlBlk;                  invalidatedFound = 1;                  break;               }               else               {                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet Not Locked, cannot transfer frame");               }            }
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                        "Found Invalidated Descriptor %d", (int)descLoop);
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                        "Found Invalidated Descriptor %d", (int)descLoop)
+HDXE_MSG
+HDXE_MSG
+eWLAN_MODULE_DAL_DATA
+eWLAN_MODULE_DAL_DATA
+eWLAN_PAL_TRACE_LEVEL_ERROR
+eWLAN_PAL_TRACE_LEVEL_ERROR
+"Found Invalidated Descriptor %d"
+(int)descLoop
+int
+int
+
+descLoop
+descLoop
+if(eWLAN_PAL_STATUS_SUCCESS == wpalIsPacketLocked(currentCtrlBlk->xfrFrame))               {                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet locked, Resync Host and HW");                  channelEntry->headCtrlBlk = currentCtrlBlk;                  invalidatedFound = 1;                  break;               }               else               {                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet Not Locked, cannot transfer frame");               }
+eWLAN_PAL_STATUS_SUCCESS == wpalIsPacketLocked(currentCtrlBlk->xfrFrame)
+eWLAN_PAL_STATUS_SUCCESS
+eWLAN_PAL_STATUS_SUCCESS
+wpalIsPacketLocked(currentCtrlBlk->xfrFrame)
+wpalIsPacketLocked
+wpalIsPacketLocked
+currentCtrlBlk->xfrFrame
+currentCtrlBlk
+currentCtrlBlk
+xfrFrame
+{                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet locked, Resync Host and HW");                  channelEntry->headCtrlBlk = currentCtrlBlk;                  invalidatedFound = 1;                  break;               }
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet locked, Resync Host and HW");
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet locked, Resync Host and HW")
+HDXE_MSG
+HDXE_MSG
+eWLAN_MODULE_DAL_DATA
+eWLAN_MODULE_DAL_DATA
+eWLAN_PAL_TRACE_LEVEL_ERROR
+eWLAN_PAL_TRACE_LEVEL_ERROR
+"Packet locked, Resync Host and HW"
+channelEntry->headCtrlBlk = currentCtrlBlk;
+channelEntry->headCtrlBlk = currentCtrlBlk
+channelEntry->headCtrlBlk
+channelEntry
+channelEntry
+headCtrlBlk
+currentCtrlBlk
+currentCtrlBlk
+invalidatedFound = 1;
+invalidatedFound = 1
+invalidatedFound
+invalidatedFound
+1
+break;
+{                  HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet Not Locked, cannot transfer frame");               }
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet Not Locked, cannot transfer frame");
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                           "Packet Not Locked, cannot transfer frame")
+HDXE_MSG
+HDXE_MSG
+eWLAN_MODULE_DAL_DATA
+eWLAN_MODULE_DAL_DATA
+eWLAN_PAL_TRACE_LEVEL_ERROR
+eWLAN_PAL_TRACE_LEVEL_ERROR
+"Packet Not Locked, cannot transfer frame"
+currentCtrlBlk = (WLANDXE_DescCtrlBlkType *)currentCtrlBlk->nextCtrlBlk;
+currentCtrlBlk = (WLANDXE_DescCtrlBlkType *)currentCtrlBlk->nextCtrlBlk
+currentCtrlBlk
+currentCtrlBlk
+(WLANDXE_DescCtrlBlkType *)currentCtrlBlk->nextCtrlBlk
+WLANDXE_DescCtrlBlkType *
+WLANDXE_DescCtrlBlkType
+WLANDXE_DescCtrlBlkType
+*
+*
+currentCtrlBlk->nextCtrlBlk
+currentCtrlBlk
+currentCtrlBlk
+nextCtrlBlk
+currentDesc    = currentCtrlBlk->linkedDesc;
+currentDesc    = currentCtrlBlk->linkedDesc
+currentDesc
+currentDesc
+currentCtrlBlk->linkedDesc
+currentCtrlBlk
+currentCtrlBlk
+linkedDesc
+descCtrl       = currentDesc->descCtrl.ctrl;
+descCtrl       = currentDesc->descCtrl.ctrl
+descCtrl
+descCtrl
+currentDesc->descCtrl.ctrl
+currentDesc->descCtrl
+currentDesc
+currentDesc
+descCtrl
+ctrl
+if((invalidatedFound) && (0 != descLoop))         {            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Found New Sync location with HW, handle frames from there");            frameCount = dxeRXFrameRouteUpperLayer(dxeCtxt, channelEntry);            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "re-sync routed %d frames to upper layer", (int)frameCount);            channelEntry->numFragmentCurrentChain = frameCount;         }         /* Successive Empty interrupt          * But this case, first descriptor also invalidated, then it means head descriptor          * is linked with already handled RX frame, then could not unlock RX frame          * This is just Out of RX buffer pool, not need to anything here */         else if((invalidatedFound) && (0 == descLoop))         {            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Out of RX Low resource, and INT came in, do nothing till get RX resource");         }         /* Critical error, reload driver */         else         {            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Could not found invalidated descriptor");            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "RX successive empty interrupt, Could not find invalidated DESC reload driver");            dxeCtxt->driverReloadInProcessing = eWLAN_PAL_TRUE;            wpalWlanReload();         }
+(invalidatedFound) && (0 != descLoop)
+(invalidatedFound)
+invalidatedFound
+invalidatedFound
+(0 != descLoop)
+0 != descLoop
+0
+descLoop
+descLoop
+{            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Found New Sync location with HW, handle frames from there");            frameCount = dxeRXFrameRouteUpperLayer(dxeCtxt, channelEntry);            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "re-sync routed %d frames to upper layer", (int)frameCount);            channelEntry->numFragmentCurrentChain = frameCount;         }
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Found New Sync location with HW, handle frames from there");
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Found New Sync location with HW, handle frames from there")
+HDXE_MSG
+HDXE_MSG
+eWLAN_MODULE_DAL_DATA
+eWLAN_MODULE_DAL_DATA
+eWLAN_PAL_TRACE_LEVEL_ERROR
+eWLAN_PAL_TRACE_LEVEL_ERROR
+"Found New Sync location with HW, handle frames from there"
+frameCount = dxeRXFrameRouteUpperLayer(dxeCtxt, channelEntry);
+frameCount = dxeRXFrameRouteUpperLayer(dxeCtxt, channelEntry)
+frameCount
+frameCount
+dxeRXFrameRouteUpperLayer(dxeCtxt, channelEntry)
+dxeRXFrameRouteUpperLayer
+dxeRXFrameRouteUpperLayer
+dxeCtxt
+dxeCtxt
+channelEntry
+channelEntry
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "re-sync routed %d frames to upper layer", (int)frameCount);
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "re-sync routed %d frames to upper layer", (int)frameCount)
+HDXE_MSG
+HDXE_MSG
+eWLAN_MODULE_DAL_DATA
+eWLAN_MODULE_DAL_DATA
+eWLAN_PAL_TRACE_LEVEL_ERROR
+eWLAN_PAL_TRACE_LEVEL_ERROR
+"re-sync routed %d frames to upper layer"
+(int)frameCount
+int
+int
+
+frameCount
+frameCount
+channelEntry->numFragmentCurrentChain = frameCount;
+channelEntry->numFragmentCurrentChain = frameCount
+channelEntry->numFragmentCurrentChain
+channelEntry
+channelEntry
+numFragmentCurrentChain
+frameCount
+frameCount
+if((invalidatedFound) && (0 == descLoop))         {            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Out of RX Low resource, and INT came in, do nothing till get RX resource");         }         /* Critical error, reload driver */         else         {            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Could not found invalidated descriptor");            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "RX successive empty interrupt, Could not find invalidated DESC reload driver");            dxeCtxt->driverReloadInProcessing = eWLAN_PAL_TRUE;            wpalWlanReload();         }
+(invalidatedFound) && (0 == descLoop)
+(invalidatedFound)
+invalidatedFound
+invalidatedFound
+(0 == descLoop)
+0 == descLoop
+0
+descLoop
+descLoop
+{            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Out of RX Low resource, and INT came in, do nothing till get RX resource");         }
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Out of RX Low resource, and INT came in, do nothing till get RX resource");
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Out of RX Low resource, and INT came in, do nothing till get RX resource")
+HDXE_MSG
+HDXE_MSG
+eWLAN_MODULE_DAL_DATA
+eWLAN_MODULE_DAL_DATA
+eWLAN_PAL_TRACE_LEVEL_ERROR
+eWLAN_PAL_TRACE_LEVEL_ERROR
+"Out of RX Low resource, and INT came in, do nothing till get RX resource"
+{            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Could not found invalidated descriptor");            HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "RX successive empty interrupt, Could not find invalidated DESC reload driver");            dxeCtxt->driverReloadInProcessing = eWLAN_PAL_TRUE;            wpalWlanReload();         }
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Could not found invalidated descriptor");
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "Could not found invalidated descriptor")
+HDXE_MSG
+HDXE_MSG
+eWLAN_MODULE_DAL_DATA
+eWLAN_MODULE_DAL_DATA
+eWLAN_PAL_TRACE_LEVEL_ERROR
+eWLAN_PAL_TRACE_LEVEL_ERROR
+"Could not found invalidated descriptor"
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "RX successive empty interrupt, Could not find invalidated DESC reload driver");
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,                     "RX successive empty interrupt, Could not find invalidated DESC reload driver")
+HDXE_MSG
+HDXE_MSG
+eWLAN_MODULE_DAL_DATA
+eWLAN_MODULE_DAL_DATA
+eWLAN_PAL_TRACE_LEVEL_ERROR
+eWLAN_PAL_TRACE_LEVEL_ERROR
+"RX successive empty interrupt, Could not find invalidated DESC reload driver"
+dxeCtxt->driverReloadInProcessing = eWLAN_PAL_TRUE;
+dxeCtxt->driverReloadInProcessing = eWLAN_PAL_TRUE
+dxeCtxt->driverReloadInProcessing
+dxeCtxt
+dxeCtxt
+driverReloadInProcessing
+eWLAN_PAL_TRUE
+eWLAN_PAL_TRUE
+wpalWlanReload();
+wpalWlanReload()
+wpalWlanReload
+wpalWlanReload
+channelEntry->numFragmentCurrentChain = frameCount;
+channelEntry->numFragmentCurrentChain = frameCount
+channelEntry->numFragmentCurrentChain
+channelEntry
+channelEntry
+numFragmentCurrentChain
+frameCount
+frameCount
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,            "%s Exit", __func__);
+HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,            "%s Exit", __func__)
+HDXE_MSG
+HDXE_MSG
+eWLAN_MODULE_DAL_DATA
+eWLAN_MODULE_DAL_DATA
+eWLAN_PAL_TRACE_LEVEL_INFO_LOW
+eWLAN_PAL_TRACE_LEVEL_INFO_LOW
+"%s Exit"
+__func__
+__func__
+return status;
+status
+status
+-----joern-----
+(190,214,0)
+(193,56,0)
+(243,37,0)
+(254,193,0)
+(173,65,0)
+(48,44,0)
+(128,286,0)
+(191,237,0)
+(281,232,0)
+(227,257,0)
+(230,37,0)
+(105,270,0)
+(263,203,0)
+(192,211,0)
+(108,26,0)
+(238,112,0)
+(81,296,0)
+(302,57,0)
+(296,173,0)
+(162,275,0)
+(144,174,0)
+(213,37,0)
+(91,212,0)
+(53,56,0)
+(80,27,0)
+(114,184,0)
+(126,240,0)
+(234,280,0)
+(169,112,0)
+(188,187,0)
+(240,184,0)
+(249,152,0)
+(163,272,0)
+(65,124,0)
+(136,37,0)
+(286,155,0)
+(269,24,0)
+(193,22,0)
+(27,169,0)
+(127,131,0)
+(81,201,0)
+(162,145,0)
+(264,140,0)
+(137,38,0)
+(96,24,0)
+(291,105,0)
+(302,132,0)
+(254,22,0)
+(93,127,0)
+(154,26,0)
+(164,256,0)
+(79,24,0)
+(198,245,0)
+(103,87,0)
+(94,202,0)
+(36,100,0)
+(134,152,0)
+(40,131,0)
+(195,49,0)
+(166,198,0)
+(158,190,0)
+(120,148,0)
+(178,298,0)
+(60,37,0)
+(194,254,0)
+(83,154,0)
+(244,37,0)
+(39,152,0)
+(50,104,0)
+(22,254,0)
+(124,65,0)
+(204,41,0)
+(52,152,0)
+(107,174,0)
+(203,37,0)
+(237,7,0)
+(6,64,0)
+(259,46,0)
+(251,269,0)
+(233,37,0)
+(293,154,0)
+(98,26,0)
+(130,298,0)
+(33,66,0)
+(132,302,0)
+(63,44,0)
+(232,145,0)
+(31,43,0)
+(95,220,0)
+(245,198,0)
+(4,76,0)
+(17,61,0)
+(174,131,0)
+(199,88,0)
+(242,211,0)
+(28,112,0)
+(23,177,0)
+(254,24,0)
+(250,112,0)
+(287,216,0)
+(268,135,0)
+(284,37,0)
+(18,149,0)
+(141,250,0)
+(175,302,0)
+(84,66,0)
+(23,46,0)
+(77,131,0)
+(256,241,0)
+(61,26,0)
+(290,212,0)
+(109,240,0)
+(19,228,0)
+(101,230,0)
+(246,38,0)
+(92,256,0)
+(68,214,0)
+(247,11,0)
+(210,216,0)
+(187,250,0)
+(49,147,0)
+(75,64,0)
+(85,40,0)
+(269,193,0)
+(262,201,0)
+(73,46,0)
+(55,84,0)
+(4,55,0)
+(154,83,0)
+(11,68,0)
+(239,202,0)
+(10,108,0)
+(22,193,0)
+(22,156,0)
+(181,162,0)
+(286,145,0)
+(102,173,0)
+(198,280,0)
+(201,98,0)
+(116,286,0)
+(133,159,0)
+(38,88,0)
+(78,259,0)
+(27,145,0)
+(125,135,0)
+(68,37,0)
+(220,74,0)
+(177,148,0)
+(41,186,0)
+(14,302,0)
+(45,34,0)
+(177,23,0)
+(143,37,0)
+(76,37,0)
+(298,138,0)
+(46,259,0)
+(132,24,0)
+(31,285,0)
+(29,275,0)
+(100,24,0)
+(110,291,0)
+(1,284,0)
+(274,143,0)
+(5,23,0)
+(58,228,0)
+(257,81,0)
+(117,14,0)
+(71,108,0)
+(89,113,0)
+(214,184,0)
+(165,232,0)
+(47,75,0)
+(155,286,0)
+(43,31,0)
+(140,264,0)
+(270,272,0)
+(225,83,0)
+(170,254,0)
+(234,193,0)
+(142,127,0)
+(7,237,0)
+(43,145,0)
+(201,81,0)
+(59,23,0)
+(4,89,0)
+(123,70,0)
+(209,169,0)
+(70,112,0)
+(98,201,0)
+(257,161,0)
+(187,230,0)
+(161,257,0)
+(11,145,0)
+(232,96,0)
+(276,190,0)
+(115,284,0)
+(176,112,0)
+(106,269,0)
+(296,81,0)
+(295,148,0)
+(34,202,0)
+(155,162,0)
+(186,41,0)
+(167,256,0)
+(105,291,0)
+(297,105,0)
+(228,184,0)
+(135,65,0)
+(279,37,0)
+(14,272,0)
+(159,145,0)
+(187,86,0)
+(292,75,0)
+(214,108,0)
+(21,132,0)
+(277,43,0)
+(82,284,0)
+(291,110,0)
+(153,237,0)
+(294,250,0)
+(289,284,0)
+(285,31,0)
+(152,34,0)
+(182,234,0)
+(34,152,0)
+(76,203,0)
+(149,275,0)
+(8,270,0)
+(258,193,0)
+(24,57,0)
+(152,25,0)
+(196,37,0)
+(41,145,0)
+(149,145,0)
+(171,114,0)
+(86,64,0)
+(12,86,0)
+(70,123,0)
+(146,56,0)
+(66,25,0)
+(96,64,0)
+(273,161,0)
+(74,220,0)
+(205,174,0)
+(148,177,0)
+(7,230,0)
+(38,70,0)
+(84,145,0)
+(255,70,0)
+(280,56,0)
+(32,124,0)
+(24,100,0)
+(208,23,0)
+(271,57,0)
+(235,68,0)
+(266,43,0)
+(267,214,0)
+(111,264,0)
+(46,73,0)
+(2,98,0)
+(96,193,0)
+(67,186,0)
+(13,28,0)
+(9,124,0)
+(87,113,0)
+(240,190,0)
+(265,41,0)
+(224,100,0)
+(129,275,0)
+(200,240,0)
+(260,216,0)
+(68,65,0)
+(179,259,0)
+(15,7,0)
+(168,149,0)
+(261,228,0)
+(7,86,0)
+(190,240,0)
+(173,296,0)
+(236,136,0)
+(161,26,0)
+(250,187,0)
+(51,245,0)
+(23,229,0)
+(278,280,0)
+(259,26,0)
+(245,146,0)
+(253,136,0)
+(44,37,0)
+(185,177,0)
+(280,234,0)
+(282,143,0)
+(189,291,0)
+(202,145,0)
+(212,147,0)
+(16,37,0)
+(55,25,0)
+(152,241,0)
+(197,89,0)
+(220,145,0)
+(221,65,0)
+(4,49,0)
+(183,173,0)
+(222,143,0)
+(97,11,0)
+(148,145,0)
+(186,145,0)
+(72,154,0)
+(301,298,0)
+(269,140,0)
+(104,114,0)
+(272,14,0)
+(146,245,0)
+(156,22,0)
+(206,96,0)
+(299,87,0)
+(30,159,0)
+(69,37,0)
+(231,161,0)
+(139,285,0)
+(207,98,0)
+(270,57,0)
+(90,27,0)
+(104,145,0)
+(105,146,0)
+(0,132,0)
+(256,164,0)
+(160,37,0)
+(180,162,0)
+(186,275,0)
+(108,214,0)
+(162,155,0)
+(124,26,0)
+(150,75,0)
+(3,230,0)
+(42,61,0)
+(70,38,0)
+(157,212,0)
+(151,84,0)
+(124,145,0)
+(65,37,0)
+(237,112,0)
+(215,38,0)
+(288,74,0)
+(226,86,0)
+(248,55,0)
+(121,57,0)
+(218,87,0)
+(100,145,0)
+(216,300,0)
+(190,158,0)
+(219,57,0)
+(172,14,0)
+(272,270,0)
+(283,146,0)
+(217,234,0)
+(169,27,0)
+(202,34,0)
+(35,220,0)
+(159,275,0)
+(122,104,0)
+(285,26,0)
+(62,143,0)
+(81,257,0)
+(99,84,0)
+(54,155,0)
+(223,285,0)
+(61,40,0)
+(119,76,0)
+(252,127,0)
+(211,37,0)
+(118,203,0)
+(20,198,0)
+(46,23,0)
+(140,269,0)
+(114,214,0)
+(108,145,0)
+(206,232,1)
+(181,155,1)
+(54,286,1)
+(295,120,1)
+(238,176,1)
+(291,189,1)
+(98,26,1)
+(142,93,1)
+(194,170,1)
+(126,214,1)
+(217,278,1)
+(220,95,1)
+(43,266,1)
+(190,276,1)
+(226,96,1)
+(89,197,1)
+(254,193,1)
+(44,48,1)
+(288,83,1)
+(182,217,1)
+(162,145,1)
+(203,118,1)
+(221,31,1)
+(298,178,1)
+(245,51,1)
+(257,161,1)
+(4,89,1)
+(237,112,1)
+(235,11,1)
+(259,78,1)
+(155,54,1)
+(4,76,1)
+(152,241,1)
+(27,90,1)
+(104,145,1)
+(234,193,1)
+(166,283,1)
+(273,227,1)
+(164,256,1)
+(15,169,1)
+(192,242,1)
+(7,86,1)
+(21,0,1)
+(159,145,1)
+(272,14,1)
+(122,240,1)
+(187,250,1)
+(108,71,1)
+(119,143,1)
+(189,105,1)
+(162,181,1)
+(6,86,1)
+(186,41,1)
+(280,234,1)
+(80,209,1)
+(24,100,1)
+(9,32,1)
+(277,285,1)
+(152,52,1)
+(95,35,1)
+(202,145,1)
+(258,216,1)
+(179,59,1)
+(250,141,1)
+(220,145,1)
+(269,193,1)
+(173,102,1)
+(272,163,1)
+(35,288,1)
+(150,292,1)
+(63,136,1)
+(39,164,1)
+(299,218,1)
+(46,73,1)
+(188,7,1)
+(108,26,1)
+(269,24,1)
+(66,33,1)
+(247,97,1)
+(50,122,1)
+(34,202,1)
+(212,91,1)
+(96,24,1)
+(240,190,1)
+(135,65,1)
+(71,10,1)
+(146,245,1)
+(136,253,1)
+(7,230,1)
+(269,251,1)
+(214,108,1)
+(97,77,1)
+(109,126,1)
+(287,264,1)
+(278,193,1)
+(23,177,1)
+(204,265,1)
+(10,267,1)
+(108,145,1)
+(152,34,1)
+(90,80,1)
+(83,154,1)
+(27,145,1)
+(5,83,1)
+(141,294,1)
+(251,106,1)
+(22,156,1)
+(31,285,1)
+(81,257,1)
+(232,145,1)
+(209,112,1)
+(41,145,1)
+(218,103,1)
+(253,236,1)
+(222,68,1)
+(180,149,1)
+(97,74,1)
+(270,272,1)
+(187,86,1)
+(230,101,1)
+(297,169,1)
+(197,87,1)
+(232,165,1)
+(140,269,1)
+(104,50,1)
+(72,293,1)
+(55,84,1)
+(259,26,1)
+(32,221,1)
+(70,112,1)
+(130,301,1)
+(161,231,1)
+(176,186,1)
+(76,119,1)
+(186,145,1)
+(18,74,1)
+(114,214,1)
+(245,198,1)
+(33,84,1)
+(165,281,1)
+(148,145,1)
+(82,289,1)
+(28,13,1)
+(102,183,1)
+(258,110,1)
+(13,146,1)
+(4,49,1)
+(41,204,1)
+(100,36,1)
+(225,270,1)
+(201,98,1)
+(132,21,1)
+(112,238,1)
+(120,185,1)
+(114,171,1)
+(198,20,1)
+(51,198,1)
+(286,145,1)
+(137,110,1)
+(190,214,1)
+(0,175,1)
+(42,17,1)
+(284,115,1)
+(281,75,1)
+(68,235,1)
+(223,139,1)
+(97,298,1)
+(296,173,1)
+(105,270,1)
+(115,82,1)
+(191,153,1)
+(23,46,1)
+(135,125,1)
+(124,9,1)
+(40,85,1)
+(291,105,1)
+(2,262,1)
+(183,135,1)
+(70,123,1)
+(296,81,1)
+(38,70,1)
+(65,124,1)
+(98,207,1)
+(242,44,1)
+(282,274,1)
+(172,8,1)
+(268,65,1)
+(153,15,1)
+(68,65,1)
+(215,137,1)
+(252,174,1)
+(84,145,1)
+(111,38,1)
+(276,200,1)
+(151,99,1)
+(170,258,1)
+(22,254,1)
+(81,201,1)
+(293,225,1)
+(49,195,1)
+(157,290,1)
+(208,5,1)
+(43,145,1)
+(224,79,1)
+(67,159,1)
+(174,107,1)
+(254,24,1)
+(289,1,1)
+(45,249,1)
+(86,12,1)
+(94,45,1)
+(205,144,1)
+(12,226,1)
+(227,173,1)
+(260,287,1)
+(274,222,1)
+(128,180,1)
+(96,193,1)
+(3,211,1)
+(163,14,1)
+(7,15,1)
+(175,24,1)
+(288,23,1)
+(97,114,1)
+(149,145,1)
+(125,268,1)
+(133,162,1)
+(193,22,1)
+(209,28,1)
+(62,282,1)
+(187,188,1)
+(266,277,1)
+(162,155,1)
+(249,134,1)
+(96,206,1)
+(246,215,1)
+(55,248,1)
+(169,27,1)
+(8,302,1)
+(177,148,1)
+(250,112,1)
+(200,109,1)
+(134,39,1)
+(149,168,1)
+(107,205,1)
+(283,280,1)
+(58,261,1)
+(173,65,1)
+(17,127,1)
+(210,260,1)
+(93,252,1)
+(103,31,1)
+(91,157,1)
+(61,42,1)
+(70,255,1)
+(30,133,1)
+(105,297,1)
+(228,19,1)
+(74,220,1)
+(124,145,1)
+(267,228,1)
+(234,182,1)
+(52,34,1)
+(248,66,1)
+(117,172,1)
+(262,257,1)
+(14,117,1)
+(75,150,1)
+(124,26,1)
+(143,62,1)
+(185,46,1)
+(7,237,1)
+(294,188,1)
+(286,116,1)
+(264,140,1)
+(155,286,1)
+(301,187,1)
+(216,210,1)
+(144,187,1)
+(101,3,1)
+(154,26,1)
+(178,130,1)
+(105,146,1)
+(302,132,1)
+(265,67,1)
+(236,203,1)
+(211,192,1)
+(168,18,1)
+(159,30,1)
+(78,179,1)
+(48,63,1)
+(36,224,1)
+(290,135,1)
+(61,26,1)
+(198,280,1)
+(87,299,1)
+(256,241,1)
+(190,158,1)
+(231,273,1)
+(100,145,1)
+(254,194,1)
+(99,152,1)
+(132,24,1)
+(31,43,1)
+(11,145,1)
+(77,40,1)
+(195,212,1)
+(256,92,1)
+(139,284,1)
+(84,151,1)
+(116,128,1)
+(59,208,1)
+(285,223,1)
+(68,214,1)
+(255,246,1)
+(1,230,1)
+(97,296,1)
+(239,94,1)
+(148,295,1)
+(237,191,1)
+(171,104,1)
+(79,164,1)
+(47,264,1)
+(118,263,1)
+(167,296,1)
+(76,203,1)
+(154,72,1)
+(110,291,1)
+(207,2,1)
+(202,239,1)
+(292,47,1)
+(15,6,1)
+(169,112,1)
+(127,142,1)
+(92,167,1)
+(11,247,1)
+(20,166,1)
+(285,26,1)
+(85,61,1)
+(19,58,1)
+(161,26,1)
+(46,259,1)
+(261,7,1)
+(14,302,1)
+(187,230,1)
+(28,112,1)
+(106,111,1)
+(4,55,1)
+(55,84,2)
+(252,187,2)
+(214,7,2)
+(165,264,2)
+(0,164,2)
+(14,302,2)
+(162,74,2)
+(198,110,2)
+(202,164,2)
+(224,164,2)
+(302,132,2)
+(169,110,2)
+(46,83,2)
+(164,256,2)
+(83,164,2)
+(293,164,2)
+(193,22,2)
+(83,154,2)
+(220,145,2)
+(161,173,2)
+(215,110,2)
+(218,31,2)
+(157,135,2)
+(149,145,2)
+(34,202,2)
+(257,173,2)
+(177,83,2)
+(104,145,2)
+(27,145,2)
+(291,105,2)
+(47,264,2)
+(4,76,2)
+(188,7,2)
+(68,214,2)
+(190,7,2)
+(153,15,2)
+(193,110,2)
+(97,164,2)
+(280,110,2)
+(173,135,2)
+(11,145,2)
+(193,264,2)
+(186,145,2)
+(247,296,2)
+(96,193,2)
+(200,7,2)
+(137,110,2)
+(28,112,2)
+(77,187,2)
+(4,55,2)
+(95,164,2)
+(282,164,2)
+(36,164,2)
+(28,110,2)
+(245,198,2)
+(68,65,2)
+(140,110,2)
+(61,187,2)
+(20,110,2)
+(195,135,2)
+(225,164,2)
+(209,264,2)
+(90,264,2)
+(144,187,2)
+(24,164,2)
+(100,164,2)
+(7,237,2)
+(152,164,2)
+(67,74,2)
+(245,264,2)
+(278,264,2)
+(126,7,2)
+(176,74,2)
+(251,110,2)
+(278,110,2)
+(178,187,2)
+(120,83,2)
+(119,296,2)
+(62,296,2)
+(228,7,2)
+(76,164,2)
+(270,272,2)
+(125,31,2)
+(274,296,2)
+(255,110,2)
+(207,257,2)
+(146,264,2)
+(159,145,2)
+(9,31,2)
+(190,214,2)
+(18,74,2)
+(107,187,2)
+(161,26,2)
+(222,296,2)
+(194,110,2)
+(22,110,2)
+(143,164,2)
+(162,145,2)
+(68,296,2)
+(135,31,2)
+(104,7,2)
+(277,285,2)
+(280,234,2)
+(76,296,2)
+(20,264,2)
+(11,296,2)
+(127,187,2)
+(50,7,2)
+(17,187,2)
+(273,173,2)
+(6,264,2)
+(65,31,2)
+(302,164,2)
+(172,164,2)
+(79,164,2)
+(70,110,2)
+(112,74,2)
+(23,177,2)
+(256,296,2)
+(130,187,2)
+(148,83,2)
+(149,74,2)
+(133,74,2)
+(169,27,2)
+(155,286,2)
+(249,164,2)
+(209,110,2)
+(226,264,2)
+(198,280,2)
+(269,110,2)
+(52,164,2)
+(186,41,2)
+(59,83,2)
+(169,74,2)
+(80,74,2)
+(290,135,2)
+(39,164,2)
+(208,83,2)
+(185,83,2)
+(24,100,2)
+(109,7,2)
+(246,110,2)
+(68,164,2)
+(237,112,2)
+(155,74,2)
+(92,296,2)
+(162,155,2)
+(259,83,2)
+(122,7,2)
+(54,74,2)
+(220,164,2)
+(258,110,2)
+(13,264,2)
+(299,31,2)
+(100,145,2)
+(7,230,2)
+(187,86,2)
+(272,164,2)
+(231,173,2)
+(201,257,2)
+(146,110,2)
+(40,187,2)
+(247,164,2)
+(22,156,2)
+(298,187,2)
+(210,264,2)
+(257,161,2)
+(135,65,2)
+(8,164,2)
+(267,7,2)
+(22,254,2)
+(90,110,2)
+(245,110,2)
+(41,145,2)
+(10,7,2)
+(205,187,2)
+(4,89,2)
+(250,188,2)
+(12,264,2)
+(262,257,2)
+(238,74,2)
+(212,135,2)
+(274,164,2)
+(7,86,2)
+(151,164,2)
+(124,26,2)
+(105,169,2)
+(182,264,2)
+(261,7,2)
+(232,264,2)
+(239,164,2)
+(33,164,2)
+(268,31,2)
+(5,83,2)
+(7,74,2)
+(142,187,2)
+(217,110,2)
+(227,173,2)
+(194,264,2)
+(292,264,2)
+(45,164,2)
+(4,49,2)
+(234,193,2)
+(164,296,2)
+(30,74,2)
+(173,65,2)
+(177,148,2)
+(235,296,2)
+(28,264,2)
+(197,31,2)
+(140,269,2)
+(217,264,2)
+(168,74,2)
+(58,7,2)
+(49,135,2)
+(111,110,2)
+(65,124,2)
+(51,264,2)
+(105,146,2)
+(254,264,2)
+(19,7,2)
+(286,74,2)
+(221,31,2)
+(15,74,2)
+(187,250,2)
+(169,112,2)
+(102,135,2)
+(264,110,2)
+(169,264,2)
+(286,145,2)
+(296,135,2)
+(81,173,2)
+(276,7,2)
+(187,7,2)
+(198,264,2)
+(21,164,2)
+(143,296,2)
+(81,201,2)
+(283,110,2)
+(110,169,2)
+(97,296,2)
+(70,123,2)
+(232,145,2)
+(235,164,2)
+(175,164,2)
+(280,264,2)
+(222,164,2)
+(152,241,2)
+(86,264,2)
+(154,164,2)
+(264,140,2)
+(14,164,2)
+(254,193,2)
+(38,110,2)
+(296,81,2)
+(259,26,2)
+(234,110,2)
+(258,264,2)
+(38,70,2)
+(43,285,2)
+(296,173,2)
+(103,31,2)
+(31,43,2)
+(89,31,2)
+(201,98,2)
+(266,285,2)
+(114,214,2)
+(35,164,2)
+(62,164,2)
+(124,31,2)
+(108,26,2)
+(96,24,2)
+(23,83,2)
+(81,257,2)
+(128,74,2)
+(43,145,2)
+(98,257,2)
+(166,264,2)
+(179,83,2)
+(146,245,2)
+(265,74,2)
+(132,24,2)
+(13,110,2)
+(87,31,2)
+(66,164,2)
+(295,83,2)
+(154,26,2)
+(84,164,2)
+(191,15,2)
+(294,188,2)
+(269,24,2)
+(84,145,2)
+(288,164,2)
+(99,164,2)
+(250,112,2)
+(96,264,2)
+(166,110,2)
+(46,73,2)
+(282,296,2)
+(76,203,2)
+(23,46,2)
+(110,291,2)
+(11,164,2)
+(119,164,2)
+(85,187,2)
+(189,169,2)
+(80,264,2)
+(27,110,2)
+(183,135,2)
+(148,145,2)
+(105,270,2)
+(269,193,2)
+(34,164,2)
+(51,110,2)
+(204,74,2)
+(22,264,2)
+(301,187,2)
+(190,158,2)
+(27,74,2)
+(181,74,2)
+(94,164,2)
+(31,285,2)
+(78,83,2)
+(90,74,2)
+(80,110,2)
+(240,190,2)
+(256,241,2)
+(216,264,2)
+(32,31,2)
+(254,24,2)
+(108,7,2)
+(167,296,2)
+(163,164,2)
+(46,259,2)
+(170,110,2)
+(74,220,2)
+(117,164,2)
+(174,187,2)
+(281,264,2)
+(171,7,2)
+(42,187,2)
+(74,164,2)
+(116,74,2)
+(124,145,2)
+(132,164,2)
+(283,264,2)
+(202,145,2)
+(287,264,2)
+(240,7,2)
+(297,169,2)
+(159,74,2)
+(150,264,2)
+(141,188,2)
+(106,110,2)
+(41,74,2)
+(91,135,2)
+(180,74,2)
+(291,169,2)
+(272,14,2)
+(248,164,2)
+(61,26,2)
+(234,264,2)
+(186,74,2)
+(170,264,2)
+(152,34,2)
+(260,264,2)
+(55,164,2)
+(93,187,2)
+(27,264,2)
+(237,15,2)
+(2,257,2)
+(72,164,2)
+(134,164,2)
+(214,108,2)
+(70,112,2)
+(108,145,2)
+(75,264,2)
+(270,164,2)
+(114,7,2)
+(254,110,2)
+(182,110,2)
+(71,7,2)
+(285,26,2)
+(187,230,2)
+(206,264,2)
+(98,26,2)
+(209,74,2)
+-----------------------------------
+(0,currentCtrlBlk)
+(1,eWLAN_MODULE_DAL_DATA)
+(2,dxeCtxt)
+(3,invalidatedFound)
+(4,RET)
+(5,eWLAN_MODULE_DAL_DATA)
+(6,break;)
+(7,(invalidatedFound)
+(8,descCtrl)
+(9,channelEntry)
+(10,dxeCtxt)
+(11,channelEntry->numFragmentCurrentChain)
+(12,1)
+(13,descLoop)
+(14,currentDesc->descCtrl)
+(15,invalidatedFound)
+(16,currentDesc)
+(17,dxeCtxt)
+(18,"RX Ready")
+(19,"Found New Sync location with HW, handle frames from there")
+(20,descCtrl)
+(21,linkedDesc)
+(22,(WLANDXE_DescCtrlBlkType *)
+(23,HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,\n\\n                   "RX ISR called but no frame handled PWS %d, channel %s",\n\\n                   (int)
+(24,currentCtrlBlk = channelEntry->headCtrlBlk)
+(25,)
+(26,WLANDXE_CtrlBlkType     *dxeCtxt)
+(27,channelEntry->numDesc)
+(28,descLoop++)
+(29,if((invalidatedFound)
+(30,"RX successive empty interrupt")
+(31,(NULL == dxeCtxt)
+(32,dxeCtxt)
+(33,0)
+(34,channelType[channelEntry->channelType])
+(35,channelEntry)
+(36,headCtrlBlk)
+(37,)
+(38,HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,\n\\n                        "Found Invalidated Descriptor %d", (int)
+(39,eWLAN_MODULE_DAL_DATA)
+(40,dxeCtxt->driverReloadInProcessing = eWLAN_PAL_TRUE)
+(41,channelEntry->channelType)
+(42,driverReloadInProcessing)
+(43,NULL == channelEntry)
+(44,*currentDesc    = NULL)
+(45,channelType)
+(46,(int)
+(47,eWLAN_MODULE_DAL_DATA)
+(48,NULL)
+(49,return eWLAN_PAL_STATUS_E_INVAL;)
+(50,numFragmentCurrentChain)
+(51,ctrl)
+(52,chStat)
+(53,if(!(WLANDXE_U32_SWAP_ENDIAN(descCtrl)
+(54,linkedDesc)
+(55,return eWLAN_PAL_STATUS_SUCCESS;)
+(56,)
+(57,)
+(58,eWLAN_PAL_TRACE_LEVEL_ERROR)
+(59,"RX ISR called but no frame handled PWS %d, channel %s")
+(60,descLoop)
+(61,dxeCtxt->driverReloadInProcessing)
+(62,__func__)
+(63,currentDesc)
+(64,)
+(65,frameCount = dxeRXFrameRouteUpperLayer(dxeCtxt, channelEntry)
+(66,channelEntry->numFragmentCurrentChain = 0)
+(67,channelEntry)
+(68,channelEntry->numFragmentCurrentChain = frameCount)
+(69,if(0 > frameCount)
+(70,(int)
+(71,channelEntry)
+(72,hostPowerState)
+(73,int)
+(74,0 == channelEntry->numFragmentCurrentChain)
+(75,HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,\n\\n                           "Packet locked, Resync Host and HW")
+(76,return status;)
+(77,wpalWlanReload()
+(78,hostPowerState)
+(79,currentCtrlBlk)
+(80,channelEntry)
+(81,(WLANDXE_POWER_STATE_BMPS == dxeCtxt->hostPowerState)
+(82,"%s Enter")
+(83,WLANDXE_POWER_STATE_BMPS != dxeCtxt->hostPowerState)
+(84,channelEntry->numFragmentCurrentChain)
+(85,eWLAN_PAL_TRUE)
+(86,invalidatedFound = 1)
+(87,HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,\n\\n               "dxeRXFrameReady Channel Entry is not valid")
+(88,)
+(89,return eWLAN_PAL_STATUS_E_INVAL;)
+(90,numDesc)
+(91,"dxeRXFrameReady RX frame route fail")
+(92,WLANDXE_CH_CTRL_EN_MASK)
+(93,eWLAN_PAL_TRACE_LEVEL_ERROR)
+(94,channelEntry)
+(95,numFragmentCurrentChain)
+(96,channelEntry->headCtrlBlk = currentCtrlBlk)
+(97,channelEntry)
+(98,dxeCtxt->hostPowerState)
+(99,channelEntry)
+(100,channelEntry->headCtrlBlk)
+(101,0)
+(102,frameCount)
+(103,eWLAN_MODULE_DAL_DATA)
+(104,channelEntry->numFragmentCurrentChain)
+(105,WLANDXE_U32_SWAP_ENDIAN(descCtrl)
+(106,currentCtrlBlk)
+(107,"Could not found invalidated descriptor")
+(108,dxeRXFrameRouteUpperLayer(dxeCtxt, channelEntry)
+(109,eWLAN_PAL_TRACE_LEVEL_ERROR)
+(110,!(WLANDXE_U32_SWAP_ENDIAN(descCtrl)
+(111,eWLAN_PAL_STATUS_SUCCESS)
+(112,descLoop = 0)
+(113,)
+(114,channelEntry->numFragmentCurrentChain = frameCount)
+(115,__func__)
+(116,headCtrlBlk)
+(117,descCtrl)
+(118,eWLAN_PAL_STATUS_SUCCESS)
+(119,status)
+(120,channelEntry)
+(121,if(WLANDXE_POWER_STATE_BMPS != dxeCtxt->hostPowerState)
+(122,channelEntry)
+(123,int)
+(124,dxeRXFrameRouteUpperLayer(dxeCtxt, channelEntry)
+(125,frameCount)
+(126,eWLAN_MODULE_DAL_DATA)
+(127,HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,\n\\n                     "RX successive empty interrupt, Could not find invalidated DESC reload driver")
+(128,channelEntry)
+(129,for(descLoop = 0; descLoop < channelEntry->numDesc; descLoop++)
+(130,eWLAN_PAL_TRACE_LEVEL_ERROR)
+(131,)
+(132,currentCtrlBlk->linkedDesc)
+(133,channelEntry)
+(134,eWLAN_PAL_TRACE_LEVEL_ERROR)
+(135,0 > frameCount)
+(136,*currentCtrlBlk = NULL)
+(137,eWLAN_MODULE_DAL_DATA)
+(138,)
+(139,NULL)
+(140,wpalIsPacketLocked(currentCtrlBlk->xfrFrame)
+(141,descLoop)
+(142,"RX successive empty interrupt, Could not find invalidated DESC reload driver")
+(143,HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,\n\\n            "%s Exit", __func__)
+(144,eWLAN_MODULE_DAL_DATA)
+(145,WLANDXE_ChannelCBType   *channelEntry)
+(146,descCtrl       = currentDesc->descCtrl.ctrl)
+(147,)
+(148,channelEntry->channelType)
+(149,dxeChannelMonitor("RX Ready", channelEntry)
+(150,"Packet locked, Resync Host and HW")
+(151,numFragmentCurrentChain)
+(152,HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,\n\\n                  "dxeRXFrameReady %s RING Wrapped, RX Free Low 0x%x",\n\\n                  channelType[channelEntry->channelType], chStat)
+(153,0)
+(154,dxeCtxt->hostPowerState)
+(155,channelEntry->headCtrlBlk->linkedDesc)
+(156,WLANDXE_DescCtrlBlkType *)
+(157,eWLAN_PAL_TRACE_LEVEL_ERROR)
+(158,int)
+(159,dxeChannelRegisterDump(channelEntry, "RX successive empty interrupt")
+(160,invalidatedFound)
+(161,dxeCtxt->hostPowerState)
+(162,dxeDescriptorDump(channelEntry, channelEntry->headCtrlBlk->linkedDesc, 0)
+(163,ctrl)
+(164,!(chStat & WLANDXE_CH_CTRL_EN_MASK)
+(165,headCtrlBlk)
+(166,currentDesc)
+(167,chStat)
+(168,channelEntry)
+(169,descLoop < channelEntry->numDesc)
+(170,currentCtrlBlk)
+(171,frameCount)
+(172,currentDesc)
+(173,0 == frameCount)
+(174,HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,\n\\n                     "Could not found invalidated descriptor")
+(175,currentDesc)
+(176,descLoop)
+(177,channelType[channelEntry->channelType])
+(178,"Out of RX Low resource, and INT came in, do nothing till get RX resource")
+(179,dxeCtxt)
+(180,channelEntry)
+(181,0)
+(182,linkedDesc)
+(183,0)
+(184,)
+(185,channelType)
+(186,dxeChannelAllDescDump(channelEntry, channelEntry->channelType)
+(187,(invalidatedFound)
+(188,invalidatedFound)
+(189,WLANDXE_DESC_CTRL_VALID)
+(190,(int)
+(191,descLoop)
+(192,0)
+(193,currentCtrlBlk = (WLANDXE_DescCtrlBlkType *)
+(194,nextCtrlBlk)
+(195,eWLAN_PAL_STATUS_E_INVAL)
+(196,currentCtrlBlk)
+(197,eWLAN_PAL_STATUS_E_INVAL)
+(198,currentDesc->descCtrl)
+(199,if(eWLAN_PAL_STATUS_SUCCESS == wpalIsPacketLocked(currentCtrlBlk->xfrFrame)
+(200,"re-sync routed %d frames to upper layer")
+(201,WLANDXE_POWER_STATE_FULL == dxeCtxt->hostPowerState)
+(202,channelEntry->channelType)
+(203,status = eWLAN_PAL_STATUS_SUCCESS)
+(204,channelType)
+(205,eWLAN_PAL_TRACE_LEVEL_ERROR)
+(206,currentCtrlBlk)
+(207,hostPowerState)
+(208,eWLAN_PAL_TRACE_LEVEL_INFO_LOW)
+(209,descLoop)
+(210,"Packet Not Locked, cannot transfer frame")
+(211,frameCount = 0)
+(212,HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,\n\\n               "dxeRXFrameReady RX frame route fail")
+(213,status)
+(214,frameCount = dxeRXFrameRouteUpperLayer(dxeCtxt, channelEntry)
+(215,eWLAN_PAL_TRACE_LEVEL_ERROR)
+(216,HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,\n\\n                           "Packet Not Locked, cannot transfer frame")
+(217,currentCtrlBlk)
+(218,eWLAN_PAL_TRACE_LEVEL_ERROR)
+(219,if(0 == channelEntry->numFragmentCurrentChain)
+(220,channelEntry->numFragmentCurrentChain)
+(221,frameCount)
+(222,eWLAN_MODULE_DAL_DATA)
+(223,dxeCtxt)
+(224,channelEntry)
+(225,WLANDXE_POWER_STATE_BMPS)
+(226,invalidatedFound)
+(227,WLANDXE_POWER_STATE_BMPS)
+(228,HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,\n\\n                     "Found New Sync location with HW, handle frames from there")
+(229,)
+(230,invalidatedFound = 0)
+(231,hostPowerState)
+(232,channelEntry->headCtrlBlk)
+(233,descCtrl)
+(234,currentCtrlBlk->linkedDesc)
+(235,frameCount)
+(236,currentCtrlBlk)
+(237,0 != descLoop)
+(238,0)
+(239,channelType)
+(240,HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,\n\\n                     "re-sync routed %d frames to upper layer", (int)
+(241,wpt_uint32               chStat)
+(242,frameCount)
+(243,frameCount)
+(244,if((NULL == dxeCtxt)
+(245,currentDesc->descCtrl.ctrl)
+(246,"Found Invalidated Descriptor %d")
+(247,numFragmentCurrentChain)
+(248,eWLAN_PAL_STATUS_SUCCESS)
+(249,"dxeRXFrameReady %s RING Wrapped, RX Free Low 0x%x")
+(250,0 == descLoop)
+(251,xfrFrame)
+(252,eWLAN_MODULE_DAL_DATA)
+(253,NULL)
+(254,currentCtrlBlk->nextCtrlBlk)
+(255,descLoop)
+(256,chStat & WLANDXE_CH_CTRL_EN_MASK)
+(257,WLANDXE_POWER_STATE_BMPS == dxeCtxt->hostPowerState)
+(258,currentCtrlBlk)
+(259,dxeCtxt->hostPowerState)
+(260,eWLAN_PAL_TRACE_LEVEL_ERROR)
+(261,eWLAN_MODULE_DAL_DATA)
+(262,WLANDXE_POWER_STATE_FULL)
+(263,status)
+(264,eWLAN_PAL_STATUS_SUCCESS == wpalIsPacketLocked(currentCtrlBlk->xfrFrame)
+(265,channelEntry)
+(266,channelEntry)
+(267,frameCount)
+(268,0)
+(269,currentCtrlBlk->xfrFrame)
+(270,descCtrl       = currentDesc->descCtrl.ctrl)
+(271,if(!(chStat & WLANDXE_CH_CTRL_EN_MASK)
+(272,currentDesc->descCtrl.ctrl)
+(273,dxeCtxt)
+(274,eWLAN_PAL_TRACE_LEVEL_INFO_LOW)
+(275,)
+(276,frameCount)
+(277,NULL)
+(278,currentDesc)
+(279,if((0 == frameCount)
+(280,currentDesc    = currentCtrlBlk->linkedDesc)
+(281,channelEntry)
+(282,"%s Exit")
+(283,descCtrl)
+(284,HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,\n\\n            "%s Enter", __func__)
+(285,NULL == dxeCtxt)
+(286,channelEntry->headCtrlBlk)
+(287,eWLAN_MODULE_DAL_DATA)
+(288,0)
+(289,eWLAN_PAL_TRACE_LEVEL_INFO_LOW)
+(290,eWLAN_MODULE_DAL_DATA)
+(291,WLANDXE_U32_SWAP_ENDIAN(descCtrl)
+(292,eWLAN_PAL_TRACE_LEVEL_ERROR)
+(293,dxeCtxt)
+(294,0)
+(295,channelType)
+(296,(0 == frameCount)
+(297,descCtrl)
+(298,HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,\n\\n                     "Out of RX Low resource, and INT came in, do nothing till get RX resource")
+(299,"dxeRXFrameReady Channel Entry is not valid")
+(300,)
+(301,eWLAN_MODULE_DAL_DATA)
+(302,currentDesc    = currentCtrlBlk->linkedDesc)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

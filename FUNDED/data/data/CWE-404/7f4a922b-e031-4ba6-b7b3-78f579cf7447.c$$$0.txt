@@ -1,0 +1,2769 @@
+-----label-----
+0
+-----code-----
+static long ir_lirc_ioctl(struct file *filep, unsigned int cmd,
+			unsigned long arg)
+{
+	struct lirc_codec *lirc;
+	struct rc_dev *dev;
+	u32 __user *argp = (u32 __user *)(arg);
+	int ret = 0;
+	__u32 val = 0, tmp;
+
+	lirc = lirc_get_pdata(filep);
+	if (!lirc)
+		return -EFAULT;
+
+	dev = lirc->dev;
+	if (!dev)
+		return -EFAULT;
+
+	if (_IOC_DIR(cmd) & _IOC_WRITE) {
+		ret = get_user(val, argp);
+		if (ret)
+			return ret;
+	}
+
+	switch (cmd) {
+
+	/* legacy support */
+	case LIRC_GET_SEND_MODE:
+		val = LIRC_CAN_SEND_PULSE & LIRC_CAN_SEND_MASK;
+		break;
+
+	case LIRC_SET_SEND_MODE:
+		if (val != (LIRC_MODE_PULSE & LIRC_CAN_SEND_MASK))
+			return -EINVAL;
+		return 0;
+
+	/* TX settings */
+	case LIRC_SET_TRANSMITTER_MASK:
+		if (!dev->s_tx_mask)
+			return -ENOSYS;
+
+		return dev->s_tx_mask(dev, val);
+
+	case LIRC_SET_SEND_CARRIER:
+		if (!dev->s_tx_carrier)
+			return -ENOSYS;
+
+		return dev->s_tx_carrier(dev, val);
+
+	case LIRC_SET_SEND_DUTY_CYCLE:
+		if (!dev->s_tx_duty_cycle)
+			return -ENOSYS;
+
+		if (val <= 0 || val >= 100)
+			return -EINVAL;
+
+		return dev->s_tx_duty_cycle(dev, val);
+
+	/* RX settings */
+	case LIRC_SET_REC_CARRIER:
+		if (!dev->s_rx_carrier_range)
+			return -ENOSYS;
+
+		if (val <= 0)
+			return -EINVAL;
+
+		return dev->s_rx_carrier_range(dev,
+					       dev->raw->lirc.carrier_low,
+					       val);
+
+	case LIRC_SET_REC_CARRIER_RANGE:
+		if (val <= 0)
+			return -EINVAL;
+
+		dev->raw->lirc.carrier_low = val;
+		return 0;
+
+	case LIRC_GET_REC_RESOLUTION:
+		val = dev->rx_resolution;
+		break;
+
+	case LIRC_SET_WIDEBAND_RECEIVER:
+		if (!dev->s_learning_mode)
+			return -ENOSYS;
+
+		return dev->s_learning_mode(dev, !!val);
+
+	case LIRC_SET_MEASURE_CARRIER_MODE:
+		if (!dev->s_carrier_report)
+			return -ENOSYS;
+
+		return dev->s_carrier_report(dev, !!val);
+
+	/* Generic timeout support */
+	case LIRC_GET_MIN_TIMEOUT:
+		if (!dev->max_timeout)
+			return -ENOSYS;
+		val = dev->min_timeout / 1000;
+		break;
+
+	case LIRC_GET_MAX_TIMEOUT:
+		if (!dev->max_timeout)
+			return -ENOSYS;
+		val = dev->max_timeout / 1000;
+		break;
+
+	case LIRC_SET_REC_TIMEOUT:
+		if (!dev->max_timeout)
+			return -ENOSYS;
+
+		/* Check for multiply overflow */
+		if (val > U32_MAX / 1000)
+			return -EINVAL;
+
+		tmp = val * 1000;
+
+		if (tmp < dev->min_timeout || tmp > dev->max_timeout)
+			return -EINVAL;
+
+		dev->timeout = tmp;
+		break;
+
+	case LIRC_SET_REC_TIMEOUT_REPORTS:
+		lirc->send_timeout_reports = !!val;
+		break;
+
+	default:
+		return lirc_dev_fop_ioctl(filep, cmd, arg);
+	}
+
+	if (_IOC_DIR(cmd) & _IOC_READ)
+		ret = put_user(val, argp);
+
+	return ret;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+13,14
+15,16
+15,17
+17,18
+19,20
+19,21
+19,22
+19,23
+19,24
+19,25
+19,26
+19,27
+19,28
+19,29
+19,30
+19,31
+19,32
+19,33
+19,34
+20,21
+21,22
+21,23
+22,23
+24,25
+24,26
+27,28
+28,29
+28,30
+29,30
+31,32
+31,33
+34,35
+35,36
+35,37
+36,37
+38,39
+40,41
+41,42
+42,43
+43,44
+43,45
+45,46
+45,47
+47,48
+49,50
+50,51
+50,52
+50,53
+51,52
+53,54
+53,55
+55,56
+57,58
+59,60
+60,61
+60,62
+61,62
+63,64
+63,65
+64,65
+66,67
+68,69
+68,70
+69,70
+70,71
+72,73
+73,74
+74,75
+76,77
+77,78
+77,79
+78,79
+80,81
+80,82
+81,82
+84,85
+84,86
+85,86
+86,87
+88,89
+89,90
+90,91
+92,93
+92,94
+93,94
+93,95
+94,95
+94,96
+95,96
+97,98
+99,100
+101,102
+101,103
+102,103
+103,104
+103,105
+104,105
+106,107
+106,108
+106,109
+107,108
+109,110
+111,112
+113,114
+113,115
+114,115
+116,117
+117,118
+119,120
+119,121
+120,121
+122,123
+122,124
+122,125
+122,126
+122,127
+122,128
+122,129
+122,130
+122,131
+122,132
+122,133
+122,134
+122,135
+122,136
+122,137
+122,138
+122,139
+122,140
+122,141
+122,142
+122,143
+122,144
+122,145
+122,146
+122,147
+122,148
+122,149
+122,150
+122,151
+122,152
+122,153
+122,154
+122,155
+122,156
+122,157
+122,158
+122,159
+122,160
+122,161
+122,162
+122,163
+122,164
+122,165
+122,166
+122,167
+122,168
+122,169
+122,170
+122,171
+122,172
+122,173
+122,174
+122,175
+123,124
+124,125
+126,127
+127,128
+127,129
+128,129
+130,131
+130,132
+131,132
+133,134
+136,137
+137,138
+139,140
+139,141
+140,141
+140,142
+141,142
+143,144
+144,145
+144,146
+145,146
+147,148
+149,150
+150,151
+151,152
+153,154
+155,156
+156,157
+158,159
+158,160
+159,160
+160,161
+160,162
+161,162
+164,165
+165,166
+166,167
+168,169
+169,170
+169,171
+169,172
+170,171
+170,172
+171,172
+174,175
+176,177
+178,179
+179,180
+181,182
+181,183
+182,183
+183,184
+183,185
+184,185
+187,188
+188,189
+189,190
+191,192
+192,193
+192,194
+192,195
+193,194
+193,195
+194,195
+197,198
+199,200
+201,202
+202,203
+204,205
+204,206
+205,206
+206,207
+206,208
+207,208
+210,211
+211,212
+212,213
+214,215
+214,216
+215,216
+215,217
+216,217
+216,218
+217,218
+220,221
+220,222
+221,222
+224,225
+225,226
+226,227
+228,229
+229,230
+229,231
+229,232
+230,231
+230,232
+231,232
+234,235
+236,237
+238,239
+239,240
+241,242
+241,243
+242,243
+243,244
+243,245
+244,245
+247,248
+248,249
+249,250
+251,252
+251,253
+252,253
+252,254
+253,254
+256,257
+257,258
+258,259
+260,261
+261,262
+261,263
+261,264
+261,265
+262,263
+262,264
+263,264
+266,267
+268,269
+268,270
+269,270
+269,271
+270,271
+270,272
+271,272
+276,277
+278,279
+279,280
+281,282
+281,283
+282,283
+282,284
+283,284
+286,287
+287,288
+288,289
+290,291
+291,292
+291,293
+292,293
+292,294
+293,294
+293,295
+294,295
+294,296
+295,296
+300,301
+302,303
+304,305
+305,306
+307,308
+308,309
+308,310
+309,310
+311,312
+311,313
+312,313
+316,317
+317,318
+319,320
+319,321
+320,321
+321,322
+321,323
+322,323
+325,326
+326,327
+327,328
+329,330
+330,331
+330,332
+330,333
+331,332
+331,333
+332,333
+335,336
+337,338
+338,339
+339,340
+341,342
+342,343
+344,345
+344,346
+345,346
+346,347
+346,348
+347,348
+350,351
+351,352
+352,353
+354,355
+355,356
+355,357
+355,358
+356,357
+356,358
+357,358
+360,361
+362,363
+363,364
+364,365
+366,367
+367,368
+369,370
+369,371
+370,371
+371,372
+371,373
+372,373
+375,376
+376,377
+377,378
+379,380
+380,381
+380,382
+381,382
+383,384
+383,385
+384,385
+384,386
+385,386
+390,391
+391,392
+393,394
+393,395
+394,395
+395,396
+395,397
+396,397
+399,400
+400,401
+401,402
+403,404
+404,405
+404,406
+405,406
+407,408
+407,409
+408,409
+408,410
+409,410
+414,415
+415,416
+417,418
+417,419
+418,419
+419,420
+419,421
+420,421
+423,424
+424,425
+425,426
+427,428
+427,429
+428,429
+428,430
+429,430
+431,432
+431,433
+432,433
+435,436
+436,437
+437,438
+439,440
+440,441
+440,442
+441,442
+443,444
+443,445
+444,445
+447,448
+447,449
+448,449
+448,450
+449,450
+449,451
+450,451
+452,453
+452,454
+453,454
+456,457
+456,458
+457,458
+459,460
+459,461
+460,461
+463,464
+464,465
+465,466
+467,468
+468,469
+468,470
+469,470
+469,471
+470,471
+473,474
+476,477
+477,478
+479,480
+480,481
+480,482
+481,482
+481,483
+482,483
+485,486
+486,487
+487,488
+491,492
+492,493
+492,494
+492,495
+492,496
+493,494
+495,496
+497,498
+499,500
+501,502
+501,503
+502,503
+502,504
+503,504
+503,505
+504,505
+506,507
+508,509
+510,511
+511,512
+511,513
+512,513
+514,515
+514,516
+514,517
+515,516
+517,518
+519,520
+521,522
+522,523
+-----nextToken-----
+2,4,7,9,10,12,14,16,18,23,25,26,30,32,33,37,39,44,46,48,52,54,56,58,62,65,67,71,75,79,82,83,87,91,96,98,100,105,108,110,112,115,118,121,125,129,132,134,135,138,142,146,148,152,154,157,162,163,167,172,173,175,177,180,185,186,190,195,196,198,200,203,208,209,213,218,219,222,223,227,232,233,235,237,240,245,246,250,254,255,259,264,265,267,272,273,274,275,277,280,284,285,289,296,297,298,299,301,303,306,310,313,314,315,318,323,324,328,333,334,336,340,343,348,349,353,358,359,361,365,368,373,374,378,382,386,387,388,389,392,397,398,402,406,410,411,412,413,416,421,422,426,430,433,434,438,442,445,446,451,454,455,458,461,462,466,471,472,474,475,478,483,484,488,489,490,494,496,498,500,505,507,509,513,516,518,520,523
+-----computeFrom-----
+60,61
+60,62
+77,78
+77,79
+93,94
+93,95
+103,104
+103,105
+127,128
+127,129
+130,131
+130,132
+140,141
+140,142
+144,145
+144,146
+215,216
+215,217
+216,217
+216,218
+220,221
+220,222
+252,253
+252,254
+282,283
+282,284
+291,292
+291,293
+308,309
+308,310
+380,381
+380,382
+383,384
+383,385
+404,405
+404,406
+407,408
+407,409
+428,429
+428,430
+431,432
+431,433
+440,441
+440,442
+443,444
+443,445
+448,449
+448,450
+449,450
+449,451
+456,457
+456,458
+468,469
+468,470
+480,481
+480,482
+502,503
+502,504
+511,512
+511,513
+-----guardedBy-----
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ProblemStatement;ProblemStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;LiteralExpression;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;IdExpression;Name;ReturnStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IfStatement;UnaryExpression;IdExpression;Name;ReturnStatement;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;IdExpression;Name;ReturnStatement;IdExpression;Name;SwitchStatement;IdExpression;Name;CompoundStatement;CaseStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;UnaryExpression;IdExpression;Name;ReturnStatement;LiteralExpression;CaseStatement;IdExpression;Name;IfStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;ReturnStatement;UnaryExpression;IdExpression;Name;ReturnStatement;FunctionCallExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IdExpression;Name;CaseStatement;IdExpression;Name;IfStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;ReturnStatement;UnaryExpression;IdExpression;Name;ReturnStatement;FunctionCallExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IdExpression;Name;CaseStatement;IdExpression;Name;IfStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;ReturnStatement;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;LiteralExpression;ReturnStatement;UnaryExpression;IdExpression;Name;ReturnStatement;FunctionCallExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IdExpression;Name;CaseStatement;IdExpression;Name;IfStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;ReturnStatement;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ReturnStatement;UnaryExpression;IdExpression;Name;ReturnStatement;FunctionCallExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;FieldReference;FieldReference;FieldReference;IdExpression;Name;Name;Name;Name;IdExpression;Name;CaseStatement;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ReturnStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;FieldReference;IdExpression;Name;Name;Name;Name;IdExpression;Name;ReturnStatement;LiteralExpression;CaseStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BreakStatement;CaseStatement;IdExpression;Name;IfStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;ReturnStatement;UnaryExpression;IdExpression;Name;ReturnStatement;FunctionCallExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;UnaryExpression;UnaryExpression;IdExpression;Name;CaseStatement;IdExpression;Name;IfStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;ReturnStatement;UnaryExpression;IdExpression;Name;ReturnStatement;FunctionCallExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;UnaryExpression;UnaryExpression;IdExpression;Name;CaseStatement;IdExpression;Name;IfStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;ReturnStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;BreakStatement;CaseStatement;IdExpression;Name;IfStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;ReturnStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;BreakStatement;CaseStatement;IdExpression;Name;IfStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;ReturnStatement;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;ReturnStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ReturnStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;UnaryExpression;IdExpression;Name;BreakStatement;DefaultStatement;ReturnStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+static long ir_lirc_ioctl(struct file *filep, unsigned int cmd,			unsigned long arg){	struct lirc_codec *lirc;	struct rc_dev *dev;	u32 __user *argp = (u32 __user *)(arg);	int ret = 0;	__u32 val = 0, tmp;	lirc = lirc_get_pdata(filep);	if (!lirc)		return -EFAULT;	dev = lirc->dev;	if (!dev)		return -EFAULT;	if (_IOC_DIR(cmd) & _IOC_WRITE) {		ret = get_user(val, argp);		if (ret)			return ret;	}	switch (cmd) {	/* legacy support */	case LIRC_GET_SEND_MODE:		val = LIRC_CAN_SEND_PULSE & LIRC_CAN_SEND_MASK;		break;	case LIRC_SET_SEND_MODE:		if (val != (LIRC_MODE_PULSE & LIRC_CAN_SEND_MASK))			return -EINVAL;		return 0;	/* TX settings */	case LIRC_SET_TRANSMITTER_MASK:		if (!dev->s_tx_mask)			return -ENOSYS;		return dev->s_tx_mask(dev, val);	case LIRC_SET_SEND_CARRIER:		if (!dev->s_tx_carrier)			return -ENOSYS;		return dev->s_tx_carrier(dev, val);	case LIRC_SET_SEND_DUTY_CYCLE:		if (!dev->s_tx_duty_cycle)			return -ENOSYS;		if (val <= 0 || val >= 100)			return -EINVAL;		return dev->s_tx_duty_cycle(dev, val);	/* RX settings */	case LIRC_SET_REC_CARRIER:		if (!dev->s_rx_carrier_range)			return -ENOSYS;		if (val <= 0)			return -EINVAL;		return dev->s_rx_carrier_range(dev,					       dev->raw->lirc.carrier_low,					       val);	case LIRC_SET_REC_CARRIER_RANGE:		if (val <= 0)			return -EINVAL;		dev->raw->lirc.carrier_low = val;		return 0;	case LIRC_GET_REC_RESOLUTION:		val = dev->rx_resolution;		break;	case LIRC_SET_WIDEBAND_RECEIVER:		if (!dev->s_learning_mode)			return -ENOSYS;		return dev->s_learning_mode(dev, !!val);	case LIRC_SET_MEASURE_CARRIER_MODE:		if (!dev->s_carrier_report)			return -ENOSYS;		return dev->s_carrier_report(dev, !!val);	/* Generic timeout support */	case LIRC_GET_MIN_TIMEOUT:		if (!dev->max_timeout)			return -ENOSYS;		val = dev->min_timeout / 1000;		break;	case LIRC_GET_MAX_TIMEOUT:		if (!dev->max_timeout)			return -ENOSYS;		val = dev->max_timeout / 1000;		break;	case LIRC_SET_REC_TIMEOUT:		if (!dev->max_timeout)			return -ENOSYS;		/* Check for multiply overflow */		if (val > U32_MAX / 1000)			return -EINVAL;		tmp = val * 1000;		if (tmp < dev->min_timeout || tmp > dev->max_timeout)			return -EINVAL;		dev->timeout = tmp;		break;	case LIRC_SET_REC_TIMEOUT_REPORTS:		lirc->send_timeout_reports = !!val;		break;	default:		return lirc_dev_fop_ioctl(filep, cmd, arg);	}	if (_IOC_DIR(cmd) & _IOC_READ)		ret = put_user(val, argp);	return ret;}
+static long
+ir_lirc_ioctl(struct file *filep, unsigned int cmd,			unsigned long arg)
+ir_lirc_ioctl
+struct file *filep
+struct file
+file
+*filep
+*
+filep
+unsigned int cmd
+unsigned int
+cmd
+cmd
+unsigned long arg
+unsigned long
+arg
+arg
+{	struct lirc_codec *lirc;	struct rc_dev *dev;	u32 __user *argp = (u32 __user *)(arg);	int ret = 0;	__u32 val = 0, tmp;	lirc = lirc_get_pdata(filep);	if (!lirc)		return -EFAULT;	dev = lirc->dev;	if (!dev)		return -EFAULT;	if (_IOC_DIR(cmd) & _IOC_WRITE) {		ret = get_user(val, argp);		if (ret)			return ret;	}	switch (cmd) {	/* legacy support */	case LIRC_GET_SEND_MODE:		val = LIRC_CAN_SEND_PULSE & LIRC_CAN_SEND_MASK;		break;	case LIRC_SET_SEND_MODE:		if (val != (LIRC_MODE_PULSE & LIRC_CAN_SEND_MASK))			return -EINVAL;		return 0;	/* TX settings */	case LIRC_SET_TRANSMITTER_MASK:		if (!dev->s_tx_mask)			return -ENOSYS;		return dev->s_tx_mask(dev, val);	case LIRC_SET_SEND_CARRIER:		if (!dev->s_tx_carrier)			return -ENOSYS;		return dev->s_tx_carrier(dev, val);	case LIRC_SET_SEND_DUTY_CYCLE:		if (!dev->s_tx_duty_cycle)			return -ENOSYS;		if (val <= 0 || val >= 100)			return -EINVAL;		return dev->s_tx_duty_cycle(dev, val);	/* RX settings */	case LIRC_SET_REC_CARRIER:		if (!dev->s_rx_carrier_range)			return -ENOSYS;		if (val <= 0)			return -EINVAL;		return dev->s_rx_carrier_range(dev,					       dev->raw->lirc.carrier_low,					       val);	case LIRC_SET_REC_CARRIER_RANGE:		if (val <= 0)			return -EINVAL;		dev->raw->lirc.carrier_low = val;		return 0;	case LIRC_GET_REC_RESOLUTION:		val = dev->rx_resolution;		break;	case LIRC_SET_WIDEBAND_RECEIVER:		if (!dev->s_learning_mode)			return -ENOSYS;		return dev->s_learning_mode(dev, !!val);	case LIRC_SET_MEASURE_CARRIER_MODE:		if (!dev->s_carrier_report)			return -ENOSYS;		return dev->s_carrier_report(dev, !!val);	/* Generic timeout support */	case LIRC_GET_MIN_TIMEOUT:		if (!dev->max_timeout)			return -ENOSYS;		val = dev->min_timeout / 1000;		break;	case LIRC_GET_MAX_TIMEOUT:		if (!dev->max_timeout)			return -ENOSYS;		val = dev->max_timeout / 1000;		break;	case LIRC_SET_REC_TIMEOUT:		if (!dev->max_timeout)			return -ENOSYS;		/* Check for multiply overflow */		if (val > U32_MAX / 1000)			return -EINVAL;		tmp = val * 1000;		if (tmp < dev->min_timeout || tmp > dev->max_timeout)			return -EINVAL;		dev->timeout = tmp;		break;	case LIRC_SET_REC_TIMEOUT_REPORTS:		lirc->send_timeout_reports = !!val;		break;	default:		return lirc_dev_fop_ioctl(filep, cmd, arg);	}	if (_IOC_DIR(cmd) & _IOC_READ)		ret = put_user(val, argp);	return ret;}
+struct lirc_codec *lirc;
+struct lirc_codec *lirc;
+struct lirc_codec
+lirc_codec
+*lirc
+*
+lirc
+struct rc_dev *dev;
+struct rc_dev *dev;
+struct rc_dev
+rc_dev
+*dev
+*
+dev
+u32 __user
+u32 __user
+u32
+u32
+__user
+__user
+r
+*argp = (u32 __user *)(arg);
+int ret = 0;
+int ret = 0;
+int
+ret = 0
+ret
+= 0
+0
+__u32 val = 0, tmp;
+__u32 val = 0, tmp;
+__u32
+__u32
+val = 0
+val
+= 0
+0
+tmp
+tmp
+lirc = lirc_get_pdata(filep);
+lirc = lirc_get_pdata(filep)
+lirc
+lirc
+lirc_get_pdata(filep)
+lirc_get_pdata
+lirc_get_pdata
+filep
+filep
+if (!lirc)		return -EFAULT;
+!lirc
+lirc
+lirc
+return -EFAULT;
+-EFAULT
+EFAULT
+EFAULT
+dev = lirc->dev;
+dev = lirc->dev
+dev
+dev
+lirc->dev
+lirc
+lirc
+dev
+if (!dev)		return -EFAULT;
+!dev
+dev
+dev
+return -EFAULT;
+-EFAULT
+EFAULT
+EFAULT
+if (_IOC_DIR(cmd) & _IOC_WRITE) {		ret = get_user(val, argp);		if (ret)			return ret;	}
+_IOC_DIR(cmd) & _IOC_WRITE
+_IOC_DIR(cmd)
+_IOC_DIR
+_IOC_DIR
+cmd
+cmd
+_IOC_WRITE
+_IOC_WRITE
+{		ret = get_user(val, argp);		if (ret)			return ret;	}
+ret = get_user(val, argp);
+ret = get_user(val, argp)
+ret
+ret
+get_user(val, argp)
+get_user
+get_user
+val
+val
+argp
+argp
+if (ret)			return ret;
+ret
+ret
+return ret;
+ret
+ret
+switch (cmd) {	/* legacy support */	case LIRC_GET_SEND_MODE:		val = LIRC_CAN_SEND_PULSE & LIRC_CAN_SEND_MASK;		break;	case LIRC_SET_SEND_MODE:		if (val != (LIRC_MODE_PULSE & LIRC_CAN_SEND_MASK))			return -EINVAL;		return 0;	/* TX settings */	case LIRC_SET_TRANSMITTER_MASK:		if (!dev->s_tx_mask)			return -ENOSYS;		return dev->s_tx_mask(dev, val);	case LIRC_SET_SEND_CARRIER:		if (!dev->s_tx_carrier)			return -ENOSYS;		return dev->s_tx_carrier(dev, val);	case LIRC_SET_SEND_DUTY_CYCLE:		if (!dev->s_tx_duty_cycle)			return -ENOSYS;		if (val <= 0 || val >= 100)			return -EINVAL;		return dev->s_tx_duty_cycle(dev, val);	/* RX settings */	case LIRC_SET_REC_CARRIER:		if (!dev->s_rx_carrier_range)			return -ENOSYS;		if (val <= 0)			return -EINVAL;		return dev->s_rx_carrier_range(dev,					       dev->raw->lirc.carrier_low,					       val);	case LIRC_SET_REC_CARRIER_RANGE:		if (val <= 0)			return -EINVAL;		dev->raw->lirc.carrier_low = val;		return 0;	case LIRC_GET_REC_RESOLUTION:		val = dev->rx_resolution;		break;	case LIRC_SET_WIDEBAND_RECEIVER:		if (!dev->s_learning_mode)			return -ENOSYS;		return dev->s_learning_mode(dev, !!val);	case LIRC_SET_MEASURE_CARRIER_MODE:		if (!dev->s_carrier_report)			return -ENOSYS;		return dev->s_carrier_report(dev, !!val);	/* Generic timeout support */	case LIRC_GET_MIN_TIMEOUT:		if (!dev->max_timeout)			return -ENOSYS;		val = dev->min_timeout / 1000;		break;	case LIRC_GET_MAX_TIMEOUT:		if (!dev->max_timeout)			return -ENOSYS;		val = dev->max_timeout / 1000;		break;	case LIRC_SET_REC_TIMEOUT:		if (!dev->max_timeout)			return -ENOSYS;		/* Check for multiply overflow */		if (val > U32_MAX / 1000)			return -EINVAL;		tmp = val * 1000;		if (tmp < dev->min_timeout || tmp > dev->max_timeout)			return -EINVAL;		dev->timeout = tmp;		break;	case LIRC_SET_REC_TIMEOUT_REPORTS:		lirc->send_timeout_reports = !!val;		break;	default:		return lirc_dev_fop_ioctl(filep, cmd, arg);	}
+cmd
+cmd
+{	/* legacy support */	case LIRC_GET_SEND_MODE:		val = LIRC_CAN_SEND_PULSE & LIRC_CAN_SEND_MASK;		break;	case LIRC_SET_SEND_MODE:		if (val != (LIRC_MODE_PULSE & LIRC_CAN_SEND_MASK))			return -EINVAL;		return 0;	/* TX settings */	case LIRC_SET_TRANSMITTER_MASK:		if (!dev->s_tx_mask)			return -ENOSYS;		return dev->s_tx_mask(dev, val);	case LIRC_SET_SEND_CARRIER:		if (!dev->s_tx_carrier)			return -ENOSYS;		return dev->s_tx_carrier(dev, val);	case LIRC_SET_SEND_DUTY_CYCLE:		if (!dev->s_tx_duty_cycle)			return -ENOSYS;		if (val <= 0 || val >= 100)			return -EINVAL;		return dev->s_tx_duty_cycle(dev, val);	/* RX settings */	case LIRC_SET_REC_CARRIER:		if (!dev->s_rx_carrier_range)			return -ENOSYS;		if (val <= 0)			return -EINVAL;		return dev->s_rx_carrier_range(dev,					       dev->raw->lirc.carrier_low,					       val);	case LIRC_SET_REC_CARRIER_RANGE:		if (val <= 0)			return -EINVAL;		dev->raw->lirc.carrier_low = val;		return 0;	case LIRC_GET_REC_RESOLUTION:		val = dev->rx_resolution;		break;	case LIRC_SET_WIDEBAND_RECEIVER:		if (!dev->s_learning_mode)			return -ENOSYS;		return dev->s_learning_mode(dev, !!val);	case LIRC_SET_MEASURE_CARRIER_MODE:		if (!dev->s_carrier_report)			return -ENOSYS;		return dev->s_carrier_report(dev, !!val);	/* Generic timeout support */	case LIRC_GET_MIN_TIMEOUT:		if (!dev->max_timeout)			return -ENOSYS;		val = dev->min_timeout / 1000;		break;	case LIRC_GET_MAX_TIMEOUT:		if (!dev->max_timeout)			return -ENOSYS;		val = dev->max_timeout / 1000;		break;	case LIRC_SET_REC_TIMEOUT:		if (!dev->max_timeout)			return -ENOSYS;		/* Check for multiply overflow */		if (val > U32_MAX / 1000)			return -EINVAL;		tmp = val * 1000;		if (tmp < dev->min_timeout || tmp > dev->max_timeout)			return -EINVAL;		dev->timeout = tmp;		break;	case LIRC_SET_REC_TIMEOUT_REPORTS:		lirc->send_timeout_reports = !!val;		break;	default:		return lirc_dev_fop_ioctl(filep, cmd, arg);	}
+case LIRC_GET_SEND_MODE:
+LIRC_GET_SEND_MODE
+LIRC_GET_SEND_MODE
+val = LIRC_CAN_SEND_PULSE & LIRC_CAN_SEND_MASK;
+val = LIRC_CAN_SEND_PULSE & LIRC_CAN_SEND_MASK
+val
+val
+LIRC_CAN_SEND_PULSE & LIRC_CAN_SEND_MASK
+LIRC_CAN_SEND_PULSE
+LIRC_CAN_SEND_PULSE
+LIRC_CAN_SEND_MASK
+LIRC_CAN_SEND_MASK
+break;
+case LIRC_SET_SEND_MODE:
+LIRC_SET_SEND_MODE
+LIRC_SET_SEND_MODE
+if (val != (LIRC_MODE_PULSE & LIRC_CAN_SEND_MASK))			return -EINVAL;
+val != (LIRC_MODE_PULSE & LIRC_CAN_SEND_MASK)
+val
+val
+(LIRC_MODE_PULSE & LIRC_CAN_SEND_MASK)
+LIRC_MODE_PULSE & LIRC_CAN_SEND_MASK
+LIRC_MODE_PULSE
+LIRC_MODE_PULSE
+LIRC_CAN_SEND_MASK
+LIRC_CAN_SEND_MASK
+return -EINVAL;
+-EINVAL
+EINVAL
+EINVAL
+return 0;
+0
+case LIRC_SET_TRANSMITTER_MASK:
+LIRC_SET_TRANSMITTER_MASK
+LIRC_SET_TRANSMITTER_MASK
+if (!dev->s_tx_mask)			return -ENOSYS;
+!dev->s_tx_mask
+dev->s_tx_mask
+dev
+dev
+s_tx_mask
+return -ENOSYS;
+-ENOSYS
+ENOSYS
+ENOSYS
+return dev->s_tx_mask(dev, val);
+dev->s_tx_mask(dev, val)
+dev->s_tx_mask
+dev
+dev
+s_tx_mask
+dev
+dev
+val
+val
+case LIRC_SET_SEND_CARRIER:
+LIRC_SET_SEND_CARRIER
+LIRC_SET_SEND_CARRIER
+if (!dev->s_tx_carrier)			return -ENOSYS;
+!dev->s_tx_carrier
+dev->s_tx_carrier
+dev
+dev
+s_tx_carrier
+return -ENOSYS;
+-ENOSYS
+ENOSYS
+ENOSYS
+return dev->s_tx_carrier(dev, val);
+dev->s_tx_carrier(dev, val)
+dev->s_tx_carrier
+dev
+dev
+s_tx_carrier
+dev
+dev
+val
+val
+case LIRC_SET_SEND_DUTY_CYCLE:
+LIRC_SET_SEND_DUTY_CYCLE
+LIRC_SET_SEND_DUTY_CYCLE
+if (!dev->s_tx_duty_cycle)			return -ENOSYS;
+!dev->s_tx_duty_cycle
+dev->s_tx_duty_cycle
+dev
+dev
+s_tx_duty_cycle
+return -ENOSYS;
+-ENOSYS
+ENOSYS
+ENOSYS
+if (val <= 0 || val >= 100)			return -EINVAL;
+val <= 0 || val >= 100
+val <= 0
+val
+val
+0
+val >= 100
+val
+val
+100
+return -EINVAL;
+-EINVAL
+EINVAL
+EINVAL
+return dev->s_tx_duty_cycle(dev, val);
+dev->s_tx_duty_cycle(dev, val)
+dev->s_tx_duty_cycle
+dev
+dev
+s_tx_duty_cycle
+dev
+dev
+val
+val
+case LIRC_SET_REC_CARRIER:
+LIRC_SET_REC_CARRIER
+LIRC_SET_REC_CARRIER
+if (!dev->s_rx_carrier_range)			return -ENOSYS;
+!dev->s_rx_carrier_range
+dev->s_rx_carrier_range
+dev
+dev
+s_rx_carrier_range
+return -ENOSYS;
+-ENOSYS
+ENOSYS
+ENOSYS
+if (val <= 0)			return -EINVAL;
+val <= 0
+val
+val
+0
+return -EINVAL;
+-EINVAL
+EINVAL
+EINVAL
+return dev->s_rx_carrier_range(dev,					       dev->raw->lirc.carrier_low,					       val);
+dev->s_rx_carrier_range(dev,					       dev->raw->lirc.carrier_low,					       val)
+dev->s_rx_carrier_range
+dev
+dev
+s_rx_carrier_range
+dev
+dev
+dev->raw->lirc.carrier_low
+dev->raw->lirc
+dev->raw
+dev
+dev
+raw
+lirc
+carrier_low
+val
+val
+case LIRC_SET_REC_CARRIER_RANGE:
+LIRC_SET_REC_CARRIER_RANGE
+LIRC_SET_REC_CARRIER_RANGE
+if (val <= 0)			return -EINVAL;
+val <= 0
+val
+val
+0
+return -EINVAL;
+-EINVAL
+EINVAL
+EINVAL
+dev->raw->lirc.carrier_low = val;
+dev->raw->lirc.carrier_low = val
+dev->raw->lirc.carrier_low
+dev->raw->lirc
+dev->raw
+dev
+dev
+raw
+lirc
+carrier_low
+val
+val
+return 0;
+0
+case LIRC_GET_REC_RESOLUTION:
+LIRC_GET_REC_RESOLUTION
+LIRC_GET_REC_RESOLUTION
+val = dev->rx_resolution;
+val = dev->rx_resolution
+val
+val
+dev->rx_resolution
+dev
+dev
+rx_resolution
+break;
+case LIRC_SET_WIDEBAND_RECEIVER:
+LIRC_SET_WIDEBAND_RECEIVER
+LIRC_SET_WIDEBAND_RECEIVER
+if (!dev->s_learning_mode)			return -ENOSYS;
+!dev->s_learning_mode
+dev->s_learning_mode
+dev
+dev
+s_learning_mode
+return -ENOSYS;
+-ENOSYS
+ENOSYS
+ENOSYS
+return dev->s_learning_mode(dev, !!val);
+dev->s_learning_mode(dev, !!val)
+dev->s_learning_mode
+dev
+dev
+s_learning_mode
+dev
+dev
+!!val
+!val
+val
+val
+case LIRC_SET_MEASURE_CARRIER_MODE:
+LIRC_SET_MEASURE_CARRIER_MODE
+LIRC_SET_MEASURE_CARRIER_MODE
+if (!dev->s_carrier_report)			return -ENOSYS;
+!dev->s_carrier_report
+dev->s_carrier_report
+dev
+dev
+s_carrier_report
+return -ENOSYS;
+-ENOSYS
+ENOSYS
+ENOSYS
+return dev->s_carrier_report(dev, !!val);
+dev->s_carrier_report(dev, !!val)
+dev->s_carrier_report
+dev
+dev
+s_carrier_report
+dev
+dev
+!!val
+!val
+val
+val
+case LIRC_GET_MIN_TIMEOUT:
+LIRC_GET_MIN_TIMEOUT
+LIRC_GET_MIN_TIMEOUT
+if (!dev->max_timeout)			return -ENOSYS;
+!dev->max_timeout
+dev->max_timeout
+dev
+dev
+max_timeout
+return -ENOSYS;
+-ENOSYS
+ENOSYS
+ENOSYS
+val = dev->min_timeout / 1000;
+val = dev->min_timeout / 1000
+val
+val
+dev->min_timeout / 1000
+dev->min_timeout
+dev
+dev
+min_timeout
+1000
+break;
+case LIRC_GET_MAX_TIMEOUT:
+LIRC_GET_MAX_TIMEOUT
+LIRC_GET_MAX_TIMEOUT
+if (!dev->max_timeout)			return -ENOSYS;
+!dev->max_timeout
+dev->max_timeout
+dev
+dev
+max_timeout
+return -ENOSYS;
+-ENOSYS
+ENOSYS
+ENOSYS
+val = dev->max_timeout / 1000;
+val = dev->max_timeout / 1000
+val
+val
+dev->max_timeout / 1000
+dev->max_timeout
+dev
+dev
+max_timeout
+1000
+break;
+case LIRC_SET_REC_TIMEOUT:
+LIRC_SET_REC_TIMEOUT
+LIRC_SET_REC_TIMEOUT
+if (!dev->max_timeout)			return -ENOSYS;
+!dev->max_timeout
+dev->max_timeout
+dev
+dev
+max_timeout
+return -ENOSYS;
+-ENOSYS
+ENOSYS
+ENOSYS
+if (val > U32_MAX / 1000)			return -EINVAL;
+val > U32_MAX / 1000
+val
+val
+U32_MAX / 1000
+U32_MAX
+U32_MAX
+1000
+return -EINVAL;
+-EINVAL
+EINVAL
+EINVAL
+tmp = val * 1000;
+tmp = val * 1000
+tmp
+tmp
+val * 1000
+val
+val
+1000
+if (tmp < dev->min_timeout || tmp > dev->max_timeout)			return -EINVAL;
+tmp < dev->min_timeout || tmp > dev->max_timeout
+tmp < dev->min_timeout
+tmp
+tmp
+dev->min_timeout
+dev
+dev
+min_timeout
+tmp > dev->max_timeout
+tmp
+tmp
+dev->max_timeout
+dev
+dev
+max_timeout
+return -EINVAL;
+-EINVAL
+EINVAL
+EINVAL
+dev->timeout = tmp;
+dev->timeout = tmp
+dev->timeout
+dev
+dev
+timeout
+tmp
+tmp
+break;
+case LIRC_SET_REC_TIMEOUT_REPORTS:
+LIRC_SET_REC_TIMEOUT_REPORTS
+LIRC_SET_REC_TIMEOUT_REPORTS
+lirc->send_timeout_reports = !!val;
+lirc->send_timeout_reports = !!val
+lirc->send_timeout_reports
+lirc
+lirc
+send_timeout_reports
+!!val
+!val
+val
+val
+break;
+default:
+return lirc_dev_fop_ioctl(filep, cmd, arg);
+lirc_dev_fop_ioctl(filep, cmd, arg)
+lirc_dev_fop_ioctl
+lirc_dev_fop_ioctl
+filep
+filep
+cmd
+cmd
+arg
+arg
+if (_IOC_DIR(cmd) & _IOC_READ)		ret = put_user(val, argp);
+_IOC_DIR(cmd) & _IOC_READ
+_IOC_DIR(cmd)
+_IOC_DIR
+_IOC_DIR
+cmd
+cmd
+_IOC_READ
+_IOC_READ
+ret = put_user(val, argp);
+ret = put_user(val, argp)
+ret
+ret
+put_user(val, argp)
+put_user
+put_user
+val
+val
+argp
+argp
+return ret;
+ret
+ret
+-----joern-----
+(231,211,0)
+(53,107,0)
+(12,122,0)
+(274,23,0)
+(290,306,0)
+(35,170,0)
+(93,89,0)
+(295,97,0)
+(29,156,0)
+(257,170,0)
+(183,6,0)
+(289,63,0)
+(207,107,0)
+(18,25,0)
+(167,164,0)
+(83,189,0)
+(197,159,0)
+(51,170,0)
+(189,257,0)
+(149,301,0)
+(142,159,0)
+(29,120,0)
+(252,178,0)
+(303,7,0)
+(66,262,0)
+(45,170,0)
+(246,221,0)
+(189,83,0)
+(243,192,0)
+(69,292,0)
+(136,41,0)
+(301,149,0)
+(4,55,0)
+(29,211,0)
+(74,107,0)
+(217,170,0)
+(162,221,0)
+(227,106,0)
+(308,159,0)
+(205,173,0)
+(14,33,0)
+(147,195,0)
+(181,97,0)
+(126,218,0)
+(18,169,0)
+(194,4,0)
+(90,55,0)
+(113,53,0)
+(171,278,0)
+(70,125,0)
+(33,14,0)
+(164,167,0)
+(299,108,0)
+(241,25,0)
+(218,274,0)
+(15,170,0)
+(75,164,0)
+(274,218,0)
+(36,78,0)
+(119,113,0)
+(222,25,0)
+(27,37,0)
+(294,170,0)
+(203,70,0)
+(209,25,0)
+(184,223,0)
+(308,13,0)
+(5,268,0)
+(300,122,0)
+(25,219,0)
+(19,209,0)
+(275,308,0)
+(108,55,0)
+(216,231,0)
+(214,219,0)
+(43,314,0)
+(261,25,0)
+(221,162,0)
+(158,25,0)
+(78,25,0)
+(211,170,0)
+(225,170,0)
+(133,261,0)
+(271,91,0)
+(92,55,0)
+(97,269,0)
+(212,146,0)
+(169,170,0)
+(16,231,0)
+(317,65,0)
+(283,55,0)
+(261,140,0)
+(210,218,0)
+(148,170,0)
+(17,107,0)
+(286,259,0)
+(202,107,0)
+(279,267,0)
+(297,170,0)
+(73,96,0)
+(228,202,0)
+(127,170,0)
+(249,67,0)
+(63,188,0)
+(4,25,0)
+(60,226,0)
+(29,130,0)
+(62,226,0)
+(113,290,0)
+(258,170,0)
+(212,53,0)
+(29,132,0)
+(112,107,0)
+(242,87,0)
+(106,227,0)
+(201,278,0)
+(48,23,0)
+(279,37,0)
+(196,107,0)
+(84,94,0)
+(20,170,0)
+(291,55,0)
+(138,90,0)
+(29,169,0)
+(29,114,0)
+(29,126,0)
+(162,254,0)
+(153,301,0)
+(4,185,0)
+(29,304,0)
+(208,170,0)
+(308,53,0)
+(190,311,0)
+(240,215,0)
+(285,70,0)
+(29,140,0)
+(68,293,0)
+(29,125,0)
+(292,183,0)
+(29,297,0)
+(257,189,0)
+(79,67,0)
+(172,55,0)
+(110,25,0)
+(178,2,0)
+(29,145,0)
+(115,212,0)
+(215,55,0)
+(84,25,0)
+(29,314,0)
+(186,63,0)
+(158,121,0)
+(199,304,0)
+(220,199,0)
+(47,25,0)
+(175,107,0)
+(256,192,0)
+(267,279,0)
+(268,202,0)
+(231,155,0)
+(8,260,0)
+(195,278,0)
+(29,185,0)
+(212,124,0)
+(102,276,0)
+(307,25,0)
+(38,83,0)
+(171,170,0)
+(254,25,0)
+(23,274,0)
+(18,240,0)
+(55,107,0)
+(1,170,0)
+(24,56,0)
+(241,195,0)
+(291,65,0)
+(236,254,0)
+(293,281,0)
+(46,47,0)
+(116,267,0)
+(245,191,0)
+(263,55,0)
+(147,30,0)
+(96,107,0)
+(313,158,0)
+(29,298,0)
+(254,162,0)
+(130,290,0)
+(206,291,0)
+(123,219,0)
+(29,161,0)
+(168,113,0)
+(230,13,0)
+(63,25,0)
+(157,190,0)
+(30,307,0)
+(138,191,0)
+(95,241,0)
+(278,263,0)
+(125,170,0)
+(250,307,0)
+(287,170,0)
+(265,191,0)
+(29,173,0)
+(30,278,0)
+(159,142,0)
+(65,291,0)
+(59,183,0)
+(228,257,0)
+(224,4,0)
+(227,25,0)
+(21,78,0)
+(302,170,0)
+(10,215,0)
+(270,170,0)
+(160,47,0)
+(218,108,0)
+(29,281,0)
+(154,130,0)
+(6,183,0)
+(122,300,0)
+(100,170,0)
+(283,182,0)
+(104,176,0)
+(237,273,0)
+(29,91,0)
+(310,263,0)
+(87,237,0)
+(215,240,0)
+(198,283,0)
+(308,149,0)
+(229,107,0)
+(239,117,0)
+(40,84,0)
+(187,301,0)
+(204,271,0)
+(82,279,0)
+(108,170,0)
+(26,53,0)
+(262,161,0)
+(96,290,0)
+(200,170,0)
+(71,134,0)
+(182,170,0)
+(70,55,0)
+(37,25,0)
+(195,147,0)
+(88,107,0)
+(174,67,0)
+(223,156,0)
+(238,254,0)
+(235,231,0)
+(221,170,0)
+(78,55,0)
+(188,63,0)
+(9,56,0)
+(226,55,0)
+(131,170,0)
+(191,138,0)
+(232,170,0)
+(6,25,0)
+(192,172,0)
+(137,170,0)
+(263,278,0)
+(117,298,0)
+(159,170,0)
+(29,259,0)
+(72,90,0)
+(292,70,0)
+(141,209,0)
+(234,43,0)
+(219,25,0)
+(67,79,0)
+(240,18,0)
+(58,107,0)
+(101,307,0)
+(90,138,0)
+(7,120,0)
+(251,142,0)
+(283,25,0)
+(32,55,0)
+(288,14,0)
+(140,170,0)
+(300,273,0)
+(247,158,0)
+(202,41,0)
+(278,170,0)
+(23,25,0)
+(61,227,0)
+(3,300,0)
+(70,292,0)
+(34,306,0)
+(266,107,0)
+(195,241,0)
+(179,84,0)
+(296,308,0)
+(29,96,0)
+(89,55,0)
+(42,30,0)
+(272,228,0)
+(176,114,0)
+(231,146,0)
+(213,209,0)
+(31,89,0)
+(118,23,0)
+(312,274,0)
+(269,97,0)
+(98,170,0)
+(54,205,0)
+(44,18,0)
+(78,297,0)
+(151,170,0)
+(172,192,0)
+(39,25,0)
+(29,2,0)
+(30,147,0)
+(41,202,0)
+(85,290,0)
+(209,19,0)
+(180,286,0)
+(29,182,0)
+(97,25,0)
+(315,145,0)
+(96,56,0)
+(267,170,0)
+(277,241,0)
+(103,170,0)
+(124,212,0)
+(185,170,0)
+(81,237,0)
+(307,30,0)
+(128,170,0)
+(29,134,0)
+(191,55,0)
+(111,65,0)
+(49,170,0)
+(261,33,0)
+(47,46,0)
+(219,202,0)
+(237,87,0)
+(309,149,0)
+(244,170,0)
+(105,170,0)
+(308,55,0)
+(290,113,0)
+(144,170,0)
+(145,170,0)
+(308,267,0)
+(41,155,0)
+(29,311,0)
+(39,171,0)
+(305,172,0)
+(109,170,0)
+(165,222,0)
+(57,171,0)
+(77,170,0)
+(50,164,0)
+(28,170,0)
+(177,6,0)
+(56,107,0)
+(126,170,0)
+(11,170,0)
+(142,25,0)
+(113,55,0)
+(264,39,0)
+(152,195,0)
+(53,212,0)
+(29,139,0)
+(25,107,0)
+(149,170,0)
+(150,90,0)
+(33,261,0)
+(76,8,0)
+(280,170,0)
+(22,39,0)
+(282,263,0)
+(86,132,0)
+(135,71,0)
+(143,170,0)
+(83,55,0)
+(253,162,0)
+(316,142,0)
+(52,170,0)
+(121,158,0)
+(64,227,0)
+(183,292,0)
+(13,308,0)
+(14,55,0)
+(193,47,0)
+(164,25,0)
+(308,221,0)
+(80,86,0)
+(163,6,0)
+(94,84,0)
+(96,13,0)
+(37,279,0)
+(276,139,0)
+(70,25,0)
+(166,107,0)
+(233,283,0)
+(0,126,0)
+(29,260,0)
+(99,37,0)
+(231,273,0)
+(248,228,0)
+(129,202,0)
+(67,25,0)
+(226,55,1)
+(219,123,1)
+(29,156,1)
+(164,25,1)
+(314,43,1)
+(254,236,1)
+(36,21,1)
+(84,25,1)
+(292,183,1)
+(296,230,1)
+(23,25,1)
+(37,27,1)
+(41,136,1)
+(90,150,1)
+(158,25,1)
+(289,186,1)
+(70,285,1)
+(153,309,1)
+(206,255,1)
+(97,295,1)
+(222,25,1)
+(268,202,1)
+(231,146,1)
+(37,25,1)
+(214,110,1)
+(282,310,1)
+(227,61,1)
+(29,259,1)
+(108,55,1)
+(105,221,1)
+(315,291,1)
+(135,269,1)
+(180,222,1)
+(138,191,1)
+(111,317,1)
+(308,221,1)
+(29,130,1)
+(129,55,1)
+(181,255,1)
+(189,83,1)
+(253,254,1)
+(8,76,1)
+(299,218,1)
+(231,273,1)
+(122,12,1)
+(138,90,1)
+(149,301,1)
+(30,307,1)
+(203,89,1)
+(95,277,1)
+(4,194,1)
+(274,312,1)
+(162,254,1)
+(272,255,1)
+(219,202,1)
+(230,122,1)
+(171,57,1)
+(305,188,1)
+(96,290,1)
+(190,157,1)
+(23,48,1)
+(284,290,1)
+(246,121,1)
+(310,201,1)
+(238,246,1)
+(29,260,1)
+(173,205,1)
+(22,264,1)
+(291,55,1)
+(281,293,1)
+(19,209,1)
+(29,298,1)
+(27,99,1)
+(133,79,1)
+(29,96,1)
+(130,290,1)
+(24,53,1)
+(179,255,1)
+(164,50,1)
+(209,25,1)
+(29,91,1)
+(9,24,1)
+(159,142,1)
+(286,180,1)
+(29,297,1)
+(311,190,1)
+(264,147,1)
+(221,162,1)
+(279,82,1)
+(3,98,1)
+(150,72,1)
+(125,70,1)
+(18,240,1)
+(211,231,1)
+(29,314,1)
+(72,191,1)
+(277,152,1)
+(163,177,1)
+(141,213,1)
+(29,125,1)
+(44,167,1)
+(16,255,1)
+(89,55,1)
+(83,55,1)
+(6,163,1)
+(13,308,1)
+(245,94,1)
+(80,79,1)
+(91,271,1)
+(142,316,1)
+(255,284,1)
+(187,153,1)
+(283,198,1)
+(68,268,1)
+(228,248,1)
+(113,55,1)
+(231,155,1)
+(29,161,1)
+(300,3,1)
+(84,40,1)
+(116,19,1)
+(301,187,1)
+(184,19,1)
+(171,278,1)
+(292,69,1)
+(57,39,1)
+(275,296,1)
+(312,23,1)
+(73,122,1)
+(62,255,1)
+(123,214,1)
+(194,224,1)
+(61,64,1)
+(210,274,1)
+(143,257,1)
+(115,26,1)
+(154,284,1)
+(252,172,1)
+(18,25,1)
+(205,54,1)
+(126,0,1)
+(291,65,1)
+(2,178,1)
+(185,4,1)
+(139,276,1)
+(60,62,1)
+(278,263,1)
+(288,133,1)
+(6,25,1)
+(10,44,1)
+(78,36,1)
+(183,59,1)
+(265,245,1)
+(25,219,1)
+(174,249,1)
+(29,132,1)
+(63,25,1)
+(29,139,1)
+(259,286,1)
+(283,25,1)
+(122,300,1)
+(86,80,1)
+(197,255,1)
+(256,243,1)
+(162,253,1)
+(12,300,1)
+(183,6,1)
+(283,55,1)
+(50,75,1)
+(309,255,1)
+(307,101,1)
+(92,32,1)
+(240,215,1)
+(167,164,1)
+(267,279,1)
+(293,68,1)
+(134,71,1)
+(308,267,1)
+(117,239,1)
+(97,25,1)
+(3,143,1)
+(67,174,1)
+(43,234,1)
+(227,25,1)
+(106,227,1)
+(215,55,1)
+(186,255,1)
+(274,23,1)
+(29,182,1)
+(33,14,1)
+(241,95,1)
+(241,25,1)
+(113,53,1)
+(82,37,1)
+(316,251,1)
+(304,199,1)
+(64,255,1)
+(14,55,1)
+(222,165,1)
+(29,211,1)
+(46,47,1)
+(156,223,1)
+(218,274,1)
+(99,116,1)
+(29,311,1)
+(29,185,1)
+(3,270,1)
+(199,220,1)
+(212,115,1)
+(201,172,1)
+(285,292,1)
+(231,235,1)
+(113,168,1)
+(42,195,1)
+(308,159,1)
+(81,222,1)
+(29,140,1)
+(191,55,1)
+(213,255,1)
+(59,6,1)
+(191,265,1)
+(120,7,1)
+(87,242,1)
+(76,291,1)
+(239,138,1)
+(209,141,1)
+(317,206,1)
+(247,255,1)
+(70,25,1)
+(249,255,1)
+(119,85,1)
+(188,63,1)
+(145,315,1)
+(142,25,1)
+(78,55,1)
+(270,267,1)
+(21,138,1)
+(78,25,1)
+(29,145,1)
+(73,13,1)
+(176,104,1)
+(243,305,1)
+(29,114,1)
+(172,192,1)
+(303,106,1)
+(3,151,1)
+(195,241,1)
+(87,237,1)
+(47,193,1)
+(98,171,1)
+(202,41,1)
+(165,25,1)
+(269,97,1)
+(260,8,1)
+(89,31,1)
+(152,278,1)
+(41,155,1)
+(308,149,1)
+(271,204,1)
+(178,252,1)
+(226,60,1)
+(63,289,1)
+(250,42,1)
+(307,25,1)
+(147,30,1)
+(29,126,1)
+(251,197,1)
+(279,37,1)
+(263,55,1)
+(110,268,1)
+(168,119,1)
+(29,281,1)
+(161,262,1)
+(255,87,1)
+(102,46,1)
+(224,269,1)
+(263,282,1)
+(228,202,1)
+(69,183,1)
+(300,273,1)
+(96,73,1)
+(67,25,1)
+(14,288,1)
+(218,210,1)
+(54,188,1)
+(220,121,1)
+(276,102,1)
+(4,55,1)
+(242,237,1)
+(83,38,1)
+(192,256,1)
+(40,179,1)
+(172,55,1)
+(158,313,1)
+(234,226,1)
+(212,146,1)
+(195,278,1)
+(85,87,1)
+(193,160,1)
+(261,25,1)
+(215,10,1)
+(169,18,1)
+(204,94,1)
+(212,124,1)
+(236,238,1)
+(261,33,1)
+(147,195,1)
+(53,212,1)
+(257,189,1)
+(297,78,1)
+(262,66,1)
+(114,176,1)
+(7,303,1)
+(38,228,1)
+(29,304,1)
+(177,203,1)
+(29,134,1)
+(70,292,1)
+(0,108,1)
+(79,67,1)
+(65,111,1)
+(132,86,1)
+(96,56,1)
+(268,5,1)
+(104,167,1)
+(47,25,1)
+(298,117,1)
+(3,105,1)
+(29,2,1)
+(118,226,1)
+(126,218,1)
+(103,149,1)
+(29,173,1)
+(5,202,1)
+(198,233,1)
+(308,55,1)
+(31,93,1)
+(70,55,1)
+(71,135,1)
+(157,147,1)
+(108,299,1)
+(313,247,1)
+(248,272,1)
+(136,129,1)
+(290,113,1)
+(66,89,1)
+(48,118,1)
+(295,181,1)
+(160,255,1)
+(216,16,1)
+(254,25,1)
+(55,92,1)
+(29,120,1)
+(182,283,1)
+(235,216,1)
+(237,273,1)
+(75,255,1)
+(101,250,1)
+(308,53,1)
+(3,103,1)
+(30,278,1)
+(233,46,1)
+(151,159,1)
+(237,81,1)
+(56,9,1)
+(140,261,1)
+(32,56,1)
+(4,25,1)
+(96,13,1)
+(121,158,1)
+(29,169,1)
+(308,275,1)
+(130,154,1)
+(39,22,1)
+(39,25,1)
+(223,184,1)
+(93,106,1)
+(94,84,1)
+(90,55,1)
+(308,149,2)
+(41,155,2)
+(191,55,2)
+(96,56,2)
+(113,87,2)
+(78,55,2)
+(29,281,2)
+(215,55,2)
+(63,255,2)
+(96,255,2)
+(162,121,2)
+(221,121,2)
+(13,308,2)
+(206,255,2)
+(14,55,2)
+(150,191,2)
+(291,55,2)
+(96,121,2)
+(231,255,2)
+(180,222,2)
+(72,191,2)
+(263,172,2)
+(29,125,2)
+(8,291,2)
+(159,255,2)
+(185,269,2)
+(139,46,2)
+(179,255,2)
+(271,94,2)
+(188,63,2)
+(99,19,2)
+(252,172,2)
+(70,25,2)
+(214,268,2)
+(176,167,2)
+(284,87,2)
+(231,273,2)
+(241,25,2)
+(236,121,2)
+(79,67,2)
+(159,142,2)
+(101,195,2)
+(311,147,2)
+(272,255,2)
+(125,89,2)
+(195,278,2)
+(138,94,2)
+(298,138,2)
+(75,255,2)
+(143,255,2)
+(209,25,2)
+(164,255,2)
+(135,269,2)
+(308,159,2)
+(142,255,2)
+(114,167,2)
+(172,188,2)
+(317,255,2)
+(255,87,2)
+(18,167,2)
+(29,145,2)
+(167,255,2)
+(209,255,2)
+(288,79,2)
+(97,255,2)
+(30,195,2)
+(68,268,2)
+(300,19,2)
+(261,25,2)
+(18,25,2)
+(64,255,2)
+(12,19,2)
+(211,255,2)
+(296,122,2)
+(147,30,2)
+(291,65,2)
+(158,255,2)
+(264,147,2)
+(6,89,2)
+(257,255,2)
+(189,83,2)
+(218,274,2)
+(267,279,2)
+(297,138,2)
+(121,158,2)
+(228,202,2)
+(117,138,2)
+(81,222,2)
+(241,172,2)
+(126,226,2)
+(0,226,2)
+(309,255,2)
+(113,55,2)
+(310,172,2)
+(123,268,2)
+(315,291,2)
+(248,255,2)
+(82,19,2)
+(222,268,2)
+(235,255,2)
+(247,255,2)
+(292,183,2)
+(84,25,2)
+(113,53,2)
+(3,19,2)
+(300,121,2)
+(29,161,2)
+(29,134,2)
+(242,222,2)
+(183,6,2)
+(172,192,2)
+(275,122,2)
+(61,255,2)
+(105,121,2)
+(30,278,2)
+(43,226,2)
+(165,268,2)
+(316,255,2)
+(96,147,2)
+(90,55,2)
+(308,267,2)
+(173,188,2)
+(50,255,2)
+(83,55,2)
+(172,55,2)
+(169,167,2)
+(308,55,2)
+(79,255,2)
+(29,314,2)
+(158,25,2)
+(29,185,2)
+(29,298,2)
+(86,79,2)
+(19,255,2)
+(261,33,2)
+(183,89,2)
+(121,255,2)
+(156,19,2)
+(283,55,2)
+(12,121,2)
+(106,255,2)
+(73,19,2)
+(243,188,2)
+(304,121,2)
+(21,138,2)
+(283,25,2)
+(39,147,2)
+(29,156,2)
+(73,121,2)
+(227,25,2)
+(292,89,2)
+(237,273,2)
+(274,226,2)
+(163,89,2)
+(282,172,2)
+(29,304,2)
+(33,79,2)
+(249,255,2)
+(269,255,2)
+(91,94,2)
+(186,255,2)
+(238,121,2)
+(4,269,2)
+(219,268,2)
+(96,290,2)
+(78,138,2)
+(4,25,2)
+(37,25,2)
+(290,87,2)
+(300,147,2)
+(141,255,2)
+(190,147,2)
+(96,19,2)
+(314,226,2)
+(149,301,2)
+(222,25,2)
+(245,94,2)
+(203,89,2)
+(226,55,2)
+(29,126,2)
+(90,191,2)
+(6,25,2)
+(261,79,2)
+(4,55,2)
+(130,290,2)
+(230,122,2)
+(108,226,2)
+(147,172,2)
+(29,120,2)
+(67,25,2)
+(3,255,2)
+(108,55,2)
+(301,255,2)
+(212,124,2)
+(221,162,2)
+(157,147,2)
+(213,255,2)
+(171,278,2)
+(30,307,2)
+(313,255,2)
+(7,106,2)
+(94,84,2)
+(307,195,2)
+(119,87,2)
+(253,121,2)
+(268,202,2)
+(177,89,2)
+(276,46,2)
+(54,188,2)
+(184,19,2)
+(14,79,2)
+(305,188,2)
+(246,121,2)
+(38,255,2)
+(103,255,2)
+(80,79,2)
+(39,25,2)
+(152,172,2)
+(233,46,2)
+(300,273,2)
+(3,147,2)
+(47,25,2)
+(63,25,2)
+(76,291,2)
+(36,138,2)
+(161,89,2)
+(145,291,2)
+(154,284,2)
+(12,255,2)
+(274,23,2)
+(116,19,2)
+(254,121,2)
+(70,55,2)
+(31,106,2)
+(3,121,2)
+(231,155,2)
+(96,13,2)
+(37,19,2)
+(174,255,2)
+(192,188,2)
+(201,172,2)
+(48,226,2)
+(227,255,2)
+(195,241,2)
+(256,188,2)
+(251,255,2)
+(42,195,2)
+(226,255,2)
+(279,19,2)
+(187,255,2)
+(40,255,2)
+(138,191,2)
+(278,263,2)
+(133,79,2)
+(29,173,2)
+(191,94,2)
+(250,195,2)
+(204,94,2)
+(283,46,2)
+(95,172,2)
+(89,106,2)
+(29,140,2)
+(210,226,2)
+(83,255,2)
+(281,268,2)
+(71,269,2)
+(60,255,2)
+(84,255,2)
+(67,255,2)
+(73,255,2)
+(193,255,2)
+(140,79,2)
+(149,255,2)
+(291,255,2)
+(87,237,2)
+(23,226,2)
+(199,121,2)
+(29,91,2)
+(73,147,2)
+(120,106,2)
+(106,227,2)
+(66,89,2)
+(69,89,2)
+(307,25,2)
+(85,87,2)
+(18,240,2)
+(126,218,2)
+(255,284,2)
+(278,172,2)
+(130,284,2)
+(270,19,2)
+(59,89,2)
+(29,297,2)
+(195,172,2)
+(29,130,2)
+(295,255,2)
+(102,46,2)
+(46,255,2)
+(27,19,2)
+(22,147,2)
+(29,96,2)
+(13,122,2)
+(53,212,2)
+(171,147,2)
+(237,222,2)
+(267,19,2)
+(78,25,2)
+(216,255,2)
+(231,146,2)
+(312,226,2)
+(29,259,2)
+(162,254,2)
+(240,215,2)
+(277,172,2)
+(220,121,2)
+(263,55,2)
+(285,89,2)
+(286,222,2)
+(202,41,2)
+(181,255,2)
+(188,255,2)
+(228,255,2)
+(205,188,2)
+(94,255,2)
+(224,269,2)
+(240,167,2)
+(29,211,2)
+(308,221,2)
+(194,269,2)
+(259,222,2)
+(122,255,2)
+(110,268,2)
+(89,55,2)
+(122,121,2)
+(12,147,2)
+(118,226,2)
+(16,255,2)
+(142,25,2)
+(46,47,2)
+(290,113,2)
+(219,202,2)
+(168,87,2)
+(29,169,2)
+(223,19,2)
+(122,300,2)
+(62,255,2)
+(265,94,2)
+(19,209,2)
+(25,219,2)
+(189,255,2)
+(218,226,2)
+(308,122,2)
+(308,53,2)
+(254,25,2)
+(178,172,2)
+(303,106,2)
+(44,167,2)
+(70,292,2)
+(262,89,2)
+(29,182,2)
+(33,14,2)
+(93,106,2)
+(138,90,2)
+(147,195,2)
+(212,146,2)
+(47,255,2)
+(29,139,2)
+(234,226,2)
+(300,255,2)
+(167,164,2)
+(293,268,2)
+(197,255,2)
+(111,255,2)
+(104,167,2)
+(29,260,2)
+(25,268,2)
+(164,25,2)
+(29,311,2)
+(122,19,2)
+(29,132,2)
+(97,25,2)
+(257,189,2)
+(57,147,2)
+(10,167,2)
+(198,46,2)
+(279,37,2)
+(153,255,2)
+(65,255,2)
+(182,46,2)
+(160,255,2)
+(134,269,2)
+(239,138,2)
+(260,291,2)
+(87,222,2)
+(132,79,2)
+(269,97,2)
+(299,226,2)
+(122,147,2)
+(23,25,2)
+(289,255,2)
+(29,2,2)
+(151,255,2)
+(29,114,2)
+(70,89,2)
+(2,172,2)
+(215,167,2)
+(98,147,2)
+-----------------------------------
+(0,0)
+(1,if (!dev->s_learning_mode)
+(2,return -EINVAL;)
+(3,cmd)
+(4,dev->s_tx_mask(dev, val)
+(5,lirc)
+(6,dev->raw)
+(7,-ENOSYS)
+(8,-EINVAL)
+(9,0)
+(10,val)
+(11,case LIRC_SET_TRANSMITTER_MASK:)
+(12,_IOC_READ)
+(13,ret = put_user(val, argp)
+(14,!val)
+(15,case LIRC_SET_SEND_CARRIER:)
+(16,filep)
+(17,argp)
+(18,dev->s_learning_mode(dev, !!val)
+(19,!dev->max_timeout)
+(20,if (!dev->max_timeout)
+(21,dev)
+(22,timeout)
+(23,dev->raw)
+(24,ret)
+(25,dev = lirc->dev)
+(26,argp)
+(27,max_timeout)
+(28,case LIRC_SET_REC_CARRIER_RANGE:)
+(29,RET)
+(30,tmp > dev->max_timeout)
+(31,0)
+(32,val)
+(33,!!val)
+(34,if (ret)
+(35,if (val > U32_MAX / 1000)
+(36,val)
+(37,dev->max_timeout)
+(38,val)
+(39,dev->timeout)
+(40,s_tx_duty_cycle)
+(41,lirc_get_pdata(filep)
+(42,tmp)
+(43,-EINVAL)
+(44,dev)
+(45,case LIRC_SET_WIDEBAND_RECEIVER:)
+(46,!dev->s_tx_carrier)
+(47,dev->s_tx_carrier)
+(48,raw)
+(49,case LIRC_SET_REC_CARRIER:)
+(50,s_learning_mode)
+(51,if (!dev->s_tx_duty_cycle)
+(52,case LIRC_SET_REC_TIMEOUT_REPORTS:)
+(53,*argp = (u32 __user *)
+(54,ENOSYS)
+(55,val = 0)
+(56,ret = 0)
+(57,tmp)
+(58,lirc)
+(59,lirc)
+(60,0)
+(61,s_rx_carrier_range)
+(62,val)
+(63,dev->max_timeout)
+(64,dev)
+(65,LIRC_MODE_PULSE & LIRC_CAN_SEND_MASK)
+(66,EINVAL)
+(67,dev->s_carrier_report)
+(68,EFAULT)
+(69,carrier_low)
+(70,dev->s_rx_carrier_range(dev,\n\\n\\t\\t\\t\\t\\t       dev->raw->lirc.carrier_low,\n\\n\\t\\t\\t\\t\\t       val)
+(71,-ENOSYS)
+(72,val)
+(73,ret)
+(74,dev)
+(75,dev)
+(76,EINVAL)
+(77,case LIRC_SET_REC_TIMEOUT:)
+(78,dev->s_tx_duty_cycle(dev, val)
+(79,!dev->s_carrier_report)
+(80,ENOSYS)
+(81,cmd)
+(82,1000)
+(83,!val)
+(84,dev->s_tx_duty_cycle)
+(85,ret)
+(86,-ENOSYS)
+(87,_IOC_DIR(cmd)
+(88,ret)
+(89,val <= 0)
+(90,val >= 100)
+(91,return -ENOSYS;)
+(92,0)
+(93,val)
+(94,!dev->s_tx_duty_cycle)
+(95,min_timeout)
+(96,return ret;)
+(97,dev->s_tx_mask)
+(98,break;)
+(99,dev)
+(100,if (val <= 0)
+(101,max_timeout)
+(102,ENOSYS)
+(103,break;)
+(104,ENOSYS)
+(105,break;)
+(106,!dev->s_rx_carrier_range)
+(107,)
+(108,dev->raw->lirc.carrier_low = val)
+(109,if (val <= 0)
+(110,dev)
+(111,LIRC_CAN_SEND_MASK)
+(112,if (!dev)
+(113,get_user(val, argp)
+(114,return -ENOSYS;)
+(115,arg)
+(116,val)
+(117,-EINVAL)
+(118,dev)
+(119,val)
+(120,return -ENOSYS;)
+(121,!dev->max_timeout)
+(122,_IOC_DIR(cmd)
+(123,dev)
+(124,u32 __user *)
+(125,return dev->s_rx_carrier_range(dev,\n\\n\\t\\t\\t\\t\\t       dev->raw->lirc.carrier_low,\n\\n\\t\\t\\t\\t\\t       val)
+(126,return 0;)
+(127,case LIRC_GET_MAX_TIMEOUT:)
+(128,case LIRC_SET_MEASURE_CARRIER_MODE:)
+(129,lirc)
+(130,return ret;)
+(131,if (tmp < dev->min_timeout || tmp > dev->max_timeout)
+(132,return -ENOSYS;)
+(133,dev)
+(134,return -ENOSYS;)
+(135,ENOSYS)
+(136,filep)
+(137,if (!dev->s_tx_mask)
+(138,val <= 0 || val >= 100)
+(139,return -ENOSYS;)
+(140,return dev->s_carrier_report(dev, !!val)
+(141,max_timeout)
+(142,dev->rx_resolution)
+(143,break;)
+(144,if (!dev->max_timeout)
+(145,return 0;)
+(146,unsigned long arg)
+(147,tmp < dev->min_timeout || tmp > dev->max_timeout)
+(148,default:)
+(149,val = LIRC_CAN_SEND_PULSE & LIRC_CAN_SEND_MASK)
+(150,100)
+(151,break;)
+(152,tmp)
+(153,LIRC_CAN_SEND_PULSE)
+(154,ret)
+(155,struct file *filep)
+(156,return -ENOSYS;)
+(157,EINVAL)
+(158,dev->max_timeout)
+(159,val = dev->rx_resolution)
+(160,dev)
+(161,return -EINVAL;)
+(162,dev->min_timeout / 1000)
+(163,raw)
+(164,dev->s_learning_mode)
+(165,dev)
+(166,tmp)
+(167,!dev->s_learning_mode)
+(168,argp)
+(169,return dev->s_learning_mode(dev, !!val)
+(170,)
+(171,dev->timeout = tmp)
+(172,val > U32_MAX / 1000)
+(173,return -ENOSYS;)
+(174,s_carrier_report)
+(175,if (_IOC_DIR(cmd)
+(176,-ENOSYS)
+(177,dev)
+(178,-EINVAL)
+(179,dev)
+(180,EFAULT)
+(181,dev)
+(182,return dev->s_tx_carrier(dev, val)
+(183,dev->raw->lirc)
+(184,ENOSYS)
+(185,return dev->s_tx_mask(dev, val)
+(186,dev)
+(187,LIRC_CAN_SEND_MASK)
+(188,!dev->max_timeout)
+(189,!!val)
+(190,-EINVAL)
+(191,val <= 0)
+(192,U32_MAX / 1000)
+(193,s_tx_carrier)
+(194,val)
+(195,tmp < dev->min_timeout)
+(196,val)
+(197,val)
+(198,val)
+(199,-ENOSYS)
+(200,case LIRC_GET_MIN_TIMEOUT:)
+(201,tmp)
+(202,lirc = lirc_get_pdata(filep)
+(203,dev)
+(204,ENOSYS)
+(205,-ENOSYS)
+(206,val)
+(207,switch (cmd)
+(208,if (!dev->s_rx_carrier_range)
+(209,dev->max_timeout)
+(210,carrier_low)
+(211,return lirc_dev_fop_ioctl(filep, cmd, arg)
+(212,(u32 __user *)
+(213,dev)
+(214,lirc)
+(215,!val)
+(216,cmd)
+(217,if (!dev->s_carrier_report)
+(218,dev->raw->lirc.carrier_low)
+(219,lirc->dev)
+(220,ENOSYS)
+(221,val = dev->min_timeout / 1000)
+(222,!dev)
+(223,-ENOSYS)
+(224,dev)
+(225,case LIRC_SET_SEND_MODE:)
+(226,val <= 0)
+(227,dev->s_rx_carrier_range)
+(228,lirc->send_timeout_reports)
+(229,if (_IOC_DIR(cmd)
+(230,ret)
+(231,lirc_dev_fop_ioctl(filep, cmd, arg)
+(232,if (!dev->s_tx_carrier)
+(233,dev)
+(234,EINVAL)
+(235,arg)
+(236,min_timeout)
+(237,_IOC_DIR(cmd)
+(238,dev)
+(239,EINVAL)
+(240,!!val)
+(241,dev->min_timeout)
+(242,_IOC_WRITE)
+(243,U32_MAX)
+(244,case LIRC_SET_SEND_DUTY_CYCLE:)
+(245,val)
+(246,val)
+(247,dev)
+(248,send_timeout_reports)
+(249,dev)
+(250,dev)
+(251,dev)
+(252,EINVAL)
+(253,1000)
+(254,dev->min_timeout)
+(255,cmd)
+(256,1000)
+(257,lirc->send_timeout_reports = !!val)
+(258,if (val <= 0 || val >= 100)
+(259,return -EFAULT;)
+(260,return -EINVAL;)
+(261,dev->s_carrier_report(dev, !!val)
+(262,-EINVAL)
+(263,val * 1000)
+(264,dev)
+(265,0)
+(266,if (!lirc)
+(267,val = dev->max_timeout / 1000)
+(268,!lirc)
+(269,!dev->s_tx_mask)
+(270,break;)
+(271,-ENOSYS)
+(272,lirc)
+(273,unsigned int cmd)
+(274,dev->raw->lirc)
+(275,argp)
+(276,-ENOSYS)
+(277,dev)
+(278,tmp = val * 1000)
+(279,dev->max_timeout / 1000)
+(280,if (!dev->max_timeout)
+(281,return -EFAULT;)
+(282,1000)
+(283,dev->s_tx_carrier(dev, val)
+(284,ret)
+(285,val)
+(286,-EFAULT)
+(287,if (val != (LIRC_MODE_PULSE & LIRC_CAN_SEND_MASK)
+(288,val)
+(289,max_timeout)
+(290,ret = get_user(val, argp)
+(291,val != (LIRC_MODE_PULSE & LIRC_CAN_SEND_MASK)
+(292,dev->raw->lirc.carrier_low)
+(293,-EFAULT)
+(294,case LIRC_GET_SEND_MODE:)
+(295,s_tx_mask)
+(296,val)
+(297,return dev->s_tx_duty_cycle(dev, val)
+(298,return -EINVAL;)
+(299,val)
+(300,_IOC_DIR(cmd)
+(301,LIRC_CAN_SEND_PULSE & LIRC_CAN_SEND_MASK)
+(302,case LIRC_GET_REC_RESOLUTION:)
+(303,ENOSYS)
+(304,return -ENOSYS;)
+(305,val)
+(306,)
+(307,dev->max_timeout)
+(308,put_user(val, argp)
+(309,val)
+(310,val)
+(311,return -EINVAL;)
+(312,lirc)
+(313,max_timeout)
+(314,return -EINVAL;)
+(315,0)
+(316,rx_resolution)
+(317,LIRC_MODE_PULSE)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

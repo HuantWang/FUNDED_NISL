@@ -1,0 +1,2900 @@
+-----label-----
+1
+-----code-----
+void show_code(struct pt_regs *regs)
+{
+	char *mode = user_mode(regs) ? "User" : "Krnl";
+	unsigned char code[64];
+	char buffer[64], *ptr;
+	mm_segment_t old_fs;
+	unsigned long addr;
+	int start, end, opsize, hops, i;
+
+	/* Get a snapshot of the 64 bytes surrounding the fault address. */
+	old_fs = get_fs();
+	set_fs(user_mode(regs) ? USER_DS : KERNEL_DS);
+	for (start = 32; start && regs->psw.addr >= 34 - start; start -= 2) {
+		addr = regs->psw.addr - 34 + start;
+		if (__copy_from_user(code + start - 2,
+				     (char __user *) addr, 2))
+			break;
+	}
+	for (end = 32; end < 64; end += 2) {
+		addr = regs->psw.addr + end - 32;
+		if (__copy_from_user(code + end,
+				     (char __user *) addr, 2))
+			break;
+	}
+	set_fs(old_fs);
+	/* Code snapshot useable ? */
+	if ((regs->psw.addr & 1) || start >= end) {
+		printk("%s Code: Bad PSW.\n", mode);
+		return;
+	}
+	/* Find a starting point for the disassembly. */
+	while (start < 32) {
+		for (i = 0, hops = 0; start + i < 32 && hops < 3; hops++) {
+			if (!find_insn(code + start + i))
+				break;
+			i += insn_length(code[start + i]);
+		}
+		if (start + i == 32)
+			/* Looks good, sequence ends at PSW. */
+			break;
+		start += 2;
+	}
+	/* Decode the instructions. */
+	ptr = buffer;
+	ptr += sprintf(ptr, "%s Code:", mode);
+	hops = 0;
+	while (start < end && hops < 8) {
+		opsize = insn_length(code[start]);
+		if  (start + opsize == 32)
+			*ptr++ = '#';
+		else if (start == 32)
+			*ptr++ = '>';
+		else
+			*ptr++ = ' ';
+		addr = regs->psw.addr + start - 32;
+		ptr += sprintf(ptr, "%016lx: ", addr);
+		if (start + opsize >= end)
+			break;
+		for (i = 0; i < opsize; i++)
+			ptr += sprintf(ptr, "%02x", code[start + i]);
+		*ptr++ = '\t';
+		if (i < 6)
+			*ptr++ = '\t';
+		ptr += print_insn(ptr, code + start, addr);
+		start += opsize;
+		printk(buffer);
+		ptr = buffer;
+		ptr += sprintf(ptr, "\n          ");
+		hops++;
+	}
+	printk("\n");
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+11,14
+11,15
+11,16
+11,17
+11,18
+11,19
+11,20
+11,21
+11,22
+11,23
+11,24
+11,25
+11,26
+11,27
+11,28
+11,29
+12,13
+13,14
+13,15
+15,16
+15,17
+15,18
+18,19
+19,20
+19,21
+19,22
+20,21
+20,22
+21,22
+23,24
+27,28
+28,29
+28,30
+30,31
+30,32
+32,33
+34,35
+35,36
+35,37
+35,38
+37,38
+37,39
+39,40
+41,42
+41,43
+44,45
+45,46
+45,47
+46,47
+48,49
+50,51
+51,52
+51,53
+53,54
+55,56
+56,57
+56,58
+56,59
+56,60
+56,61
+56,62
+58,59
+60,61
+62,63
+64,65
+66,67
+68,69
+69,70
+69,71
+70,71
+72,73
+73,74
+75,76
+76,77
+76,78
+77,78
+79,80
+79,81
+79,82
+80,81
+80,82
+81,82
+83,84
+85,86
+87,88
+89,90
+89,91
+89,92
+89,93
+90,91
+91,92
+91,93
+92,93
+95,96
+95,97
+96,97
+98,99
+98,100
+99,100
+99,101
+100,101
+100,102
+101,102
+105,106
+105,107
+107,108
+109,110
+109,111
+110,111
+113,114
+113,115
+114,115
+115,116
+115,117
+116,117
+118,119
+118,120
+119,120
+119,121
+120,121
+120,122
+121,122
+121,123
+122,123
+127,128
+129,130
+129,131
+130,131
+132,133
+132,134
+132,135
+132,136
+133,134
+134,135
+134,136
+135,136
+138,139
+138,140
+139,140
+142,143
+142,144
+143,144
+146,147
+146,148
+147,148
+148,149
+148,150
+149,150
+151,152
+151,153
+152,153
+152,154
+153,154
+153,155
+154,155
+154,156
+155,156
+159,160
+162,163
+162,164
+163,164
+165,166
+166,167
+166,168
+167,168
+169,170
+171,172
+171,173
+172,173
+172,174
+173,174
+174,175
+174,176
+175,176
+175,177
+176,177
+176,178
+177,178
+182,183
+182,184
+183,184
+185,186
+187,188
+187,189
+188,189
+189,190
+189,191
+189,192
+190,191
+193,194
+196,197
+196,198
+197,198
+197,199
+198,199
+201,202
+201,203
+201,204
+202,203
+202,204
+202,205
+202,206
+203,204
+204,205
+204,206
+205,206
+205,207
+206,207
+209,210
+209,211
+210,211
+213,214
+213,215
+214,215
+214,216
+215,216
+215,217
+216,217
+218,219
+221,222
+221,223
+222,223
+225,226
+226,227
+228,229
+228,230
+229,230
+229,231
+230,231
+231,232
+231,233
+232,233
+234,235
+234,236
+235,236
+235,237
+236,237
+238,239
+240,241
+243,244
+244,245
+244,246
+245,246
+247,248
+247,249
+248,249
+250,251
+250,252
+251,252
+253,254
+253,255
+254,255
+256,257
+258,259
+258,260
+259,260
+259,261
+260,261
+260,262
+261,262
+263,264
+267,268
+268,269
+268,270
+269,270
+272,273
+273,274
+273,275
+274,275
+276,277
+278,279
+279,280
+279,281
+280,281
+282,283
+282,284
+282,285
+282,286
+283,284
+285,286
+288,289
+290,291
+291,292
+291,293
+292,293
+295,296
+295,297
+296,297
+296,298
+297,298
+297,299
+298,299
+300,301
+302,303
+302,304
+303,304
+306,307
+306,308
+306,309
+306,310
+306,311
+306,312
+306,313
+306,314
+306,315
+306,316
+306,317
+306,318
+306,319
+306,320
+307,308
+308,309
+308,310
+309,310
+311,312
+311,313
+312,313
+314,315
+314,316
+315,316
+317,318
+319,320
+319,321
+319,322
+320,321
+320,322
+321,322
+321,323
+322,323
+324,325
+327,328
+328,329
+328,330
+329,330
+330,331
+331,332
+334,335
+334,336
+334,337
+335,336
+335,337
+336,337
+339,340
+340,341
+340,342
+341,342
+342,343
+343,344
+346,347
+347,348
+347,349
+348,349
+349,350
+350,351
+353,354
+354,355
+354,356
+355,356
+357,358
+357,359
+358,359
+358,360
+359,360
+359,361
+360,361
+360,362
+361,362
+365,366
+368,369
+369,370
+369,371
+370,371
+372,373
+372,374
+372,375
+372,376
+373,374
+375,376
+378,379
+380,381
+380,382
+381,382
+381,383
+382,383
+382,384
+383,384
+385,386
+387,388
+390,391
+390,392
+390,393
+390,394
+391,392
+392,393
+392,394
+393,394
+396,397
+396,398
+397,398
+399,400
+401,402
+402,403
+404,405
+405,406
+405,407
+406,407
+408,409
+408,410
+408,411
+408,412
+409,410
+411,412
+414,415
+414,416
+415,416
+417,418
+417,419
+418,419
+420,421
+422,423
+423,424
+423,425
+424,425
+425,426
+426,427
+429,430
+429,431
+430,431
+430,432
+431,432
+434,435
+435,436
+435,437
+436,437
+437,438
+438,439
+441,442
+442,443
+442,444
+443,444
+445,446
+445,447
+445,448
+445,449
+446,447
+448,449
+450,451
+450,452
+451,452
+453,454
+455,456
+457,458
+458,459
+458,460
+459,460
+461,462
+463,464
+464,465
+464,466
+465,466
+467,468
+469,470
+470,471
+470,472
+471,472
+473,474
+475,476
+476,477
+476,478
+477,478
+479,480
+479,481
+479,482
+480,481
+482,483
+485,486
+486,487
+487,488
+489,490
+490,491
+490,492
+491,492
+-----nextToken-----
+2,4,7,9,10,14,16,17,22,24,25,26,29,31,33,36,38,40,42,43,47,49,52,54,57,59,61,63,65,67,71,74,78,82,84,86,88,93,94,97,102,103,104,106,108,111,112,117,123,124,125,126,128,131,136,137,140,141,144,145,150,156,157,158,160,161,164,168,170,178,179,180,181,184,186,191,192,194,195,199,200,207,208,211,212,217,219,220,223,224,227,233,237,239,241,242,246,249,252,255,257,262,264,265,266,270,271,275,277,281,284,286,287,289,293,294,299,301,304,305,310,313,316,318,323,325,326,332,333,337,338,344,345,351,352,356,362,363,364,366,367,371,374,376,377,379,384,386,388,389,394,395,398,400,403,407,410,412,413,416,419,421,427,428,432,433,439,440,444,447,449,452,454,456,460,462,466,468,472,474,478,481,483,484,488,492,493
+-----computeFrom-----
+69,70
+69,71
+91,92
+91,93
+95,96
+95,97
+98,99
+98,100
+105,106
+105,107
+109,110
+109,111
+115,116
+115,117
+118,119
+118,120
+119,120
+119,121
+134,135
+134,136
+138,139
+138,140
+142,143
+142,144
+148,149
+148,150
+151,152
+151,153
+152,153
+152,154
+172,173
+172,174
+174,175
+174,176
+182,183
+182,184
+197,198
+197,199
+205,206
+205,207
+209,210
+209,211
+213,214
+213,215
+214,215
+214,216
+215,216
+215,217
+221,222
+221,223
+234,235
+234,236
+235,236
+235,237
+244,245
+244,246
+253,254
+253,255
+259,260
+259,261
+260,261
+260,262
+268,269
+268,270
+273,274
+273,275
+279,280
+279,281
+291,292
+291,293
+296,297
+296,298
+297,298
+297,299
+302,303
+302,304
+308,309
+308,310
+320,321
+320,322
+321,322
+321,323
+328,329
+328,330
+335,336
+335,337
+340,341
+340,342
+347,348
+347,349
+354,355
+354,356
+357,358
+357,359
+358,359
+358,360
+369,370
+369,371
+381,382
+381,383
+382,383
+382,384
+392,393
+392,394
+396,397
+396,398
+405,406
+405,407
+417,418
+417,419
+423,424
+423,425
+430,431
+430,432
+435,436
+435,437
+442,443
+442,444
+450,451
+450,452
+458,459
+458,460
+470,471
+470,472
+476,477
+476,478
+-----guardedBy-----
+-----guardedByNegation-----
+323,337
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;EqualsInitializer;ConditionalExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;ArrayDeclarator;Name;ArrayModifier;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;ArrayDeclarator;Name;ArrayModifier;LiteralExpression;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;Declarator;Name;Declarator;Name;Declarator;Name;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ConditionalExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;BinaryExpression;LiteralExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;LiteralExpression;IdExpression;Name;IfStatement;ProblemExpression;BreakStatement;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;LiteralExpression;IfStatement;ProblemExpression;BreakStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;ReturnStatement;WhileStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ForStatement;ExpressionStatement;ExpressionList;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;LiteralExpression;UnaryExpression;IdExpression;Name;CompoundStatement;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;BreakStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;BreakStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;WhileStatement;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;UnaryExpression;UnaryExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;UnaryExpression;UnaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;UnaryExpression;UnaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;BreakStatement;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ArraySubscriptExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;UnaryExpression;UnaryExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;UnaryExpression;UnaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;
+-----ast_node-----
+void show_code(struct pt_regs *regs){	char *mode = user_mode(regs) ? "User" : "Krnl";	unsigned char code[64];	char buffer[64], *ptr;	mm_segment_t old_fs;	unsigned long addr;	int start, end, opsize, hops, i;	/* Get a snapshot of the 64 bytes surrounding the fault address. */	old_fs = get_fs();	set_fs(user_mode(regs) ? USER_DS : KERNEL_DS);	for (start = 32; start && regs->psw.addr >= 34 - start; start -= 2) {		addr = regs->psw.addr - 34 + start;		if (__copy_from_user(code + start - 2,				     (char __user *) addr, 2))			break;	}	for (end = 32; end < 64; end += 2) {		addr = regs->psw.addr + end - 32;		if (__copy_from_user(code + end,				     (char __user *) addr, 2))			break;	}	set_fs(old_fs);	/* Code snapshot useable ? */	if ((regs->psw.addr & 1) || start >= end) {		printk("%s Code: Bad PSW.\n", mode);		return;	}	/* Find a starting point for the disassembly. */	while (start < 32) {		for (i = 0, hops = 0; start + i < 32 && hops < 3; hops++) {			if (!find_insn(code + start + i))				break;			i += insn_length(code[start + i]);		}		if (start + i == 32)			/* Looks good, sequence ends at PSW. */			break;		start += 2;	}	/* Decode the instructions. */	ptr = buffer;	ptr += sprintf(ptr, "%s Code:", mode);	hops = 0;	while (start < end && hops < 8) {		opsize = insn_length(code[start]);		if  (start + opsize == 32)			*ptr++ = '#';		else if (start == 32)			*ptr++ = '>';		else			*ptr++ = ' ';		addr = regs->psw.addr + start - 32;		ptr += sprintf(ptr, "%016lx: ", addr);		if (start + opsize >= end)			break;		for (i = 0; i < opsize; i++)			ptr += sprintf(ptr, "%02x", code[start + i]);		*ptr++ = '\t';		if (i < 6)			*ptr++ = '\t';		ptr += print_insn(ptr, code + start, addr);		start += opsize;		printk(buffer);		ptr = buffer;		ptr += sprintf(ptr, "\n          ");		hops++;	}	printk("\n");}
+void
+show_code(struct pt_regs *regs)
+show_code
+struct pt_regs *regs
+struct pt_regs
+pt_regs
+*regs
+*
+regs
+{	char *mode = user_mode(regs) ? "User" : "Krnl";	unsigned char code[64];	char buffer[64], *ptr;	mm_segment_t old_fs;	unsigned long addr;	int start, end, opsize, hops, i;	/* Get a snapshot of the 64 bytes surrounding the fault address. */	old_fs = get_fs();	set_fs(user_mode(regs) ? USER_DS : KERNEL_DS);	for (start = 32; start && regs->psw.addr >= 34 - start; start -= 2) {		addr = regs->psw.addr - 34 + start;		if (__copy_from_user(code + start - 2,				     (char __user *) addr, 2))			break;	}	for (end = 32; end < 64; end += 2) {		addr = regs->psw.addr + end - 32;		if (__copy_from_user(code + end,				     (char __user *) addr, 2))			break;	}	set_fs(old_fs);	/* Code snapshot useable ? */	if ((regs->psw.addr & 1) || start >= end) {		printk("%s Code: Bad PSW.\n", mode);		return;	}	/* Find a starting point for the disassembly. */	while (start < 32) {		for (i = 0, hops = 0; start + i < 32 && hops < 3; hops++) {			if (!find_insn(code + start + i))				break;			i += insn_length(code[start + i]);		}		if (start + i == 32)			/* Looks good, sequence ends at PSW. */			break;		start += 2;	}	/* Decode the instructions. */	ptr = buffer;	ptr += sprintf(ptr, "%s Code:", mode);	hops = 0;	while (start < end && hops < 8) {		opsize = insn_length(code[start]);		if  (start + opsize == 32)			*ptr++ = '#';		else if (start == 32)			*ptr++ = '>';		else			*ptr++ = ' ';		addr = regs->psw.addr + start - 32;		ptr += sprintf(ptr, "%016lx: ", addr);		if (start + opsize >= end)			break;		for (i = 0; i < opsize; i++)			ptr += sprintf(ptr, "%02x", code[start + i]);		*ptr++ = '\t';		if (i < 6)			*ptr++ = '\t';		ptr += print_insn(ptr, code + start, addr);		start += opsize;		printk(buffer);		ptr = buffer;		ptr += sprintf(ptr, "\n          ");		hops++;	}	printk("\n");}
+char *mode = user_mode(regs) ? "User" : "Krnl";
+char *mode = user_mode(regs) ? "User" : "Krnl";
+char
+*mode = user_mode(regs) ? "User" : "Krnl"
+*
+mode
+= user_mode(regs) ? "User" : "Krnl"
+user_mode(regs) ? "User" : "Krnl"
+user_mode(regs)
+user_mode
+user_mode
+regs
+regs
+"User"
+"Krnl"
+unsigned char code[64];
+unsigned char code[64];
+unsigned char
+code[64]
+code
+[64]
+64
+char buffer[64], *ptr;
+char buffer[64], *ptr;
+char
+buffer[64]
+buffer
+[64]
+64
+*ptr
+*
+ptr
+mm_segment_t old_fs;
+mm_segment_t old_fs;
+mm_segment_t
+mm_segment_t
+old_fs
+old_fs
+unsigned long addr;
+unsigned long addr;
+unsigned long
+addr
+addr
+int start, end, opsize, hops, i;
+int start, end, opsize, hops, i;
+int
+start
+start
+end
+end
+opsize
+opsize
+hops
+hops
+i
+i
+old_fs = get_fs();
+old_fs = get_fs()
+old_fs
+old_fs
+get_fs()
+get_fs
+get_fs
+set_fs(user_mode(regs) ? USER_DS : KERNEL_DS);
+set_fs(user_mode(regs) ? USER_DS : KERNEL_DS)
+set_fs
+set_fs
+user_mode(regs) ? USER_DS : KERNEL_DS
+user_mode(regs)
+user_mode
+user_mode
+regs
+regs
+USER_DS
+USER_DS
+KERNEL_DS
+KERNEL_DS
+for (start = 32; start && regs->psw.addr >= 34 - start; start -= 2) {		addr = regs->psw.addr - 34 + start;		if (__copy_from_user(code + start - 2,				     (char __user *) addr, 2))			break;	}
+start = 32;
+start = 32
+start
+start
+32
+start && regs->psw.addr >= 34 - start
+start
+start
+regs->psw.addr >= 34 - start
+regs->psw.addr
+regs->psw
+regs
+regs
+psw
+addr
+34 - start
+34
+start
+start
+start -= 2
+start
+start
+2
+{		addr = regs->psw.addr - 34 + start;		if (__copy_from_user(code + start - 2,				     (char __user *) addr, 2))			break;	}
+addr = regs->psw.addr - 34 + start;
+addr = regs->psw.addr - 34 + start
+addr
+addr
+regs->psw.addr - 34 + start
+regs->psw.addr - 34
+regs->psw.addr
+regs->psw
+regs
+regs
+psw
+addr
+34
+start
+start
+if (__copy_from_user(code + start - 2,				     (char __user *) addr, 2))			break;
+__copy_from_user(code + start - 2,				     (char __user *) addr, 2)
+break;
+for (end = 32; end < 64; end += 2) {		addr = regs->psw.addr + end - 32;		if (__copy_from_user(code + end,				     (char __user *) addr, 2))			break;	}
+end = 32;
+end = 32
+end
+end
+32
+end < 64
+end
+end
+64
+end += 2
+end
+end
+2
+{		addr = regs->psw.addr + end - 32;		if (__copy_from_user(code + end,				     (char __user *) addr, 2))			break;	}
+addr = regs->psw.addr + end - 32;
+addr = regs->psw.addr + end - 32
+addr
+addr
+regs->psw.addr + end - 32
+regs->psw.addr + end
+regs->psw.addr
+regs->psw
+regs
+regs
+psw
+addr
+end
+end
+32
+if (__copy_from_user(code + end,				     (char __user *) addr, 2))			break;
+__copy_from_user(code + end,				     (char __user *) addr, 2)
+break;
+set_fs(old_fs);
+set_fs(old_fs)
+set_fs
+set_fs
+old_fs
+old_fs
+if ((regs->psw.addr & 1) || start >= end) {		printk("%s Code: Bad PSW.\n", mode);		return;	}
+(regs->psw.addr & 1) || start >= end
+(regs->psw.addr & 1)
+regs->psw.addr & 1
+regs->psw.addr
+regs->psw
+regs
+regs
+psw
+addr
+1
+start >= end
+start
+start
+end
+end
+{		printk("%s Code: Bad PSW.\n", mode);		return;	}
+printk("%s Code: Bad PSW.\n", mode);
+printk("%s Code: Bad PSW.\n", mode)
+printk
+printk
+"%s Code: Bad PSW.\n"
+mode
+mode
+return;
+while (start < 32) {		for (i = 0, hops = 0; start + i < 32 && hops < 3; hops++) {			if (!find_insn(code + start + i))				break;			i += insn_length(code[start + i]);		}		if (start + i == 32)			/* Looks good, sequence ends at PSW. */			break;		start += 2;	}
+start < 32
+start
+start
+32
+{		for (i = 0, hops = 0; start + i < 32 && hops < 3; hops++) {			if (!find_insn(code + start + i))				break;			i += insn_length(code[start + i]);		}		if (start + i == 32)			/* Looks good, sequence ends at PSW. */			break;		start += 2;	}
+for (i = 0, hops = 0; start + i < 32 && hops < 3; hops++) {			if (!find_insn(code + start + i))				break;			i += insn_length(code[start + i]);		}
+i = 0, hops = 0;
+i = 0, hops = 0
+i = 0
+i
+i
+0
+hops = 0
+hops
+hops
+0
+start + i < 32 && hops < 3
+start + i < 32
+start + i
+start
+start
+i
+i
+32
+hops < 3
+hops
+hops
+3
+hops++
+hops
+hops
+{			if (!find_insn(code + start + i))				break;			i += insn_length(code[start + i]);		}
+if (!find_insn(code + start + i))				break;
+!find_insn(code + start + i)
+find_insn(code + start + i)
+find_insn
+find_insn
+code + start + i
+code + start
+code
+code
+start
+start
+i
+i
+break;
+i += insn_length(code[start + i]);
+i += insn_length(code[start + i])
+i
+i
+insn_length(code[start + i])
+insn_length
+insn_length
+code[start + i]
+code
+code
+start + i
+start
+start
+i
+i
+if (start + i == 32)			/* Looks good, sequence ends at PSW. */			break;
+start + i == 32
+start + i
+start
+start
+i
+i
+32
+break;
+start += 2;
+start += 2
+start
+start
+2
+ptr = buffer;
+ptr = buffer
+ptr
+ptr
+buffer
+buffer
+ptr += sprintf(ptr, "%s Code:", mode);
+ptr += sprintf(ptr, "%s Code:", mode)
+ptr
+ptr
+sprintf(ptr, "%s Code:", mode)
+sprintf
+sprintf
+ptr
+ptr
+"%s Code:"
+mode
+mode
+hops = 0;
+hops = 0
+hops
+hops
+0
+while (start < end && hops < 8) {		opsize = insn_length(code[start]);		if  (start + opsize == 32)			*ptr++ = '#';		else if (start == 32)			*ptr++ = '>';		else			*ptr++ = ' ';		addr = regs->psw.addr + start - 32;		ptr += sprintf(ptr, "%016lx: ", addr);		if (start + opsize >= end)			break;		for (i = 0; i < opsize; i++)			ptr += sprintf(ptr, "%02x", code[start + i]);		*ptr++ = '\t';		if (i < 6)			*ptr++ = '\t';		ptr += print_insn(ptr, code + start, addr);		start += opsize;		printk(buffer);		ptr = buffer;		ptr += sprintf(ptr, "\n          ");		hops++;	}
+start < end && hops < 8
+start < end
+start
+start
+end
+end
+hops < 8
+hops
+hops
+8
+{		opsize = insn_length(code[start]);		if  (start + opsize == 32)			*ptr++ = '#';		else if (start == 32)			*ptr++ = '>';		else			*ptr++ = ' ';		addr = regs->psw.addr + start - 32;		ptr += sprintf(ptr, "%016lx: ", addr);		if (start + opsize >= end)			break;		for (i = 0; i < opsize; i++)			ptr += sprintf(ptr, "%02x", code[start + i]);		*ptr++ = '\t';		if (i < 6)			*ptr++ = '\t';		ptr += print_insn(ptr, code + start, addr);		start += opsize;		printk(buffer);		ptr = buffer;		ptr += sprintf(ptr, "\n          ");		hops++;	}
+opsize = insn_length(code[start]);
+opsize = insn_length(code[start])
+opsize
+opsize
+insn_length(code[start])
+insn_length
+insn_length
+code[start]
+code
+code
+start
+start
+if  (start + opsize == 32)			*ptr++ = '#';		else if (start == 32)			*ptr++ = '>';		else			*ptr++ = ' ';
+start + opsize == 32
+start + opsize
+start
+start
+opsize
+opsize
+32
+*ptr++ = '#';
+*ptr++ = '#'
+*ptr++
+ptr++
+ptr
+ptr
+'#'
+if (start == 32)			*ptr++ = '>';		else			*ptr++ = ' ';
+start == 32
+start
+start
+32
+*ptr++ = '>';
+*ptr++ = '>'
+*ptr++
+ptr++
+ptr
+ptr
+'>'
+*ptr++ = ' ';
+*ptr++ = ' '
+*ptr++
+ptr++
+ptr
+ptr
+' '
+addr = regs->psw.addr + start - 32;
+addr = regs->psw.addr + start - 32
+addr
+addr
+regs->psw.addr + start - 32
+regs->psw.addr + start
+regs->psw.addr
+regs->psw
+regs
+regs
+psw
+addr
+start
+start
+32
+ptr += sprintf(ptr, "%016lx: ", addr);
+ptr += sprintf(ptr, "%016lx: ", addr)
+ptr
+ptr
+sprintf(ptr, "%016lx: ", addr)
+sprintf
+sprintf
+ptr
+ptr
+"%016lx: "
+addr
+addr
+if (start + opsize >= end)			break;
+start + opsize >= end
+start + opsize
+start
+start
+opsize
+opsize
+end
+end
+break;
+for (i = 0; i < opsize; i++)			ptr += sprintf(ptr, "%02x", code[start + i]);
+i = 0;
+i = 0
+i
+i
+0
+i < opsize
+i
+i
+opsize
+opsize
+i++
+i
+i
+ptr += sprintf(ptr, "%02x", code[start + i]);
+ptr += sprintf(ptr, "%02x", code[start + i])
+ptr
+ptr
+sprintf(ptr, "%02x", code[start + i])
+sprintf
+sprintf
+ptr
+ptr
+"%02x"
+code[start + i]
+code
+code
+start + i
+start
+start
+i
+i
+*ptr++ = '\t';
+*ptr++ = '\t'
+*ptr++
+ptr++
+ptr
+ptr
+'\t'
+if (i < 6)			*ptr++ = '\t';
+i < 6
+i
+i
+6
+*ptr++ = '\t';
+*ptr++ = '\t'
+*ptr++
+ptr++
+ptr
+ptr
+'\t'
+ptr += print_insn(ptr, code + start, addr);
+ptr += print_insn(ptr, code + start, addr)
+ptr
+ptr
+print_insn(ptr, code + start, addr)
+print_insn
+print_insn
+ptr
+ptr
+code + start
+code
+code
+start
+start
+addr
+addr
+start += opsize;
+start += opsize
+start
+start
+opsize
+opsize
+printk(buffer);
+printk(buffer)
+printk
+printk
+buffer
+buffer
+ptr = buffer;
+ptr = buffer
+ptr
+ptr
+buffer
+buffer
+ptr += sprintf(ptr, "\n          ");
+ptr += sprintf(ptr, "\n          ")
+ptr
+ptr
+sprintf(ptr, "\n          ")
+sprintf
+sprintf
+ptr
+ptr
+"\n          "
+hops++;
+hops++
+hops
+hops
+printk("\n");
+printk("\n")
+printk
+printk
+"\n"
+-----joern-----
+(1,166,0)
+(244,116,0)
+(166,85,0)
+(225,174,0)
+(35,59,0)
+(27,241,0)
+(35,170,0)
+(30,105,0)
+(95,230,0)
+(104,247,0)
+(129,298,0)
+(156,68,0)
+(197,42,0)
+(205,65,0)
+(258,13,0)
+(57,138,0)
+(297,59,0)
+(157,57,0)
+(261,173,0)
+(34,9,0)
+(202,105,0)
+(273,22,0)
+(174,13,0)
+(170,116,0)
+(20,248,0)
+(29,42,0)
+(115,138,0)
+(260,59,0)
+(238,121,0)
+(119,304,0)
+(136,32,0)
+(155,208,0)
+(192,216,0)
+(18,108,0)
+(103,209,0)
+(16,205,0)
+(133,297,0)
+(86,138,0)
+(232,285,0)
+(111,223,0)
+(223,65,0)
+(187,269,0)
+(275,240,0)
+(189,245,0)
+(141,244,0)
+(112,128,0)
+(54,15,0)
+(99,274,0)
+(219,245,0)
+(65,59,0)
+(266,59,0)
+(21,143,0)
+(294,0,0)
+(260,188,0)
+(241,88,0)
+(50,277,0)
+(297,65,0)
+(61,230,0)
+(20,126,0)
+(205,189,0)
+(46,219,0)
+(255,88,0)
+(143,189,0)
+(264,247,0)
+(190,260,0)
+(115,240,0)
+(143,138,0)
+(146,88,0)
+(145,105,0)
+(95,108,0)
+(288,258,0)
+(191,15,0)
+(121,143,0)
+(219,59,0)
+(266,101,0)
+(230,2,0)
+(52,203,0)
+(94,151,0)
+(49,105,0)
+(236,108,0)
+(29,156,0)
+(299,279,0)
+(284,105,0)
+(175,233,0)
+(222,22,0)
+(140,105,0)
+(43,297,0)
+(54,12,0)
+(240,138,0)
+(240,230,0)
+(65,65,0)
+(241,27,0)
+(143,65,0)
+(289,294,0)
+(296,219,0)
+(101,248,0)
+(20,194,0)
+(189,84,0)
+(247,247,0)
+(228,127,0)
+(285,247,0)
+(275,65,0)
+(275,61,0)
+(217,51,0)
+(50,267,0)
+(214,59,0)
+(277,269,0)
+(274,105,0)
+(218,59,0)
+(260,240,0)
+(244,59,0)
+(174,2,0)
+(183,128,0)
+(178,42,0)
+(277,13,0)
+(254,105,0)
+(84,189,0)
+(68,156,0)
+(270,208,0)
+(35,230,0)
+(174,269,0)
+(132,260,0)
+(115,230,0)
+(247,51,0)
+(140,9,0)
+(85,85,0)
+(240,65,0)
+(243,242,0)
+(138,272,0)
+(71,58,0)
+(262,267,0)
+(115,65,0)
+(70,2,0)
+(300,151,0)
+(285,188,0)
+(115,59,0)
+(170,85,0)
+(206,230,0)
+(271,105,0)
+(275,59,0)
+(209,103,0)
+(8,194,0)
+(40,178,0)
+(82,167,0)
+(112,83,0)
+(259,188,0)
+(283,138,0)
+(287,272,0)
+(240,2,0)
+(128,268,0)
+(154,105,0)
+(205,138,0)
+(199,291,0)
+(31,51,0)
+(223,108,0)
+(239,247,0)
+(260,138,0)
+(64,293,0)
+(55,248,0)
+(131,105,0)
+(85,116,0)
+(216,2,0)
+(13,151,0)
+(194,175,0)
+(3,275,0)
+(239,174,0)
+(73,197,0)
+(126,20,0)
+(90,266,0)
+(26,52,0)
+(110,197,0)
+(139,83,0)
+(100,58,0)
+(72,29,0)
+(175,73,0)
+(89,12,0)
+(120,240,0)
+(76,4,0)
+(35,65,0)
+(231,156,0)
+(32,163,0)
+(107,251,0)
+(37,143,0)
+(216,54,0)
+(298,2,0)
+(106,103,0)
+(53,105,0)
+(151,13,0)
+(143,59,0)
+(279,226,0)
+(204,174,0)
+(47,95,0)
+(104,64,0)
+(121,114,0)
+(142,205,0)
+(278,272,0)
+(291,59,0)
+(170,35,0)
+(286,118,0)
+(152,70,0)
+(44,35,0)
+(32,59,0)
+(230,61,0)
+(161,277,0)
+(276,12,0)
+(162,2,0)
+(63,68,0)
+(112,165,0)
+(297,245,0)
+(203,52,0)
+(143,245,0)
+(9,140,0)
+(13,105,0)
+(303,169,0)
+(93,223,0)
+(22,222,0)
+(83,85,0)
+(68,141,0)
+(147,105,0)
+(92,95,0)
+(290,240,0)
+(166,116,0)
+(163,32,0)
+(233,65,0)
+(51,174,0)
+(223,138,0)
+(114,121,0)
+(106,166,0)
+(295,196,0)
+(210,266,0)
+(188,260,0)
+(15,138,0)
+(258,109,0)
+(275,138,0)
+(75,13,0)
+(138,59,0)
+(128,112,0)
+(196,108,0)
+(15,54,0)
+(11,275,0)
+(180,101,0)
+(138,138,0)
+(223,217,0)
+(51,247,0)
+(88,241,0)
+(269,208,0)
+(48,83,0)
+(240,240,0)
+(38,103,0)
+(169,105,0)
+(120,116,0)
+(165,167,0)
+(120,65,0)
+(23,51,0)
+(25,105,0)
+(5,205,0)
+(266,65,0)
+(239,168,0)
+(74,104,0)
+(182,187,0)
+(188,247,0)
+(144,105,0)
+(225,216,0)
+(203,120,0)
+(134,279,0)
+(60,251,0)
+(57,59,0)
+(15,240,0)
+(205,16,0)
+(237,170,0)
+(211,245,0)
+(277,50,0)
+(223,59,0)
+(97,106,0)
+(207,65,0)
+(234,219,0)
+(173,71,0)
+(165,112,0)
+(35,138,0)
+(256,96,0)
+(52,33,0)
+(57,65,0)
+(297,138,0)
+(103,128,0)
+(137,271,0)
+(109,258,0)
+(214,65,0)
+(98,167,0)
+(173,42,0)
+(281,225,0)
+(297,189,0)
+(219,189,0)
+(260,65,0)
+(117,188,0)
+(235,71,0)
+(15,59,0)
+(123,225,0)
+(253,214,0)
+(91,276,0)
+(83,116,0)
+(71,173,0)
+(77,166,0)
+(219,138,0)
+(247,174,0)
+(177,217,0)
+(292,15,0)
+(291,240,0)
+(141,68,0)
+(258,269,0)
+(219,46,0)
+(200,291,0)
+(81,105,0)
+(265,120,0)
+(217,223,0)
+(124,151,0)
+(263,239,0)
+(75,60,0)
+(195,120,0)
+(294,42,0)
+(27,297,0)
+(32,65,0)
+(24,85,0)
+(224,294,0)
+(163,214,0)
+(198,244,0)
+(87,116,0)
+(9,178,0)
+(189,96,0)
+(0,163,0)
+(51,217,0)
+(148,226,0)
+(138,65,0)
+(175,194,0)
+(172,20,0)
+(213,115,0)
+(242,115,0)
+(104,174,0)
+(168,239,0)
+(205,245,0)
+(244,85,0)
+(245,127,0)
+(153,233,0)
+(75,269,0)
+(205,59,0)
+(88,228,0)
+(84,16,0)
+(79,13,0)
+(305,65,0)
+(248,20,0)
+(225,13,0)
+(41,114,0)
+(113,32,0)
+(233,175,0)
+(109,4,0)
+(12,276,0)
+(164,240,0)
+(16,84,0)
+(178,9,0)
+(208,2,0)
+(188,174,0)
+(73,175,0)
+(291,65,0)
+(78,71,0)
+(151,58,0)
+(285,174,0)
+(244,65,0)
+(194,159,0)
+(176,228,0)
+(225,269,0)
+(285,2,0)
+(307,196,0)
+(13,169,0)
+(122,187,0)
+(102,293,0)
+(125,16,0)
+(167,42,0)
+(248,101,0)
+(189,189,0)
+(14,116,0)
+(7,105,0)
+(35,240,0)
+(212,9,0)
+(301,228,0)
+(269,2,0)
+(62,225,0)
+(193,52,0)
+(58,71,0)
+(188,216,0)
+(28,56,0)
+(19,115,0)
+(279,58,0)
+(150,85,0)
+(56,2,0)
+(252,2,0)
+(197,73,0)
+(151,169,0)
+(297,27,0)
+(304,116,0)
+(36,59,0)
+(0,294,0)
+(179,33,0)
+(276,42,0)
+(240,59,0)
+(120,138,0)
+(10,105,0)
+(219,65,0)
+(229,228,0)
+(163,0,0)
+(118,108,0)
+(120,85,0)
+(6,268,0)
+(135,105,0)
+(171,159,0)
+(64,104,0)
+(215,148,0)
+(45,189,0)
+(302,165,0)
+(168,70,0)
+(250,73,0)
+(167,165,0)
+(54,216,0)
+(271,22,0)
+(304,85,0)
+(83,112,0)
+(244,141,0)
+(67,197,0)
+(220,245,0)
+(120,203,0)
+(22,105,0)
+(115,242,0)
+(257,46,0)
+(12,54,0)
+(80,276,0)
+(101,266,0)
+(61,275,0)
+(160,229,0)
+(166,106,0)
+(156,29,0)
+(214,163,0)
+(233,59,0)
+(60,75,0)
+(185,269,0)
+(282,27,0)
+(181,57,0)
+(149,2,0)
+(201,2,0)
+(103,106,0)
+(114,41,0)
+(223,240,0)
+(15,65,0)
+(174,225,0)
+(246,304,0)
+(291,138,0)
+(130,29,0)
+(143,121,0)
+(227,244,0)
+(186,33,0)
+(298,33,0)
+(184,233,0)
+(249,75,0)
+(188,285,0)
+(58,105,0)
+(187,208,0)
+(269,187,0)
+(120,59,0)
+(66,0,0)
+(306,169,0)
+(158,35,0)
+(33,105,0)
+(79,169,1)
+(244,85,1)
+(199,200,1)
+(244,227,1)
+(157,141,1)
+(163,32,1)
+(109,258,1)
+(248,20,1)
+(230,61,1)
+(95,230,1)
+(5,125,1)
+(57,138,1)
+(223,108,1)
+(9,34,1)
+(223,111,1)
+(138,138,1)
+(260,132,1)
+(57,181,1)
+(271,22,1)
+(243,115,1)
+(24,150,1)
+(166,116,1)
+(3,206,1)
+(216,54,1)
+(248,55,1)
+(200,242,1)
+(275,59,1)
+(91,192,1)
+(286,247,1)
+(115,240,1)
+(73,250,1)
+(275,138,1)
+(35,158,1)
+(279,58,1)
+(35,65,1)
+(83,116,1)
+(45,41,1)
+(146,255,1)
+(86,283,1)
+(260,138,1)
+(33,186,1)
+(139,48,1)
+(273,58,1)
+(89,276,1)
+(215,274,1)
+(196,295,1)
+(83,139,1)
+(277,13,1)
+(301,245,1)
+(297,65,1)
+(291,199,1)
+(266,59,1)
+(283,46,1)
+(292,12,1)
+(65,59,1)
+(137,69,1)
+(266,90,1)
+(223,240,1)
+(143,245,1)
+(120,240,1)
+(95,108,1)
+(228,176,1)
+(194,175,1)
+(258,288,1)
+(265,298,1)
+(219,59,1)
+(21,238,1)
+(165,167,1)
+(111,93,1)
+(192,4,1)
+(203,120,1)
+(205,59,1)
+(29,72,1)
+(266,65,1)
+(281,204,1)
+(282,297,1)
+(101,266,1)
+(20,194,1)
+(115,59,1)
+(188,174,1)
+(114,121,1)
+(75,269,1)
+(198,68,1)
+(172,101,1)
+(215,148,1)
+(57,65,1)
+(229,160,1)
+(118,286,1)
+(130,271,1)
+(104,174,1)
+(297,245,1)
+(84,16,1)
+(46,257,1)
+(214,65,1)
+(120,85,1)
+(138,86,1)
+(23,264,1)
+(35,59,1)
+(277,269,1)
+(75,249,1)
+(242,243,1)
+(304,116,1)
+(220,57,1)
+(28,240,1)
+(291,240,1)
+(242,115,1)
+(240,59,1)
+(112,83,1)
+(203,52,1)
+(233,59,1)
+(246,116,1)
+(70,152,1)
+(136,0,1)
+(248,101,1)
+(264,95,1)
+(170,35,1)
+(156,231,1)
+(143,65,1)
+(152,168,1)
+(118,108,1)
+(217,223,1)
+(128,112,1)
+(143,59,1)
+(235,173,1)
+(300,94,1)
+(299,134,1)
+(107,60,1)
+(112,165,1)
+(240,65,1)
+(184,153,1)
+(56,28,1)
+(190,117,1)
+(304,119,1)
+(204,216,1)
+(88,228,1)
+(51,247,1)
+(40,22,1)
+(11,3,1)
+(0,294,1)
+(178,42,1)
+(175,73,1)
+(291,59,1)
+(32,59,1)
+(103,128,1)
+(122,185,1)
+(188,247,1)
+(16,205,1)
+(74,196,1)
+(263,95,1)
+(274,99,1)
+(244,65,1)
+(19,230,1)
+(106,97,1)
+(294,224,1)
+(26,193,1)
+(93,177,1)
+(120,116,1)
+(14,280,1)
+(275,240,1)
+(195,265,1)
+(35,230,1)
+(18,170,1)
+(55,20,1)
+(231,29,1)
+(253,59,1)
+(133,228,1)
+(223,65,1)
+(72,130,1)
+(15,240,1)
+(232,196,1)
+(151,169,1)
+(29,42,1)
+(85,116,1)
+(59,218,1)
+(20,172,1)
+(97,103,1)
+(52,33,1)
+(102,64,1)
+(258,269,1)
+(239,174,1)
+(303,57,1)
+(189,245,1)
+(186,179,1)
+(82,98,1)
+(233,184,1)
+(66,294,1)
+(208,270,1)
+(163,0,1)
+(244,59,1)
+(148,279,1)
+(244,116,1)
+(41,114,1)
+(280,248,1)
+(293,102,1)
+(269,208,1)
+(161,291,1)
+(205,245,1)
+(120,59,1)
+(98,183,1)
+(192,251,1)
+(219,189,1)
+(120,138,1)
+(206,203,1)
+(167,82,1)
+(13,151,1)
+(64,104,1)
+(0,66,1)
+(174,225,1)
+(189,84,1)
+(4,76,1)
+(247,51,1)
+(108,236,1)
+(32,65,1)
+(104,247,1)
+(129,269,1)
+(142,5,1)
+(267,262,1)
+(225,13,1)
+(260,59,1)
+(106,103,1)
+(179,13,1)
+(151,58,1)
+(68,156,1)
+(125,45,1)
+(13,169,1)
+(44,174,1)
+(116,87,1)
+(303,221,1)
+(197,110,1)
+(143,189,1)
+(205,189,1)
+(1,128,1)
+(275,11,1)
+(307,70,1)
+(240,230,1)
+(169,306,1)
+(210,180,1)
+(222,273,1)
+(170,85,1)
+(160,189,1)
+(239,263,1)
+(15,138,1)
+(246,85,1)
+(265,33,1)
+(238,241,1)
+(138,59,1)
+(165,302,1)
+(296,17,1)
+(275,65,1)
+(297,138,1)
+(223,138,1)
+(259,260,1)
+(92,108,1)
+(212,178,1)
+(77,1,1)
+(51,174,1)
+(12,276,1)
+(15,65,1)
+(261,100,1)
+(115,65,1)
+(61,275,1)
+(306,303,1)
+(276,42,1)
+(247,247,1)
+(124,79,1)
+(181,157,1)
+(110,67,1)
+(247,174,1)
+(188,259,1)
+(65,305,1)
+(115,213,1)
+(250,197,1)
+(47,92,1)
+(241,88,1)
+(85,85,1)
+(295,307,1)
+(48,165,1)
+(257,219,1)
+(22,222,1)
+(54,12,1)
+(119,246,1)
+(27,282,1)
+(121,143,1)
+(153,73,1)
+(141,68,1)
+(185,208,1)
+(123,281,1)
+(298,33,1)
+(175,233,1)
+(83,85,1)
+(14,214,1)
+(188,260,1)
+(15,191,1)
+(117,232,1)
+(104,74,1)
+(205,65,1)
+(141,244,1)
+(168,239,1)
+(90,210,1)
+(37,21,1)
+(133,229,1)
+(213,19,1)
+(233,65,1)
+(288,291,1)
+(262,50,1)
+(65,65,1)
+(232,293,1)
+(174,269,1)
+(134,141,1)
+(255,27,1)
+(214,253,1)
+(140,9,1)
+(271,137,1)
+(106,166,1)
+(32,113,1)
+(57,59,1)
+(62,123,1)
+(205,138,1)
+(31,23,1)
+(197,42,1)
+(302,167,1)
+(192,267,1)
+(174,13,1)
+(225,269,1)
+(164,290,1)
+(50,277,1)
+(99,203,1)
+(143,37,1)
+(99,39,1)
+(35,240,1)
+(182,122,1)
+(9,178,1)
+(115,138,1)
+(151,300,1)
+(298,129,1)
+(260,240,1)
+(269,187,1)
+(225,216,1)
+(166,85,1)
+(176,301,1)
+(193,120,1)
+(170,116,1)
+(20,126,1)
+(285,174,1)
+(270,155,1)
+(103,209,1)
+(296,241,1)
+(178,40,1)
+(219,65,1)
+(69,106,1)
+(17,41,1)
+(173,261,1)
+(188,216,1)
+(240,240,1)
+(289,253,1)
+(85,24,1)
+(34,178,1)
+(191,292,1)
+(279,299,1)
+(46,219,1)
+(245,211,1)
+(260,65,1)
+(68,63,1)
+(240,138,1)
+(221,46,1)
+(39,170,1)
+(285,188,1)
+(297,43,1)
+(156,29,1)
+(54,15,1)
+(297,189,1)
+(87,14,1)
+(15,59,1)
+(223,59,1)
+(196,108,1)
+(251,107,1)
+(183,304,1)
+(205,142,1)
+(36,140,1)
+(67,8,1)
+(227,198,1)
+(167,42,1)
+(8,214,1)
+(38,166,1)
+(177,31,1)
+(63,156,1)
+(73,197,1)
+(76,109,1)
+(207,248,1)
+(189,189,1)
+(78,173,1)
+(173,42,1)
+(143,138,1)
+(211,220,1)
+(294,42,1)
+(285,247,1)
+(95,47,1)
+(35,138,1)
+(120,65,1)
+(234,296,1)
+(219,245,1)
+(158,44,1)
+(225,62,1)
+(180,194,1)
+(170,237,1)
+(219,234,1)
+(138,65,1)
+(166,77,1)
+(27,297,1)
+(43,133,1)
+(94,124,1)
+(157,138,1)
+(187,208,1)
+(9,212,1)
+(187,182,1)
+(291,65,1)
+(132,190,1)
+(253,65,1)
+(276,80,1)
+(92,118,1)
+(304,85,1)
+(150,106,1)
+(219,138,1)
+(291,138,1)
+(240,164,1)
+(71,78,1)
+(58,71,1)
+(137,304,1)
+(115,230,1)
+(218,36,1)
+(239,247,1)
+(214,163,1)
+(71,235,1)
+(224,289,1)
+(249,242,1)
+(290,285,1)
+(120,195,1)
+(12,89,1)
+(60,75,1)
+(113,136,1)
+(75,13,1)
+(51,217,1)
+(237,35,1)
+(214,59,1)
+(80,91,1)
+(71,173,1)
+(52,26,1)
+(258,13,1)
+(88,146,1)
+(236,18,1)
+(103,38,1)
+(241,27,1)
+(155,56,1)
+(297,59,1)
+(305,207,1)
+(229,228,1)
+(277,161,1)
+(93,95,2)
+(90,214,2)
+(223,95,2)
+(108,170,2)
+(120,141,2)
+(244,65,2)
+(65,59,2)
+(38,304,2)
+(58,71,2)
+(241,41,2)
+(277,13,2)
+(307,170,2)
+(170,35,2)
+(16,41,2)
+(182,170,2)
+(219,138,2)
+(175,233,2)
+(304,106,2)
+(242,115,2)
+(67,214,2)
+(239,174,2)
+(168,239,2)
+(241,27,2)
+(223,138,2)
+(165,167,2)
+(35,138,2)
+(51,174,2)
+(258,13,2)
+(13,169,2)
+(189,189,2)
+(35,59,2)
+(291,59,2)
+(244,116,2)
+(156,29,2)
+(143,245,2)
+(22,222,2)
+(183,304,2)
+(57,46,2)
+(24,106,2)
+(110,214,2)
+(210,214,2)
+(219,245,2)
+(44,203,2)
+(57,138,2)
+(123,203,2)
+(240,170,2)
+(302,304,2)
+(181,46,2)
+(80,203,2)
+(3,203,2)
+(199,242,2)
+(155,170,2)
+(107,242,2)
+(267,291,2)
+(180,214,2)
+(89,203,2)
+(205,189,2)
+(114,241,2)
+(285,247,2)
+(285,170,2)
+(41,241,2)
+(257,57,2)
+(146,27,2)
+(51,217,2)
+(120,85,2)
+(15,65,2)
+(238,241,2)
+(240,59,2)
+(120,138,2)
+(168,170,2)
+(122,170,2)
+(15,240,2)
+(112,165,2)
+(292,203,2)
+(163,32,2)
+(225,216,2)
+(223,59,2)
+(301,57,2)
+(181,141,2)
+(280,248,2)
+(35,230,2)
+(266,214,2)
+(163,0,2)
+(117,170,2)
+(279,58,2)
+(115,138,2)
+(115,230,2)
+(223,65,2)
+(214,65,2)
+(247,247,2)
+(189,84,2)
+(51,95,2)
+(124,141,2)
+(31,95,2)
+(219,65,2)
+(175,73,2)
+(248,214,2)
+(195,141,2)
+(39,170,2)
+(27,297,2)
+(289,253,2)
+(258,269,2)
+(217,223,2)
+(188,174,2)
+(52,33,2)
+(66,253,2)
+(153,214,2)
+(282,57,2)
+(264,95,2)
+(68,156,2)
+(103,128,2)
+(240,65,2)
+(294,42,2)
+(128,112,2)
+(190,170,2)
+(103,304,2)
+(143,65,2)
+(304,116,2)
+(61,203,2)
+(219,189,2)
+(179,141,2)
+(216,54,2)
+(95,230,2)
+(104,247,2)
+(236,170,2)
+(12,203,2)
+(248,20,2)
+(109,258,2)
+(35,240,2)
+(184,214,2)
+(17,41,2)
+(98,304,2)
+(114,121,2)
+(138,138,2)
+(47,170,2)
+(247,51,2)
+(305,248,2)
+(285,188,2)
+(77,304,2)
+(70,170,2)
+(291,240,2)
+(12,276,2)
+(247,95,2)
+(151,141,2)
+(255,27,2)
+(5,41,2)
+(277,269,2)
+(266,65,2)
+(73,214,2)
+(65,248,2)
+(61,275,2)
+(251,242,2)
+(97,304,2)
+(296,57,2)
+(32,59,2)
+(262,291,2)
+(20,214,2)
+(88,228,2)
+(270,170,2)
+(133,41,2)
+(0,253,2)
+(82,304,2)
+(54,12,2)
+(32,253,2)
+(195,170,2)
+(244,68,2)
+(265,141,2)
+(205,59,2)
+(95,170,2)
+(120,116,2)
+(91,203,2)
+(237,203,2)
+(169,141,2)
+(166,85,2)
+(253,248,2)
+(239,170,2)
+(178,42,2)
+(109,291,2)
+(248,101,2)
+(165,304,2)
+(205,41,2)
+(85,106,2)
+(299,141,2)
+(174,13,2)
+(244,59,2)
+(139,304,2)
+(266,59,2)
+(112,83,2)
+(306,141,2)
+(52,120,2)
+(207,248,2)
+(75,269,2)
+(160,41,2)
+(223,240,2)
+(194,214,2)
+(73,197,2)
+(115,65,2)
+(13,151,2)
+(206,203,2)
+(95,95,2)
+(269,187,2)
+(249,242,2)
+(120,240,2)
+(205,245,2)
+(35,203,2)
+(41,114,2)
+(166,116,2)
+(16,205,2)
+(101,214,2)
+(223,108,2)
+(304,85,2)
+(20,126,2)
+(83,85,2)
+(138,59,2)
+(118,95,2)
+(128,304,2)
+(35,65,2)
+(76,291,2)
+(136,253,2)
+(242,203,2)
+(54,203,2)
+(274,141,2)
+(172,214,2)
+(288,291,2)
+(11,203,2)
+(197,42,2)
+(229,41,2)
+(185,170,2)
+(104,196,2)
+(239,247,2)
+(293,196,2)
+(54,15,2)
+(164,170,2)
+(101,266,2)
+(275,240,2)
+(34,178,2)
+(56,170,2)
+(95,108,2)
+(85,85,2)
+(37,241,2)
+(85,116,2)
+(303,141,2)
+(283,46,2)
+(259,170,2)
+(141,244,2)
+(281,203,2)
+(134,141,2)
+(196,170,2)
+(75,242,2)
+(219,59,2)
+(141,68,2)
+(32,65,2)
+(158,203,2)
+(216,203,2)
+(295,170,2)
+(188,216,2)
+(69,106,2)
+(300,141,2)
+(79,141,2)
+(277,291,2)
+(113,253,2)
+(247,174,2)
+(132,170,2)
+(57,65,2)
+(83,304,2)
+(8,214,2)
+(173,42,2)
+(203,120,2)
+(217,95,2)
+(64,104,2)
+(212,178,2)
+(213,203,2)
+(258,291,2)
+(170,116,2)
+(246,106,2)
+(211,57,2)
+(240,240,2)
+(15,59,2)
+(291,65,2)
+(214,59,2)
+(13,141,2)
+(263,170,2)
+(220,57,2)
+(225,269,2)
+(187,208,2)
+(214,163,2)
+(260,170,2)
+(228,57,2)
+(148,141,2)
+(227,68,2)
+(203,141,2)
+(232,170,2)
+(55,214,2)
+(194,175,2)
+(143,138,2)
+(125,41,2)
+(115,240,2)
+(143,59,2)
+(291,242,2)
+(151,169,2)
+(260,138,2)
+(75,13,2)
+(118,108,2)
+(286,95,2)
+(140,9,2)
+(143,189,2)
+(297,59,2)
+(18,170,2)
+(187,170,2)
+(27,57,2)
+(208,170,2)
+(111,95,2)
+(186,141,2)
+(50,291,2)
+(298,170,2)
+(265,170,2)
+(57,141,2)
+(45,41,2)
+(28,170,2)
+(23,95,2)
+(225,13,2)
+(46,57,2)
+(151,58,2)
+(86,46,2)
+(276,42,2)
+(120,170,2)
+(106,103,2)
+(60,75,2)
+(200,242,2)
+(197,214,2)
+(174,203,2)
+(297,57,2)
+(298,33,2)
+(221,46,2)
+(240,138,2)
+(20,194,2)
+(143,241,2)
+(167,304,2)
+(279,141,2)
+(229,228,2)
+(297,65,2)
+(157,46,2)
+(167,42,2)
+(188,247,2)
+(9,178,2)
+(219,57,2)
+(276,203,2)
+(78,173,2)
+(275,65,2)
+(60,242,2)
+(120,59,2)
+(198,68,2)
+(294,253,2)
+(19,203,2)
+(241,57,2)
+(50,277,2)
+(297,138,2)
+(291,138,2)
+(0,294,2)
+(115,203,2)
+(275,203,2)
+(115,59,2)
+(138,65,2)
+(234,57,2)
+(205,65,2)
+(138,46,2)
+(120,65,2)
+(43,57,2)
+(204,203,2)
+(271,22,2)
+(260,240,2)
+(205,138,2)
+(230,61,2)
+(33,141,2)
+(65,65,2)
+(71,173,2)
+(233,65,2)
+(62,203,2)
+(243,203,2)
+(225,203,2)
+(240,230,2)
+(150,106,2)
+(142,41,2)
+(84,41,2)
+(64,196,2)
+(46,219,2)
+(29,42,2)
+(260,59,2)
+(297,245,2)
+(285,174,2)
+(245,57,2)
+(26,120,2)
+(51,247,2)
+(203,52,2)
+(269,170,2)
+(250,214,2)
+(192,203,2)
+(166,304,2)
+(106,166,2)
+(104,174,2)
+(233,214,2)
+(189,245,2)
+(260,65,2)
+(235,173,2)
+(112,304,2)
+(188,260,2)
+(215,148,2)
+(119,106,2)
+(92,95,2)
+(290,170,2)
+(47,95,2)
+(244,85,2)
+(121,143,2)
+(48,304,2)
+(133,57,2)
+(106,304,2)
+(92,170,2)
+(297,41,2)
+(129,170,2)
+(83,116,2)
+(224,253,2)
+(230,203,2)
+(94,141,2)
+(57,59,2)
+(170,203,2)
+(161,291,2)
+(170,85,2)
+(214,248,2)
+(269,208,2)
+(121,241,2)
+(188,170,2)
+(88,27,2)
+(1,304,2)
+(193,120,2)
+(157,141,2)
+(176,57,2)
+(163,253,2)
+(102,196,2)
+(43,41,2)
+(15,203,2)
+(15,138,2)
+(4,291,2)
+(282,41,2)
+(191,203,2)
+(103,209,2)
+(297,189,2)
+(275,59,2)
+(174,269,2)
+(175,214,2)
+(241,88,2)
+(21,241,2)
+(189,41,2)
+(152,170,2)
+(74,196,2)
+(196,108,2)
+(27,41,2)
+(84,16,2)
+(99,141,2)
+(203,170,2)
+(275,138,2)
+(233,59,2)
+(177,95,2)
+(174,225,2)
+-----------------------------------
+(0,regs->psw.addr)
+(1,code)
+(2,)
+(3,code)
+(4,*ptr++ = \'>\')
+(5,start)
+(6,if (__copy_from_user(code + end,\n\\n\\t\\t\\t\\t     (char __user *)
+(7,opsize)
+(8,addr)
+(9,user_mode(regs)
+(10,ptr)
+(11,start)
+(12,regs->psw.addr)
+(13,ptr += sprintf(ptr, "%s Code:", mode)
+(14,end)
+(15,start - 32)
+(16,code[start + i])
+(17,break;)
+(18,i)
+(19,start)
+(20,(char __user *)
+(21,start)
+(22,old_fs = get_fs()
+(23,ptr)
+(24,2)
+(25,mode)
+(26,8)
+(27,start + i < 32)
+(28,buffer)
+(29,regs->psw)
+(30,i)
+(31,"%02x")
+(32,34 - start)
+(33,hops = 0)
+(34,USER_DS)
+(35,start + opsize)
+(36,start)
+(37,i)
+(38,addr)
+(39,break;)
+(40,regs)
+(41,!find_insn(code + start + i)
+(42,struct pt_regs *regs)
+(43,i)
+(44,start)
+(45,i)
+(46,start + i == 32)
+(47,opsize)
+(48,end)
+(49,if ((regs->psw.addr & 1)
+(50,*ptr++)
+(51,sprintf(ptr, "%02x", code[start + i])
+(52,hops < 8)
+(53,while (start < end && hops < 8)
+(54,regs->psw.addr + start - 32)
+(55,2)
+(56,printk(buffer)
+(57,start < 32)
+(58,*mode = user_mode(regs)
+(59,start = 32)
+(60,*ptr++)
+(61,insn_length(code[start])
+(62,addr)
+(63,1)
+(64,*ptr++)
+(65,start -= 2)
+(66,addr)
+(67,regs)
+(68,regs->psw.addr & 1)
+(69,break;)
+(70,*ptr++ = \'\\t\')
+(71,user_mode(regs)
+(72,psw)
+(73,regs->psw.addr)
+(74,ptr)
+(75,ptr++)
+(76,\'>\')
+(77,end)
+(78,"Krnl")
+(79,ptr)
+(80,psw)
+(81,for (end = 32; end < 64; end += 2)
+(82,psw)
+(83,end - 32)
+(84,insn_length(code[start + i])
+(85,end += 2)
+(86,2)
+(87,32)
+(88,hops < 3)
+(89,addr)
+(90,2)
+(91,regs)
+(92,i)
+(93,start)
+(94,"%s Code:")
+(95,i < opsize)
+(96,)
+(97,2)
+(98,regs)
+(99,"\\n")
+(100,mode)
+(101,code + start - 2)
+(102,\'\\t\')
+(103,(char __user *)
+(104,ptr++)
+(105,)
+(106,__copy_from_user(code + end,\n\\n\\t\\t\\t\\t     (char __user *)
+(107,\'#\')
+(108,i = 0)
+(109,*ptr++)
+(110,psw)
+(111,i)
+(112,regs->psw.addr + end - 32)
+(113,start)
+(114,find_insn(code + start + i)
+(115,start + opsize)
+(116,end = 32)
+(117,ptr)
+(118,i++)
+(119,64)
+(120,start < end)
+(121,code + start + i)
+(122,ptr)
+(123,"%016lx: ")
+(124,ptr)
+(125,code)
+(126,char __user *)
+(127,)
+(128,addr = regs->psw.addr + end - 32)
+(129,hops)
+(130,regs)
+(131,addr)
+(132,start)
+(133,start)
+(134,"%s Code: Bad PSW.\\n")
+(135,code)
+(136,34)
+(137,old_fs)
+(138,start += 2)
+(139,32)
+(140,set_fs(user_mode(regs)
+(141,(regs->psw.addr & 1)
+(142,i)
+(143,start + i)
+(144,buffer)
+(145,end)
+(146,3)
+(147,for (start = 32; start && regs->psw.addr >= 34 - start; start -= 2)
+(148,return;)
+(149,if  (start + opsize == 32)
+(150,end)
+(151,sprintf(ptr, "%s Code:", mode)
+(152,\'\\t\')
+(153,34)
+(154,old_fs)
+(155,ptr)
+(156,regs->psw.addr)
+(157,start)
+(158,opsize)
+(159,)
+(160,hops)
+(161,ptr)
+(162,for (i = 0; i < opsize; i++)
+(163,regs->psw.addr >= 34 - start)
+(164,opsize)
+(165,regs->psw.addr)
+(166,code + end)
+(167,regs->psw)
+(168,*ptr++)
+(169,ptr = buffer)
+(170,start + opsize >= end)
+(171,if (__copy_from_user(code + start - 2,\n\\n\\t\\t\\t\\t     (char __user *)
+(172,addr)
+(173,user_mode(regs)
+(174,ptr += sprintf(ptr, "%016lx: ", addr)
+(175,regs->psw.addr - 34 + start)
+(176,0)
+(177,code)
+(178,user_mode(regs)
+(179,hops)
+(180,code)
+(181,32)
+(182,"\\n          ")
+(183,addr)
+(184,start)
+(185,ptr)
+(186,0)
+(187,sprintf(ptr, "\\n          ")
+(188,print_insn(ptr, code + start, addr)
+(189,i += insn_length(code[start + i])
+(190,code)
+(191,32)
+(192,addr)
+(193,hops)
+(194,addr = regs->psw.addr - 34 + start)
+(195,end)
+(196,i < 6)
+(197,regs->psw)
+(198,start)
+(199,32)
+(200,start)
+(201,if (i < 6)
+(202,hops)
+(203,start < end && hops < 8)
+(204,ptr)
+(205,start + i)
+(206,opsize)
+(207,start)
+(208,ptr = buffer)
+(209,char __user *)
+(210,start)
+(211,0)
+(212,KERNEL_DS)
+(213,opsize)
+(214,start && regs->psw.addr >= 34 - start)
+(215,RET)
+(216,addr = regs->psw.addr + start - 32)
+(217,code[start + i])
+(218,32)
+(219,start + i)
+(220,i)
+(221,break;)
+(222,get_fs()
+(223,start + i)
+(224,psw)
+(225,sprintf(ptr, "%016lx: ", addr)
+(226,)
+(227,end)
+(228,hops = 0)
+(229,hops++)
+(230,opsize = insn_length(code[start])
+(231,addr)
+(232,ptr)
+(233,34 + start)
+(234,i)
+(235,"User")
+(236,0)
+(237,end)
+(238,code)
+(239,ptr++)
+(240,start += opsize)
+(241,start + i < 32 && hops < 3)
+(242,start + opsize == 32)
+(243,32)
+(244,start >= end)
+(245,i = 0)
+(246,end)
+(247,ptr += sprintf(ptr, "%02x", code[start + i])
+(248,__copy_from_user(code + start - 2,\n\\n\\t\\t\\t\\t     (char __user *)
+(249,ptr)
+(250,addr)
+(251,*ptr++ = \'#\')
+(252,if (start + opsize >= end)
+(253,start)
+(254,while (start < 32)
+(255,hops)
+(256,if (!find_insn(code + start + i)
+(257,32)
+(258,ptr++)
+(259,addr)
+(260,code + start)
+(261,regs)
+(262,\' \')
+(263,ptr)
+(264,ptr)
+(265,start)
+(266,start - 2)
+(267,*ptr++ = \' \')
+(268,)
+(269,ptr += sprintf(ptr, "\\n          ")
+(270,buffer)
+(271,set_fs(old_fs)
+(272,)
+(273,old_fs)
+(274,printk("\\n")
+(275,code[start])
+(276,regs->psw)
+(277,ptr++)
+(278,for (i = 0, hops = 0; start + i < 32 && hops < 3; hops++)
+(279,printk("%s Code: Bad PSW.\\n", mode)
+(280,break;)
+(281,ptr)
+(282,32)
+(283,start)
+(284,start)
+(285,ptr += print_insn(ptr, code + start, addr)
+(286,i)
+(287,if (start + i == 32)
+(288,ptr)
+(289,regs)
+(290,start)
+(291,start == 32)
+(292,start)
+(293,*ptr++ = \'\\t\')
+(294,regs->psw)
+(295,6)
+(296,start)
+(297,start + i)
+(298,hops++)
+(299,mode)
+(300,mode)
+(301,hops)
+(302,addr)
+(303,ptr)
+(304,end < 64)
+(305,2)
+(306,buffer)
+(307,i)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

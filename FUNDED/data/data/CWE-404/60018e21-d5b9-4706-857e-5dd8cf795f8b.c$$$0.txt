@@ -1,0 +1,4502 @@
+-----label-----
+0
+-----code-----
+static int adfs_fill_super(struct super_block *sb, void *data, int silent)
+{
+	struct adfs_discrecord *dr;
+	struct buffer_head *bh;
+	struct object_info root_obj;
+	unsigned char *b_data;
+	struct adfs_sb_info *asb;
+	struct inode *root;
+	int ret = -EINVAL;
+
+	sb->s_flags |= MS_NODIRATIME;
+
+	asb = kzalloc(sizeof(*asb), GFP_KERNEL);
+	if (!asb)
+		return -ENOMEM;
+	sb->s_fs_info = asb;
+
+	/* set default options */
+	asb->s_uid = GLOBAL_ROOT_UID;
+	asb->s_gid = GLOBAL_ROOT_GID;
+	asb->s_owner_mask = ADFS_DEFAULT_OWNER_MASK;
+	asb->s_other_mask = ADFS_DEFAULT_OTHER_MASK;
+	asb->s_ftsuffix = 0;
+
+	if (parse_options(sb, data))
+		goto error;
+
+	sb_set_blocksize(sb, BLOCK_SIZE);
+	if (!(bh = sb_bread(sb, ADFS_DISCRECORD / BLOCK_SIZE))) {
+		adfs_error(sb, "unable to read superblock");
+		ret = -EIO;
+		goto error;
+	}
+
+	b_data = bh->b_data + (ADFS_DISCRECORD % BLOCK_SIZE);
+
+	if (adfs_checkbblk(b_data)) {
+		if (!silent)
+			printk("VFS: Can't find an adfs filesystem on dev "
+				"%s.\n", sb->s_id);
+		ret = -EINVAL;
+		goto error_free_bh;
+	}
+
+	dr = (struct adfs_discrecord *)(b_data + ADFS_DR_OFFSET);
+
+	/*
+	 * Do some sanity checks on the ADFS disc record
+	 */
+	if (adfs_checkdiscrecord(dr)) {
+		if (!silent)
+			printk("VPS: Can't find an adfs filesystem on dev "
+				"%s.\n", sb->s_id);
+		ret = -EINVAL;
+		goto error_free_bh;
+	}
+
+	brelse(bh);
+	if (sb_set_blocksize(sb, 1 << dr->log2secsize)) {
+		bh = sb_bread(sb, ADFS_DISCRECORD / sb->s_blocksize);
+		if (!bh) {
+			adfs_error(sb, "couldn't read superblock on "
+				"2nd try.");
+			ret = -EIO;
+			goto error;
+		}
+		b_data = bh->b_data + (ADFS_DISCRECORD % sb->s_blocksize);
+		if (adfs_checkbblk(b_data)) {
+			adfs_error(sb, "disc record mismatch, very weird!");
+			ret = -EINVAL;
+			goto error_free_bh;
+		}
+		dr = (struct adfs_discrecord *)(b_data + ADFS_DR_OFFSET);
+	} else {
+		if (!silent)
+			printk(KERN_ERR "VFS: Unsupported blocksize on dev "
+				"%s.\n", sb->s_id);
+		ret = -EINVAL;
+		goto error;
+	}
+
+	/*
+	 * blocksize on this device should now be set to the ADFS log2secsize
+	 */
+
+	sb->s_magic		= ADFS_SUPER_MAGIC;
+	asb->s_idlen		= dr->idlen;
+	asb->s_map_size		= dr->nzones | (dr->nzones_high << 8);
+	asb->s_map2blk		= dr->log2bpmb - dr->log2secsize;
+	asb->s_size    		= adfs_discsize(dr, sb->s_blocksize_bits);
+	asb->s_version 		= dr->format_version;
+	asb->s_log2sharesize	= dr->log2sharesize;
+
+	asb->s_map = adfs_read_map(sb, dr);
+	if (IS_ERR(asb->s_map)) {
+		ret =  PTR_ERR(asb->s_map);
+		goto error_free_bh;
+	}
+
+	brelse(bh);
+
+	/*
+	 * set up enough so that we can read an inode
+	 */
+	sb->s_op = &adfs_sops;
+
+	dr = (struct adfs_discrecord *)(asb->s_map[0].dm_bh->b_data + 4);
+
+	root_obj.parent_id = root_obj.file_id = le32_to_cpu(dr->root);
+	root_obj.name_len  = 0;
+	/* Set root object date as 01 Jan 1987 00:00:00 */
+	root_obj.loadaddr  = 0xfff0003f;
+	root_obj.execaddr  = 0xec22c000;
+	root_obj.size	   = ADFS_NEWDIR_SIZE;
+	root_obj.attr	   = ADFS_NDA_DIRECTORY   | ADFS_NDA_OWNER_READ |
+			     ADFS_NDA_OWNER_WRITE | ADFS_NDA_PUBLIC_READ;
+	root_obj.filetype  = -1;
+
+	/*
+	 * If this is a F+ disk with variable length directories,
+	 * get the root_size from the disc record.
+	 */
+	if (asb->s_version) {
+		root_obj.size = le32_to_cpu(dr->root_size);
+		asb->s_dir     = &adfs_fplus_dir_ops;
+		asb->s_namelen = ADFS_FPLUS_NAME_LEN;
+	} else {
+		asb->s_dir     = &adfs_f_dir_ops;
+		asb->s_namelen = ADFS_F_NAME_LEN;
+	}
+	/*
+	 * ,xyz hex filetype suffix may be added by driver
+	 * to files that have valid RISC OS filetype
+	 */
+	if (asb->s_ftsuffix)
+		asb->s_namelen += 4;
+
+	sb->s_d_op = &adfs_dentry_operations;
+	root = adfs_iget(sb, &root_obj);
+	sb->s_root = d_make_root(root);
+	if (!sb->s_root) {
+		int i;
+		for (i = 0; i < asb->s_map_size; i++)
+			brelse(asb->s_map[i].dm_bh);
+		kfree(asb->s_map);
+		adfs_error(sb, "get root inode failed\n");
+		ret = -EIO;
+		goto error;
+	}
+	return 0;
+
+error_free_bh:
+	brelse(bh);
+error:
+	sb->s_fs_info = NULL;
+	kfree(asb);
+	return ret;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+13,14
+13,15
+16,17
+16,18
+18,19
+20,21
+20,22
+20,23
+20,24
+20,25
+20,26
+20,27
+20,28
+20,29
+20,30
+20,31
+20,32
+20,33
+20,34
+20,35
+20,36
+20,37
+20,38
+20,39
+20,40
+20,41
+20,42
+20,43
+20,44
+20,45
+20,46
+20,47
+20,48
+20,49
+20,50
+20,51
+20,52
+20,53
+20,54
+20,55
+20,56
+20,57
+20,58
+20,59
+20,60
+20,61
+20,62
+20,63
+20,64
+20,65
+20,66
+20,67
+20,68
+20,69
+20,70
+20,71
+20,72
+20,73
+20,74
+20,75
+21,22
+22,23
+22,24
+23,24
+25,26
+25,27
+28,29
+29,30
+29,31
+30,31
+32,33
+32,34
+35,36
+36,37
+36,38
+37,38
+39,40
+41,42
+42,43
+42,44
+44,45
+44,46
+47,48
+48,49
+48,50
+49,50
+51,52
+51,53
+54,55
+55,56
+55,57
+56,57
+58,59
+58,60
+61,62
+62,63
+62,64
+64,65
+64,66
+66,67
+67,68
+68,69
+70,71
+71,72
+71,73
+72,73
+72,74
+73,74
+76,77
+78,79
+79,80
+79,81
+80,81
+82,83
+82,84
+82,85
+83,84
+85,86
+86,87
+87,88
+88,89
+90,91
+92,93
+92,94
+93,94
+94,95
+96,97
+97,98
+98,99
+100,101
+101,102
+101,103
+102,103
+102,104
+103,104
+106,107
+108,109
+109,110
+109,111
+110,111
+110,112
+111,112
+114,115
+116,117
+117,118
+117,119
+118,119
+118,120
+119,120
+122,123
+124,125
+125,126
+125,127
+126,127
+126,128
+127,128
+130,131
+132,133
+133,134
+133,135
+134,135
+134,136
+135,136
+138,139
+140,141
+141,142
+141,143
+142,143
+142,144
+143,144
+147,148
+147,149
+148,149
+148,150
+148,151
+149,150
+151,152
+153,154
+155,156
+157,158
+158,159
+158,160
+158,161
+159,160
+161,162
+163,164
+165,166
+165,167
+166,167
+167,168
+168,169
+168,170
+169,170
+171,172
+171,173
+171,174
+172,173
+174,175
+176,177
+176,178
+177,178
+179,180
+181,182
+181,183
+181,184
+182,183
+183,184
+183,185
+183,186
+184,185
+186,187
+189,190
+190,191
+190,192
+191,192
+193,194
+194,195
+196,197
+198,199
+199,200
+199,201
+200,201
+202,203
+202,204
+203,204
+203,205
+204,205
+207,208
+208,209
+208,210
+209,210
+211,212
+213,214
+213,215
+214,215
+214,216
+215,216
+217,218
+219,220
+219,221
+219,222
+220,221
+220,222
+221,222
+222,223
+224,225
+225,226
+225,227
+225,228
+226,227
+229,230
+229,231
+230,231
+233,234
+234,235
+234,236
+235,236
+237,238
+238,239
+240,241
+242,243
+243,244
+243,245
+244,245
+246,247
+246,248
+247,248
+247,249
+248,249
+250,251
+252,253
+253,254
+253,255
+254,255
+256,257
+258,259
+258,260
+259,260
+259,261
+260,261
+262,263
+264,265
+264,266
+264,267
+265,266
+265,267
+266,267
+267,268
+269,270
+270,271
+270,272
+270,273
+271,272
+274,275
+274,276
+275,276
+278,279
+279,280
+279,281
+280,281
+282,283
+283,284
+285,286
+287,288
+288,289
+288,290
+289,290
+291,292
+293,294
+293,295
+293,296
+294,295
+294,296
+294,297
+295,296
+297,298
+299,300
+299,301
+301,302
+301,303
+302,303
+305,306
+305,307
+305,308
+305,309
+305,310
+306,307
+307,308
+307,309
+308,309
+310,311
+310,312
+310,313
+311,312
+313,314
+315,316
+315,317
+316,317
+318,319
+318,320
+319,320
+322,323
+322,324
+323,324
+324,325
+326,327
+326,328
+326,329
+327,328
+328,329
+328,330
+328,331
+329,330
+331,332
+334,335
+335,336
+335,337
+336,337
+338,339
+339,340
+341,342
+343,344
+344,345
+344,346
+345,346
+347,348
+347,349
+348,349
+348,350
+349,350
+352,353
+353,354
+353,355
+354,355
+356,357
+356,358
+357,358
+360,361
+360,362
+361,362
+361,363
+362,363
+364,365
+366,367
+366,368
+366,369
+367,368
+368,369
+368,370
+368,371
+369,370
+371,372
+374,375
+375,376
+375,377
+376,377
+378,379
+379,380
+381,382
+383,384
+384,385
+384,386
+385,386
+387,388
+387,389
+388,389
+388,390
+389,390
+391,392
+393,394
+394,395
+394,396
+395,396
+397,398
+399,400
+399,401
+399,402
+400,401
+401,402
+402,403
+402,404
+403,404
+405,406
+406,407
+408,409
+410,411
+411,412
+411,413
+412,413
+412,414
+413,414
+416,417
+418,419
+419,420
+419,421
+420,421
+420,422
+421,422
+424,425
+424,426
+425,426
+428,429
+429,430
+429,431
+430,431
+430,432
+431,432
+434,435
+434,436
+435,436
+435,437
+436,437
+439,440
+440,441
+440,442
+441,442
+441,443
+442,443
+446,447
+447,448
+447,449
+448,449
+448,450
+449,450
+452,453
+452,454
+453,454
+453,455
+454,455
+457,458
+457,459
+458,459
+461,462
+462,463
+462,464
+463,464
+463,465
+464,465
+467,468
+467,469
+467,470
+468,469
+470,471
+472,473
+472,474
+473,474
+476,477
+477,478
+477,479
+478,479
+478,480
+479,480
+482,483
+482,484
+483,484
+486,487
+487,488
+487,489
+488,489
+488,490
+489,490
+492,493
+492,494
+493,494
+496,497
+497,498
+497,499
+498,499
+498,500
+499,500
+502,503
+502,504
+502,505
+503,504
+505,506
+507,508
+509,510
+509,511
+510,511
+510,512
+511,512
+513,514
+513,515
+514,515
+517,518
+517,519
+518,519
+519,520
+519,521
+520,521
+522,523
+522,524
+523,524
+525,526
+525,527
+526,527
+529,530
+531,532
+532,533
+532,534
+533,534
+535,536
+537,538
+538,539
+538,540
+539,540
+539,541
+540,541
+543,544
+544,545
+546,547
+547,548
+547,549
+548,549
+550,551
+550,552
+551,552
+551,553
+552,553
+554,555
+556,557
+557,558
+557,559
+558,559
+558,560
+559,560
+559,561
+560,561
+560,562
+561,562
+561,563
+562,563
+569,570
+570,571
+570,572
+571,572
+571,573
+572,573
+575,576
+575,577
+576,577
+576,578
+577,578
+580,581
+580,582
+581,582
+583,584
+583,585
+584,585
+587,588
+588,589
+588,590
+589,590
+589,591
+590,591
+594,595
+595,596
+595,597
+596,597
+596,598
+597,598
+601,602
+602,603
+602,604
+603,604
+603,605
+604,605
+608,609
+609,610
+609,611
+610,611
+610,612
+611,612
+614,615
+616,617
+617,618
+617,619
+618,619
+618,620
+619,620
+622,623
+622,624
+623,624
+623,625
+624,625
+624,626
+625,626
+627,628
+629,630
+631,632
+633,634
+634,635
+634,636
+635,636
+635,637
+636,637
+639,640
+641,642
+641,643
+641,644
+642,643
+642,644
+643,644
+646,647
+646,648
+646,649
+647,648
+648,649
+648,650
+649,650
+649,651
+650,651
+653,654
+653,655
+654,655
+656,657
+656,658
+657,658
+660,661
+661,662
+661,663
+662,663
+662,664
+663,664
+666,667
+667,668
+669,670
+670,671
+670,672
+671,672
+671,673
+672,673
+675,676
+677,678
+677,679
+678,679
+679,680
+679,681
+680,681
+680,682
+681,682
+684,685
+685,686
+687,688
+688,689
+688,690
+689,690
+689,691
+690,691
+693,694
+695,696
+695,697
+696,697
+696,698
+697,698
+700,701
+701,702
+701,703
+702,703
+702,704
+703,704
+707,708
+708,709
+708,710
+709,710
+709,711
+710,711
+713,714
+714,715
+716,717
+717,718
+717,719
+718,719
+720,721
+720,722
+720,723
+721,722
+723,724
+725,726
+726,727
+728,729
+729,730
+729,731
+730,731
+730,732
+731,732
+734,735
+734,736
+735,736
+737,738
+739,740
+739,741
+740,741
+741,742
+741,743
+742,743
+745,746
+745,747
+745,748
+745,749
+745,750
+745,751
+746,747
+747,748
+747,749
+749,750
+751,752
+751,753
+751,754
+751,755
+752,753
+753,754
+753,755
+754,755
+757,758
+757,759
+758,759
+760,761
+760,762
+761,762
+764,765
+765,766
+767,768
+768,769
+768,770
+769,770
+771,772
+771,773
+772,773
+772,774
+773,774
+773,775
+774,775
+777,778
+780,781
+781,782
+781,783
+782,783
+784,785
+784,786
+785,786
+788,789
+789,790
+789,791
+789,792
+790,791
+792,793
+795,796
+796,797
+796,798
+797,798
+799,800
+800,801
+802,803
+804,805
+806,807
+806,808
+808,809
+809,810
+809,811
+810,811
+812,813
+814,815
+814,816
+816,817
+817,818
+817,819
+818,819
+818,820
+819,820
+822,823
+824,825
+825,826
+825,827
+826,827
+828,829
+830,831
+831,832
+-----nextToken-----
+2,4,7,9,10,12,14,15,17,19,24,26,27,31,33,34,38,40,43,45,46,50,52,53,57,59,60,63,65,69,74,75,77,81,84,89,91,95,99,104,105,107,112,113,115,120,121,123,128,129,131,136,137,139,144,145,146,150,152,154,156,160,162,164,170,173,175,178,180,185,187,188,192,195,197,201,205,206,210,212,216,218,223,227,228,231,232,236,239,241,245,249,251,255,257,261,263,268,272,273,276,277,281,284,286,290,292,296,298,300,303,304,309,312,314,317,320,321,325,330,332,333,337,340,342,346,350,351,355,358,359,363,365,370,372,373,377,380,382,386,390,392,396,398,404,407,409,414,415,417,422,423,426,427,432,433,437,438,443,444,445,450,451,455,456,459,460,465,466,469,471,474,475,480,481,484,485,490,491,494,495,500,501,504,506,508,512,515,516,521,524,527,528,530,534,536,541,542,545,549,553,555,563,564,565,566,567,568,573,574,578,579,582,585,586,591,592,593,598,599,600,605,606,607,612,613,615,620,621,626,628,630,632,637,638,640,644,645,651,652,655,658,659,664,665,668,673,674,676,682,683,686,691,692,694,698,699,704,705,706,711,712,715,719,722,724,727,732,733,736,738,743,744,748,750,755,756,759,762,763,766,770,775,776,778,779,783,786,787,791,793,794,798,801,803,805,807,811,813,815,820,821,823,827,829,832
+-----computeFrom-----
+71,72
+71,73
+79,80
+79,81
+101,102
+101,103
+109,110
+109,111
+117,118
+117,119
+125,126
+125,127
+133,134
+133,135
+141,142
+141,143
+168,169
+168,170
+176,177
+176,178
+190,191
+190,192
+199,200
+199,201
+202,203
+202,204
+208,209
+208,210
+234,235
+234,236
+243,244
+243,245
+253,254
+253,255
+279,280
+279,281
+299,300
+299,301
+307,308
+307,309
+315,316
+315,317
+335,336
+335,337
+344,345
+344,346
+347,348
+347,349
+353,354
+353,355
+375,376
+375,377
+384,385
+384,386
+394,395
+394,396
+402,403
+402,404
+411,412
+411,413
+419,420
+419,421
+429,430
+429,431
+434,435
+434,436
+440,441
+440,442
+447,448
+447,449
+452,453
+452,454
+462,463
+462,464
+477,478
+477,479
+487,488
+487,489
+497,498
+497,499
+519,520
+519,521
+538,539
+538,540
+547,548
+547,549
+557,558
+557,559
+570,571
+570,572
+575,576
+575,577
+588,589
+588,590
+595,596
+595,597
+602,603
+602,604
+609,610
+609,611
+617,618
+617,619
+622,623
+622,624
+623,624
+623,625
+624,625
+624,626
+634,635
+634,636
+648,649
+648,650
+661,662
+661,663
+670,671
+670,672
+679,680
+679,681
+688,689
+688,690
+701,702
+701,703
+708,709
+708,710
+717,718
+717,719
+729,730
+729,731
+753,754
+753,755
+757,758
+757,759
+796,797
+796,798
+817,818
+817,819
+-----guardedBy-----
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;UnaryExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;IdExpression;Name;ReturnStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;GotoStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;GotoStatement;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;IfStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;GotoStatement;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;Pointer;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;IfStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;GotoStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;LiteralExpression;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IfStatement;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;GotoStatement;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;GotoStatement;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;Pointer;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ProblemStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;GotoStatement;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;GotoStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;Pointer;UnaryExpression;BinaryExpression;FieldReference;FieldReference;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;LiteralExpression;IfStatement;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;GotoStatement;Name;ReturnStatement;LiteralExpression;LabelStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LabelStatement;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+static int adfs_fill_super(struct super_block *sb, void *data, int silent){	struct adfs_discrecord *dr;	struct buffer_head *bh;	struct object_info root_obj;	unsigned char *b_data;	struct adfs_sb_info *asb;	struct inode *root;	int ret = -EINVAL;	sb->s_flags |= MS_NODIRATIME;	asb = kzalloc(sizeof(*asb), GFP_KERNEL);	if (!asb)		return -ENOMEM;	sb->s_fs_info = asb;	/* set default options */	asb->s_uid = GLOBAL_ROOT_UID;	asb->s_gid = GLOBAL_ROOT_GID;	asb->s_owner_mask = ADFS_DEFAULT_OWNER_MASK;	asb->s_other_mask = ADFS_DEFAULT_OTHER_MASK;	asb->s_ftsuffix = 0;	if (parse_options(sb, data))		goto error;	sb_set_blocksize(sb, BLOCK_SIZE);	if (!(bh = sb_bread(sb, ADFS_DISCRECORD / BLOCK_SIZE))) {		adfs_error(sb, "unable to read superblock");		ret = -EIO;		goto error;	}	b_data = bh->b_data + (ADFS_DISCRECORD % BLOCK_SIZE);	if (adfs_checkbblk(b_data)) {		if (!silent)			printk("VFS: Can't find an adfs filesystem on dev "				"%s.\n", sb->s_id);		ret = -EINVAL;		goto error_free_bh;	}	dr = (struct adfs_discrecord *)(b_data + ADFS_DR_OFFSET);	/*	 * Do some sanity checks on the ADFS disc record	 */	if (adfs_checkdiscrecord(dr)) {		if (!silent)			printk("VPS: Can't find an adfs filesystem on dev "				"%s.\n", sb->s_id);		ret = -EINVAL;		goto error_free_bh;	}	brelse(bh);	if (sb_set_blocksize(sb, 1 << dr->log2secsize)) {		bh = sb_bread(sb, ADFS_DISCRECORD / sb->s_blocksize);		if (!bh) {			adfs_error(sb, "couldn't read superblock on "				"2nd try.");			ret = -EIO;			goto error;		}		b_data = bh->b_data + (ADFS_DISCRECORD % sb->s_blocksize);		if (adfs_checkbblk(b_data)) {			adfs_error(sb, "disc record mismatch, very weird!");			ret = -EINVAL;			goto error_free_bh;		}		dr = (struct adfs_discrecord *)(b_data + ADFS_DR_OFFSET);	} else {		if (!silent)			printk(KERN_ERR "VFS: Unsupported blocksize on dev "				"%s.\n", sb->s_id);		ret = -EINVAL;		goto error;	}	/*	 * blocksize on this device should now be set to the ADFS log2secsize	 */	sb->s_magic		= ADFS_SUPER_MAGIC;	asb->s_idlen		= dr->idlen;	asb->s_map_size		= dr->nzones | (dr->nzones_high << 8);	asb->s_map2blk		= dr->log2bpmb - dr->log2secsize;	asb->s_size    		= adfs_discsize(dr, sb->s_blocksize_bits);	asb->s_version 		= dr->format_version;	asb->s_log2sharesize	= dr->log2sharesize;	asb->s_map = adfs_read_map(sb, dr);	if (IS_ERR(asb->s_map)) {		ret =  PTR_ERR(asb->s_map);		goto error_free_bh;	}	brelse(bh);	/*	 * set up enough so that we can read an inode	 */	sb->s_op = &adfs_sops;	dr = (struct adfs_discrecord *)(asb->s_map[0].dm_bh->b_data + 4);	root_obj.parent_id = root_obj.file_id = le32_to_cpu(dr->root);	root_obj.name_len  = 0;	/* Set root object date as 01 Jan 1987 00:00:00 */	root_obj.loadaddr  = 0xfff0003f;	root_obj.execaddr  = 0xec22c000;	root_obj.size	   = ADFS_NEWDIR_SIZE;	root_obj.attr	   = ADFS_NDA_DIRECTORY   | ADFS_NDA_OWNER_READ |			     ADFS_NDA_OWNER_WRITE | ADFS_NDA_PUBLIC_READ;	root_obj.filetype  = -1;	/*	 * If this is a F+ disk with variable length directories,	 * get the root_size from the disc record.	 */	if (asb->s_version) {		root_obj.size = le32_to_cpu(dr->root_size);		asb->s_dir     = &adfs_fplus_dir_ops;		asb->s_namelen = ADFS_FPLUS_NAME_LEN;	} else {		asb->s_dir     = &adfs_f_dir_ops;		asb->s_namelen = ADFS_F_NAME_LEN;	}	/*	 * ,xyz hex filetype suffix may be added by driver	 * to files that have valid RISC OS filetype	 */	if (asb->s_ftsuffix)		asb->s_namelen += 4;	sb->s_d_op = &adfs_dentry_operations;	root = adfs_iget(sb, &root_obj);	sb->s_root = d_make_root(root);	if (!sb->s_root) {		int i;		for (i = 0; i < asb->s_map_size; i++)			brelse(asb->s_map[i].dm_bh);		kfree(asb->s_map);		adfs_error(sb, "get root inode failed\n");		ret = -EIO;		goto error;	}	return 0;error_free_bh:	brelse(bh);error:	sb->s_fs_info = NULL;	kfree(asb);	return ret;}
+static int
+adfs_fill_super(struct super_block *sb, void *data, int silent)
+adfs_fill_super
+struct super_block *sb
+struct super_block
+super_block
+*sb
+*
+sb
+void *data
+void
+*data
+*
+data
+int silent
+int
+silent
+silent
+{	struct adfs_discrecord *dr;	struct buffer_head *bh;	struct object_info root_obj;	unsigned char *b_data;	struct adfs_sb_info *asb;	struct inode *root;	int ret = -EINVAL;	sb->s_flags |= MS_NODIRATIME;	asb = kzalloc(sizeof(*asb), GFP_KERNEL);	if (!asb)		return -ENOMEM;	sb->s_fs_info = asb;	/* set default options */	asb->s_uid = GLOBAL_ROOT_UID;	asb->s_gid = GLOBAL_ROOT_GID;	asb->s_owner_mask = ADFS_DEFAULT_OWNER_MASK;	asb->s_other_mask = ADFS_DEFAULT_OTHER_MASK;	asb->s_ftsuffix = 0;	if (parse_options(sb, data))		goto error;	sb_set_blocksize(sb, BLOCK_SIZE);	if (!(bh = sb_bread(sb, ADFS_DISCRECORD / BLOCK_SIZE))) {		adfs_error(sb, "unable to read superblock");		ret = -EIO;		goto error;	}	b_data = bh->b_data + (ADFS_DISCRECORD % BLOCK_SIZE);	if (adfs_checkbblk(b_data)) {		if (!silent)			printk("VFS: Can't find an adfs filesystem on dev "				"%s.\n", sb->s_id);		ret = -EINVAL;		goto error_free_bh;	}	dr = (struct adfs_discrecord *)(b_data + ADFS_DR_OFFSET);	/*	 * Do some sanity checks on the ADFS disc record	 */	if (adfs_checkdiscrecord(dr)) {		if (!silent)			printk("VPS: Can't find an adfs filesystem on dev "				"%s.\n", sb->s_id);		ret = -EINVAL;		goto error_free_bh;	}	brelse(bh);	if (sb_set_blocksize(sb, 1 << dr->log2secsize)) {		bh = sb_bread(sb, ADFS_DISCRECORD / sb->s_blocksize);		if (!bh) {			adfs_error(sb, "couldn't read superblock on "				"2nd try.");			ret = -EIO;			goto error;		}		b_data = bh->b_data + (ADFS_DISCRECORD % sb->s_blocksize);		if (adfs_checkbblk(b_data)) {			adfs_error(sb, "disc record mismatch, very weird!");			ret = -EINVAL;			goto error_free_bh;		}		dr = (struct adfs_discrecord *)(b_data + ADFS_DR_OFFSET);	} else {		if (!silent)			printk(KERN_ERR "VFS: Unsupported blocksize on dev "				"%s.\n", sb->s_id);		ret = -EINVAL;		goto error;	}	/*	 * blocksize on this device should now be set to the ADFS log2secsize	 */	sb->s_magic		= ADFS_SUPER_MAGIC;	asb->s_idlen		= dr->idlen;	asb->s_map_size		= dr->nzones | (dr->nzones_high << 8);	asb->s_map2blk		= dr->log2bpmb - dr->log2secsize;	asb->s_size    		= adfs_discsize(dr, sb->s_blocksize_bits);	asb->s_version 		= dr->format_version;	asb->s_log2sharesize	= dr->log2sharesize;	asb->s_map = adfs_read_map(sb, dr);	if (IS_ERR(asb->s_map)) {		ret =  PTR_ERR(asb->s_map);		goto error_free_bh;	}	brelse(bh);	/*	 * set up enough so that we can read an inode	 */	sb->s_op = &adfs_sops;	dr = (struct adfs_discrecord *)(asb->s_map[0].dm_bh->b_data + 4);	root_obj.parent_id = root_obj.file_id = le32_to_cpu(dr->root);	root_obj.name_len  = 0;	/* Set root object date as 01 Jan 1987 00:00:00 */	root_obj.loadaddr  = 0xfff0003f;	root_obj.execaddr  = 0xec22c000;	root_obj.size	   = ADFS_NEWDIR_SIZE;	root_obj.attr	   = ADFS_NDA_DIRECTORY   | ADFS_NDA_OWNER_READ |			     ADFS_NDA_OWNER_WRITE | ADFS_NDA_PUBLIC_READ;	root_obj.filetype  = -1;	/*	 * If this is a F+ disk with variable length directories,	 * get the root_size from the disc record.	 */	if (asb->s_version) {		root_obj.size = le32_to_cpu(dr->root_size);		asb->s_dir     = &adfs_fplus_dir_ops;		asb->s_namelen = ADFS_FPLUS_NAME_LEN;	} else {		asb->s_dir     = &adfs_f_dir_ops;		asb->s_namelen = ADFS_F_NAME_LEN;	}	/*	 * ,xyz hex filetype suffix may be added by driver	 * to files that have valid RISC OS filetype	 */	if (asb->s_ftsuffix)		asb->s_namelen += 4;	sb->s_d_op = &adfs_dentry_operations;	root = adfs_iget(sb, &root_obj);	sb->s_root = d_make_root(root);	if (!sb->s_root) {		int i;		for (i = 0; i < asb->s_map_size; i++)			brelse(asb->s_map[i].dm_bh);		kfree(asb->s_map);		adfs_error(sb, "get root inode failed\n");		ret = -EIO;		goto error;	}	return 0;error_free_bh:	brelse(bh);error:	sb->s_fs_info = NULL;	kfree(asb);	return ret;}
+struct adfs_discrecord *dr;
+struct adfs_discrecord *dr;
+struct adfs_discrecord
+adfs_discrecord
+*dr
+*
+dr
+struct buffer_head *bh;
+struct buffer_head *bh;
+struct buffer_head
+buffer_head
+*bh
+*
+bh
+struct object_info root_obj;
+struct object_info root_obj;
+struct object_info
+object_info
+root_obj
+root_obj
+unsigned char *b_data;
+unsigned char *b_data;
+unsigned char
+*b_data
+*
+b_data
+struct adfs_sb_info *asb;
+struct adfs_sb_info *asb;
+struct adfs_sb_info
+adfs_sb_info
+*asb
+*
+asb
+struct inode *root;
+struct inode *root;
+struct inode
+inode
+*root
+*
+root
+int ret = -EINVAL;
+int ret = -EINVAL;
+int
+ret = -EINVAL
+ret
+= -EINVAL
+-EINVAL
+EINVAL
+EINVAL
+sb->s_flags |= MS_NODIRATIME;
+sb->s_flags |= MS_NODIRATIME
+sb->s_flags
+sb
+sb
+s_flags
+MS_NODIRATIME
+MS_NODIRATIME
+asb = kzalloc(sizeof(*asb), GFP_KERNEL);
+asb = kzalloc(sizeof(*asb), GFP_KERNEL)
+asb
+asb
+kzalloc(sizeof(*asb), GFP_KERNEL)
+kzalloc
+kzalloc
+sizeof(*asb)
+(*asb)
+*asb
+asb
+asb
+GFP_KERNEL
+GFP_KERNEL
+if (!asb)		return -ENOMEM;
+!asb
+asb
+asb
+return -ENOMEM;
+-ENOMEM
+ENOMEM
+ENOMEM
+sb->s_fs_info = asb;
+sb->s_fs_info = asb
+sb->s_fs_info
+sb
+sb
+s_fs_info
+asb
+asb
+asb->s_uid = GLOBAL_ROOT_UID;
+asb->s_uid = GLOBAL_ROOT_UID
+asb->s_uid
+asb
+asb
+s_uid
+GLOBAL_ROOT_UID
+GLOBAL_ROOT_UID
+asb->s_gid = GLOBAL_ROOT_GID;
+asb->s_gid = GLOBAL_ROOT_GID
+asb->s_gid
+asb
+asb
+s_gid
+GLOBAL_ROOT_GID
+GLOBAL_ROOT_GID
+asb->s_owner_mask = ADFS_DEFAULT_OWNER_MASK;
+asb->s_owner_mask = ADFS_DEFAULT_OWNER_MASK
+asb->s_owner_mask
+asb
+asb
+s_owner_mask
+ADFS_DEFAULT_OWNER_MASK
+ADFS_DEFAULT_OWNER_MASK
+asb->s_other_mask = ADFS_DEFAULT_OTHER_MASK;
+asb->s_other_mask = ADFS_DEFAULT_OTHER_MASK
+asb->s_other_mask
+asb
+asb
+s_other_mask
+ADFS_DEFAULT_OTHER_MASK
+ADFS_DEFAULT_OTHER_MASK
+asb->s_ftsuffix = 0;
+asb->s_ftsuffix = 0
+asb->s_ftsuffix
+asb
+asb
+s_ftsuffix
+0
+if (parse_options(sb, data))		goto error;
+parse_options(sb, data)
+parse_options
+parse_options
+sb
+sb
+data
+data
+goto error;
+error
+sb_set_blocksize(sb, BLOCK_SIZE);
+sb_set_blocksize(sb, BLOCK_SIZE)
+sb_set_blocksize
+sb_set_blocksize
+sb
+sb
+BLOCK_SIZE
+BLOCK_SIZE
+if (!(bh = sb_bread(sb, ADFS_DISCRECORD / BLOCK_SIZE))) {		adfs_error(sb, "unable to read superblock");		ret = -EIO;		goto error;	}
+!(bh = sb_bread(sb, ADFS_DISCRECORD / BLOCK_SIZE))
+(bh = sb_bread(sb, ADFS_DISCRECORD / BLOCK_SIZE))
+bh = sb_bread(sb, ADFS_DISCRECORD / BLOCK_SIZE)
+bh
+bh
+sb_bread(sb, ADFS_DISCRECORD / BLOCK_SIZE)
+sb_bread
+sb_bread
+sb
+sb
+ADFS_DISCRECORD / BLOCK_SIZE
+ADFS_DISCRECORD
+ADFS_DISCRECORD
+BLOCK_SIZE
+BLOCK_SIZE
+{		adfs_error(sb, "unable to read superblock");		ret = -EIO;		goto error;	}
+adfs_error(sb, "unable to read superblock");
+adfs_error(sb, "unable to read superblock")
+adfs_error
+adfs_error
+sb
+sb
+"unable to read superblock"
+ret = -EIO;
+ret = -EIO
+ret
+ret
+-EIO
+EIO
+EIO
+goto error;
+error
+b_data = bh->b_data + (ADFS_DISCRECORD % BLOCK_SIZE);
+b_data = bh->b_data + (ADFS_DISCRECORD % BLOCK_SIZE)
+b_data
+b_data
+bh->b_data + (ADFS_DISCRECORD % BLOCK_SIZE)
+bh->b_data
+bh
+bh
+b_data
+(ADFS_DISCRECORD % BLOCK_SIZE)
+ADFS_DISCRECORD % BLOCK_SIZE
+ADFS_DISCRECORD
+ADFS_DISCRECORD
+BLOCK_SIZE
+BLOCK_SIZE
+if (adfs_checkbblk(b_data)) {		if (!silent)			printk("VFS: Can't find an adfs filesystem on dev "				"%s.\n", sb->s_id);		ret = -EINVAL;		goto error_free_bh;	}
+adfs_checkbblk(b_data)
+adfs_checkbblk
+adfs_checkbblk
+b_data
+b_data
+{		if (!silent)			printk("VFS: Can't find an adfs filesystem on dev "				"%s.\n", sb->s_id);		ret = -EINVAL;		goto error_free_bh;	}
+if (!silent)			printk("VFS: Can't find an adfs filesystem on dev "				"%s.\n", sb->s_id);
+!silent
+silent
+silent
+printk("VFS: Can't find an adfs filesystem on dev "				"%s.\n", sb->s_id);
+printk("VFS: Can't find an adfs filesystem on dev "				"%s.\n", sb->s_id)
+printk
+printk
+"VFS: Can't find an adfs filesystem on dev "				"%s.\n"
+sb->s_id
+sb
+sb
+s_id
+ret = -EINVAL;
+ret = -EINVAL
+ret
+ret
+-EINVAL
+EINVAL
+EINVAL
+goto error_free_bh;
+error_free_bh
+dr = (struct adfs_discrecord *)(b_data + ADFS_DR_OFFSET);
+dr = (struct adfs_discrecord *)(b_data + ADFS_DR_OFFSET)
+dr
+dr
+(struct adfs_discrecord *)(b_data + ADFS_DR_OFFSET)
+struct adfs_discrecord *
+struct adfs_discrecord
+adfs_discrecord
+*
+*
+(b_data + ADFS_DR_OFFSET)
+b_data + ADFS_DR_OFFSET
+b_data
+b_data
+ADFS_DR_OFFSET
+ADFS_DR_OFFSET
+if (adfs_checkdiscrecord(dr)) {		if (!silent)			printk("VPS: Can't find an adfs filesystem on dev "				"%s.\n", sb->s_id);		ret = -EINVAL;		goto error_free_bh;	}
+adfs_checkdiscrecord(dr)
+adfs_checkdiscrecord
+adfs_checkdiscrecord
+dr
+dr
+{		if (!silent)			printk("VPS: Can't find an adfs filesystem on dev "				"%s.\n", sb->s_id);		ret = -EINVAL;		goto error_free_bh;	}
+if (!silent)			printk("VPS: Can't find an adfs filesystem on dev "				"%s.\n", sb->s_id);
+!silent
+silent
+silent
+printk("VPS: Can't find an adfs filesystem on dev "				"%s.\n", sb->s_id);
+printk("VPS: Can't find an adfs filesystem on dev "				"%s.\n", sb->s_id)
+printk
+printk
+"VPS: Can't find an adfs filesystem on dev "				"%s.\n"
+sb->s_id
+sb
+sb
+s_id
+ret = -EINVAL;
+ret = -EINVAL
+ret
+ret
+-EINVAL
+EINVAL
+EINVAL
+goto error_free_bh;
+error_free_bh
+brelse(bh);
+brelse(bh)
+brelse
+brelse
+bh
+bh
+if (sb_set_blocksize(sb, 1 << dr->log2secsize)) {		bh = sb_bread(sb, ADFS_DISCRECORD / sb->s_blocksize);		if (!bh) {			adfs_error(sb, "couldn't read superblock on "				"2nd try.");			ret = -EIO;			goto error;		}		b_data = bh->b_data + (ADFS_DISCRECORD % sb->s_blocksize);		if (adfs_checkbblk(b_data)) {			adfs_error(sb, "disc record mismatch, very weird!");			ret = -EINVAL;			goto error_free_bh;		}		dr = (struct adfs_discrecord *)(b_data + ADFS_DR_OFFSET);	} else {		if (!silent)			printk(KERN_ERR "VFS: Unsupported blocksize on dev "				"%s.\n", sb->s_id);		ret = -EINVAL;		goto error;	}
+sb_set_blocksize(sb, 1 << dr->log2secsize)
+sb_set_blocksize
+sb_set_blocksize
+sb
+sb
+1 << dr->log2secsize
+1
+dr->log2secsize
+dr
+dr
+log2secsize
+{		bh = sb_bread(sb, ADFS_DISCRECORD / sb->s_blocksize);		if (!bh) {			adfs_error(sb, "couldn't read superblock on "				"2nd try.");			ret = -EIO;			goto error;		}		b_data = bh->b_data + (ADFS_DISCRECORD % sb->s_blocksize);		if (adfs_checkbblk(b_data)) {			adfs_error(sb, "disc record mismatch, very weird!");			ret = -EINVAL;			goto error_free_bh;		}		dr = (struct adfs_discrecord *)(b_data + ADFS_DR_OFFSET);	}
+bh = sb_bread(sb, ADFS_DISCRECORD / sb->s_blocksize);
+bh = sb_bread(sb, ADFS_DISCRECORD / sb->s_blocksize)
+bh
+bh
+sb_bread(sb, ADFS_DISCRECORD / sb->s_blocksize)
+sb_bread
+sb_bread
+sb
+sb
+ADFS_DISCRECORD / sb->s_blocksize
+ADFS_DISCRECORD
+ADFS_DISCRECORD
+sb->s_blocksize
+sb
+sb
+s_blocksize
+if (!bh) {			adfs_error(sb, "couldn't read superblock on "				"2nd try.");			ret = -EIO;			goto error;		}
+!bh
+bh
+bh
+{			adfs_error(sb, "couldn't read superblock on "				"2nd try.");			ret = -EIO;			goto error;		}
+adfs_error(sb, "couldn't read superblock on "				"2nd try.");
+adfs_error(sb, "couldn't read superblock on "				"2nd try.")
+adfs_error
+adfs_error
+sb
+sb
+"couldn't read superblock on "				"2nd try."
+ret = -EIO;
+ret = -EIO
+ret
+ret
+-EIO
+EIO
+EIO
+goto error;
+error
+b_data = bh->b_data + (ADFS_DISCRECORD % sb->s_blocksize);
+b_data = bh->b_data + (ADFS_DISCRECORD % sb->s_blocksize)
+b_data
+b_data
+bh->b_data + (ADFS_DISCRECORD % sb->s_blocksize)
+bh->b_data
+bh
+bh
+b_data
+(ADFS_DISCRECORD % sb->s_blocksize)
+ADFS_DISCRECORD % sb->s_blocksize
+ADFS_DISCRECORD
+ADFS_DISCRECORD
+sb->s_blocksize
+sb
+sb
+s_blocksize
+if (adfs_checkbblk(b_data)) {			adfs_error(sb, "disc record mismatch, very weird!");			ret = -EINVAL;			goto error_free_bh;		}
+adfs_checkbblk(b_data)
+adfs_checkbblk
+adfs_checkbblk
+b_data
+b_data
+{			adfs_error(sb, "disc record mismatch, very weird!");			ret = -EINVAL;			goto error_free_bh;		}
+adfs_error(sb, "disc record mismatch, very weird!");
+adfs_error(sb, "disc record mismatch, very weird!")
+adfs_error
+adfs_error
+sb
+sb
+"disc record mismatch, very weird!"
+ret = -EINVAL;
+ret = -EINVAL
+ret
+ret
+-EINVAL
+EINVAL
+EINVAL
+goto error_free_bh;
+error_free_bh
+dr = (struct adfs_discrecord *)(b_data + ADFS_DR_OFFSET);
+dr = (struct adfs_discrecord *)(b_data + ADFS_DR_OFFSET)
+dr
+dr
+(struct adfs_discrecord *)(b_data + ADFS_DR_OFFSET)
+struct adfs_discrecord *
+struct adfs_discrecord
+adfs_discrecord
+*
+*
+(b_data + ADFS_DR_OFFSET)
+b_data + ADFS_DR_OFFSET
+b_data
+b_data
+ADFS_DR_OFFSET
+ADFS_DR_OFFSET
+{		if (!silent)			printk(KERN_ERR "VFS: Unsupported blocksize on dev "				"%s.\n", sb->s_id);		ret = -EINVAL;		goto error;	}
+if (!silent)			printk(KERN_ERR "VFS: Unsupported blocksize on dev "				"%s.\n", sb->s_id);
+ret = -EINVAL;
+ret = -EINVAL
+ret
+ret
+-EINVAL
+EINVAL
+EINVAL
+goto error;
+error
+sb->s_magic		= ADFS_SUPER_MAGIC;
+sb->s_magic		= ADFS_SUPER_MAGIC
+sb->s_magic
+sb
+sb
+s_magic
+ADFS_SUPER_MAGIC
+ADFS_SUPER_MAGIC
+asb->s_idlen		= dr->idlen;
+asb->s_idlen		= dr->idlen
+asb->s_idlen
+asb
+asb
+s_idlen
+dr->idlen
+dr
+dr
+idlen
+asb->s_map_size		= dr->nzones | (dr->nzones_high << 8);
+asb->s_map_size		= dr->nzones | (dr->nzones_high << 8)
+asb->s_map_size
+asb
+asb
+s_map_size
+dr->nzones | (dr->nzones_high << 8)
+dr->nzones
+dr
+dr
+nzones
+(dr->nzones_high << 8)
+dr->nzones_high << 8
+dr->nzones_high
+dr
+dr
+nzones_high
+8
+asb->s_map2blk		= dr->log2bpmb - dr->log2secsize;
+asb->s_map2blk		= dr->log2bpmb - dr->log2secsize
+asb->s_map2blk
+asb
+asb
+s_map2blk
+dr->log2bpmb - dr->log2secsize
+dr->log2bpmb
+dr
+dr
+log2bpmb
+dr->log2secsize
+dr
+dr
+log2secsize
+asb->s_size    		= adfs_discsize(dr, sb->s_blocksize_bits);
+asb->s_size    		= adfs_discsize(dr, sb->s_blocksize_bits)
+asb->s_size
+asb
+asb
+s_size
+adfs_discsize(dr, sb->s_blocksize_bits)
+adfs_discsize
+adfs_discsize
+dr
+dr
+sb->s_blocksize_bits
+sb
+sb
+s_blocksize_bits
+asb->s_version 		= dr->format_version;
+asb->s_version 		= dr->format_version
+asb->s_version
+asb
+asb
+s_version
+dr->format_version
+dr
+dr
+format_version
+asb->s_log2sharesize	= dr->log2sharesize;
+asb->s_log2sharesize	= dr->log2sharesize
+asb->s_log2sharesize
+asb
+asb
+s_log2sharesize
+dr->log2sharesize
+dr
+dr
+log2sharesize
+asb->s_map = adfs_read_map(sb, dr);
+asb->s_map = adfs_read_map(sb, dr)
+asb->s_map
+asb
+asb
+s_map
+adfs_read_map(sb, dr)
+adfs_read_map
+adfs_read_map
+sb
+sb
+dr
+dr
+if (IS_ERR(asb->s_map)) {		ret =  PTR_ERR(asb->s_map);		goto error_free_bh;	}
+IS_ERR(asb->s_map)
+IS_ERR
+IS_ERR
+asb->s_map
+asb
+asb
+s_map
+{		ret =  PTR_ERR(asb->s_map);		goto error_free_bh;	}
+ret =  PTR_ERR(asb->s_map);
+ret =  PTR_ERR(asb->s_map)
+ret
+ret
+PTR_ERR(asb->s_map)
+PTR_ERR
+PTR_ERR
+asb->s_map
+asb
+asb
+s_map
+goto error_free_bh;
+error_free_bh
+brelse(bh);
+brelse(bh)
+brelse
+brelse
+bh
+bh
+sb->s_op = &adfs_sops;
+sb->s_op = &adfs_sops
+sb->s_op
+sb
+sb
+s_op
+&adfs_sops
+adfs_sops
+adfs_sops
+dr = (struct adfs_discrecord *)(asb->s_map[0].dm_bh->b_data + 4);
+dr = (struct adfs_discrecord *)(asb->s_map[0].dm_bh->b_data + 4)
+dr
+dr
+(struct adfs_discrecord *)(asb->s_map[0].dm_bh->b_data + 4)
+struct adfs_discrecord *
+struct adfs_discrecord
+adfs_discrecord
+*
+*
+(asb->s_map[0].dm_bh->b_data + 4)
+asb->s_map[0].dm_bh->b_data + 4
+asb->s_map[0].dm_bh->b_data
+asb->s_map[0].dm_bh
+asb->s_map[0]
+asb->s_map
+asb
+asb
+s_map
+0
+dm_bh
+b_data
+4
+root_obj.parent_id = root_obj.file_id = le32_to_cpu(dr->root);
+root_obj.parent_id = root_obj.file_id = le32_to_cpu(dr->root)
+root_obj.parent_id
+root_obj
+root_obj
+parent_id
+root_obj.file_id = le32_to_cpu(dr->root)
+root_obj.file_id
+root_obj
+root_obj
+file_id
+le32_to_cpu(dr->root)
+le32_to_cpu
+le32_to_cpu
+dr->root
+dr
+dr
+root
+root_obj.name_len  = 0;
+root_obj.name_len  = 0
+root_obj.name_len
+root_obj
+root_obj
+name_len
+0
+root_obj.loadaddr  = 0xfff0003f;
+root_obj.loadaddr  = 0xfff0003f
+root_obj.loadaddr
+root_obj
+root_obj
+loadaddr
+0xfff0003f
+root_obj.execaddr  = 0xec22c000;
+root_obj.execaddr  = 0xec22c000
+root_obj.execaddr
+root_obj
+root_obj
+execaddr
+0xec22c000
+root_obj.size	   = ADFS_NEWDIR_SIZE;
+root_obj.size	   = ADFS_NEWDIR_SIZE
+root_obj.size
+root_obj
+root_obj
+size
+ADFS_NEWDIR_SIZE
+ADFS_NEWDIR_SIZE
+root_obj.attr	   = ADFS_NDA_DIRECTORY   | ADFS_NDA_OWNER_READ |			     ADFS_NDA_OWNER_WRITE | ADFS_NDA_PUBLIC_READ;
+root_obj.attr	   = ADFS_NDA_DIRECTORY   | ADFS_NDA_OWNER_READ |			     ADFS_NDA_OWNER_WRITE | ADFS_NDA_PUBLIC_READ
+root_obj.attr
+root_obj
+root_obj
+attr
+ADFS_NDA_DIRECTORY   | ADFS_NDA_OWNER_READ |			     ADFS_NDA_OWNER_WRITE | ADFS_NDA_PUBLIC_READ
+ADFS_NDA_DIRECTORY   | ADFS_NDA_OWNER_READ |			     ADFS_NDA_OWNER_WRITE
+ADFS_NDA_DIRECTORY   | ADFS_NDA_OWNER_READ
+ADFS_NDA_DIRECTORY
+ADFS_NDA_DIRECTORY
+ADFS_NDA_OWNER_READ
+ADFS_NDA_OWNER_READ
+ADFS_NDA_OWNER_WRITE
+ADFS_NDA_OWNER_WRITE
+ADFS_NDA_PUBLIC_READ
+ADFS_NDA_PUBLIC_READ
+root_obj.filetype  = -1;
+root_obj.filetype  = -1
+root_obj.filetype
+root_obj
+root_obj
+filetype
+-1
+1
+if (asb->s_version) {		root_obj.size = le32_to_cpu(dr->root_size);		asb->s_dir     = &adfs_fplus_dir_ops;		asb->s_namelen = ADFS_FPLUS_NAME_LEN;	} else {		asb->s_dir     = &adfs_f_dir_ops;		asb->s_namelen = ADFS_F_NAME_LEN;	}
+asb->s_version
+asb
+asb
+s_version
+{		root_obj.size = le32_to_cpu(dr->root_size);		asb->s_dir     = &adfs_fplus_dir_ops;		asb->s_namelen = ADFS_FPLUS_NAME_LEN;	}
+root_obj.size = le32_to_cpu(dr->root_size);
+root_obj.size = le32_to_cpu(dr->root_size)
+root_obj.size
+root_obj
+root_obj
+size
+le32_to_cpu(dr->root_size)
+le32_to_cpu
+le32_to_cpu
+dr->root_size
+dr
+dr
+root_size
+asb->s_dir     = &adfs_fplus_dir_ops;
+asb->s_dir     = &adfs_fplus_dir_ops
+asb->s_dir
+asb
+asb
+s_dir
+&adfs_fplus_dir_ops
+adfs_fplus_dir_ops
+adfs_fplus_dir_ops
+asb->s_namelen = ADFS_FPLUS_NAME_LEN;
+asb->s_namelen = ADFS_FPLUS_NAME_LEN
+asb->s_namelen
+asb
+asb
+s_namelen
+ADFS_FPLUS_NAME_LEN
+ADFS_FPLUS_NAME_LEN
+{		asb->s_dir     = &adfs_f_dir_ops;		asb->s_namelen = ADFS_F_NAME_LEN;	}
+asb->s_dir     = &adfs_f_dir_ops;
+asb->s_dir     = &adfs_f_dir_ops
+asb->s_dir
+asb
+asb
+s_dir
+&adfs_f_dir_ops
+adfs_f_dir_ops
+adfs_f_dir_ops
+asb->s_namelen = ADFS_F_NAME_LEN;
+asb->s_namelen = ADFS_F_NAME_LEN
+asb->s_namelen
+asb
+asb
+s_namelen
+ADFS_F_NAME_LEN
+ADFS_F_NAME_LEN
+if (asb->s_ftsuffix)		asb->s_namelen += 4;
+asb->s_ftsuffix
+asb
+asb
+s_ftsuffix
+asb->s_namelen += 4;
+asb->s_namelen += 4
+asb->s_namelen
+asb
+asb
+s_namelen
+4
+sb->s_d_op = &adfs_dentry_operations;
+sb->s_d_op = &adfs_dentry_operations
+sb->s_d_op
+sb
+sb
+s_d_op
+&adfs_dentry_operations
+adfs_dentry_operations
+adfs_dentry_operations
+root = adfs_iget(sb, &root_obj);
+root = adfs_iget(sb, &root_obj)
+root
+root
+adfs_iget(sb, &root_obj)
+adfs_iget
+adfs_iget
+sb
+sb
+&root_obj
+root_obj
+root_obj
+sb->s_root = d_make_root(root);
+sb->s_root = d_make_root(root)
+sb->s_root
+sb
+sb
+s_root
+d_make_root(root)
+d_make_root
+d_make_root
+root
+root
+if (!sb->s_root) {		int i;		for (i = 0; i < asb->s_map_size; i++)			brelse(asb->s_map[i].dm_bh);		kfree(asb->s_map);		adfs_error(sb, "get root inode failed\n");		ret = -EIO;		goto error;	}
+!sb->s_root
+sb->s_root
+sb
+sb
+s_root
+{		int i;		for (i = 0; i < asb->s_map_size; i++)			brelse(asb->s_map[i].dm_bh);		kfree(asb->s_map);		adfs_error(sb, "get root inode failed\n");		ret = -EIO;		goto error;	}
+int i;
+int i;
+int
+i
+i
+for (i = 0; i < asb->s_map_size; i++)			brelse(asb->s_map[i].dm_bh);
+i = 0;
+i = 0
+i
+i
+0
+i < asb->s_map_size
+i
+i
+asb->s_map_size
+asb
+asb
+s_map_size
+i++
+i
+i
+brelse(asb->s_map[i].dm_bh);
+brelse(asb->s_map[i].dm_bh)
+brelse
+brelse
+asb->s_map[i].dm_bh
+asb->s_map[i]
+asb->s_map
+asb
+asb
+s_map
+i
+i
+dm_bh
+kfree(asb->s_map);
+kfree(asb->s_map)
+kfree
+kfree
+asb->s_map
+asb
+asb
+s_map
+adfs_error(sb, "get root inode failed\n");
+adfs_error(sb, "get root inode failed\n")
+adfs_error
+adfs_error
+sb
+sb
+"get root inode failed\n"
+ret = -EIO;
+ret = -EIO
+ret
+ret
+-EIO
+EIO
+EIO
+goto error;
+error
+return 0;
+0
+error_free_bh:	brelse(bh);
+error_free_bh
+brelse(bh);
+brelse(bh)
+brelse
+brelse
+bh
+bh
+error:	sb->s_fs_info = NULL;
+error
+sb->s_fs_info = NULL;
+sb->s_fs_info = NULL
+sb->s_fs_info
+sb
+sb
+s_fs_info
+NULL
+NULL
+kfree(asb);
+kfree(asb)
+kfree
+kfree
+asb
+asb
+return ret;
+ret
+ret
+-----joern-----
+(57,170,0)
+(381,422,0)
+(55,416,0)
+(419,202,0)
+(61,202,0)
+(142,412,0)
+(161,82,0)
+(201,109,0)
+(321,144,0)
+(173,117,0)
+(191,412,0)
+(224,296,0)
+(101,352,0)
+(409,269,0)
+(428,367,0)
+(459,352,0)
+(220,29,0)
+(117,176,0)
+(134,109,0)
+(214,101,0)
+(214,106,0)
+(224,244,0)
+(224,432,0)
+(334,214,0)
+(388,123,0)
+(261,242,0)
+(347,251,0)
+(135,222,0)
+(386,348,0)
+(232,264,0)
+(129,216,0)
+(406,246,0)
+(121,81,0)
+(181,217,0)
+(168,352,0)
+(224,292,0)
+(239,340,0)
+(280,214,0)
+(28,445,0)
+(416,310,0)
+(282,417,0)
+(389,251,0)
+(84,16,0)
+(187,352,0)
+(213,106,0)
+(186,272,0)
+(126,246,0)
+(235,17,0)
+(214,337,0)
+(242,217,0)
+(0,346,0)
+(156,403,0)
+(367,176,0)
+(185,363,0)
+(227,134,0)
+(32,471,0)
+(175,289,0)
+(214,122,0)
+(335,54,0)
+(214,107,0)
+(397,435,0)
+(315,359,0)
+(137,270,0)
+(410,381,0)
+(224,104,0)
+(393,466,0)
+(214,455,0)
+(460,176,0)
+(214,212,0)
+(309,198,0)
+(174,442,0)
+(255,352,0)
+(65,432,0)
+(378,301,0)
+(155,66,0)
+(402,29,0)
+(327,288,0)
+(301,378,0)
+(91,191,0)
+(368,466,0)
+(51,29,0)
+(226,29,0)
+(445,199,0)
+(214,288,0)
+(470,29,0)
+(211,259,0)
+(218,298,0)
+(435,176,0)
+(369,24,0)
+(471,29,0)
+(15,113,0)
+(442,29,0)
+(106,352,0)
+(364,332,0)
+(234,349,0)
+(389,395,0)
+(86,228,0)
+(289,78,0)
+(193,55,0)
+(216,129,0)
+(341,318,0)
+(24,395,0)
+(262,14,0)
+(332,222,0)
+(238,458,0)
+(352,29,0)
+(425,402,0)
+(292,303,0)
+(194,377,0)
+(415,224,0)
+(135,264,0)
+(431,212,0)
+(359,16,0)
+(110,222,0)
+(22,455,0)
+(377,90,0)
+(103,398,0)
+(274,224,0)
+(450,89,0)
+(27,365,0)
+(258,475,0)
+(224,334,0)
+(457,109,0)
+(67,82,0)
+(233,6,0)
+(214,269,0)
+(80,183,0)
+(344,29,0)
+(143,118,0)
+(73,372,0)
+(219,29,0)
+(2,171,0)
+(390,310,0)
+(51,466,0)
+(62,118,0)
+(363,264,0)
+(267,318,0)
+(78,232,0)
+(363,361,0)
+(275,346,0)
+(177,442,0)
+(466,125,0)
+(146,477,0)
+(330,9,0)
+(21,469,0)
+(413,244,0)
+(401,356,0)
+(171,29,0)
+(354,405,0)
+(346,0,0)
+(224,106,0)
+(399,296,0)
+(240,29,0)
+(367,428,0)
+(90,29,0)
+(224,288,0)
+(192,15,0)
+(117,148,0)
+(313,291,0)
+(373,269,0)
+(243,419,0)
+(403,29,0)
+(164,29,0)
+(318,341,0)
+(7,378,0)
+(366,461,0)
+(257,54,0)
+(349,206,0)
+(266,29,0)
+(458,238,0)
+(351,407,0)
+(387,235,0)
+(157,390,0)
+(309,475,0)
+(49,320,0)
+(115,29,0)
+(465,272,0)
+(88,342,0)
+(74,197,0)
+(473,466,0)
+(197,94,0)
+(296,352,0)
+(468,455,0)
+(128,176,0)
+(426,107,0)
+(443,123,0)
+(44,316,0)
+(79,390,0)
+(165,356,0)
+(23,310,0)
+(466,1,0)
+(40,425,0)
+(363,352,0)
+(289,48,0)
+(307,234,0)
+(412,140,0)
+(187,161,0)
+(337,176,0)
+(207,6,0)
+(454,140,0)
+(253,244,0)
+(394,85,0)
+(284,403,0)
+(145,29,0)
+(350,64,0)
+(42,234,0)
+(215,29,0)
+(372,310,0)
+(260,29,0)
+(278,125,0)
+(54,270,0)
+(200,29,0)
+(262,29,0)
+(417,29,0)
+(299,390,0)
+(214,130,0)
+(71,439,0)
+(358,345,0)
+(245,276,0)
+(100,34,0)
+(433,352,0)
+(184,17,0)
+(270,29,0)
+(398,461,0)
+(469,435,0)
+(92,260,0)
+(8,106,0)
+(304,303,0)
+(347,70,0)
+(224,337,0)
+(72,139,0)
+(214,64,0)
+(298,310,0)
+(347,95,0)
+(221,217,0)
+(464,1,0)
+(371,58,0)
+(149,460,0)
+(453,460,0)
+(178,201,0)
+(192,364,0)
+(224,64,0)
+(214,187,0)
+(114,133,0)
+(414,29,0)
+(224,187,0)
+(429,378,0)
+(439,71,0)
+(314,212,0)
+(446,34,0)
+(139,421,0)
+(383,125,0)
+(120,406,0)
+(193,29,0)
+(196,118,0)
+(70,347,0)
+(214,316,0)
+(241,334,0)
+(206,349,0)
+(71,352,0)
+(89,30,0)
+(288,352,0)
+(229,470,0)
+(142,458,0)
+(224,130,0)
+(360,14,0)
+(418,459,0)
+(224,29,0)
+(216,310,0)
+(210,176,0)
+(428,29,0)
+(232,78,0)
+(224,212,0)
+(329,53,0)
+(97,162,0)
+(364,192,0)
+(291,81,0)
+(356,176,0)
+(188,473,0)
+(355,348,0)
+(356,291,0)
+(17,15,0)
+(235,206,0)
+(36,252,0)
+(214,296,0)
+(124,476,0)
+(430,80,0)
+(461,176,0)
+(231,316,0)
+(210,372,0)
+(264,405,0)
+(78,289,0)
+(142,341,0)
+(41,95,0)
+(434,246,0)
+(279,66,0)
+(10,412,0)
+(475,309,0)
+(272,176,0)
+(128,447,0)
+(106,408,0)
+(214,244,0)
+(102,140,0)
+(118,143,0)
+(283,422,0)
+(306,94,0)
+(142,0,0)
+(403,176,0)
+(12,51,0)
+(287,29,0)
+(365,408,0)
+(224,53,0)
+(395,190,0)
+(95,347,0)
+(362,328,0)
+(224,476,0)
+(348,355,0)
+(1,33,0)
+(319,276,0)
+(3,161,0)
+(169,210,0)
+(427,457,0)
+(69,53,0)
+(163,70,0)
+(396,221,0)
+(380,220,0)
+(355,176,0)
+(214,168,0)
+(412,191,0)
+(308,162,0)
+(179,477,0)
+(345,367,0)
+(228,176,0)
+(264,29,0)
+(30,246,0)
+(142,29,0)
+(214,461,0)
+(55,193,0)
+(53,352,0)
+(372,73,0)
+(395,24,0)
+(162,90,0)
+(352,85,0)
+(107,471,0)
+(444,104,0)
+(294,174,0)
+(141,142,0)
+(355,58,0)
+(395,389,0)
+(305,122,0)
+(73,29,0)
+(281,128,0)
+(332,364,0)
+(247,136,0)
+(474,352,0)
+(340,404,0)
+(39,352,0)
+(158,416,0)
+(375,296,0)
+(376,29,0)
+(77,187,0)
+(349,11,0)
+(317,369,0)
+(60,416,0)
+(455,287,0)
+(26,64,0)
+(228,220,0)
+(295,389,0)
+(89,352,0)
+(33,170,0)
+(59,352,0)
+(402,425,0)
+(351,176,0)
+(445,143,0)
+(214,272,0)
+(458,123,0)
+(411,180,0)
+(153,9,0)
+(244,157,0)
+(384,170,0)
+(297,338,0)
+(58,371,0)
+(452,103,0)
+(104,94,0)
+(16,359,0)
+(170,33,0)
+(462,121,0)
+(359,407,0)
+(437,288,0)
+(277,216,0)
+(131,363,0)
+(142,419,0)
+(96,197,0)
+(151,136,0)
+(303,29,0)
+(440,29,0)
+(341,34,0)
+(463,435,0)
+(183,80,0)
+(435,469,0)
+(224,136,0)
+(325,192,0)
+(223,6,0)
+(270,137,0)
+(214,459,0)
+(63,71,0)
+(222,332,0)
+(174,176,0)
+(223,76,0)
+(76,29,0)
+(224,477,0)
+(224,101,0)
+(143,445,0)
+(381,176,0)
+(328,29,0)
+(87,232,0)
+(224,107,0)
+(85,352,0)
+(416,55,0)
+(432,11,0)
+(342,81,0)
+(436,351,0)
+(274,398,0)
+(323,475,0)
+(142,242,0)
+(105,174,0)
+(111,368,0)
+(404,340,0)
+(197,176,0)
+(206,235,0)
+(157,29,0)
+(251,347,0)
+(301,67,0)
+(56,337,0)
+(224,269,0)
+(249,101,0)
+(159,221,0)
+(421,29,0)
+(89,270,0)
+(474,264,0)
+(477,176,0)
+(460,276,0)
+(309,310,0)
+(83,310,0)
+(166,187,0)
+(6,233,0)
+(290,276,0)
+(68,95,0)
+(224,122,0)
+(214,474,0)
+(214,53,0)
+(370,228,0)
+(135,352,0)
+(214,162,0)
+(18,29,0)
+(80,447,0)
+(214,432,0)
+(224,474,0)
+(25,433,0)
+(132,348,0)
+(81,291,0)
+(273,135,0)
+(334,352,0)
+(306,428,0)
+(333,344,0)
+(420,428,0)
+(286,3,0)
+(255,29,0)
+(214,292,0)
+(121,125,0)
+(204,89,0)
+(197,96,0)
+(224,162,0)
+(9,24,0)
+(180,242,0)
+(459,344,0)
+(405,264,0)
+(408,285,0)
+(439,276,0)
+(90,377,0)
+(237,405,0)
+(374,33,0)
+(254,107,0)
+(202,419,0)
+(263,168,0)
+(5,458,0)
+(252,29,0)
+(423,334,0)
+(421,139,0)
+(322,210,0)
+(30,89,0)
+(93,117,0)
+(225,29,0)
+(55,298,0)
+(136,421,0)
+(144,321,0)
+(242,180,0)
+(1,466,0)
+(224,455,0)
+(455,352,0)
+(45,364,0)
+(94,29,0)
+(35,70,0)
+(251,29,0)
+(214,54,0)
+(337,226,0)
+(116,287,0)
+(127,342,0)
+(214,234,0)
+(13,448,0)
+(425,310,0)
+(172,255,0)
+(224,461,0)
+(152,425,0)
+(339,476,0)
+(190,395,0)
+(24,29,0)
+(338,121,0)
+(224,54,0)
+(438,29,0)
+(59,29,0)
+(212,133,0)
+(368,58,0)
+(422,9,0)
+(11,29,0)
+(214,136,0)
+(137,129,0)
+(66,352,0)
+(198,309,0)
+(23,137,0)
+(302,447,0)
+(15,192,0)
+(222,135,0)
+(475,121,0)
+(94,306,0)
+(357,235,0)
+(136,352,0)
+(208,337,0)
+(150,29,0)
+(324,474,0)
+(244,352,0)
+(248,456,0)
+(224,234,0)
+(1,176,0)
+(20,130,0)
+(353,30,0)
+(291,356,0)
+(343,232,0)
+(477,262,0)
+(113,15,0)
+(142,80,0)
+(382,251,0)
+(221,176,0)
+(419,276,0)
+(50,223,0)
+(19,292,0)
+(312,351,0)
+(274,142,0)
+(81,121,0)
+(11,349,0)
+(118,352,0)
+(340,176,0)
+(336,197,0)
+(310,125,0)
+(311,367,0)
+(58,355,0)
+(203,29,0)
+(451,461,0)
+(456,58,0)
+(15,17,0)
+(422,381,0)
+(104,176,0)
+(76,223,0)
+(85,144,0)
+(424,298,0)
+(98,58,0)
+(226,259,0)
+(224,168,0)
+(119,459,0)
+(367,345,0)
+(271,23,0)
+(130,402,0)
+(372,210,0)
+(320,352,0)
+(265,24,0)
+(147,355,0)
+(81,342,0)
+(112,130,0)
+(70,58,0)
+(300,143,0)
+(129,137,0)
+(224,228,0)
+(368,29,0)
+(199,445,0)
+(130,352,0)
+(293,128,0)
+(71,264,0)
+(99,71,0)
+(54,352,0)
+(67,301,0)
+(378,17,0)
+(259,226,0)
+(154,332,0)
+(224,316,0)
+(214,228,0)
+(224,272,0)
+(0,29,0)
+(170,176,0)
+(143,246,0)
+(75,135,0)
+(256,340,0)
+(391,341,0)
+(400,48,0)
+(9,422,0)
+(133,285,0)
+(14,262,0)
+(326,321,0)
+(47,122,0)
+(390,157,0)
+(408,365,0)
+(144,85,0)
+(342,466,0)
+(288,73,0)
+(212,352,0)
+(167,404,0)
+(296,470,0)
+(449,432,0)
+(209,183,0)
+(310,309,0)
+(182,129,0)
+(6,223,0)
+(168,328,0)
+(361,363,0)
+(272,59,0)
+(441,168,0)
+(142,289,0)
+(467,29,0)
+(33,1,0)
+(405,310,0)
+(137,23,0)
+(331,29,0)
+(138,101,0)
+(38,320,0)
+(189,82,0)
+(46,372,0)
+(392,59,0)
+(101,189,0)
+(472,23,0)
+(316,352,0)
+(37,0,0)
+(205,292,0)
+(448,251,0)
+(142,359,0)
+(379,104,0)
+(139,310,0)
+(461,171,0)
+(31,139,0)
+(64,260,0)
+(122,67,0)
+(476,417,0)
+(236,189,0)
+(43,407,0)
+(160,389,0)
+(224,459,0)
+(161,3,0)
+(316,193,0)
+(232,352,0)
+(195,306,0)
+(53,252,0)
+(250,238,0)
+(17,29,0)
+(456,29,0)
+(118,264,0)
+(298,55,0)
+(52,474,0)
+(385,216,0)
+(269,76,0)
+(405,176,0)
+(230,233,0)
+(268,233,0)
+(4,29,0)
+(214,476,0)
+(214,106,1)
+(415,96,1)
+(326,39,1)
+(61,243,1)
+(279,133,1)
+(288,327,1)
+(153,330,1)
+(224,234,1)
+(417,282,1)
+(390,310,1)
+(370,86,1)
+(280,334,1)
+(234,307,1)
+(80,183,1)
+(243,460,1)
+(274,142,1)
+(195,104,1)
+(409,373,1)
+(224,296,1)
+(89,352,1)
+(183,209,1)
+(191,91,1)
+(249,161,1)
+(255,352,1)
+(237,354,1)
+(128,293,1)
+(212,314,1)
+(209,430,1)
+(386,147,1)
+(321,326,1)
+(364,45,1)
+(432,65,1)
+(21,134,1)
+(56,51,1)
+(95,41,1)
+(224,136,1)
+(453,439,1)
+(390,79,1)
+(411,261,1)
+(186,433,1)
+(374,464,1)
+(444,428,1)
+(273,184,1)
+(213,320,1)
+(283,410,1)
+(281,338,1)
+(337,176,1)
+(429,7,1)
+(379,444,1)
+(455,22,1)
+(332,222,1)
+(224,101,1)
+(111,400,1)
+(309,475,1)
+(354,474,1)
+(393,381,1)
+(128,176,1)
+(88,462,1)
+(356,165,1)
+(310,309,1)
+(262,14,1)
+(347,70,1)
+(40,130,1)
+(57,374,1)
+(405,310,1)
+(172,442,1)
+(214,296,1)
+(110,135,1)
+(315,351,1)
+(91,10,1)
+(421,139,1)
+(423,241,1)
+(157,390,1)
+(395,190,1)
+(159,396,1)
+(294,454,1)
+(136,151,1)
+(104,176,1)
+(178,381,1)
+(368,58,1)
+(96,197,1)
+(119,418,1)
+(224,334,1)
+(419,202,1)
+(395,389,1)
+(255,172,1)
+(139,310,1)
+(244,352,1)
+(406,246,1)
+(269,409,1)
+(378,17,1)
+(142,419,1)
+(290,419,1)
+(44,270,1)
+(118,62,1)
+(459,119,1)
+(98,403,1)
+(169,46,1)
+(402,425,1)
+(174,176,1)
+(221,176,1)
+(372,210,1)
+(214,187,1)
+(436,312,1)
+(244,413,1)
+(135,75,1)
+(335,257,1)
+(224,476,1)
+(214,432,1)
+(449,17,1)
+(337,208,1)
+(83,338,1)
+(333,459,1)
+(5,404,1)
+(412,191,1)
+(224,130,1)
+(89,450,1)
+(294,368,1)
+(117,176,1)
+(214,168,1)
+(345,358,1)
+(41,68,1)
+(53,352,1)
+(12,361,1)
+(452,433,1)
+(295,160,1)
+(26,303,1)
+(133,114,1)
+(111,302,1)
+(336,74,1)
+(401,313,1)
+(264,405,1)
+(179,214,1)
+(9,24,1)
+(108,117,1)
+(36,53,1)
+(68,70,1)
+(231,44,1)
+(8,213,1)
+(30,246,1)
+(16,84,1)
+(389,251,1)
+(287,116,1)
+(320,352,1)
+(182,216,1)
+(143,246,1)
+(334,352,1)
+(79,299,1)
+(342,466,1)
+(462,473,1)
+(197,336,1)
+(185,131,1)
+(352,85,1)
+(317,24,1)
+(192,364,1)
+(263,441,1)
+(272,176,1)
+(131,264,1)
+(134,227,1)
+(118,264,1)
+(454,412,1)
+(355,348,1)
+(359,16,1)
+(143,300,1)
+(246,434,1)
+(382,371,1)
+(142,412,1)
+(142,141,1)
+(477,176,1)
+(139,72,1)
+(214,136,1)
+(137,129,1)
+(241,66,1)
+(294,43,1)
+(294,181,1)
+(353,406,1)
+(477,146,1)
+(443,458,1)
+(65,449,1)
+(81,342,1)
+(70,35,1)
+(350,26,1)
+(309,198,1)
+(258,83,1)
+(289,78,1)
+(465,186,1)
+(329,69,1)
+(214,228,1)
+(456,248,1)
+(474,352,1)
+(304,292,1)
+(51,12,1)
+(362,168,1)
+(313,342,1)
+(94,306,1)
+(259,211,1)
+(214,64,1)
+(279,189,1)
+(410,456,1)
+(147,98,1)
+(202,61,1)
+(320,49,1)
+(301,378,1)
+(408,365,1)
+(224,316,1)
+(189,236,1)
+(142,359,1)
+(103,452,1)
+(441,287,1)
+(298,218,1)
+(227,448,1)
+(339,260,1)
+(469,435,1)
+(416,310,1)
+(45,332,1)
+(456,58,1)
+(233,268,1)
+(86,310,1)
+(252,36,1)
+(54,352,1)
+(224,474,1)
+(55,416,1)
+(142,80,1)
+(274,398,1)
+(365,27,1)
+(224,415,1)
+(434,126,1)
+(399,59,1)
+(0,346,1)
+(46,288,1)
+(84,315,1)
+(296,375,1)
+(168,352,1)
+(171,2,1)
+(221,159,1)
+(1,33,1)
+(127,88,1)
+(218,424,1)
+(187,77,1)
+(316,352,1)
+(236,101,1)
+(277,23,1)
+(340,176,1)
+(368,466,1)
+(207,50,1)
+(224,228,1)
+(138,249,1)
+(177,174,1)
+(418,252,1)
+(214,292,1)
+(142,289,1)
+(294,290,1)
+(85,394,1)
+(430,128,1)
+(297,121,1)
+(224,187,1)
+(214,272,1)
+(214,288,1)
+(53,329,1)
+(472,54,1)
+(403,284,1)
+(6,233,1)
+(405,237,1)
+(428,367,1)
+(356,176,1)
+(471,32,1)
+(224,455,1)
+(163,382,1)
+(389,295,1)
+(367,176,1)
+(35,163,1)
+(242,180,1)
+(27,106,1)
+(461,176,1)
+(25,352,1)
+(166,67,1)
+(224,162,1)
+(214,459,1)
+(117,173,1)
+(38,90,1)
+(204,353,1)
+(267,391,1)
+(173,93,1)
+(439,71,1)
+(205,11,1)
+(52,402,1)
+(303,304,1)
+(437,193,1)
+(160,265,1)
+(298,310,1)
+(33,170,1)
+(424,316,1)
+(92,64,1)
+(24,395,1)
+(351,436,1)
+(348,132,1)
+(214,316,1)
+(214,101,1)
+(120,199,1)
+(214,234,1)
+(214,280,1)
+(473,466,1)
+(457,427,1)
+(129,216,1)
+(167,457,1)
+(296,352,1)
+(474,324,1)
+(308,97,1)
+(268,230,1)
+(105,294,1)
+(422,9,1)
+(212,352,1)
+(284,156,1)
+(435,397,1)
+(214,455,1)
+(174,105,1)
+(272,465,1)
+(364,332,1)
+(214,122,1)
+(116,455,1)
+(75,273,1)
+(106,352,1)
+(464,393,1)
+(254,426,1)
+(188,466,1)
+(270,137,1)
+(413,253,1)
+(146,179,1)
+(224,53,1)
+(101,352,1)
+(196,30,1)
+(47,305,1)
+(31,136,1)
+(330,283,1)
+(224,54,1)
+(292,19,1)
+(375,399,1)
+(373,471,1)
+(30,89,1)
+(22,468,1)
+(214,54,1)
+(325,364,1)
+(451,366,1)
+(85,144,1)
+(222,110,1)
+(235,387,1)
+(87,175,1)
+(256,239,1)
+(71,352,1)
+(224,292,1)
+(235,17,1)
+(275,37,1)
+(175,361,1)
+(288,352,1)
+(391,469,1)
+(294,108,1)
+(9,153,1)
+(445,28,1)
+(184,226,1)
+(427,369,1)
+(463,21,1)
+(214,53,1)
+(369,24,1)
+(442,177,1)
+(324,52,1)
+(7,122,1)
+(224,461,1)
+(461,451,1)
+(367,345,1)
+(293,281,1)
+(384,57,1)
+(19,205,1)
+(420,262,1)
+(232,343,1)
+(431,408,1)
+(360,477,1)
+(136,352,1)
+(232,352,1)
+(363,264,1)
+(475,121,1)
+(358,311,1)
+(355,176,1)
+(385,277,1)
+(223,6,1)
+(468,470,1)
+(228,370,1)
+(416,60,1)
+(112,20,1)
+(42,432,1)
+(152,40,1)
+(473,188,1)
+(371,58,1)
+(433,352,1)
+(55,298,1)
+(334,423,1)
+(251,347,1)
+(224,272,1)
+(181,242,1)
+(201,109,1)
+(141,255,1)
+(210,322,1)
+(170,176,1)
+(17,15,1)
+(81,291,1)
+(224,477,1)
+(50,269,1)
+(154,222,1)
+(134,109,1)
+(363,185,1)
+(66,155,1)
+(149,453,1)
+(394,144,1)
+(378,429,1)
+(361,363,1)
+(435,176,1)
+(344,333,1)
+(197,94,1)
+(180,411,1)
+(459,352,1)
+(391,134,1)
+(39,171,1)
+(323,258,1)
+(224,269,1)
+(106,8,1)
+(155,279,1)
+(214,337,1)
+(66,352,1)
+(224,337,1)
+(381,422,1)
+(322,169,1)
+(232,264,1)
+(305,320,1)
+(224,432,1)
+(224,104,1)
+(192,325,1)
+(261,221,1)
+(403,176,1)
+(214,461,1)
+(448,13,1)
+(60,158,1)
+(156,117,1)
+(341,318,1)
+(118,352,1)
+(425,152,1)
+(291,356,1)
+(78,232,1)
+(67,301,1)
+(142,458,1)
+(248,369,1)
+(239,167,1)
+(71,63,1)
+(126,96,1)
+(302,80,1)
+(59,392,1)
+(11,349,1)
+(201,178,1)
+(226,259,1)
+(161,3,1)
+(63,99,1)
+(5,457,1)
+(101,138,1)
+(197,176,1)
+(306,195,1)
+(224,106,1)
+(15,192,1)
+(70,58,1)
+(99,30,1)
+(144,321,1)
+(406,120,1)
+(2,461,1)
+(142,242,1)
+(13,251,1)
+(135,352,1)
+(214,162,1)
+(151,247,1)
+(392,272,1)
+(369,317,1)
+(51,466,1)
+(124,339,1)
+(59,352,1)
+(433,25,1)
+(129,182,1)
+(457,109,1)
+(400,289,1)
+(132,386,1)
+(328,362,1)
+(111,446,1)
+(343,87,1)
+(405,176,1)
+(20,421,1)
+(299,244,1)
+(397,463,1)
+(168,263,1)
+(338,121,1)
+(10,201,1)
+(135,264,1)
+(1,176,1)
+(62,196,1)
+(90,377,1)
+(224,459,1)
+(158,298,1)
+(398,461,1)
+(265,448,1)
+(71,264,1)
+(28,143,1)
+(43,359,1)
+(327,437,1)
+(14,360,1)
+(117,148,1)
+(142,341,1)
+(32,107,1)
+(282,476,1)
+(165,401,1)
+(446,341,1)
+(64,350,1)
+(404,340,1)
+(23,271,1)
+(49,38,1)
+(214,474,1)
+(3,286,1)
+(253,220,1)
+(445,143,1)
+(214,269,1)
+(470,229,1)
+(220,380,1)
+(396,371,1)
+(274,224,1)
+(381,176,1)
+(216,310,1)
+(271,472,1)
+(58,355,1)
+(224,122,1)
+(224,244,1)
+(475,323,1)
+(247,73,1)
+(372,310,1)
+(224,64,1)
+(187,352,1)
+(208,56,1)
+(54,335,1)
+(224,288,1)
+(306,428,1)
+(222,135,1)
+(238,250,1)
+(286,187,1)
+(214,212,1)
+(211,337,1)
+(340,256,1)
+(318,267,1)
+(214,130,1)
+(214,107,1)
+(15,113,1)
+(342,127,1)
+(357,234,1)
+(73,372,1)
+(194,162,1)
+(448,251,1)
+(460,176,1)
+(130,112,1)
+(349,206,1)
+(366,0,1)
+(307,42,1)
+(338,297,1)
+(314,431,1)
+(23,310,1)
+(93,344,1)
+(77,166,1)
+(170,384,1)
+(76,223,1)
+(130,352,1)
+(347,95,1)
+(206,235,1)
+(193,55,1)
+(460,149,1)
+(425,310,1)
+(228,176,1)
+(162,308,1)
+(458,238,1)
+(250,5,1)
+(257,157,1)
+(97,76,1)
+(137,23,1)
+(455,352,1)
+(260,92,1)
+(224,212,1)
+(72,31,1)
+(353,246,1)
+(476,124,1)
+(230,207,1)
+(316,231,1)
+(363,352,1)
+(387,357,1)
+(143,118,1)
+(104,379,1)
+(216,385,1)
+(111,443,1)
+(199,445,1)
+(229,296,1)
+(346,275,1)
+(466,1,1)
+(74,94,1)
+(398,103,1)
+(224,107,1)
+(332,154,1)
+(426,417,1)
+(368,111,1)
+(224,168,1)
+(214,476,1)
+(300,118,1)
+(69,328,1)
+(122,47,1)
+(107,254,1)
+(89,270,1)
+(351,176,1)
+(210,176,1)
+(311,420,1)
+(114,212,1)
+(450,204,1)
+(312,473,1)
+(380,228,1)
+(121,81,1)
+(377,194,1)
+(142,0,1)
+(214,244,1)
+(179,66,1)
+(391,448,2)
+(368,369,2)
+(61,96,2)
+(439,71,2)
+(267,448,2)
+(80,338,2)
+(226,259,2)
+(362,433,2)
+(187,352,2)
+(158,338,2)
+(50,361,2)
+(395,389,2)
+(192,364,2)
+(28,30,2)
+(24,448,2)
+(301,378,2)
+(341,318,2)
+(77,320,2)
+(406,246,2)
+(474,338,2)
+(372,310,2)
+(425,310,2)
+(89,30,2)
+(214,101,2)
+(457,369,2)
+(226,361,2)
+(224,432,2)
+(328,433,2)
+(459,433,2)
+(405,310,2)
+(342,473,2)
+(14,361,2)
+(142,341,2)
+(455,433,2)
+(372,338,2)
+(229,433,2)
+(458,369,2)
+(3,320,2)
+(309,338,2)
+(311,361,2)
+(477,361,2)
+(55,298,2)
+(15,113,2)
+(114,320,2)
+(251,347,2)
+(142,289,2)
+(86,338,2)
+(412,191,2)
+(68,371,2)
+(262,14,2)
+(232,361,2)
+(30,89,2)
+(428,367,2)
+(426,361,2)
+(413,338,2)
+(214,459,2)
+(214,64,2)
+(124,361,2)
+(473,381,2)
+(117,148,2)
+(294,338,2)
+(301,320,2)
+(405,176,2)
+(401,473,2)
+(142,419,2)
+(340,176,2)
+(288,352,2)
+(224,168,2)
+(137,129,2)
+(234,361,2)
+(293,338,2)
+(436,473,2)
+(233,361,2)
+(179,361,2)
+(292,361,2)
+(309,475,2)
+(57,381,2)
+(214,66,2)
+(52,338,2)
+(223,6,2)
+(224,54,2)
+(201,381,2)
+(9,369,2)
+(430,338,2)
+(309,198,2)
+(423,66,2)
+(126,96,2)
+(142,448,2)
+(170,381,2)
+(214,130,2)
+(214,107,2)
+(253,338,2)
+(105,361,2)
+(151,338,2)
+(214,269,2)
+(35,371,2)
+(214,476,2)
+(389,448,2)
+(67,320,2)
+(174,361,2)
+(45,361,2)
+(166,320,2)
+(174,473,2)
+(207,361,2)
+(222,361,2)
+(442,473,2)
+(316,338,2)
+(74,361,2)
+(422,369,2)
+(194,361,2)
+(322,338,2)
+(354,338,2)
+(224,337,2)
+(303,361,2)
+(408,320,2)
+(466,381,2)
+(375,433,2)
+(429,320,2)
+(258,338,2)
+(367,176,2)
+(456,369,2)
+(442,369,2)
+(94,306,2)
+(224,212,2)
+(66,352,2)
+(214,122,2)
+(149,96,2)
+(380,338,2)
+(294,96,2)
+(442,371,2)
+(5,369,2)
+(134,448,2)
+(135,361,2)
+(129,216,2)
+(343,361,2)
+(449,361,2)
+(41,371,2)
+(255,361,2)
+(105,448,2)
+(402,425,2)
+(368,466,2)
+(141,381,2)
+(170,176,2)
+(353,30,2)
+(55,416,2)
+(243,96,2)
+(246,96,2)
+(201,109,2)
+(411,371,2)
+(44,338,2)
+(142,412,2)
+(20,338,2)
+(247,338,2)
+(136,352,2)
+(128,176,2)
+(172,338,2)
+(338,121,2)
+(398,433,2)
+(458,238,2)
+(172,361,2)
+(172,381,2)
+(132,117,2)
+(214,136,2)
+(174,381,2)
+(196,30,2)
+(60,338,2)
+(141,361,2)
+(183,338,2)
+(214,54,2)
+(356,473,2)
+(400,361,2)
+(418,433,2)
+(223,361,2)
+(323,338,2)
+(315,473,2)
+(178,381,2)
+(81,342,2)
+(214,296,2)
+(395,190,2)
+(224,187,2)
+(434,96,2)
+(299,338,2)
+(442,117,2)
+(12,361,2)
+(180,371,2)
+(214,455,2)
+(208,361,2)
+(446,448,2)
+(254,361,2)
+(251,371,2)
+(289,361,2)
+(141,96,2)
+(474,352,2)
+(212,352,2)
+(262,361,2)
+(63,96,2)
+(359,473,2)
+(371,117,2)
+(477,176,2)
+(273,361,2)
+(105,369,2)
+(406,30,2)
+(224,162,2)
+(112,338,2)
+(142,242,2)
+(442,381,2)
+(8,320,2)
+(160,448,2)
+(62,30,2)
+(390,310,2)
+(110,361,2)
+(442,96,2)
+(138,320,2)
+(363,264,2)
+(147,117,2)
+(351,473,2)
+(141,473,2)
+(260,361,2)
+(221,176,2)
+(422,9,2)
+(212,320,2)
+(288,338,2)
+(472,338,2)
+(142,371,2)
+(105,117,2)
+(347,95,2)
+(377,361,2)
+(397,134,2)
+(336,361,2)
+(168,352,2)
+(137,23,2)
+(72,338,2)
+(274,142,2)
+(135,352,2)
+(142,473,2)
+(1,176,2)
+(152,338,2)
+(174,338,2)
+(137,338,2)
+(381,176,2)
+(235,361,2)
+(347,371,2)
+(111,338,2)
+(214,432,2)
+(75,361,2)
+(89,352,2)
+(143,118,2)
+(368,361,2)
+(211,361,2)
+(79,338,2)
+(174,96,2)
+(404,457,2)
+(317,448,2)
+(271,338,2)
+(342,466,2)
+(214,288,2)
+(334,352,2)
+(398,461,2)
+(11,349,2)
+(23,338,2)
+(224,136,2)
+(95,371,2)
+(224,292,2)
+(390,338,2)
+(475,121,2)
+(313,473,2)
+(255,473,2)
+(81,473,2)
+(15,192,2)
+(78,361,2)
+(153,369,2)
+(184,361,2)
+(355,176,2)
+(290,96,2)
+(90,377,2)
+(224,53,2)
+(427,369,2)
+(232,264,2)
+(270,338,2)
+(325,361,2)
+(165,473,2)
+(255,96,2)
+(224,244,2)
+(214,316,2)
+(432,361,2)
+(193,55,2)
+(242,180,2)
+(381,369,2)
+(199,445,2)
+(410,369,2)
+(424,338,2)
+(294,448,2)
+(127,473,2)
+(51,361,2)
+(355,117,2)
+(395,448,2)
+(445,30,2)
+(118,352,2)
+(216,338,2)
+(174,448,2)
+(270,137,2)
+(64,361,2)
+(120,30,2)
+(27,320,2)
+(347,70,2)
+(353,96,2)
+(214,106,2)
+(367,361,2)
+(191,381,2)
+(345,361,2)
+(224,334,2)
+(250,369,2)
+(228,338,2)
+(349,206,2)
+(214,234,2)
+(93,433,2)
+(101,352,2)
+(83,338,2)
+(370,338,2)
+(111,361,2)
+(40,338,2)
+(228,176,2)
+(316,352,2)
+(19,361,2)
+(224,122,2)
+(224,106,2)
+(416,310,2)
+(222,135,2)
+(455,352,2)
+(118,30,2)
+(364,332,2)
+(142,359,2)
+(333,433,2)
+(142,369,2)
+(177,117,2)
+(419,202,2)
+(231,338,2)
+(224,64,2)
+(197,361,2)
+(221,371,2)
+(105,338,2)
+(172,369,2)
+(173,433,2)
+(463,134,2)
+(332,361,2)
+(277,338,2)
+(33,381,2)
+(23,310,2)
+(450,30,2)
+(348,117,2)
+(282,361,2)
+(352,85,2)
+(456,58,2)
+(66,361,2)
+(452,433,2)
+(121,81,2)
+(338,473,2)
+(255,448,2)
+(142,96,2)
+(238,369,2)
+(355,348,2)
+(294,473,2)
+(71,96,2)
+(13,371,2)
+(412,381,2)
+(304,361,2)
+(403,176,2)
+(121,473,2)
+(372,210,2)
+(15,361,2)
+(374,381,2)
+(97,361,2)
+(224,477,2)
+(104,361,2)
+(464,381,2)
+(381,422,2)
+(385,338,2)
+(89,96,2)
+(459,352,2)
+(58,117,2)
+(111,369,2)
+(119,433,2)
+(443,369,2)
+(224,130,2)
+(310,309,2)
+(470,433,2)
+(428,361,2)
+(239,457,2)
+(294,361,2)
+(36,433,2)
+(105,381,2)
+(384,381,2)
+(174,371,2)
+(298,310,2)
+(435,134,2)
+(442,361,2)
+(177,369,2)
+(442,338,2)
+(53,433,2)
+(466,1,2)
+(168,433,2)
+(442,448,2)
+(332,222,2)
+(111,448,2)
+(106,320,2)
+(71,264,2)
+(116,433,2)
+(103,433,2)
+(142,0,2)
+(172,448,2)
+(142,117,2)
+(193,338,2)
+(409,361,2)
+(202,96,2)
+(364,361,2)
+(214,461,2)
+(396,371,2)
+(469,435,2)
+(392,433,2)
+(255,352,2)
+(291,356,2)
+(444,361,2)
+(89,270,2)
+(214,474,2)
+(420,361,2)
+(462,473,2)
+(360,361,2)
+(53,352,2)
+(393,381,2)
+(56,361,2)
+(38,361,2)
+(172,96,2)
+(224,455,2)
+(296,352,2)
+(465,433,2)
+(261,371,2)
+(264,338,2)
+(69,433,2)
+(274,398,2)
+(265,448,2)
+(67,301,2)
+(368,58,2)
+(335,338,2)
+(295,448,2)
+(256,457,2)
+(320,361,2)
+(143,246,2)
+(210,176,2)
+(17,15,2)
+(49,361,2)
+(139,310,2)
+(363,352,2)
+(437,338,2)
+(174,176,2)
+(134,109,2)
+(65,361,2)
+(96,361,2)
+(30,246,2)
+(26,361,2)
+(189,320,2)
+(454,381,2)
+(417,361,2)
+(224,272,2)
+(205,361,2)
+(224,461,2)
+(445,143,2)
+(357,361,2)
+(33,170,2)
+(96,197,2)
+(350,361,2)
+(361,363,2)
+(129,338,2)
+(108,117,2)
+(448,251,2)
+(341,448,2)
+(73,372,2)
+(232,352,2)
+(330,369,2)
+(141,117,2)
+(369,24,2)
+(369,448,2)
+(16,473,2)
+(415,96,2)
+(54,352,2)
+(197,94,2)
+(431,320,2)
+(340,457,2)
+(163,371,2)
+(130,352,2)
+(448,371,2)
+(224,476,2)
+(408,365,2)
+(318,448,2)
+(255,369,2)
+(6,233,2)
+(87,361,2)
+(363,338,2)
+(42,361,2)
+(9,24,2)
+(76,223,2)
+(305,320,2)
+(224,234,2)
+(371,58,2)
+(457,109,2)
+(476,361,2)
+(117,176,2)
+(118,264,2)
+(105,473,2)
+(177,361,2)
+(241,66,2)
+(142,338,2)
+(471,361,2)
+(235,17,2)
+(213,320,2)
+(6,361,2)
+(172,371,2)
+(214,228,2)
+(402,338,2)
+(101,320,2)
+(224,104,2)
+(104,176,2)
+(43,473,2)
+(177,338,2)
+(224,107,2)
+(130,338,2)
+(329,433,2)
+(359,16,2)
+(59,433,2)
+(159,371,2)
+(91,381,2)
+(204,96,2)
+(249,320,2)
+(167,457,2)
+(192,361,2)
+(214,162,2)
+(187,320,2)
+(297,473,2)
+(141,448,2)
+(224,101,2)
+(286,320,2)
+(199,30,2)
+(177,381,2)
+(351,176,2)
+(274,224,2)
+(214,337,2)
+(209,338,2)
+(169,338,2)
+(70,58,2)
+(358,361,2)
+(0,346,2)
+(255,338,2)
+(220,338,2)
+(269,361,2)
+(204,30,2)
+(283,369,2)
+(206,235,2)
+(73,338,2)
+(441,433,2)
+(105,96,2)
+(144,321,2)
+(214,272,2)
+(177,448,2)
+(298,338,2)
+(78,232,2)
+(324,338,2)
+(416,338,2)
+(280,66,2)
+(157,390,2)
+(81,291,2)
+(433,352,2)
+(255,381,2)
+(131,338,2)
+(1,381,2)
+(419,96,2)
+(339,361,2)
+(279,361,2)
+(405,338,2)
+(248,369,2)
+(386,117,2)
+(421,139,2)
+(136,338,2)
+(107,361,2)
+(337,176,2)
+(141,369,2)
+(368,338,2)
+(142,381,2)
+(90,361,2)
+(141,371,2)
+(302,338,2)
+(55,338,2)
+(399,433,2)
+(76,361,2)
+(177,473,2)
+(80,183,2)
+(382,371,2)
+(361,338,2)
+(142,361,2)
+(105,371,2)
+(294,117,2)
+(210,338,2)
+(224,459,2)
+(255,117,2)
+(98,117,2)
+(58,355,2)
+(368,448,2)
+(378,17,2)
+(227,448,2)
+(268,361,2)
+(460,96,2)
+(237,338,2)
+(156,117,2)
+(439,96,2)
+(300,30,2)
+(30,96,2)
+(177,96,2)
+(117,433,2)
+(155,361,2)
+(106,352,2)
+(230,361,2)
+(92,361,2)
+(128,338,2)
+(294,371,2)
+(143,30,2)
+(88,473,2)
+(468,433,2)
+(224,269,2)
+(421,338,2)
+(356,176,2)
+(404,340,2)
+(188,381,2)
+(257,338,2)
+(435,176,2)
+(71,352,2)
+(32,361,2)
+(206,361,2)
+(337,361,2)
+(373,361,2)
+(224,96,2)
+(122,320,2)
+(264,405,2)
+(296,433,2)
+(172,117,2)
+(224,288,2)
+(30,30,2)
+(281,338,2)
+(387,361,2)
+(294,381,2)
+(17,361,2)
+(51,466,2)
+(135,264,2)
+(162,361,2)
+(216,310,2)
+(31,338,2)
+(139,338,2)
+(174,117,2)
+(181,371,2)
+(259,361,2)
+(157,338,2)
+(252,433,2)
+(186,433,2)
+(21,134,2)
+(99,96,2)
+(7,320,2)
+(133,320,2)
+(236,320,2)
+(174,369,2)
+(365,320,2)
+(307,361,2)
+(24,395,2)
+(263,433,2)
+(314,320,2)
+(142,80,2)
+(294,369,2)
+(244,352,2)
+(85,144,2)
+(146,361,2)
+(197,176,2)
+(289,78,2)
+(475,338,2)
+(334,66,2)
+(46,338,2)
+(349,361,2)
+(141,338,2)
+(224,474,2)
+(450,96,2)
+(425,338,2)
+(10,381,2)
+(453,96,2)
+(172,473,2)
+(460,176,2)
+(224,316,2)
+(461,176,2)
+(47,320,2)
+(310,338,2)
+(54,338,2)
+(177,371,2)
+(142,458,2)
+(218,338,2)
+(389,251,2)
+(379,361,2)
+(214,244,2)
+(161,320,2)
+(182,338,2)
+(255,371,2)
+(272,433,2)
+(287,433,2)
+(403,117,2)
+(244,338,2)
+(224,296,2)
+(272,176,2)
+(214,187,2)
+(327,338,2)
+(367,345,2)
+(94,361,2)
+(1,33,2)
+(59,352,2)
+(214,212,2)
+(291,473,2)
+(161,3,2)
+(306,361,2)
+(320,352,2)
+(284,117,2)
+(242,371,2)
+(154,361,2)
+(214,292,2)
+(308,361,2)
+(22,433,2)
+(312,473,2)
+(70,371,2)
+(469,134,2)
+(224,228,2)
+(175,361,2)
+(185,338,2)
+(84,473,2)
+(473,466,2)
+(214,53,2)
+(306,428,2)
+(214,168,2)
+(195,361,2)
+(344,433,2)
+(11,361,2)
+(378,320,2)
+-----------------------------------
+(0,ret = -EINVAL)
+(1,sb_bread(sb, ADFS_DISCRECORD / sb->s_blocksize)
+(2,MS_NODIRATIME)
+(3,&adfs_fplus_dir_ops)
+(4,ret)
+(5,ret)
+(6,ADFS_NDA_OWNER_READ |\n\\n\\t\\t\\t     ADFS_NDA_OWNER_WRITE | ADFS_NDA_PUBLIC_READ)
+(7,dr)
+(8,s_dir)
+(9,dr->log2secsize)
+(10,ret)
+(11,root_obj.parent_id = root_obj.file_id = le32_to_cpu(dr->root)
+(12,bh)
+(13,b_data)
+(14,&adfs_dentry_operations)
+(15,(struct adfs_discrecord *)
+(16,-EIO)
+(17,dr = (struct adfs_discrecord *)
+(18,if (IS_ERR(asb->s_map)
+(19,name_len)
+(20,asb)
+(21,"VFS: Can\'t find an adfs filesystem on dev "\n\\n\\t\\t\\t\\t"%s.\\n")
+(22,s_gid)
+(23,dr->nzones)
+(24,dr = (struct adfs_discrecord *)
+(25,asb)
+(26,root_obj)
+(27,adfs_f_dir_ops)
+(28,dm_bh)
+(29,)
+(30,i < asb->s_map_size)
+(31,dr)
+(32,ADFS_NEWDIR_SIZE)
+(33,ADFS_DISCRECORD / sb->s_blocksize)
+(34,)
+(35,b_data)
+(36,ADFS_DEFAULT_OTHER_MASK)
+(37,ret)
+(38,asb)
+(39,asb)
+(40,dr)
+(41,BLOCK_SIZE)
+(42,root_obj)
+(43,goto error;)
+(44,asb)
+(45,b_data)
+(46,dr)
+(47,size)
+(48,)
+(49,s_version)
+(50,ADFS_NDA_DIRECTORY)
+(51,brelse(bh)
+(52,asb)
+(53,asb->s_other_mask)
+(54,asb->s_map_size)
+(55,dr->log2bpmb - dr->log2secsize)
+(56,sb)
+(57,sb)
+(58,bh = sb_bread(sb, ADFS_DISCRECORD / BLOCK_SIZE)
+(59,sb->s_fs_info = asb)
+(60,log2secsize)
+(61,EIO)
+(62,s_map)
+(63,s_map)
+(64,root_obj.loadaddr)
+(65,parent_id)
+(66,asb->s_ftsuffix)
+(67,root_obj.size = le32_to_cpu(dr->root_size)
+(68,ADFS_DISCRECORD)
+(69,asb)
+(70,bh->b_data)
+(71,asb->s_map)
+(72,format_version)
+(73,asb->s_size    \\t\\t= adfs_discsize(dr, sb->s_blocksize_bits)
+(74,sb)
+(75,s_map)
+(76,root_obj.attr\\t   = ADFS_NDA_DIRECTORY   | ADFS_NDA_OWNER_READ |\n\\n\\t\\t\\t     ADFS_NDA_OWNER_WRITE | ADFS_NDA_PUBLIC_READ)
+(77,s_dir)
+(78,PTR_ERR(asb->s_map)
+(79,idlen)
+(80,ret = -EINVAL)
+(81,bh->b_data + (ADFS_DISCRECORD % sb->s_blocksize)
+(82,)
+(83,dr)
+(84,EIO)
+(85,kzalloc(sizeof(*asb)
+(86,sb)
+(87,asb)
+(88,bh)
+(89,asb->s_map_size)
+(90,root_obj.filetype  = -1)
+(91,EINVAL)
+(92,0xfff0003f)
+(93,sb)
+(94,sb->s_root = d_make_root(root)
+(95,ADFS_DISCRECORD % BLOCK_SIZE)
+(96,!sb->s_root)
+(97,root_obj)
+(98,bh)
+(99,asb)
+(100,if (!silent)
+(101,asb->s_namelen)
+(102,if (!silent)
+(103,-ENOMEM)
+(104,sb->s_root)
+(105,s_fs_info)
+(106,asb->s_dir)
+(107,root_obj.size)
+(108,goto error;)
+(109,int silent)
+(110,0)
+(111,bh)
+(112,s_log2sharesize)
+(113,struct adfs_discrecord *)
+(114,ADFS_F_NAME_LEN)
+(115,if (parse_options(sb, data)
+(116,GLOBAL_ROOT_GID)
+(117,parse_options(sb, data)
+(118,asb->s_map)
+(119,s_ftsuffix)
+(120,i)
+(121,b_data = bh->b_data + (ADFS_DISCRECORD % sb->s_blocksize)
+(122,root_obj.size)
+(123,)
+(124,execaddr)
+(125,)
+(126,i)
+(127,b_data)
+(128,adfs_error(sb, "disc record mismatch, very weird!")
+(129,dr->nzones_high << 8)
+(130,asb->s_log2sharesize)
+(131,asb)
+(132,BLOCK_SIZE)
+(133,asb->s_namelen = ADFS_F_NAME_LEN)
+(134,!silent)
+(135,asb->s_map)
+(136,asb->s_version)
+(137,dr->nzones | (dr->nzones_high << 8)
+(138,s_namelen)
+(139,dr->format_version)
+(140,)
+(141,ret)
+(142,return ret;)
+(143,asb->s_map[i])
+(144,sizeof(*asb)
+(145,error_free_bh:)
+(146,s_d_op)
+(147,sb)
+(148,void *data)
+(149,"get root inode failed\\n")
+(150,if (!sb->s_root)
+(151,s_version)
+(152,log2sharesize)
+(153,log2secsize)
+(154,dm_bh)
+(155,s_ftsuffix)
+(156,sb)
+(157,asb->s_idlen\\t\\t= dr->idlen)
+(158,dr)
+(159,"unable to read superblock")
+(160,b_data)
+(161,asb->s_dir     = &adfs_fplus_dir_ops)
+(162,root_obj.filetype)
+(163,bh)
+(164,bh)
+(165,s_blocksize)
+(166,asb)
+(167,"VPS: Can\'t find an adfs filesystem on dev "\n\\n\\t\\t\\t\\t"%s.\\n")
+(168,asb->s_owner_mask)
+(169,sb)
+(170,sb->s_blocksize)
+(171,sb->s_flags |= MS_NODIRATIME)
+(172,asb)
+(173,data)
+(174,sb->s_fs_info)
+(175,ret)
+(176,struct super_block *sb)
+(177,NULL)
+(178,silent)
+(179,sb)
+(180,-EIO)
+(181,goto error;)
+(182,8)
+(183,-EINVAL)
+(184,dr)
+(185,s_map)
+(186,sb)
+(187,asb->s_dir)
+(188,bh)
+(189,asb->s_namelen = ADFS_FPLUS_NAME_LEN)
+(190,struct adfs_discrecord *)
+(191,-EINVAL)
+(192,asb->s_map[0].dm_bh->b_data + 4)
+(193,asb->s_map2blk\\t\\t= dr->log2bpmb - dr->log2secsize)
+(194,1)
+(195,root)
+(196,asb)
+(197,sb->s_root)
+(198,struct adfs_discrecord *)
+(199,brelse(asb->s_map[i].dm_bh)
+(200,if (adfs_checkdiscrecord(dr)
+(201,!silent)
+(202,-EIO)
+(203,if (asb->s_version)
+(204,asb)
+(205,root_obj)
+(206,le32_to_cpu(dr->root)
+(207,ADFS_NDA_OWNER_READ)
+(208,s_op)
+(209,EINVAL)
+(210,sb->s_blocksize_bits)
+(211,adfs_sops)
+(212,asb->s_namelen)
+(213,asb)
+(214,asb->s_namelen += 4)
+(215,if (sb_set_blocksize(sb, 1 << dr->log2secsize)
+(216,dr->nzones_high)
+(217,)
+(218,log2bpmb)
+(219,error:)
+(220,sb->s_magic\\t\\t= ADFS_SUPER_MAGIC)
+(221,adfs_error(sb, "unable to read superblock")
+(222,asb->s_map[0])
+(223,ADFS_NDA_DIRECTORY   | ADFS_NDA_OWNER_READ |\n\\n\\t\\t\\t     ADFS_NDA_OWNER_WRITE | ADFS_NDA_PUBLIC_READ)
+(224,return 0;)
+(225,if (adfs_checkbblk(b_data)
+(226,sb->s_op = &adfs_sops)
+(227,silent)
+(228,sb->s_magic)
+(229,GLOBAL_ROOT_UID)
+(230,ADFS_NDA_OWNER_WRITE)
+(231,s_map2blk)
+(232,asb->s_map)
+(233,ADFS_NDA_OWNER_WRITE | ADFS_NDA_PUBLIC_READ)
+(234,root_obj.file_id)
+(235,dr->root)
+(236,ADFS_FPLUS_NAME_LEN)
+(237,dr)
+(238,-EINVAL)
+(239,sb)
+(240,if (!(bh = sb_bread(sb, ADFS_DISCRECORD / BLOCK_SIZE)
+(241,asb)
+(242,ret = -EIO)
+(243,ret)
+(244,asb->s_idlen)
+(245,for (i = 0; i < asb->s_map_size; i++)
+(246,i = 0)
+(247,asb)
+(248,bh)
+(249,asb)
+(250,EINVAL)
+(251,b_data = bh->b_data + (ADFS_DISCRECORD % BLOCK_SIZE)
+(252,asb->s_other_mask = ADFS_DEFAULT_OTHER_MASK)
+(253,asb)
+(254,size)
+(255,kfree(asb)
+(256,s_id)
+(257,asb)
+(258,b_data)
+(259,&adfs_sops)
+(260,root_obj.loadaddr  = 0xfff0003f)
+(261,ret)
+(262,sb->s_d_op = &adfs_dentry_operations)
+(263,s_owner_mask)
+(264,asb->s_map = adfs_read_map(sb, dr)
+(265,dr)
+(266,root_obj)
+(267,EINVAL)
+(268,ADFS_NDA_PUBLIC_READ)
+(269,root_obj.attr)
+(270,asb->s_map_size\\t\\t= dr->nzones | (dr->nzones_high << 8)
+(271,nzones)
+(272,sb->s_fs_info)
+(273,asb)
+(274,RET)
+(275,EINVAL)
+(276,)
+(277,dr)
+(278,if (!bh)
+(279,asb)
+(280,4)
+(281,sb)
+(282,0xec22c000)
+(283,1)
+(284,BLOCK_SIZE)
+(285,)
+(286,adfs_fplus_dir_ops)
+(287,asb->s_gid = GLOBAL_ROOT_GID)
+(288,asb->s_size)
+(289,ret =  PTR_ERR(asb->s_map)
+(290,goto error;)
+(291,ADFS_DISCRECORD % sb->s_blocksize)
+(292,root_obj.name_len)
+(293,"disc record mismatch, very weird!")
+(294,sb)
+(295,ADFS_DR_OFFSET)
+(296,asb->s_uid)
+(297,b_data)
+(298,dr->log2bpmb)
+(299,dr)
+(300,i)
+(301,le32_to_cpu(dr->root_size)
+(302,goto error_free_bh;)
+(303,root_obj.name_len  = 0)
+(304,0)
+(305,root_obj)
+(306,d_make_root(root)
+(307,file_id)
+(308,filetype)
+(309,(struct adfs_discrecord *)
+(310,dr = (struct adfs_discrecord *)
+(311,sb)
+(312,sb)
+(313,ADFS_DISCRECORD)
+(314,s_namelen)
+(315,ret)
+(316,asb->s_map2blk)
+(317,dr)
+(318,-EINVAL)
+(319,i)
+(320,asb->s_version)
+(321,*asb)
+(322,s_blocksize_bits)
+(323,ADFS_DR_OFFSET)
+(324,s_map)
+(325,4)
+(326,asb)
+(327,s_size)
+(328,asb->s_owner_mask = ADFS_DEFAULT_OWNER_MASK)
+(329,s_other_mask)
+(330,dr)
+(331,dr)
+(332,asb->s_map[0].dm_bh)
+(333,0)
+(334,asb->s_namelen)
+(335,s_map_size)
+(336,s_root)
+(337,sb->s_op)
+(338,adfs_checkbblk(b_data)
+(339,root_obj)
+(340,sb->s_id)
+(341,ret = -EINVAL)
+(342,bh->b_data)
+(343,s_map)
+(344,asb->s_ftsuffix = 0)
+(345,&root_obj)
+(346,-EINVAL)
+(347,bh->b_data + (ADFS_DISCRECORD % BLOCK_SIZE)
+(348,ADFS_DISCRECORD / BLOCK_SIZE)
+(349,root_obj.file_id = le32_to_cpu(dr->root)
+(350,loadaddr)
+(351,adfs_error(sb, "couldn\'t read superblock on "\n\\n\\t\\t\\t\\t"2nd try.")
+(352,asb = kzalloc(sizeof(*asb)
+(353,i)
+(354,sb)
+(355,sb_bread(sb, ADFS_DISCRECORD / BLOCK_SIZE)
+(356,sb->s_blocksize)
+(357,dr)
+(358,root_obj)
+(359,ret = -EIO)
+(360,adfs_dentry_operations)
+(361,IS_ERR(asb->s_map)
+(362,ADFS_DEFAULT_OWNER_MASK)
+(363,asb->s_map)
+(364,asb->s_map[0].dm_bh->b_data)
+(365,&adfs_f_dir_ops)
+(366,sb)
+(367,adfs_iget(sb, &root_obj)
+(368,brelse(bh)
+(369,adfs_checkdiscrecord(dr)
+(370,s_magic)
+(371,!(bh = sb_bread(sb, ADFS_DISCRECORD / BLOCK_SIZE)
+(372,adfs_discsize(dr, sb->s_blocksize_bits)
+(373,root_obj)
+(374,ADFS_DISCRECORD)
+(375,s_uid)
+(376,if (!asb)
+(377,-1)
+(378,dr->root_size)
+(379,s_root)
+(380,ADFS_SUPER_MAGIC)
+(381,sb_set_blocksize(sb, 1 << dr->log2secsize)
+(382,b_data)
+(383,if (adfs_checkbblk(b_data)
+(384,s_blocksize)
+(385,nzones_high)
+(386,ADFS_DISCRECORD)
+(387,root)
+(388,if (!silent)
+(389,b_data + ADFS_DR_OFFSET)
+(390,dr->idlen)
+(391,ret)
+(392,asb)
+(393,bh)
+(394,GFP_KERNEL)
+(395,(struct adfs_discrecord *)
+(396,sb)
+(397,s_id)
+(398,return -ENOMEM;)
+(399,asb)
+(400,goto error_free_bh;)
+(401,sb)
+(402,asb->s_log2sharesize\\t= dr->log2sharesize)
+(403,sb_set_blocksize(sb, BLOCK_SIZE)
+(404,printk("VPS: Can\'t find an adfs filesystem on dev "\n\\n\\t\\t\\t\\t"%s.\\n", sb->s_id)
+(405,adfs_read_map(sb, dr)
+(406,i++)
+(407,)
+(408,asb->s_dir     = &adfs_f_dir_ops)
+(409,attr)
+(410,sb)
+(411,EIO)
+(412,ret = -EINVAL)
+(413,s_idlen)
+(414,if (asb->s_ftsuffix)
+(415,0)
+(416,dr->log2secsize)
+(417,root_obj.execaddr  = 0xec22c000)
+(418,asb)
+(419,ret = -EIO)
+(420,root)
+(421,asb->s_version \\t\\t= dr->format_version)
+(422,1 << dr->log2secsize)
+(423,s_namelen)
+(424,dr)
+(425,dr->log2sharesize)
+(426,root_obj)
+(427,silent)
+(428,root = adfs_iget(sb, &root_obj)
+(429,root_size)
+(430,ret)
+(431,asb)
+(432,root_obj.parent_id)
+(433,!asb)
+(434,0)
+(435,sb->s_id)
+(436,"couldn\'t read superblock on "\n\\n\\t\\t\\t\\t"2nd try.")
+(437,asb)
+(438,b_data)
+(439,kfree(asb->s_map)
+(440,root)
+(441,asb)
+(442,sb->s_fs_info = NULL)
+(443,goto error_free_bh;)
+(444,sb)
+(445,asb->s_map[i].dm_bh)
+(446,goto error_free_bh;)
+(447,)
+(448,adfs_checkbblk(b_data)
+(449,root_obj)
+(450,s_map_size)
+(451,s_flags)
+(452,ENOMEM)
+(453,sb)
+(454,goto error;)
+(455,asb->s_gid)
+(456,brelse(bh)
+(457,!silent)
+(458,ret = -EINVAL)
+(459,asb->s_ftsuffix)
+(460,adfs_error(sb, "get root inode failed\\n")
+(461,sb->s_flags)
+(462,b_data)
+(463,sb)
+(464,sb)
+(465,s_fs_info)
+(466,bh = sb_bread(sb, ADFS_DISCRECORD / sb->s_blocksize)
+(467,asb)
+(468,asb)
+(469,printk("VFS: Can\'t find an adfs filesystem on dev "\n\\n\\t\\t\\t\\t"%s.\\n", sb->s_id)
+(470,asb->s_uid = GLOBAL_ROOT_UID)
+(471,root_obj.size\\t   = ADFS_NEWDIR_SIZE)
+(472,dr)
+(473,!bh)
+(474,asb->s_map)
+(475,b_data + ADFS_DR_OFFSET)
+(476,root_obj.execaddr)
+(477,sb->s_d_op)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

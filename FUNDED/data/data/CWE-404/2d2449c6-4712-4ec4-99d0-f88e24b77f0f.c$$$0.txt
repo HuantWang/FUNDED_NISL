@@ -1,0 +1,2936 @@
+-----label-----
+1
+-----code-----
+int v4l2_query_ext_ctrl(struct v4l2_ctrl_handler *hdl, struct v4l2_query_ext_ctrl *qc)
+{
+	const unsigned next_flags = V4L2_CTRL_FLAG_NEXT_CTRL | V4L2_CTRL_FLAG_NEXT_COMPOUND;
+	u32 id = qc->id & V4L2_CTRL_ID_MASK;
+	struct v4l2_ctrl_ref *ref;
+	struct v4l2_ctrl *ctrl;
+
+	if (hdl == NULL)
+		return -EINVAL;
+
+	mutex_lock(hdl->lock);
+
+	/* Try to find it */
+	ref = find_ref(hdl, id);
+
+	if ((qc->id & next_flags) && !list_empty(&hdl->ctrl_refs)) {
+		bool is_compound;
+		/* Match any control that is not hidden */
+		unsigned mask = 1;
+		bool match = false;
+
+		if ((qc->id & next_flags) == V4L2_CTRL_FLAG_NEXT_COMPOUND) {
+			/* Match any hidden control */
+			match = true;
+		} else if ((qc->id & next_flags) == next_flags) {
+			/* Match any control, compound or not */
+			mask = 0;
+		}
+
+		/* Find the next control with ID > qc->id */
+
+		/* Did we reach the end of the control list? */
+		if (id >= node2id(hdl->ctrl_refs.prev)) {
+			ref = NULL; /* Yes, so there is no next control */
+		} else if (ref) {
+			/* We found a control with the given ID, so just get
+			   the next valid one in the list. */
+			list_for_each_entry_continue(ref, &hdl->ctrl_refs, node) {
+				is_compound =
+					ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES;
+				if (id < ref->ctrl->id &&
+				    (is_compound & mask) == match)
+					break;
+			}
+			if (&ref->node == &hdl->ctrl_refs)
+				ref = NULL;
+		} else {
+			/* No control with the given ID exists, so start
+			   searching for the next largest ID. We know there
+			   is one, otherwise the first 'if' above would have
+			   been true. */
+			list_for_each_entry(ref, &hdl->ctrl_refs, node) {
+				is_compound =
+					ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES;
+				if (id < ref->ctrl->id &&
+				    (is_compound & mask) == match)
+					break;
+			}
+			if (&ref->node == &hdl->ctrl_refs)
+				ref = NULL;
+		}
+	}
+	mutex_unlock(hdl->lock);
+
+	if (!ref)
+		return -EINVAL;
+
+	ctrl = ref->ctrl;
+	memset(qc, 0, sizeof(*qc));
+	if (id >= V4L2_CID_PRIVATE_BASE)
+		qc->id = id;
+	else
+		qc->id = ctrl->id;
+	strlcpy(qc->name, ctrl->name, sizeof(qc->name));
+	qc->flags = user_flags(ctrl);
+	qc->type = ctrl->type;
+	qc->elem_size = ctrl->elem_size;
+	qc->elems = ctrl->elems;
+	qc->nr_of_dims = ctrl->nr_of_dims;
+	memcpy(qc->dims, ctrl->dims, qc->nr_of_dims * sizeof(qc->dims[0]));
+	qc->minimum = ctrl->minimum;
+	qc->maximum = ctrl->maximum;
+	qc->default_value = ctrl->default_value;
+	if (ctrl->type == V4L2_CTRL_TYPE_MENU
+	    || ctrl->type == V4L2_CTRL_TYPE_INTEGER_MENU)
+		qc->step = 1;
+	else
+		qc->step = ctrl->step;
+	return 0;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+17,19
+17,20
+17,21
+17,22
+17,23
+17,24
+17,25
+17,26
+17,27
+17,28
+17,29
+17,30
+17,31
+17,32
+17,33
+17,34
+17,35
+17,36
+17,37
+17,38
+17,39
+17,40
+17,41
+17,42
+18,19
+19,20
+19,21
+21,22
+21,23
+23,24
+24,25
+24,26
+25,26
+27,28
+29,30
+30,31
+30,32
+31,32
+33,34
+33,35
+35,36
+36,37
+36,38
+37,38
+37,39
+38,39
+41,42
+43,44
+44,45
+44,46
+45,46
+47,48
+47,49
+50,51
+51,52
+51,53
+52,53
+54,55
+54,56
+57,58
+57,59
+58,59
+58,60
+59,60
+61,62
+63,64
+64,65
+65,66
+67,68
+68,69
+68,70
+69,70
+71,72
+71,73
+72,73
+75,76
+76,77
+76,78
+77,78
+79,80
+79,81
+79,82
+80,81
+82,83
+84,85
+86,87
+86,88
+87,88
+87,89
+88,89
+89,90
+89,91
+90,91
+90,92
+91,92
+94,95
+96,97
+97,98
+97,99
+98,99
+100,101
+101,102
+101,103
+102,103
+105,106
+105,107
+105,108
+105,109
+105,110
+106,107
+107,108
+107,109
+109,110
+111,112
+112,113
+112,114
+114,115
+114,116
+116,117
+118,119
+119,120
+119,121
+121,122
+121,123
+123,124
+125,126
+125,127
+125,128
+126,127
+126,128
+127,128
+128,129
+128,130
+129,130
+129,131
+130,131
+133,134
+135,136
+137,138
+138,139
+139,140
+139,141
+140,141
+143,144
+143,145
+144,145
+144,146
+145,146
+146,147
+146,148
+147,148
+147,149
+148,149
+151,152
+153,154
+155,156
+156,157
+157,158
+157,159
+158,159
+161,162
+161,163
+161,164
+162,163
+162,164
+163,164
+165,166
+165,167
+166,167
+168,169
+168,170
+169,170
+169,171
+170,171
+174,175
+175,176
+176,177
+176,178
+177,178
+179,180
+181,182
+181,183
+181,184
+182,183
+184,185
+184,186
+184,187
+184,188
+185,186
+186,187
+186,188
+186,189
+186,190
+187,188
+189,190
+191,192
+192,193
+192,194
+193,194
+196,197
+198,199
+199,200
+199,201
+200,201
+201,202
+201,203
+202,203
+204,205
+204,206
+205,206
+205,207
+206,207
+206,208
+207,208
+211,212
+213,214
+213,215
+214,215
+214,216
+215,216
+215,217
+216,217
+218,219
+218,220
+219,220
+219,221
+220,221
+224,225
+224,226
+225,226
+226,227
+226,228
+227,228
+229,230
+231,232
+234,235
+234,236
+235,236
+235,237
+236,237
+237,238
+237,239
+238,239
+241,242
+242,243
+242,244
+243,244
+246,247
+247,248
+247,249
+248,249
+250,251
+252,253
+252,254
+252,255
+252,256
+253,254
+254,255
+254,256
+254,257
+254,258
+255,256
+257,258
+259,260
+260,261
+260,262
+261,262
+264,265
+266,267
+267,268
+267,269
+268,269
+269,270
+269,271
+270,271
+272,273
+272,274
+273,274
+273,275
+274,275
+274,276
+275,276
+279,280
+281,282
+281,283
+282,283
+282,284
+283,284
+283,285
+284,285
+286,287
+286,288
+287,288
+287,289
+288,289
+292,293
+292,294
+293,294
+294,295
+294,296
+295,296
+297,298
+299,300
+302,303
+302,304
+303,304
+303,305
+304,305
+305,306
+305,307
+306,307
+309,310
+310,311
+310,312
+311,312
+314,315
+315,316
+315,317
+316,317
+318,319
+320,321
+321,322
+321,323
+322,323
+324,325
+324,326
+325,326
+328,329
+328,330
+329,330
+330,331
+332,333
+333,334
+334,335
+336,337
+337,338
+337,339
+338,339
+340,341
+340,342
+341,342
+344,345
+345,346
+345,347
+345,348
+345,349
+346,347
+348,349
+351,352
+352,353
+353,354
+354,355
+356,357
+356,358
+356,359
+357,358
+357,359
+358,359
+360,361
+362,363
+363,364
+363,365
+364,365
+364,366
+365,366
+368,369
+370,371
+371,372
+371,373
+372,373
+372,374
+373,374
+376,377
+376,378
+377,378
+380,381
+381,382
+381,383
+381,384
+381,385
+382,383
+384,385
+384,386
+385,386
+388,389
+388,390
+389,390
+392,393
+393,394
+394,395
+394,396
+395,396
+398,399
+399,400
+399,401
+400,401
+400,402
+401,402
+404,405
+404,406
+405,406
+407,408
+409,410
+410,411
+410,412
+411,412
+411,413
+412,413
+415,416
+415,417
+416,417
+419,420
+420,421
+420,422
+421,422
+421,423
+422,423
+425,426
+425,427
+426,427
+429,430
+430,431
+430,432
+431,432
+431,433
+432,433
+435,436
+435,437
+436,437
+439,440
+440,441
+440,442
+441,442
+441,443
+442,443
+445,446
+445,447
+446,447
+449,450
+450,451
+450,452
+450,453
+450,454
+451,452
+453,454
+453,455
+454,455
+457,458
+457,459
+458,459
+461,462
+461,463
+462,463
+462,464
+463,464
+466,467
+467,468
+468,469
+468,470
+469,470
+469,471
+470,471
+474,475
+475,476
+475,477
+476,477
+476,478
+477,478
+480,481
+480,482
+481,482
+484,485
+485,486
+485,487
+486,487
+486,488
+487,488
+490,491
+490,492
+491,492
+494,495
+495,496
+495,497
+496,497
+496,498
+497,498
+500,501
+500,502
+501,502
+504,505
+504,506
+504,507
+505,506
+505,507
+506,507
+506,508
+507,508
+507,509
+508,509
+511,512
+513,514
+513,515
+514,515
+514,516
+515,516
+518,519
+520,521
+521,522
+521,523
+522,523
+522,524
+523,524
+527,528
+528,529
+528,530
+529,530
+529,531
+530,531
+533,534
+533,535
+534,535
+537,538
+-----nextToken-----
+2,4,7,9,10,13,15,16,20,22,26,28,32,34,39,40,42,46,48,49,53,55,56,60,62,66,70,73,74,78,81,83,85,92,93,95,99,103,104,108,110,113,115,117,120,122,124,131,132,134,136,141,142,149,150,152,154,159,160,164,167,171,172,173,178,180,183,188,190,194,195,197,203,208,209,210,212,217,221,222,223,228,230,232,233,239,240,244,245,249,251,256,258,262,263,265,271,276,277,278,280,285,289,290,291,296,298,300,301,307,308,312,313,317,319,323,326,327,331,335,339,342,343,347,349,350,355,359,361,366,367,369,374,375,378,379,383,386,387,390,391,396,397,402,403,406,408,413,414,417,418,423,424,427,428,433,434,437,438,443,444,447,448,452,455,456,459,460,464,465,471,472,473,478,479,482,483,488,489,492,493,498,499,502,503,509,510,512,516,517,519,524,525,526,531,532,535,536,538
+-----computeFrom-----
+24,25
+24,26
+36,37
+36,38
+58,59
+58,60
+76,77
+76,78
+87,88
+87,89
+89,90
+89,91
+126,127
+126,128
+128,129
+128,130
+139,140
+139,141
+144,145
+144,146
+146,147
+146,148
+157,158
+157,159
+162,163
+162,164
+176,177
+176,178
+201,202
+201,203
+204,205
+204,206
+214,215
+214,216
+215,216
+215,217
+224,225
+224,226
+226,227
+226,228
+235,236
+235,237
+247,248
+247,249
+269,270
+269,271
+272,273
+272,274
+282,283
+282,284
+283,284
+283,285
+292,293
+292,294
+294,295
+294,296
+303,304
+303,305
+315,316
+315,317
+337,338
+337,339
+357,358
+357,359
+363,364
+363,365
+371,372
+371,373
+399,400
+399,401
+410,411
+410,412
+420,421
+420,422
+430,431
+430,432
+440,441
+440,442
+461,462
+461,463
+475,476
+475,477
+485,486
+485,487
+495,496
+495,497
+505,506
+505,507
+506,507
+506,508
+513,514
+513,515
+521,522
+521,523
+528,529
+528,530
+-----guardedBy-----
+95,154
+103,312
+92,149
+104,313
+93,291
+239,249
+307,317
+359,369
+-----guardedByNegation-----
+134,154
+131,149
+132,150
+171,312
+172,313
+164,291
+359,379
+516,535
+-----lastLexicalUse-----
+359,379
+-----jump-----
+359,379
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;BinaryExpression;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ProblemStatement;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;BreakStatement;IfStatement;BinaryExpression;UnaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ProblemStatement;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;BreakStatement;IfStatement;BinaryExpression;UnaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IfStatement;UnaryExpression;IdExpression;Name;ReturnStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;UnaryExpression;UnaryExpression;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;UnaryExpression;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ReturnStatement;LiteralExpression;
+-----ast_node-----
+int v4l2_query_ext_ctrl(struct v4l2_ctrl_handler *hdl, struct v4l2_query_ext_ctrl *qc){	const unsigned next_flags = V4L2_CTRL_FLAG_NEXT_CTRL | V4L2_CTRL_FLAG_NEXT_COMPOUND;	u32 id = qc->id & V4L2_CTRL_ID_MASK;	struct v4l2_ctrl_ref *ref;	struct v4l2_ctrl *ctrl;	if (hdl == NULL)		return -EINVAL;	mutex_lock(hdl->lock);	/* Try to find it */	ref = find_ref(hdl, id);	if ((qc->id & next_flags) && !list_empty(&hdl->ctrl_refs)) {		bool is_compound;		/* Match any control that is not hidden */		unsigned mask = 1;		bool match = false;		if ((qc->id & next_flags) == V4L2_CTRL_FLAG_NEXT_COMPOUND) {			/* Match any hidden control */			match = true;		} else if ((qc->id & next_flags) == next_flags) {			/* Match any control, compound or not */			mask = 0;		}		/* Find the next control with ID > qc->id */		/* Did we reach the end of the control list? */		if (id >= node2id(hdl->ctrl_refs.prev)) {			ref = NULL; /* Yes, so there is no next control */		} else if (ref) {			/* We found a control with the given ID, so just get			   the next valid one in the list. */			list_for_each_entry_continue(ref, &hdl->ctrl_refs, node) {				is_compound =					ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES;				if (id < ref->ctrl->id &&				    (is_compound & mask) == match)					break;			}			if (&ref->node == &hdl->ctrl_refs)				ref = NULL;		} else {			/* No control with the given ID exists, so start			   searching for the next largest ID. We know there			   is one, otherwise the first 'if' above would have			   been true. */			list_for_each_entry(ref, &hdl->ctrl_refs, node) {				is_compound =					ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES;				if (id < ref->ctrl->id &&				    (is_compound & mask) == match)					break;			}			if (&ref->node == &hdl->ctrl_refs)				ref = NULL;		}	}	mutex_unlock(hdl->lock);	if (!ref)		return -EINVAL;	ctrl = ref->ctrl;	memset(qc, 0, sizeof(*qc));	if (id >= V4L2_CID_PRIVATE_BASE)		qc->id = id;	else		qc->id = ctrl->id;	strlcpy(qc->name, ctrl->name, sizeof(qc->name));	qc->flags = user_flags(ctrl);	qc->type = ctrl->type;	qc->elem_size = ctrl->elem_size;	qc->elems = ctrl->elems;	qc->nr_of_dims = ctrl->nr_of_dims;	memcpy(qc->dims, ctrl->dims, qc->nr_of_dims * sizeof(qc->dims[0]));	qc->minimum = ctrl->minimum;	qc->maximum = ctrl->maximum;	qc->default_value = ctrl->default_value;	if (ctrl->type == V4L2_CTRL_TYPE_MENU	    || ctrl->type == V4L2_CTRL_TYPE_INTEGER_MENU)		qc->step = 1;	else		qc->step = ctrl->step;	return 0;}
+int
+v4l2_query_ext_ctrl(struct v4l2_ctrl_handler *hdl, struct v4l2_query_ext_ctrl *qc)
+v4l2_query_ext_ctrl
+struct v4l2_ctrl_handler *hdl
+struct v4l2_ctrl_handler
+v4l2_ctrl_handler
+*hdl
+*
+hdl
+struct v4l2_query_ext_ctrl *qc
+struct v4l2_query_ext_ctrl
+v4l2_query_ext_ctrl
+*qc
+*
+qc
+{	const unsigned next_flags = V4L2_CTRL_FLAG_NEXT_CTRL | V4L2_CTRL_FLAG_NEXT_COMPOUND;	u32 id = qc->id & V4L2_CTRL_ID_MASK;	struct v4l2_ctrl_ref *ref;	struct v4l2_ctrl *ctrl;	if (hdl == NULL)		return -EINVAL;	mutex_lock(hdl->lock);	/* Try to find it */	ref = find_ref(hdl, id);	if ((qc->id & next_flags) && !list_empty(&hdl->ctrl_refs)) {		bool is_compound;		/* Match any control that is not hidden */		unsigned mask = 1;		bool match = false;		if ((qc->id & next_flags) == V4L2_CTRL_FLAG_NEXT_COMPOUND) {			/* Match any hidden control */			match = true;		} else if ((qc->id & next_flags) == next_flags) {			/* Match any control, compound or not */			mask = 0;		}		/* Find the next control with ID > qc->id */		/* Did we reach the end of the control list? */		if (id >= node2id(hdl->ctrl_refs.prev)) {			ref = NULL; /* Yes, so there is no next control */		} else if (ref) {			/* We found a control with the given ID, so just get			   the next valid one in the list. */			list_for_each_entry_continue(ref, &hdl->ctrl_refs, node) {				is_compound =					ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES;				if (id < ref->ctrl->id &&				    (is_compound & mask) == match)					break;			}			if (&ref->node == &hdl->ctrl_refs)				ref = NULL;		} else {			/* No control with the given ID exists, so start			   searching for the next largest ID. We know there			   is one, otherwise the first 'if' above would have			   been true. */			list_for_each_entry(ref, &hdl->ctrl_refs, node) {				is_compound =					ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES;				if (id < ref->ctrl->id &&				    (is_compound & mask) == match)					break;			}			if (&ref->node == &hdl->ctrl_refs)				ref = NULL;		}	}	mutex_unlock(hdl->lock);	if (!ref)		return -EINVAL;	ctrl = ref->ctrl;	memset(qc, 0, sizeof(*qc));	if (id >= V4L2_CID_PRIVATE_BASE)		qc->id = id;	else		qc->id = ctrl->id;	strlcpy(qc->name, ctrl->name, sizeof(qc->name));	qc->flags = user_flags(ctrl);	qc->type = ctrl->type;	qc->elem_size = ctrl->elem_size;	qc->elems = ctrl->elems;	qc->nr_of_dims = ctrl->nr_of_dims;	memcpy(qc->dims, ctrl->dims, qc->nr_of_dims * sizeof(qc->dims[0]));	qc->minimum = ctrl->minimum;	qc->maximum = ctrl->maximum;	qc->default_value = ctrl->default_value;	if (ctrl->type == V4L2_CTRL_TYPE_MENU	    || ctrl->type == V4L2_CTRL_TYPE_INTEGER_MENU)		qc->step = 1;	else		qc->step = ctrl->step;	return 0;}
+const unsigned next_flags = V4L2_CTRL_FLAG_NEXT_CTRL | V4L2_CTRL_FLAG_NEXT_COMPOUND;
+const unsigned next_flags = V4L2_CTRL_FLAG_NEXT_CTRL | V4L2_CTRL_FLAG_NEXT_COMPOUND;
+const unsigned
+next_flags = V4L2_CTRL_FLAG_NEXT_CTRL | V4L2_CTRL_FLAG_NEXT_COMPOUND
+next_flags
+= V4L2_CTRL_FLAG_NEXT_CTRL | V4L2_CTRL_FLAG_NEXT_COMPOUND
+V4L2_CTRL_FLAG_NEXT_CTRL | V4L2_CTRL_FLAG_NEXT_COMPOUND
+V4L2_CTRL_FLAG_NEXT_CTRL
+V4L2_CTRL_FLAG_NEXT_CTRL
+V4L2_CTRL_FLAG_NEXT_COMPOUND
+V4L2_CTRL_FLAG_NEXT_COMPOUND
+u32 id = qc->id & V4L2_CTRL_ID_MASK;
+u32 id = qc->id & V4L2_CTRL_ID_MASK;
+u32
+u32
+id = qc->id & V4L2_CTRL_ID_MASK
+id
+= qc->id & V4L2_CTRL_ID_MASK
+qc->id & V4L2_CTRL_ID_MASK
+qc->id
+qc
+qc
+id
+V4L2_CTRL_ID_MASK
+V4L2_CTRL_ID_MASK
+struct v4l2_ctrl_ref *ref;
+struct v4l2_ctrl_ref *ref;
+struct v4l2_ctrl_ref
+v4l2_ctrl_ref
+*ref
+*
+ref
+struct v4l2_ctrl *ctrl;
+struct v4l2_ctrl *ctrl;
+struct v4l2_ctrl
+v4l2_ctrl
+*ctrl
+*
+ctrl
+if (hdl == NULL)		return -EINVAL;
+hdl == NULL
+hdl
+hdl
+NULL
+NULL
+return -EINVAL;
+-EINVAL
+EINVAL
+EINVAL
+mutex_lock(hdl->lock);
+mutex_lock(hdl->lock)
+mutex_lock
+mutex_lock
+hdl->lock
+hdl
+hdl
+lock
+ref = find_ref(hdl, id);
+ref = find_ref(hdl, id)
+ref
+ref
+find_ref(hdl, id)
+find_ref
+find_ref
+hdl
+hdl
+id
+id
+if ((qc->id & next_flags) && !list_empty(&hdl->ctrl_refs)) {		bool is_compound;		/* Match any control that is not hidden */		unsigned mask = 1;		bool match = false;		if ((qc->id & next_flags) == V4L2_CTRL_FLAG_NEXT_COMPOUND) {			/* Match any hidden control */			match = true;		} else if ((qc->id & next_flags) == next_flags) {			/* Match any control, compound or not */			mask = 0;		}		/* Find the next control with ID > qc->id */		/* Did we reach the end of the control list? */		if (id >= node2id(hdl->ctrl_refs.prev)) {			ref = NULL; /* Yes, so there is no next control */		} else if (ref) {			/* We found a control with the given ID, so just get			   the next valid one in the list. */			list_for_each_entry_continue(ref, &hdl->ctrl_refs, node) {				is_compound =					ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES;				if (id < ref->ctrl->id &&				    (is_compound & mask) == match)					break;			}			if (&ref->node == &hdl->ctrl_refs)				ref = NULL;		} else {			/* No control with the given ID exists, so start			   searching for the next largest ID. We know there			   is one, otherwise the first 'if' above would have			   been true. */			list_for_each_entry(ref, &hdl->ctrl_refs, node) {				is_compound =					ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES;				if (id < ref->ctrl->id &&				    (is_compound & mask) == match)					break;			}			if (&ref->node == &hdl->ctrl_refs)				ref = NULL;		}	}
+(qc->id & next_flags) && !list_empty(&hdl->ctrl_refs)
+(qc->id & next_flags)
+qc->id & next_flags
+qc->id
+qc
+qc
+id
+next_flags
+next_flags
+!list_empty(&hdl->ctrl_refs)
+list_empty(&hdl->ctrl_refs)
+list_empty
+list_empty
+&hdl->ctrl_refs
+hdl->ctrl_refs
+hdl
+hdl
+ctrl_refs
+{		bool is_compound;		/* Match any control that is not hidden */		unsigned mask = 1;		bool match = false;		if ((qc->id & next_flags) == V4L2_CTRL_FLAG_NEXT_COMPOUND) {			/* Match any hidden control */			match = true;		} else if ((qc->id & next_flags) == next_flags) {			/* Match any control, compound or not */			mask = 0;		}		/* Find the next control with ID > qc->id */		/* Did we reach the end of the control list? */		if (id >= node2id(hdl->ctrl_refs.prev)) {			ref = NULL; /* Yes, so there is no next control */		} else if (ref) {			/* We found a control with the given ID, so just get			   the next valid one in the list. */			list_for_each_entry_continue(ref, &hdl->ctrl_refs, node) {				is_compound =					ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES;				if (id < ref->ctrl->id &&				    (is_compound & mask) == match)					break;			}			if (&ref->node == &hdl->ctrl_refs)				ref = NULL;		} else {			/* No control with the given ID exists, so start			   searching for the next largest ID. We know there			   is one, otherwise the first 'if' above would have			   been true. */			list_for_each_entry(ref, &hdl->ctrl_refs, node) {				is_compound =					ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES;				if (id < ref->ctrl->id &&				    (is_compound & mask) == match)					break;			}			if (&ref->node == &hdl->ctrl_refs)				ref = NULL;		}	}
+bool is_compound;
+bool is_compound;
+bool
+is_compound
+is_compound
+unsigned mask = 1;
+unsigned mask = 1;
+unsigned
+mask = 1
+mask
+= 1
+1
+bool match = false;
+bool match = false;
+bool
+match = false
+match
+= false
+false
+if ((qc->id & next_flags) == V4L2_CTRL_FLAG_NEXT_COMPOUND) {			/* Match any hidden control */			match = true;		} else if ((qc->id & next_flags) == next_flags) {			/* Match any control, compound or not */			mask = 0;		}
+(qc->id & next_flags) == V4L2_CTRL_FLAG_NEXT_COMPOUND
+(qc->id & next_flags)
+qc->id & next_flags
+qc->id
+qc
+qc
+id
+next_flags
+next_flags
+V4L2_CTRL_FLAG_NEXT_COMPOUND
+V4L2_CTRL_FLAG_NEXT_COMPOUND
+{			/* Match any hidden control */			match = true;		}
+match = true;
+match = true
+match
+match
+true
+if ((qc->id & next_flags) == next_flags) {			/* Match any control, compound or not */			mask = 0;		}
+(qc->id & next_flags) == next_flags
+(qc->id & next_flags)
+qc->id & next_flags
+qc->id
+qc
+qc
+id
+next_flags
+next_flags
+next_flags
+next_flags
+{			/* Match any control, compound or not */			mask = 0;		}
+mask = 0;
+mask = 0
+mask
+mask
+0
+if (id >= node2id(hdl->ctrl_refs.prev)) {			ref = NULL; /* Yes, so there is no next control */		} else if (ref) {			/* We found a control with the given ID, so just get			   the next valid one in the list. */			list_for_each_entry_continue(ref, &hdl->ctrl_refs, node) {				is_compound =					ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES;				if (id < ref->ctrl->id &&				    (is_compound & mask) == match)					break;			}			if (&ref->node == &hdl->ctrl_refs)				ref = NULL;		} else {			/* No control with the given ID exists, so start			   searching for the next largest ID. We know there			   is one, otherwise the first 'if' above would have			   been true. */			list_for_each_entry(ref, &hdl->ctrl_refs, node) {				is_compound =					ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES;				if (id < ref->ctrl->id &&				    (is_compound & mask) == match)					break;			}			if (&ref->node == &hdl->ctrl_refs)				ref = NULL;		}
+id >= node2id(hdl->ctrl_refs.prev)
+id
+id
+node2id(hdl->ctrl_refs.prev)
+node2id
+node2id
+hdl->ctrl_refs.prev
+hdl->ctrl_refs
+hdl
+hdl
+ctrl_refs
+prev
+{			ref = NULL; /* Yes, so there is no next control */		}
+ref = NULL;
+ref = NULL
+ref
+ref
+NULL
+NULL
+if (ref) {			/* We found a control with the given ID, so just get			   the next valid one in the list. */			list_for_each_entry_continue(ref, &hdl->ctrl_refs, node) {				is_compound =					ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES;				if (id < ref->ctrl->id &&				    (is_compound & mask) == match)					break;			}			if (&ref->node == &hdl->ctrl_refs)				ref = NULL;		} else {			/* No control with the given ID exists, so start			   searching for the next largest ID. We know there			   is one, otherwise the first 'if' above would have			   been true. */			list_for_each_entry(ref, &hdl->ctrl_refs, node) {				is_compound =					ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES;				if (id < ref->ctrl->id &&				    (is_compound & mask) == match)					break;			}			if (&ref->node == &hdl->ctrl_refs)				ref = NULL;		}
+ref
+ref
+{			/* We found a control with the given ID, so just get			   the next valid one in the list. */			list_for_each_entry_continue(ref, &hdl->ctrl_refs, node) {				is_compound =					ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES;				if (id < ref->ctrl->id &&				    (is_compound & mask) == match)					break;			}			if (&ref->node == &hdl->ctrl_refs)				ref = NULL;		}
+list_for_each_entry_continue(ref, &hdl->ctrl_refs, node)
+list_for_each_entry_continue(ref, &hdl->ctrl_refs, node)
+list_for_each_entry_continue
+list_for_each_entry_continue
+ref
+ref
+&hdl->ctrl_refs
+hdl->ctrl_refs
+hdl
+hdl
+ctrl_refs
+node
+node
+)
+{				is_compound =					ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES;				if (id < ref->ctrl->id &&				    (is_compound & mask) == match)					break;			}
+is_compound =					ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES;
+is_compound =					ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES
+is_compound
+is_compound
+ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES
+ref->ctrl->type
+ref->ctrl
+ref
+ref
+ctrl
+type
+V4L2_CTRL_COMPOUND_TYPES
+V4L2_CTRL_COMPOUND_TYPES
+if (id < ref->ctrl->id &&				    (is_compound & mask) == match)					break;
+id < ref->ctrl->id &&				    (is_compound & mask) == match
+id < ref->ctrl->id
+id
+id
+ref->ctrl->id
+ref->ctrl
+ref
+ref
+ctrl
+id
+(is_compound & mask) == match
+(is_compound & mask)
+is_compound & mask
+is_compound
+is_compound
+mask
+mask
+match
+match
+break;
+if (&ref->node == &hdl->ctrl_refs)				ref = NULL;
+&ref->node == &hdl->ctrl_refs
+&ref->node
+ref->node
+ref
+ref
+node
+&hdl->ctrl_refs
+hdl->ctrl_refs
+hdl
+hdl
+ctrl_refs
+ref = NULL;
+ref = NULL
+ref
+ref
+NULL
+NULL
+{			/* No control with the given ID exists, so start			   searching for the next largest ID. We know there			   is one, otherwise the first 'if' above would have			   been true. */			list_for_each_entry(ref, &hdl->ctrl_refs, node) {				is_compound =					ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES;				if (id < ref->ctrl->id &&				    (is_compound & mask) == match)					break;			}			if (&ref->node == &hdl->ctrl_refs)				ref = NULL;		}
+list_for_each_entry(ref, &hdl->ctrl_refs, node)
+list_for_each_entry(ref, &hdl->ctrl_refs, node)
+list_for_each_entry
+list_for_each_entry
+ref
+ref
+&hdl->ctrl_refs
+hdl->ctrl_refs
+hdl
+hdl
+ctrl_refs
+node
+node
+)
+{				is_compound =					ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES;				if (id < ref->ctrl->id &&				    (is_compound & mask) == match)					break;			}
+is_compound =					ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES;
+is_compound =					ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES
+is_compound
+is_compound
+ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES
+ref->ctrl->type
+ref->ctrl
+ref
+ref
+ctrl
+type
+V4L2_CTRL_COMPOUND_TYPES
+V4L2_CTRL_COMPOUND_TYPES
+if (id < ref->ctrl->id &&				    (is_compound & mask) == match)					break;
+id < ref->ctrl->id &&				    (is_compound & mask) == match
+id < ref->ctrl->id
+id
+id
+ref->ctrl->id
+ref->ctrl
+ref
+ref
+ctrl
+id
+(is_compound & mask) == match
+(is_compound & mask)
+is_compound & mask
+is_compound
+is_compound
+mask
+mask
+match
+match
+break;
+if (&ref->node == &hdl->ctrl_refs)				ref = NULL;
+&ref->node == &hdl->ctrl_refs
+&ref->node
+ref->node
+ref
+ref
+node
+&hdl->ctrl_refs
+hdl->ctrl_refs
+hdl
+hdl
+ctrl_refs
+ref = NULL;
+ref = NULL
+ref
+ref
+NULL
+NULL
+mutex_unlock(hdl->lock);
+mutex_unlock(hdl->lock)
+mutex_unlock
+mutex_unlock
+hdl->lock
+hdl
+hdl
+lock
+if (!ref)		return -EINVAL;
+!ref
+ref
+ref
+return -EINVAL;
+-EINVAL
+EINVAL
+EINVAL
+ctrl = ref->ctrl;
+ctrl = ref->ctrl
+ctrl
+ctrl
+ref->ctrl
+ref
+ref
+ctrl
+memset(qc, 0, sizeof(*qc));
+memset(qc, 0, sizeof(*qc))
+memset
+memset
+qc
+qc
+0
+sizeof(*qc)
+(*qc)
+*qc
+qc
+qc
+if (id >= V4L2_CID_PRIVATE_BASE)		qc->id = id;	else		qc->id = ctrl->id;
+id >= V4L2_CID_PRIVATE_BASE
+id
+id
+V4L2_CID_PRIVATE_BASE
+V4L2_CID_PRIVATE_BASE
+qc->id = id;
+qc->id = id
+qc->id
+qc
+qc
+id
+id
+id
+qc->id = ctrl->id;
+qc->id = ctrl->id
+qc->id
+qc
+qc
+id
+ctrl->id
+ctrl
+ctrl
+id
+strlcpy(qc->name, ctrl->name, sizeof(qc->name));
+strlcpy(qc->name, ctrl->name, sizeof(qc->name))
+strlcpy
+strlcpy
+qc->name
+qc
+qc
+name
+ctrl->name
+ctrl
+ctrl
+name
+sizeof(qc->name)
+(qc->name)
+qc->name
+qc
+qc
+name
+qc->flags = user_flags(ctrl);
+qc->flags = user_flags(ctrl)
+qc->flags
+qc
+qc
+flags
+user_flags(ctrl)
+user_flags
+user_flags
+ctrl
+ctrl
+qc->type = ctrl->type;
+qc->type = ctrl->type
+qc->type
+qc
+qc
+type
+ctrl->type
+ctrl
+ctrl
+type
+qc->elem_size = ctrl->elem_size;
+qc->elem_size = ctrl->elem_size
+qc->elem_size
+qc
+qc
+elem_size
+ctrl->elem_size
+ctrl
+ctrl
+elem_size
+qc->elems = ctrl->elems;
+qc->elems = ctrl->elems
+qc->elems
+qc
+qc
+elems
+ctrl->elems
+ctrl
+ctrl
+elems
+qc->nr_of_dims = ctrl->nr_of_dims;
+qc->nr_of_dims = ctrl->nr_of_dims
+qc->nr_of_dims
+qc
+qc
+nr_of_dims
+ctrl->nr_of_dims
+ctrl
+ctrl
+nr_of_dims
+memcpy(qc->dims, ctrl->dims, qc->nr_of_dims * sizeof(qc->dims[0]));
+memcpy(qc->dims, ctrl->dims, qc->nr_of_dims * sizeof(qc->dims[0]))
+memcpy
+memcpy
+qc->dims
+qc
+qc
+dims
+ctrl->dims
+ctrl
+ctrl
+dims
+qc->nr_of_dims * sizeof(qc->dims[0])
+qc->nr_of_dims
+qc
+qc
+nr_of_dims
+sizeof(qc->dims[0])
+(qc->dims[0])
+qc->dims[0]
+qc->dims
+qc
+qc
+dims
+0
+qc->minimum = ctrl->minimum;
+qc->minimum = ctrl->minimum
+qc->minimum
+qc
+qc
+minimum
+ctrl->minimum
+ctrl
+ctrl
+minimum
+qc->maximum = ctrl->maximum;
+qc->maximum = ctrl->maximum
+qc->maximum
+qc
+qc
+maximum
+ctrl->maximum
+ctrl
+ctrl
+maximum
+qc->default_value = ctrl->default_value;
+qc->default_value = ctrl->default_value
+qc->default_value
+qc
+qc
+default_value
+ctrl->default_value
+ctrl
+ctrl
+default_value
+if (ctrl->type == V4L2_CTRL_TYPE_MENU	    || ctrl->type == V4L2_CTRL_TYPE_INTEGER_MENU)		qc->step = 1;	else		qc->step = ctrl->step;
+ctrl->type == V4L2_CTRL_TYPE_MENU	    || ctrl->type == V4L2_CTRL_TYPE_INTEGER_MENU
+ctrl->type == V4L2_CTRL_TYPE_MENU
+ctrl->type
+ctrl
+ctrl
+type
+V4L2_CTRL_TYPE_MENU
+V4L2_CTRL_TYPE_MENU
+ctrl->type == V4L2_CTRL_TYPE_INTEGER_MENU
+ctrl->type
+ctrl
+ctrl
+type
+V4L2_CTRL_TYPE_INTEGER_MENU
+V4L2_CTRL_TYPE_INTEGER_MENU
+qc->step = 1;
+qc->step = 1
+qc->step
+qc
+qc
+step
+1
+qc->step = ctrl->step;
+qc->step = ctrl->step
+qc->step
+qc
+qc
+step
+ctrl->step
+ctrl
+ctrl
+step
+return 0;
+0
+-----joern-----
+(249,16,0)
+(161,187,0)
+(286,92,0)
+(89,72,0)
+(59,65,0)
+(94,54,0)
+(290,301,0)
+(95,177,0)
+(187,301,0)
+(186,21,0)
+(232,240,0)
+(287,85,0)
+(134,7,0)
+(120,3,0)
+(181,257,0)
+(16,318,0)
+(66,295,0)
+(257,181,0)
+(6,293,0)
+(313,289,0)
+(2,5,0)
+(221,242,0)
+(170,147,0)
+(150,16,0)
+(249,181,0)
+(153,293,0)
+(189,288,0)
+(183,109,0)
+(315,20,0)
+(14,202,0)
+(188,61,0)
+(35,294,0)
+(286,175,0)
+(197,257,0)
+(11,236,0)
+(306,205,0)
+(306,240,0)
+(121,17,0)
+(208,20,0)
+(58,68,0)
+(307,44,0)
+(44,281,0)
+(269,202,0)
+(306,120,0)
+(123,25,0)
+(155,240,0)
+(249,236,0)
+(173,317,0)
+(267,199,0)
+(315,147,0)
+(44,143,0)
+(6,147,0)
+(101,267,0)
+(219,28,0)
+(193,295,0)
+(71,62,0)
+(203,102,0)
+(145,89,0)
+(159,77,0)
+(68,22,0)
+(247,213,0)
+(233,46,0)
+(146,259,0)
+(287,120,0)
+(15,259,0)
+(202,301,0)
+(55,116,0)
+(90,20,0)
+(262,178,0)
+(309,283,0)
+(71,245,0)
+(145,47,0)
+(112,218,0)
+(207,272,0)
+(274,302,0)
+(288,253,0)
+(154,293,0)
+(288,23,0)
+(194,92,0)
+(291,150,0)
+(275,85,0)
+(12,249,0)
+(113,223,0)
+(191,244,0)
+(130,6,0)
+(228,179,0)
+(51,110,0)
+(319,235,0)
+(315,32,0)
+(189,8,0)
+(7,240,0)
+(168,208,0)
+(223,113,0)
+(81,277,0)
+(195,199,0)
+(28,289,0)
+(245,20,0)
+(110,84,0)
+(294,199,0)
+(303,236,0)
+(9,313,0)
+(278,180,0)
+(175,286,0)
+(179,160,0)
+(103,175,0)
+(187,164,0)
+(37,46,0)
+(295,301,0)
+(205,83,0)
+(234,178,0)
+(25,50,0)
+(288,54,0)
+(208,99,0)
+(312,241,0)
+(310,131,0)
+(28,185,0)
+(111,251,0)
+(48,84,0)
+(119,260,0)
+(128,240,0)
+(257,143,0)
+(167,110,0)
+(281,44,0)
+(156,152,0)
+(19,225,0)
+(139,282,0)
+(3,120,0)
+(256,77,0)
+(99,241,0)
+(39,318,0)
+(225,22,0)
+(179,289,0)
+(296,86,0)
+(7,203,0)
+(243,302,0)
+(225,116,0)
+(303,20,0)
+(5,148,0)
+(36,54,0)
+(78,223,0)
+(218,17,0)
+(74,83,0)
+(115,267,0)
+(6,20,0)
+(172,253,0)
+(279,92,0)
+(268,234,0)
+(229,251,0)
+(288,232,0)
+(260,16,0)
+(314,177,0)
+(48,301,0)
+(305,131,0)
+(190,215,0)
+(164,187,0)
+(185,28,0)
+(76,109,0)
+(22,225,0)
+(288,166,0)
+(45,233,0)
+(70,217,0)
+(209,152,0)
+(67,306,0)
+(203,7,0)
+(264,46,0)
+(61,290,0)
+(44,233,0)
+(21,186,0)
+(268,283,0)
+(245,71,0)
+(253,26,0)
+(288,139,0)
+(292,315,0)
+(164,242,0)
+(165,208,0)
+(40,253,0)
+(136,62,0)
+(131,305,0)
+(1,183,0)
+(6,32,0)
+(77,214,0)
+(73,21,0)
+(253,240,0)
+(180,301,0)
+(304,313,0)
+(135,186,0)
+(239,86,0)
+(183,257,0)
+(222,245,0)
+(300,13,0)
+(160,179,0)
+(143,198,0)
+(277,8,0)
+(162,265,0)
+(38,232,0)
+(312,86,0)
+(230,6,0)
+(65,54,0)
+(317,102,0)
+(189,235,0)
+(283,268,0)
+(92,286,0)
+(188,240,0)
+(162,313,0)
+(41,287,0)
+(223,272,0)
+(298,47,0)
+(21,3,0)
+(62,16,0)
+(26,97,0)
+(69,71,0)
+(183,268,0)
+(102,54,0)
+(169,83,0)
+(174,109,0)
+(4,22,0)
+(10,183,0)
+(181,249,0)
+(221,240,0)
+(184,155,0)
+(108,46,0)
+(24,139,0)
+(150,289,0)
+(53,180,0)
+(150,20,0)
+(20,150,0)
+(215,190,0)
+(116,20,0)
+(282,217,0)
+(257,233,0)
+(283,177,0)
+(183,302,0)
+(288,152,0)
+(295,193,0)
+(180,105,0)
+(120,287,0)
+(272,223,0)
+(105,180,0)
+(49,147,0)
+(120,306,0)
+(47,128,0)
+(155,164,0)
+(64,306,0)
+(270,202,0)
+(98,203,0)
+(23,240,0)
+(31,166,0)
+(17,218,0)
+(142,150,0)
+(281,68,0)
+(131,301,0)
+(148,54,0)
+(288,110,0)
+(18,112,0)
+(86,312,0)
+(318,16,0)
+(99,208,0)
+(72,160,0)
+(102,317,0)
+(110,240,0)
+(112,240,0)
+(30,215,0)
+(252,16,0)
+(257,183,0)
+(254,95,0)
+(104,299,0)
+(269,113,0)
+(83,301,0)
+(200,54,0)
+(65,259,0)
+(232,299,0)
+(126,268,0)
+(213,240,0)
+(96,162,0)
+(217,282,0)
+(136,44,0)
+(22,68,0)
+(47,145,0)
+(3,21,0)
+(215,289,0)
+(97,301,0)
+(84,48,0)
+(241,99,0)
+(92,54,0)
+(315,293,0)
+(122,139,0)
+(29,41,0)
+(164,54,0)
+(116,225,0)
+(260,265,0)
+(251,289,0)
+(75,85,0)
+(192,215,0)
+(152,205,0)
+(127,188,0)
+(288,77,0)
+(216,295,0)
+(259,65,0)
+(43,281,0)
+(86,289,0)
+(255,48,0)
+(231,185,0)
+(171,112,0)
+(290,61,0)
+(88,23,0)
+(231,158,0)
+(26,54,0)
+(163,91,0)
+(33,303,0)
+(203,0,0)
+(82,46,0)
+(236,303,0)
+(62,136,0)
+(297,179,0)
+(218,54,0)
+(288,59,0)
+(44,136,0)
+(227,32,0)
+(244,305,0)
+(271,0,0)
+(106,233,0)
+(89,145,0)
+(80,290,0)
+(301,6,0)
+(17,301,0)
+(164,155,0)
+(72,89,0)
+(258,245,0)
+(316,166,0)
+(210,50,0)
+(212,116,0)
+(129,28,0)
+(236,249,0)
+(250,317,0)
+(91,158,0)
+(285,131,0)
+(107,54,0)
+(140,319,0)
+(23,105,0)
+(139,240,0)
+(0,203,0)
+(199,294,0)
+(246,303,0)
+(63,269,0)
+(248,288,0)
+(138,5,0)
+(196,23,0)
+(158,91,0)
+(83,205,0)
+(128,47,0)
+(6,301,0)
+(117,155,0)
+(5,289,0)
+(226,97,0)
+(68,25,0)
+(214,16,0)
+(151,54,0)
+(97,26,0)
+(301,54,0)
+(105,54,0)
+(224,54,0)
+(160,72,0)
+(267,240,0)
+(57,59,0)
+(13,16,0)
+(92,240,0)
+(185,231,0)
+(32,263,0)
+(149,143,0)
+(42,46,0)
+(199,102,0)
+(302,176,0)
+(201,54,0)
+(93,7,0)
+(282,54,0)
+(132,95,0)
+(20,54,0)
+(100,186,0)
+(202,269,0)
+(244,240,0)
+(273,214,0)
+(238,62,0)
+(199,267,0)
+(27,143,0)
+(265,162,0)
+(124,128,0)
+(60,244,0)
+(288,188,0)
+(84,54,0)
+(308,32,0)
+(259,301,0)
+(87,232,0)
+(280,13,0)
+(125,97,0)
+(79,234,0)
+(241,312,0)
+(133,213,0)
+(118,221,0)
+(41,240,0)
+(148,5,0)
+(211,272,0)
+(114,281,0)
+(281,302,0)
+(266,54,0)
+(281,109,0)
+(205,54,0)
+(141,188,0)
+(261,59,0)
+(34,187,0)
+(265,260,0)
+(85,301,0)
+(137,290,0)
+(52,102,0)
+(158,231,0)
+(272,301,0)
+(62,71,0)
+(95,20,0)
+(0,102,0)
+(85,287,0)
+(242,221,0)
+(109,46,0)
+(220,301,0)
+(288,112,0)
+(175,240,0)
+(213,318,0)
+(157,128,0)
+(56,48,0)
+(276,221,0)
+(217,301,0)
+(166,240,0)
+(177,95,0)
+(242,164,0)
+(113,269,0)
+(47,102,0)
+(91,20,0)
+(311,17,0)
+(59,240,0)
+(186,240,0)
+(287,54,0)
+(77,240,0)
+(313,162,0)
+(318,213,0)
+(204,41,0)
+(16,54,0)
+(206,91,0)
+(288,244,0)
+(284,54,0)
+(177,283,0)
+(287,41,0)
+(61,54,0)
+(166,193,0)
+(152,240,0)
+(190,54,0)
+(229,111,1)
+(104,232,1)
+(59,240,1)
+(267,240,1)
+(116,20,1)
+(288,77,1)
+(89,72,1)
+(288,232,1)
+(77,159,1)
+(209,156,1)
+(287,41,1)
+(12,268,1)
+(163,237,1)
+(58,144,1)
+(315,32,1)
+(306,205,1)
+(288,23,1)
+(278,53,1)
+(294,199,1)
+(101,233,1)
+(255,56,1)
+(295,301,1)
+(277,81,1)
+(60,113,1)
+(76,145,1)
+(288,110,1)
+(112,18,1)
+(168,165,1)
+(152,240,1)
+(48,255,1)
+(5,138,1)
+(213,133,1)
+(204,205,1)
+(115,101,1)
+(136,44,1)
+(57,261,1)
+(81,251,1)
+(137,80,1)
+(273,77,1)
+(65,259,1)
+(40,282,1)
+(78,272,1)
+(18,171,1)
+(308,260,1)
+(120,306,1)
+(184,214,1)
+(186,240,1)
+(30,241,1)
+(66,216,1)
+(260,16,1)
+(283,177,1)
+(131,301,1)
+(286,175,1)
+(231,185,1)
+(257,183,1)
+(270,14,1)
+(249,16,1)
+(225,19,1)
+(238,68,1)
+(21,73,1)
+(250,173,1)
+(19,116,1)
+(24,122,1)
+(164,187,1)
+(189,288,1)
+(212,55,1)
+(288,253,1)
+(161,34,1)
+(319,140,1)
+(214,273,1)
+(138,2,1)
+(1,10,1)
+(143,27,1)
+(241,99,1)
+(166,240,1)
+(116,212,1)
+(28,219,1)
+(35,199,1)
+(260,265,1)
+(293,154,1)
+(248,305,1)
+(235,319,1)
+(251,229,1)
+(225,116,1)
+(187,161,1)
+(127,141,1)
+(313,304,1)
+(179,289,1)
+(20,150,1)
+(6,20,1)
+(281,43,1)
+(186,135,1)
+(196,88,1)
+(183,109,1)
+(41,240,1)
+(165,182,1)
+(95,20,1)
+(91,206,1)
+(0,102,1)
+(47,298,1)
+(282,217,1)
+(287,120,1)
+(228,47,1)
+(269,202,1)
+(74,152,1)
+(150,291,1)
+(139,24,1)
+(148,5,1)
+(291,142,1)
+(303,246,1)
+(192,30,1)
+(136,62,1)
+(183,1,1)
+(203,7,1)
+(179,297,1)
+(202,270,1)
+(290,301,1)
+(184,193,1)
+(208,20,1)
+(203,102,1)
+(199,267,1)
+(128,240,1)
+(102,317,1)
+(48,301,1)
+(92,240,1)
+(32,227,1)
+(11,303,1)
+(202,301,1)
+(13,16,1)
+(3,21,1)
+(257,197,1)
+(118,187,1)
+(15,146,1)
+(114,62,1)
+(171,287,1)
+(258,222,1)
+(261,84,1)
+(30,145,1)
+(16,318,1)
+(191,60,1)
+(23,240,1)
+(245,258,1)
+(100,306,1)
+(248,299,1)
+(295,66,1)
+(26,97,1)
+(267,115,1)
+(142,90,1)
+(177,314,1)
+(29,204,1)
+(318,213,1)
+(190,215,1)
+(223,78,1)
+(183,302,1)
+(98,7,1)
+(7,240,1)
+(285,310,1)
+(245,20,1)
+(67,85,1)
+(206,163,1)
+(110,167,1)
+(315,293,1)
+(132,126,1)
+(45,106,1)
+(145,89,1)
+(296,239,1)
+(155,117,1)
+(84,48,1)
+(272,301,1)
+(154,153,1)
+(265,162,1)
+(269,63,1)
+(193,295,1)
+(174,76,1)
+(280,92,1)
+(163,181,1)
+(120,3,1)
+(86,289,1)
+(217,301,1)
+(43,114,1)
+(157,20,1)
+(141,26,1)
+(254,132,1)
+(68,22,1)
+(256,13,1)
+(288,112,1)
+(175,103,1)
+(56,110,1)
+(288,188,1)
+(259,15,1)
+(226,125,1)
+(34,155,1)
+(181,257,1)
+(39,213,1)
+(53,23,1)
+(72,160,1)
+(93,294,1)
+(241,312,1)
+(144,260,1)
+(288,244,1)
+(271,203,1)
+(51,218,1)
+(166,316,1)
+(230,220,1)
+(188,240,1)
+(203,98,1)
+(218,17,1)
+(110,240,1)
+(216,166,1)
+(85,75,1)
+(13,300,1)
+(103,279,1)
+(17,301,1)
+(214,16,1)
+(8,277,1)
+(22,4,1)
+(27,149,1)
+(303,20,1)
+(71,69,1)
+(156,105,1)
+(213,240,1)
+(17,311,1)
+(172,40,1)
+(301,6,1)
+(124,157,1)
+(62,71,1)
+(133,247,1)
+(257,233,1)
+(205,83,1)
+(272,211,1)
+(306,64,1)
+(119,143,1)
+(159,256,1)
+(119,302,1)
+(97,301,1)
+(130,230,1)
+(33,12,1)
+(122,164,1)
+(128,124,1)
+(158,91,1)
+(125,253,1)
+(75,275,1)
+(162,313,1)
+(41,29,1)
+(7,134,1)
+(145,47,1)
+(253,240,1)
+(221,276,1)
+(90,148,1)
+(149,294,1)
+(113,269,1)
+(9,119,1)
+(44,143,1)
+(87,113,1)
+(292,190,1)
+(181,249,1)
+(80,188,1)
+(304,9,1)
+(281,68,1)
+(147,170,1)
+(117,184,1)
+(152,209,1)
+(300,280,1)
+(189,8,1)
+(44,233,1)
+(44,307,1)
+(155,240,1)
+(307,281,1)
+(4,225,1)
+(73,186,1)
+(288,59,1)
+(177,95,1)
+(62,16,1)
+(31,13,1)
+(30,231,1)
+(183,268,1)
+(302,243,1)
+(316,31,1)
+(221,240,1)
+(106,109,1)
+(63,202,1)
+(140,315,1)
+(49,241,1)
+(5,289,1)
+(170,49,1)
+(69,245,1)
+(64,67,1)
+(30,293,1)
+(283,309,1)
+(173,52,1)
+(227,308,1)
+(275,41,1)
+(274,0,1)
+(259,301,1)
+(30,147,1)
+(268,283,1)
+(253,172,1)
+(236,303,1)
+(180,278,1)
+(223,272,1)
+(38,87,1)
+(315,20,1)
+(6,32,1)
+(23,196,1)
+(281,109,1)
+(279,194,1)
+(86,296,1)
+(165,136,1)
+(309,177,1)
+(220,315,1)
+(313,289,1)
+(217,70,1)
+(195,267,1)
+(6,293,1)
+(288,139,1)
+(6,147,1)
+(257,143,1)
+(207,65,1)
+(153,231,1)
+(317,250,1)
+(119,0,1)
+(175,240,1)
+(167,51,1)
+(244,240,1)
+(160,179,1)
+(211,207,1)
+(185,28,1)
+(162,96,1)
+(88,61,1)
+(150,16,1)
+(83,301,1)
+(318,39,1)
+(314,95,1)
+(109,174,1)
+(199,102,1)
+(276,118,1)
+(85,301,1)
+(70,139,1)
+(126,144,1)
+(111,16,1)
+(146,59,1)
+(105,180,1)
+(298,128,1)
+(231,158,1)
+(247,252,1)
+(187,301,1)
+(310,244,1)
+(71,245,1)
+(6,130,1)
+(47,102,1)
+(95,254,1)
+(287,85,1)
+(83,169,1)
+(30,32,1)
+(131,285,1)
+(164,242,1)
+(242,221,1)
+(169,74,1)
+(288,248,1)
+(249,236,1)
+(239,99,1)
+(251,289,1)
+(294,35,1)
+(233,45,1)
+(0,271,1)
+(281,302,1)
+(47,128,1)
+(306,240,1)
+(219,129,1)
+(243,274,1)
+(112,240,1)
+(99,208,1)
+(232,38,1)
+(236,11,1)
+(0,203,1)
+(232,240,1)
+(44,281,1)
+(77,240,1)
+(189,235,1)
+(2,251,1)
+(10,249,1)
+(55,58,1)
+(121,112,1)
+(237,181,1)
+(288,166,1)
+(194,301,1)
+(21,186,1)
+(222,238,1)
+(28,289,1)
+(208,168,1)
+(244,191,1)
+(59,57,1)
+(61,290,1)
+(139,240,1)
+(312,86,1)
+(311,121,1)
+(252,102,1)
+(288,152,1)
+(92,286,1)
+(299,104,1)
+(197,183,1)
+(188,127,1)
+(180,301,1)
+(150,289,1)
+(297,228,1)
+(113,223,1)
+(164,155,1)
+(14,223,1)
+(129,158,1)
+(215,192,1)
+(199,195,1)
+(91,20,1)
+(96,313,1)
+(215,289,1)
+(22,225,1)
+(182,136,1)
+(315,147,1)
+(290,137,1)
+(97,226,1)
+(246,33,1)
+(305,131,1)
+(135,100,1)
+(315,292,1)
+(134,93,1)
+(120,3,2)
+(288,188,2)
+(305,131,2)
+(23,240,2)
+(73,315,2)
+(47,128,2)
+(7,240,2)
+(180,315,2)
+(150,289,2)
+(283,177,2)
+(71,245,2)
+(18,315,2)
+(11,144,2)
+(290,315,2)
+(245,144,2)
+(270,223,2)
+(109,145,2)
+(231,158,2)
+(92,315,2)
+(235,315,2)
+(41,315,2)
+(99,208,2)
+(215,289,2)
+(55,144,2)
+(227,260,2)
+(297,47,2)
+(84,315,2)
+(288,152,2)
+(116,144,2)
+(57,315,2)
+(260,265,2)
+(285,113,2)
+(92,240,2)
+(162,145,2)
+(63,223,2)
+(196,315,2)
+(91,20,2)
+(307,62,2)
+(148,251,2)
+(72,47,2)
+(288,253,2)
+(27,294,2)
+(98,294,2)
+(302,0,2)
+(244,240,2)
+(114,62,2)
+(56,315,2)
+(170,241,2)
+(10,249,2)
+(271,294,2)
+(0,294,2)
+(286,315,2)
+(183,249,2)
+(29,315,2)
+(313,145,2)
+(309,144,2)
+(71,144,2)
+(164,187,2)
+(189,235,2)
+(13,16,2)
+(303,20,2)
+(175,240,2)
+(185,28,2)
+(1,249,2)
+(74,315,2)
+(220,315,2)
+(65,315,2)
+(217,315,2)
+(68,144,2)
+(228,47,2)
+(17,301,2)
+(311,315,2)
+(177,95,2)
+(61,290,2)
+(44,143,2)
+(221,240,2)
+(67,315,2)
+(179,47,2)
+(132,144,2)
+(209,315,2)
+(171,315,2)
+(110,315,2)
+(225,116,2)
+(23,315,2)
+(58,144,2)
+(242,315,2)
+(154,231,2)
+(120,315,2)
+(288,232,2)
+(288,59,2)
+(12,144,2)
+(83,301,2)
+(8,251,2)
+(147,241,2)
+(105,180,2)
+(199,102,2)
+(91,144,2)
+(218,17,2)
+(236,303,2)
+(211,315,2)
+(272,315,2)
+(75,315,2)
+(47,251,2)
+(87,113,2)
+(168,144,2)
+(277,251,2)
+(214,16,2)
+(153,231,2)
+(115,145,2)
+(89,47,2)
+(261,315,2)
+(95,144,2)
+(130,315,2)
+(117,315,2)
+(182,136,2)
+(156,315,2)
+(203,102,2)
+(260,145,2)
+(288,110,2)
+(131,113,2)
+(217,301,2)
+(238,144,2)
+(202,223,2)
+(164,315,2)
+(5,289,2)
+(294,145,2)
+(92,286,2)
+(314,144,2)
+(265,145,2)
+(290,301,2)
+(164,242,2)
+(162,313,2)
+(315,20,2)
+(13,315,2)
+(155,240,2)
+(169,315,2)
+(119,145,2)
+(158,144,2)
+(150,251,2)
+(299,113,2)
+(257,249,2)
+(287,41,2)
+(85,301,2)
+(288,112,2)
+(163,144,2)
+(3,315,2)
+(118,315,2)
+(207,315,2)
+(64,315,2)
+(48,315,2)
+(319,315,2)
+(218,315,2)
+(88,315,2)
+(199,267,2)
+(96,145,2)
+(202,301,2)
+(267,240,2)
+(78,315,2)
+(83,315,2)
+(190,251,2)
+(26,97,2)
+(112,240,2)
+(158,91,2)
+(145,89,2)
+(22,225,2)
+(81,251,2)
+(150,16,2)
+(186,240,2)
+(152,315,2)
+(231,185,2)
+(28,144,2)
+(306,240,2)
+(157,251,2)
+(294,199,2)
+(128,240,2)
+(122,315,2)
+(232,240,2)
+(159,13,2)
+(195,145,2)
+(315,147,2)
+(232,113,2)
+(215,251,2)
+(265,162,2)
+(136,44,2)
+(14,223,2)
+(43,62,2)
+(45,145,2)
+(276,315,2)
+(293,231,2)
+(20,251,2)
+(6,315,2)
+(138,251,2)
+(288,166,2)
+(181,257,2)
+(48,301,2)
+(190,215,2)
+(223,315,2)
+(44,281,2)
+(260,16,2)
+(296,144,2)
+(295,301,2)
+(166,13,2)
+(175,315,2)
+(135,315,2)
+(106,145,2)
+(90,251,2)
+(17,315,2)
+(288,139,2)
+(164,155,2)
+(253,315,2)
+(312,144,2)
+(85,315,2)
+(69,144,2)
+(206,144,2)
+(62,16,2)
+(280,315,2)
+(113,315,2)
+(77,240,2)
+(3,21,2)
+(40,315,2)
+(225,144,2)
+(95,20,2)
+(143,294,2)
+(145,47,2)
+(281,302,2)
+(161,315,2)
+(272,301,2)
+(44,62,2)
+(288,77,2)
+(51,315,2)
+(269,202,2)
+(288,23,2)
+(257,233,2)
+(278,315,2)
+(308,260,2)
+(287,85,2)
+(316,13,2)
+(303,144,2)
+(160,47,2)
+(146,315,2)
+(287,315,2)
+(208,20,2)
+(239,144,2)
+(41,240,2)
+(213,240,2)
+(44,233,2)
+(105,315,2)
+(142,251,2)
+(187,315,2)
+(139,240,2)
+(131,301,2)
+(28,289,2)
+(77,13,2)
+(318,213,2)
+(172,315,2)
+(126,144,2)
+(292,251,2)
+(205,315,2)
+(38,113,2)
+(315,293,2)
+(6,32,2)
+(113,223,2)
+(16,318,2)
+(7,294,2)
+(236,144,2)
+(242,221,2)
+(188,315,2)
+(193,13,2)
+(249,236,2)
+(134,294,2)
+(86,144,2)
+(269,223,2)
+(21,186,2)
+(256,13,2)
+(281,109,2)
+(20,150,2)
+(283,144,2)
+(310,113,2)
+(295,13,2)
+(241,144,2)
+(274,0,2)
+(181,249,2)
+(223,272,2)
+(26,315,2)
+(241,312,2)
+(112,315,2)
+(248,315,2)
+(49,241,2)
+(286,175,2)
+(189,288,2)
+(15,315,2)
+(102,317,2)
+(121,315,2)
+(255,315,2)
+(184,315,2)
+(124,251,2)
+(167,315,2)
+(219,144,2)
+(282,315,2)
+(205,83,2)
+(214,13,2)
+(22,144,2)
+(148,5,2)
+(137,315,2)
+(66,13,2)
+(140,315,2)
+(245,20,2)
+(110,240,2)
+(197,249,2)
+(259,301,2)
+(101,145,2)
+(53,315,2)
+(174,145,2)
+(204,315,2)
+(80,315,2)
+(237,181,2)
+(300,315,2)
+(301,6,2)
+(249,144,2)
+(97,301,2)
+(312,86,2)
+(203,294,2)
+(2,251,2)
+(68,22,2)
+(275,315,2)
+(288,315,2)
+(279,315,2)
+(180,301,2)
+(47,102,2)
+(31,13,2)
+(86,289,2)
+(33,144,2)
+(287,120,2)
+(125,315,2)
+(152,240,2)
+(113,269,2)
+(288,244,2)
+(281,62,2)
+(241,99,2)
+(0,102,2)
+(315,251,2)
+(281,68,2)
+(257,143,2)
+(291,251,2)
+(179,289,2)
+(30,251,2)
+(193,295,2)
+(97,315,2)
+(65,259,2)
+(70,315,2)
+(188,240,2)
+(0,203,2)
+(6,147,2)
+(100,315,2)
+(192,251,2)
+(128,251,2)
+(258,144,2)
+(21,315,2)
+(32,260,2)
+(9,145,2)
+(129,144,2)
+(139,315,2)
+(104,113,2)
+(183,302,2)
+(313,289,2)
+(282,217,2)
+(222,144,2)
+(136,144,2)
+(305,113,2)
+(233,145,2)
+(254,144,2)
+(259,315,2)
+(226,315,2)
+(84,48,2)
+(306,205,2)
+(273,13,2)
+(62,144,2)
+(6,20,2)
+(165,144,2)
+(141,315,2)
+(127,315,2)
+(181,144,2)
+(61,315,2)
+(144,260,2)
+(257,183,2)
+(208,144,2)
+(177,144,2)
+(267,145,2)
+(315,32,2)
+(183,268,2)
+(185,144,2)
+(35,145,2)
+(34,315,2)
+(72,160,2)
+(199,145,2)
+(76,145,2)
+(212,144,2)
+(187,301,2)
+(166,240,2)
+(194,315,2)
+(246,144,2)
+(253,240,2)
+(249,16,2)
+(230,315,2)
+(306,315,2)
+(89,72,2)
+(231,144,2)
+(59,240,2)
+(149,294,2)
+(183,109,2)
+(5,251,2)
+(268,283,2)
+(304,145,2)
+(62,71,2)
+(268,144,2)
+(136,62,2)
+(301,315,2)
+(298,251,2)
+(93,294,2)
+(60,113,2)
+(103,315,2)
+(244,113,2)
+(221,315,2)
+(145,251,2)
+(160,179,2)
+(189,8,2)
+(6,293,2)
+(251,289,2)
+(120,306,2)
+(24,315,2)
+(186,315,2)
+(116,20,2)
+(216,13,2)
+(203,7,2)
+(99,144,2)
+(191,113,2)
+(19,144,2)
+(4,144,2)
+(243,0,2)
+(59,315,2)
+(155,315,2)
+-----------------------------------
+(0,(qc->id & next_flags)
+(1,mask)
+(2,hdl)
+(3,sizeof(qc->dims[0])
+(4,V4L2_CTRL_COMPOUND_TYPES)
+(5,hdl->lock)
+(6,ref->ctrl)
+(7,qc->id)
+(8,return -EINVAL;)
+(9,hdl)
+(10,is_compound)
+(11,id)
+(12,id)
+(13,id >= V4L2_CID_PRIVATE_BASE)
+(14,ctrl)
+(15,default_value)
+(16,id = qc->id & V4L2_CTRL_ID_MASK)
+(17,ctrl->minimum)
+(18,minimum)
+(19,type)
+(20,ref = find_ref(hdl, id)
+(21,qc->dims[0])
+(22,ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES)
+(23,qc->elems)
+(24,flags)
+(25,)
+(26,qc->type = ctrl->type)
+(27,true)
+(28,hdl->ctrl_refs)
+(29,dims)
+(30,hdl)
+(31,qc)
+(32,ref = NULL)
+(33,ref)
+(34,ctrl)
+(35,V4L2_CTRL_FLAG_NEXT_COMPOUND)
+(36,if (hdl == NULL)
+(37,if (id >= node2id(hdl->ctrl_refs.prev)
+(38,step)
+(39,V4L2_CTRL_ID_MASK)
+(40,qc)
+(41,qc->dims)
+(42,if ((qc->id & next_flags)
+(43,mask)
+(44,(is_compound & mask)
+(45,false)
+(46,)
+(47,qc->id & next_flags)
+(48,ctrl->maximum)
+(49,ref)
+(50,)
+(51,qc)
+(52,next_flags)
+(53,ctrl)
+(54,)
+(55,ref)
+(56,ctrl)
+(57,default_value)
+(58,is_compound)
+(59,qc->default_value)
+(60,qc)
+(61,qc->elem_size = ctrl->elem_size)
+(62,id < ref->ctrl->id)
+(63,V4L2_CTRL_TYPE_INTEGER_MENU)
+(64,nr_of_dims)
+(65,qc->default_value = ctrl->default_value)
+(66,id)
+(67,qc)
+(68,is_compound =\n\\n\\t\\t\\t\\t\\tref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES)
+(69,id)
+(70,ctrl)
+(71,ref->ctrl->id)
+(72,list_empty(&hdl->ctrl_refs)
+(73,0)
+(74,ctrl)
+(75,dims)
+(76,mask)
+(77,qc->id)
+(78,V4L2_CTRL_TYPE_MENU)
+(79,if (id < ref->ctrl->id &&\n\\n\\t\\t\\t\\t    (is_compound & mask)
+(80,ctrl)
+(81,EINVAL)
+(82,is_compound)
+(83,ctrl->nr_of_dims)
+(84,qc->maximum = ctrl->maximum)
+(85,ctrl->dims)
+(86,hdl->ctrl_refs)
+(87,qc)
+(88,qc)
+(89,!list_empty(&hdl->ctrl_refs)
+(90,ref)
+(91,ref->node)
+(92,memset(qc, 0, sizeof(*qc)
+(93,qc)
+(94,if (!ref)
+(95,ref->ctrl)
+(96,prev)
+(97,ctrl->type)
+(98,next_flags)
+(99,&ref->node)
+(100,qc)
+(101,qc)
+(102,next_flags = V4L2_CTRL_FLAG_NEXT_CTRL | V4L2_CTRL_FLAG_NEXT_COMPOUND)
+(103,qc)
+(104,1)
+(105,qc->elems = ctrl->elems)
+(106,match)
+(107,if ((qc->id & next_flags)
+(108,match)
+(109,mask = 1)
+(110,qc->maximum)
+(111,hdl)
+(112,qc->minimum)
+(113,ctrl->type == V4L2_CTRL_TYPE_MENU\n\\n\\t    || ctrl->type == V4L2_CTRL_TYPE_INTEGER_MENU)
+(114,is_compound)
+(115,id)
+(116,ref->ctrl)
+(117,name)
+(118,qc)
+(119,id)
+(120,qc->nr_of_dims * sizeof(qc->dims[0])
+(121,ctrl)
+(122,qc)
+(123,if (id < ref->ctrl->id &&\n\\n\\t\\t\\t\\t    (is_compound & mask)
+(124,id)
+(125,ctrl)
+(126,is_compound)
+(127,elem_size)
+(128,qc->id)
+(129,hdl)
+(130,ctrl)
+(131,ctrl->step)
+(132,ref)
+(133,id)
+(134,id)
+(135,dims)
+(136,id < ref->ctrl->id &&\n\\n\\t\\t\\t\\t    (is_compound & mask)
+(137,elem_size)
+(138,lock)
+(139,qc->flags)
+(140,EINVAL)
+(141,qc)
+(142,hdl)
+(143,match = true)
+(144,ref)
+(145,(qc->id & next_flags)
+(146,ctrl)
+(147,ref = NULL)
+(148,mutex_lock(hdl->lock)
+(149,match)
+(150,find_ref(hdl, id)
+(151,ref)
+(152,qc->nr_of_dims)
+(153,ref)
+(154,NULL)
+(155,qc->name)
+(156,qc)
+(157,qc)
+(158,&ref->node)
+(159,id)
+(160,&hdl->ctrl_refs)
+(161,name)
+(162,hdl->ctrl_refs.prev)
+(163,ref)
+(164,strlcpy(qc->name, ctrl->name, sizeof(qc->name)
+(165,ref)
+(166,qc->id)
+(167,maximum)
+(168,node)
+(169,nr_of_dims)
+(170,NULL)
+(171,qc)
+(172,type)
+(173,V4L2_CTRL_FLAG_NEXT_CTRL)
+(174,1)
+(175,*qc)
+(176,)
+(177,ref->ctrl->type)
+(178,)
+(179,hdl->ctrl_refs)
+(180,ctrl->elems)
+(181,id < ref->ctrl->id &&\n\\n\\t\\t\\t\\t    (is_compound & mask)
+(182,break;)
+(183,is_compound & mask)
+(184,qc)
+(185,&hdl->ctrl_refs)
+(186,qc->dims)
+(187,ctrl->name)
+(188,qc->elem_size)
+(189,RET)
+(190,mutex_unlock(hdl->lock)
+(191,step)
+(192,lock)
+(193,qc->id = ctrl->id)
+(194,qc)
+(195,next_flags)
+(196,elems)
+(197,match)
+(198,)
+(199,qc->id & next_flags)
+(200,if (id >= V4L2_CID_PRIVATE_BASE)
+(201,if (ctrl->type == V4L2_CTRL_TYPE_MENU\n\\n\\t    || ctrl->type == V4L2_CTRL_TYPE_INTEGER_MENU)
+(202,ctrl->type)
+(203,qc->id & next_flags)
+(204,qc)
+(205,qc->nr_of_dims = ctrl->nr_of_dims)
+(206,node)
+(207,ctrl)
+(208,ref->node)
+(209,nr_of_dims)
+(210,if (&ref->node == &hdl->ctrl_refs)
+(211,type)
+(212,ctrl)
+(213,qc->id)
+(214,qc->id = id)
+(215,hdl->lock)
+(216,ctrl)
+(217,user_flags(ctrl)
+(218,qc->minimum = ctrl->minimum)
+(219,ctrl_refs)
+(220,ctrl)
+(221,qc->name)
+(222,ref)
+(223,ctrl->type == V4L2_CTRL_TYPE_MENU)
+(224,ctrl)
+(225,ref->ctrl->type)
+(226,type)
+(227,NULL)
+(228,hdl)
+(229,NULL)
+(230,ref)
+(231,&ref->node == &hdl->ctrl_refs)
+(232,qc->step)
+(233,match = false)
+(234,)
+(235,return -EINVAL;)
+(236,ref->ctrl->id)
+(237,break;)
+(238,id)
+(239,hdl)
+(240,struct v4l2_query_ext_ctrl *qc)
+(241,&ref->node == &hdl->ctrl_refs)
+(242,sizeof(qc->name)
+(243,0)
+(244,qc->step)
+(245,ref->ctrl)
+(246,ctrl)
+(247,qc)
+(248,0)
+(249,id < ref->ctrl->id)
+(250,V4L2_CTRL_FLAG_NEXT_COMPOUND)
+(251,hdl == NULL)
+(252,id)
+(253,qc->type)
+(254,ctrl)
+(255,maximum)
+(256,qc)
+(257,(is_compound & mask)
+(258,ctrl)
+(259,ctrl->default_value)
+(260,id >= node2id(hdl->ctrl_refs.prev)
+(261,qc)
+(262,if (&ref->node == &hdl->ctrl_refs)
+(263,)
+(264,mask)
+(265,node2id(hdl->ctrl_refs.prev)
+(266,next_flags)
+(267,qc->id)
+(268,is_compound =\n\\n\\t\\t\\t\\t\\tref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES)
+(269,ctrl->type == V4L2_CTRL_TYPE_INTEGER_MENU)
+(270,type)
+(271,next_flags)
+(272,ctrl->type)
+(273,id)
+(274,mask)
+(275,ctrl)
+(276,name)
+(277,-EINVAL)
+(278,elems)
+(279,0)
+(280,id)
+(281,is_compound & mask)
+(282,qc->flags = user_flags(ctrl)
+(283,ref->ctrl->type >= V4L2_CTRL_COMPOUND_TYPES)
+(284,id)
+(285,step)
+(286,sizeof(*qc)
+(287,memcpy(qc->dims, ctrl->dims, qc->nr_of_dims * sizeof(qc->dims[0])
+(288,return 0;)
+(289,struct v4l2_ctrl_handler *hdl)
+(290,ctrl->elem_size)
+(291,id)
+(292,ref)
+(293,ref = NULL)
+(294,(qc->id & next_flags)
+(295,ctrl->id)
+(296,ctrl_refs)
+(297,ctrl_refs)
+(298,next_flags)
+(299,qc->step = 1)
+(300,V4L2_CID_PRIVATE_BASE)
+(301,ctrl = ref->ctrl)
+(302,mask = 0)
+(303,ref->ctrl)
+(304,ctrl_refs)
+(305,qc->step = ctrl->step)
+(306,qc->nr_of_dims)
+(307,match)
+(308,ref)
+(309,V4L2_CTRL_COMPOUND_TYPES)
+(310,ctrl)
+(311,minimum)
+(312,&hdl->ctrl_refs)
+(313,hdl->ctrl_refs)
+(314,type)
+(315,!ref)
+(316,id)
+(317,V4L2_CTRL_FLAG_NEXT_CTRL | V4L2_CTRL_FLAG_NEXT_COMPOUND)
+(318,qc->id & V4L2_CTRL_ID_MASK)
+(319,-EINVAL)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

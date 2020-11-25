@@ -1,0 +1,1872 @@
+-----label-----
+0
+-----code-----
+static int svm_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr)
+{
+	struct vcpu_svm *svm = to_svm(vcpu);
+
+	u32 ecx = msr->index;
+	u64 data = msr->data;
+	switch (ecx) {
+	case MSR_IA32_CR_PAT:
+		if (!kvm_mtrr_valid(vcpu, MSR_IA32_CR_PAT, data))
+			return 1;
+		vcpu->arch.pat = data;
+		svm->vmcb->save.g_pat = data;
+		mark_dirty(svm->vmcb, VMCB_NPT);
+		break;
+	case MSR_IA32_TSC:
+		kvm_write_tsc(vcpu, msr);
+		break;
+	case MSR_STAR:
+		svm->vmcb->save.star = data;
+		break;
+#ifdef CONFIG_X86_64
+	case MSR_LSTAR:
+		svm->vmcb->save.lstar = data;
+		break;
+	case MSR_CSTAR:
+		svm->vmcb->save.cstar = data;
+		break;
+	case MSR_KERNEL_GS_BASE:
+		svm->vmcb->save.kernel_gs_base = data;
+		break;
+	case MSR_SYSCALL_MASK:
+		svm->vmcb->save.sfmask = data;
+		break;
+#endif
+	case MSR_IA32_SYSENTER_CS:
+		svm->vmcb->save.sysenter_cs = data;
+		break;
+	case MSR_IA32_SYSENTER_EIP:
+		svm->sysenter_eip = data;
+		svm->vmcb->save.sysenter_eip = data;
+		break;
+	case MSR_IA32_SYSENTER_ESP:
+		svm->sysenter_esp = data;
+		svm->vmcb->save.sysenter_esp = data;
+		break;
+	case MSR_IA32_DEBUGCTLMSR:
+		if (!boot_cpu_has(X86_FEATURE_LBRV)) {
+			vcpu_unimpl(vcpu, "%s: MSR_IA32_DEBUGCTL 0x%llx, nop\n",
+				    __func__, data);
+			break;
+		}
+		if (data & DEBUGCTL_RESERVED_BITS)
+			return 1;
+
+		svm->vmcb->save.dbgctl = data;
+		mark_dirty(svm->vmcb, VMCB_LBR);
+		if (data & (1ULL<<0))
+			svm_enable_lbrv(svm);
+		else
+			svm_disable_lbrv(svm);
+		break;
+	case MSR_VM_HSAVE_PA:
+		svm->nested.hsave_msr = data;
+		break;
+	case MSR_VM_CR:
+		return svm_set_vm_cr(vcpu, data);
+	case MSR_VM_IGNNE:
+		vcpu_unimpl(vcpu, "unimplemented wrmsr: 0x%x data 0x%llx\n", ecx, data);
+		break;
+	default:
+		return kvm_set_msr_common(vcpu, msr);
+	}
+	return 0;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+17,19
+17,20
+17,21
+17,22
+18,19
+19,20
+19,21
+20,21
+22,23
+22,24
+22,25
+25,26
+26,27
+26,28
+27,28
+29,30
+31,32
+32,33
+32,34
+33,34
+35,36
+35,37
+37,38
+38,39
+38,40
+39,40
+42,43
+43,44
+43,45
+44,45
+46,47
+46,48
+48,49
+49,50
+49,51
+50,51
+53,54
+53,55
+54,55
+56,57
+56,58
+56,59
+56,60
+56,61
+56,62
+56,63
+56,64
+56,65
+56,66
+56,67
+56,68
+56,69
+56,70
+56,71
+56,72
+56,73
+56,74
+56,75
+56,76
+56,77
+56,78
+56,79
+56,80
+56,81
+56,82
+56,83
+56,84
+56,85
+56,86
+56,87
+56,88
+56,89
+56,90
+56,91
+56,92
+56,93
+56,94
+56,95
+56,96
+57,58
+58,59
+60,61
+60,62
+61,62
+62,63
+62,64
+62,65
+62,66
+63,64
+65,66
+67,68
+69,70
+71,72
+73,74
+74,75
+74,76
+75,76
+75,77
+76,77
+76,78
+77,78
+81,82
+83,84
+84,85
+84,86
+85,86
+85,87
+86,87
+86,88
+87,88
+87,89
+88,89
+93,94
+95,96
+96,97
+96,98
+96,99
+97,98
+99,100
+99,101
+100,101
+103,104
+106,107
+107,108
+109,110
+110,111
+110,112
+110,113
+111,112
+113,114
+115,116
+118,119
+119,120
+121,122
+122,123
+122,124
+123,124
+123,125
+124,125
+124,126
+125,126
+125,127
+126,127
+131,132
+134,135
+135,136
+137,138
+138,139
+138,140
+139,140
+139,141
+140,141
+140,142
+141,142
+141,143
+142,143
+147,148
+150,151
+151,152
+153,154
+154,155
+154,156
+155,156
+155,157
+156,157
+159,160
+161,162
+162,163
+162,164
+163,164
+163,165
+164,165
+164,166
+165,166
+165,167
+166,167
+171,172
+174,175
+175,176
+177,178
+178,179
+178,180
+179,180
+179,181
+180,181
+183,184
+185,186
+186,187
+186,188
+187,188
+187,189
+188,189
+188,190
+189,190
+189,191
+190,191
+195,196
+198,199
+199,200
+201,202
+201,203
+202,203
+203,204
+203,205
+204,205
+206,207
+208,209
+208,210
+209,210
+210,211
+210,212
+210,213
+210,214
+210,215
+211,212
+213,214
+216,217
+218,219
+221,222
+221,223
+222,223
+222,224
+223,224
+225,226
+227,228
+229,230
+230,231
+230,232
+231,232
+231,233
+232,233
+232,234
+233,234
+233,235
+234,235
+239,240
+241,242
+242,243
+242,244
+242,245
+243,244
+245,246
+245,247
+246,247
+249,250
+251,252
+251,253
+251,254
+252,253
+252,254
+253,254
+255,256
+256,257
+256,258
+259,260
+260,261
+260,262
+261,262
+263,264
+265,266
+266,267
+266,268
+267,268
+269,270
+272,273
+273,274
+275,276
+276,277
+276,278
+277,278
+277,279
+278,279
+278,280
+279,280
+283,284
+286,287
+287,288
+289,290
+290,291
+290,292
+290,293
+291,292
+293,294
+295,296
+297,298
+298,299
+300,301
+301,302
+301,303
+301,304
+301,305
+301,306
+302,303
+304,305
+307,308
+309,310
+313,314
+314,315
+314,316
+314,317
+315,316
+317,318
+319,320
+321,322
+-----nextToken-----
+2,4,7,9,10,13,15,16,21,23,24,28,30,34,36,40,41,45,47,51,52,55,59,64,66,68,70,72,78,79,80,82,89,90,91,92,94,98,101,102,104,105,108,112,114,116,117,120,127,128,129,130,132,133,136,143,144,145,146,148,149,152,157,158,160,167,168,169,170,172,173,176,181,182,184,191,192,193,194,196,197,200,205,207,212,214,215,217,219,220,224,226,228,235,236,237,238,240,244,247,248,250,254,257,258,262,264,268,270,271,274,280,281,282,284,285,288,292,294,296,299,303,305,306,308,310,311,312,316,318,320,322
+-----computeFrom-----
+74,75
+74,76
+84,85
+84,86
+122,123
+122,124
+138,139
+138,140
+154,155
+154,156
+162,163
+162,164
+178,179
+178,180
+186,187
+186,188
+222,223
+222,224
+230,231
+230,232
+252,253
+252,254
+256,257
+256,258
+276,277
+276,278
+-----guardedBy-----
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;FieldReference;IdExpression;Name;Name;SwitchStatement;IdExpression;Name;CompoundStatement;CaseStatement;IdExpression;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ReturnStatement;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;FieldReference;IdExpression;Name;Name;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;FieldReference;IdExpression;Name;Name;Name;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;FieldReference;IdExpression;Name;Name;Name;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;FieldReference;IdExpression;Name;Name;Name;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;FieldReference;IdExpression;Name;Name;Name;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;BreakStatement;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;FieldReference;IdExpression;Name;Name;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;LiteralExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;ReturnStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CaseStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;BreakStatement;DefaultStatement;ReturnStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ReturnStatement;LiteralExpression;
+-----ast_node-----
+static int svm_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr){	struct vcpu_svm *svm = to_svm(vcpu);	u32 ecx = msr->index;	u64 data = msr->data;	switch (ecx) {	case MSR_IA32_CR_PAT:		if (!kvm_mtrr_valid(vcpu, MSR_IA32_CR_PAT, data))			return 1;		vcpu->arch.pat = data;		svm->vmcb->save.g_pat = data;		mark_dirty(svm->vmcb, VMCB_NPT);		break;	case MSR_IA32_TSC:		kvm_write_tsc(vcpu, msr);		break;	case MSR_STAR:		svm->vmcb->save.star = data;		break;#ifdef CONFIG_X86_64	case MSR_LSTAR:		svm->vmcb->save.lstar = data;		break;	case MSR_CSTAR:		svm->vmcb->save.cstar = data;		break;	case MSR_KERNEL_GS_BASE:		svm->vmcb->save.kernel_gs_base = data;		break;	case MSR_SYSCALL_MASK:		svm->vmcb->save.sfmask = data;		break;#endif	case MSR_IA32_SYSENTER_CS:		svm->vmcb->save.sysenter_cs = data;		break;	case MSR_IA32_SYSENTER_EIP:		svm->sysenter_eip = data;		svm->vmcb->save.sysenter_eip = data;		break;	case MSR_IA32_SYSENTER_ESP:		svm->sysenter_esp = data;		svm->vmcb->save.sysenter_esp = data;		break;	case MSR_IA32_DEBUGCTLMSR:		if (!boot_cpu_has(X86_FEATURE_LBRV)) {			vcpu_unimpl(vcpu, "%s: MSR_IA32_DEBUGCTL 0x%llx, nop\n",				    __func__, data);			break;		}		if (data & DEBUGCTL_RESERVED_BITS)			return 1;		svm->vmcb->save.dbgctl = data;		mark_dirty(svm->vmcb, VMCB_LBR);		if (data & (1ULL<<0))			svm_enable_lbrv(svm);		else			svm_disable_lbrv(svm);		break;	case MSR_VM_HSAVE_PA:		svm->nested.hsave_msr = data;		break;	case MSR_VM_CR:		return svm_set_vm_cr(vcpu, data);	case MSR_VM_IGNNE:		vcpu_unimpl(vcpu, "unimplemented wrmsr: 0x%x data 0x%llx\n", ecx, data);		break;	default:		return kvm_set_msr_common(vcpu, msr);	}	return 0;}
+static int
+svm_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr)
+svm_set_msr
+struct kvm_vcpu *vcpu
+struct kvm_vcpu
+kvm_vcpu
+*vcpu
+*
+vcpu
+struct msr_data *msr
+struct msr_data
+msr_data
+*msr
+*
+msr
+{	struct vcpu_svm *svm = to_svm(vcpu);	u32 ecx = msr->index;	u64 data = msr->data;	switch (ecx) {	case MSR_IA32_CR_PAT:		if (!kvm_mtrr_valid(vcpu, MSR_IA32_CR_PAT, data))			return 1;		vcpu->arch.pat = data;		svm->vmcb->save.g_pat = data;		mark_dirty(svm->vmcb, VMCB_NPT);		break;	case MSR_IA32_TSC:		kvm_write_tsc(vcpu, msr);		break;	case MSR_STAR:		svm->vmcb->save.star = data;		break;#ifdef CONFIG_X86_64	case MSR_LSTAR:		svm->vmcb->save.lstar = data;		break;	case MSR_CSTAR:		svm->vmcb->save.cstar = data;		break;	case MSR_KERNEL_GS_BASE:		svm->vmcb->save.kernel_gs_base = data;		break;	case MSR_SYSCALL_MASK:		svm->vmcb->save.sfmask = data;		break;#endif	case MSR_IA32_SYSENTER_CS:		svm->vmcb->save.sysenter_cs = data;		break;	case MSR_IA32_SYSENTER_EIP:		svm->sysenter_eip = data;		svm->vmcb->save.sysenter_eip = data;		break;	case MSR_IA32_SYSENTER_ESP:		svm->sysenter_esp = data;		svm->vmcb->save.sysenter_esp = data;		break;	case MSR_IA32_DEBUGCTLMSR:		if (!boot_cpu_has(X86_FEATURE_LBRV)) {			vcpu_unimpl(vcpu, "%s: MSR_IA32_DEBUGCTL 0x%llx, nop\n",				    __func__, data);			break;		}		if (data & DEBUGCTL_RESERVED_BITS)			return 1;		svm->vmcb->save.dbgctl = data;		mark_dirty(svm->vmcb, VMCB_LBR);		if (data & (1ULL<<0))			svm_enable_lbrv(svm);		else			svm_disable_lbrv(svm);		break;	case MSR_VM_HSAVE_PA:		svm->nested.hsave_msr = data;		break;	case MSR_VM_CR:		return svm_set_vm_cr(vcpu, data);	case MSR_VM_IGNNE:		vcpu_unimpl(vcpu, "unimplemented wrmsr: 0x%x data 0x%llx\n", ecx, data);		break;	default:		return kvm_set_msr_common(vcpu, msr);	}	return 0;}
+struct vcpu_svm *svm = to_svm(vcpu);
+struct vcpu_svm *svm = to_svm(vcpu);
+struct vcpu_svm
+vcpu_svm
+*svm = to_svm(vcpu)
+*
+svm
+= to_svm(vcpu)
+to_svm(vcpu)
+to_svm
+to_svm
+vcpu
+vcpu
+u32 ecx = msr->index;
+u32 ecx = msr->index;
+u32
+u32
+ecx = msr->index
+ecx
+= msr->index
+msr->index
+msr
+msr
+index
+u64 data = msr->data;
+u64 data = msr->data;
+u64
+u64
+data = msr->data
+data
+= msr->data
+msr->data
+msr
+msr
+data
+switch (ecx) {	case MSR_IA32_CR_PAT:		if (!kvm_mtrr_valid(vcpu, MSR_IA32_CR_PAT, data))			return 1;		vcpu->arch.pat = data;		svm->vmcb->save.g_pat = data;		mark_dirty(svm->vmcb, VMCB_NPT);		break;	case MSR_IA32_TSC:		kvm_write_tsc(vcpu, msr);		break;	case MSR_STAR:		svm->vmcb->save.star = data;		break;#ifdef CONFIG_X86_64	case MSR_LSTAR:		svm->vmcb->save.lstar = data;		break;	case MSR_CSTAR:		svm->vmcb->save.cstar = data;		break;	case MSR_KERNEL_GS_BASE:		svm->vmcb->save.kernel_gs_base = data;		break;	case MSR_SYSCALL_MASK:		svm->vmcb->save.sfmask = data;		break;#endif	case MSR_IA32_SYSENTER_CS:		svm->vmcb->save.sysenter_cs = data;		break;	case MSR_IA32_SYSENTER_EIP:		svm->sysenter_eip = data;		svm->vmcb->save.sysenter_eip = data;		break;	case MSR_IA32_SYSENTER_ESP:		svm->sysenter_esp = data;		svm->vmcb->save.sysenter_esp = data;		break;	case MSR_IA32_DEBUGCTLMSR:		if (!boot_cpu_has(X86_FEATURE_LBRV)) {			vcpu_unimpl(vcpu, "%s: MSR_IA32_DEBUGCTL 0x%llx, nop\n",				    __func__, data);			break;		}		if (data & DEBUGCTL_RESERVED_BITS)			return 1;		svm->vmcb->save.dbgctl = data;		mark_dirty(svm->vmcb, VMCB_LBR);		if (data & (1ULL<<0))			svm_enable_lbrv(svm);		else			svm_disable_lbrv(svm);		break;	case MSR_VM_HSAVE_PA:		svm->nested.hsave_msr = data;		break;	case MSR_VM_CR:		return svm_set_vm_cr(vcpu, data);	case MSR_VM_IGNNE:		vcpu_unimpl(vcpu, "unimplemented wrmsr: 0x%x data 0x%llx\n", ecx, data);		break;	default:		return kvm_set_msr_common(vcpu, msr);	}
+ecx
+ecx
+{	case MSR_IA32_CR_PAT:		if (!kvm_mtrr_valid(vcpu, MSR_IA32_CR_PAT, data))			return 1;		vcpu->arch.pat = data;		svm->vmcb->save.g_pat = data;		mark_dirty(svm->vmcb, VMCB_NPT);		break;	case MSR_IA32_TSC:		kvm_write_tsc(vcpu, msr);		break;	case MSR_STAR:		svm->vmcb->save.star = data;		break;#ifdef CONFIG_X86_64	case MSR_LSTAR:		svm->vmcb->save.lstar = data;		break;	case MSR_CSTAR:		svm->vmcb->save.cstar = data;		break;	case MSR_KERNEL_GS_BASE:		svm->vmcb->save.kernel_gs_base = data;		break;	case MSR_SYSCALL_MASK:		svm->vmcb->save.sfmask = data;		break;#endif	case MSR_IA32_SYSENTER_CS:		svm->vmcb->save.sysenter_cs = data;		break;	case MSR_IA32_SYSENTER_EIP:		svm->sysenter_eip = data;		svm->vmcb->save.sysenter_eip = data;		break;	case MSR_IA32_SYSENTER_ESP:		svm->sysenter_esp = data;		svm->vmcb->save.sysenter_esp = data;		break;	case MSR_IA32_DEBUGCTLMSR:		if (!boot_cpu_has(X86_FEATURE_LBRV)) {			vcpu_unimpl(vcpu, "%s: MSR_IA32_DEBUGCTL 0x%llx, nop\n",				    __func__, data);			break;		}		if (data & DEBUGCTL_RESERVED_BITS)			return 1;		svm->vmcb->save.dbgctl = data;		mark_dirty(svm->vmcb, VMCB_LBR);		if (data & (1ULL<<0))			svm_enable_lbrv(svm);		else			svm_disable_lbrv(svm);		break;	case MSR_VM_HSAVE_PA:		svm->nested.hsave_msr = data;		break;	case MSR_VM_CR:		return svm_set_vm_cr(vcpu, data);	case MSR_VM_IGNNE:		vcpu_unimpl(vcpu, "unimplemented wrmsr: 0x%x data 0x%llx\n", ecx, data);		break;	default:		return kvm_set_msr_common(vcpu, msr);	}
+case MSR_IA32_CR_PAT:
+MSR_IA32_CR_PAT
+MSR_IA32_CR_PAT
+if (!kvm_mtrr_valid(vcpu, MSR_IA32_CR_PAT, data))			return 1;
+!kvm_mtrr_valid(vcpu, MSR_IA32_CR_PAT, data)
+kvm_mtrr_valid(vcpu, MSR_IA32_CR_PAT, data)
+kvm_mtrr_valid
+kvm_mtrr_valid
+vcpu
+vcpu
+MSR_IA32_CR_PAT
+MSR_IA32_CR_PAT
+data
+data
+return 1;
+1
+vcpu->arch.pat = data;
+vcpu->arch.pat = data
+vcpu->arch.pat
+vcpu->arch
+vcpu
+vcpu
+arch
+pat
+data
+data
+svm->vmcb->save.g_pat = data;
+svm->vmcb->save.g_pat = data
+svm->vmcb->save.g_pat
+svm->vmcb->save
+svm->vmcb
+svm
+svm
+vmcb
+save
+g_pat
+data
+data
+mark_dirty(svm->vmcb, VMCB_NPT);
+mark_dirty(svm->vmcb, VMCB_NPT)
+mark_dirty
+mark_dirty
+svm->vmcb
+svm
+svm
+vmcb
+VMCB_NPT
+VMCB_NPT
+break;
+case MSR_IA32_TSC:
+MSR_IA32_TSC
+MSR_IA32_TSC
+kvm_write_tsc(vcpu, msr);
+kvm_write_tsc(vcpu, msr)
+kvm_write_tsc
+kvm_write_tsc
+vcpu
+vcpu
+msr
+msr
+break;
+case MSR_STAR:
+MSR_STAR
+MSR_STAR
+svm->vmcb->save.star = data;
+svm->vmcb->save.star = data
+svm->vmcb->save.star
+svm->vmcb->save
+svm->vmcb
+svm
+svm
+vmcb
+save
+star
+data
+data
+break;
+case MSR_IA32_SYSENTER_CS:
+MSR_IA32_SYSENTER_CS
+MSR_IA32_SYSENTER_CS
+svm->vmcb->save.sysenter_cs = data;
+svm->vmcb->save.sysenter_cs = data
+svm->vmcb->save.sysenter_cs
+svm->vmcb->save
+svm->vmcb
+svm
+svm
+vmcb
+save
+sysenter_cs
+data
+data
+break;
+case MSR_IA32_SYSENTER_EIP:
+MSR_IA32_SYSENTER_EIP
+MSR_IA32_SYSENTER_EIP
+svm->sysenter_eip = data;
+svm->sysenter_eip = data
+svm->sysenter_eip
+svm
+svm
+sysenter_eip
+data
+data
+svm->vmcb->save.sysenter_eip = data;
+svm->vmcb->save.sysenter_eip = data
+svm->vmcb->save.sysenter_eip
+svm->vmcb->save
+svm->vmcb
+svm
+svm
+vmcb
+save
+sysenter_eip
+data
+data
+break;
+case MSR_IA32_SYSENTER_ESP:
+MSR_IA32_SYSENTER_ESP
+MSR_IA32_SYSENTER_ESP
+svm->sysenter_esp = data;
+svm->sysenter_esp = data
+svm->sysenter_esp
+svm
+svm
+sysenter_esp
+data
+data
+svm->vmcb->save.sysenter_esp = data;
+svm->vmcb->save.sysenter_esp = data
+svm->vmcb->save.sysenter_esp
+svm->vmcb->save
+svm->vmcb
+svm
+svm
+vmcb
+save
+sysenter_esp
+data
+data
+break;
+case MSR_IA32_DEBUGCTLMSR:
+MSR_IA32_DEBUGCTLMSR
+MSR_IA32_DEBUGCTLMSR
+if (!boot_cpu_has(X86_FEATURE_LBRV)) {			vcpu_unimpl(vcpu, "%s: MSR_IA32_DEBUGCTL 0x%llx, nop\n",				    __func__, data);			break;		}
+!boot_cpu_has(X86_FEATURE_LBRV)
+boot_cpu_has(X86_FEATURE_LBRV)
+boot_cpu_has
+boot_cpu_has
+X86_FEATURE_LBRV
+X86_FEATURE_LBRV
+{			vcpu_unimpl(vcpu, "%s: MSR_IA32_DEBUGCTL 0x%llx, nop\n",				    __func__, data);			break;		}
+vcpu_unimpl(vcpu, "%s: MSR_IA32_DEBUGCTL 0x%llx, nop\n",				    __func__, data);
+vcpu_unimpl(vcpu, "%s: MSR_IA32_DEBUGCTL 0x%llx, nop\n",				    __func__, data)
+vcpu_unimpl
+vcpu_unimpl
+vcpu
+vcpu
+"%s: MSR_IA32_DEBUGCTL 0x%llx, nop\n"
+__func__
+__func__
+data
+data
+break;
+if (data & DEBUGCTL_RESERVED_BITS)			return 1;
+data & DEBUGCTL_RESERVED_BITS
+data
+data
+DEBUGCTL_RESERVED_BITS
+DEBUGCTL_RESERVED_BITS
+return 1;
+1
+svm->vmcb->save.dbgctl = data;
+svm->vmcb->save.dbgctl = data
+svm->vmcb->save.dbgctl
+svm->vmcb->save
+svm->vmcb
+svm
+svm
+vmcb
+save
+dbgctl
+data
+data
+mark_dirty(svm->vmcb, VMCB_LBR);
+mark_dirty(svm->vmcb, VMCB_LBR)
+mark_dirty
+mark_dirty
+svm->vmcb
+svm
+svm
+vmcb
+VMCB_LBR
+VMCB_LBR
+if (data & (1ULL<<0))			svm_enable_lbrv(svm);		else			svm_disable_lbrv(svm);
+data & (1ULL<<0)
+data
+data
+(1ULL<<0)
+1ULL<<0
+1ULL
+0
+svm_enable_lbrv(svm);
+svm_enable_lbrv(svm)
+svm_enable_lbrv
+svm_enable_lbrv
+svm
+svm
+svm_disable_lbrv(svm);
+svm_disable_lbrv(svm)
+svm_disable_lbrv
+svm_disable_lbrv
+svm
+svm
+break;
+case MSR_VM_HSAVE_PA:
+MSR_VM_HSAVE_PA
+MSR_VM_HSAVE_PA
+svm->nested.hsave_msr = data;
+svm->nested.hsave_msr = data
+svm->nested.hsave_msr
+svm->nested
+svm
+svm
+nested
+hsave_msr
+data
+data
+break;
+case MSR_VM_CR:
+MSR_VM_CR
+MSR_VM_CR
+return svm_set_vm_cr(vcpu, data);
+svm_set_vm_cr(vcpu, data)
+svm_set_vm_cr
+svm_set_vm_cr
+vcpu
+vcpu
+data
+data
+case MSR_VM_IGNNE:
+MSR_VM_IGNNE
+MSR_VM_IGNNE
+vcpu_unimpl(vcpu, "unimplemented wrmsr: 0x%x data 0x%llx\n", ecx, data);
+vcpu_unimpl(vcpu, "unimplemented wrmsr: 0x%x data 0x%llx\n", ecx, data)
+vcpu_unimpl
+vcpu_unimpl
+vcpu
+vcpu
+"unimplemented wrmsr: 0x%x data 0x%llx\n"
+ecx
+ecx
+data
+data
+break;
+default:
+return kvm_set_msr_common(vcpu, msr);
+kvm_set_msr_common(vcpu, msr)
+kvm_set_msr_common
+kvm_set_msr_common
+vcpu
+vcpu
+msr
+msr
+return 0;
+0
+-----joern-----
+(33,26,0)
+(191,148,0)
+(121,220,0)
+(151,180,0)
+(200,218,0)
+(74,220,0)
+(169,180,0)
+(101,149,0)
+(6,79,0)
+(218,206,0)
+(121,177,0)
+(90,26,0)
+(192,75,0)
+(102,92,0)
+(130,75,0)
+(191,101,0)
+(155,180,0)
+(10,101,0)
+(70,181,0)
+(0,24,0)
+(159,180,0)
+(64,106,0)
+(66,94,0)
+(213,97,0)
+(98,111,0)
+(71,22,0)
+(93,103,0)
+(38,130,0)
+(52,172,0)
+(70,136,0)
+(110,0,0)
+(2,220,0)
+(76,197,0)
+(29,92,0)
+(148,32,0)
+(62,180,0)
+(137,222,0)
+(205,180,0)
+(26,101,0)
+(81,10,0)
+(211,157,0)
+(8,81,0)
+(94,5,0)
+(117,180,0)
+(194,180,0)
+(120,0,0)
+(148,191,0)
+(186,180,0)
+(16,177,0)
+(12,88,0)
+(14,130,0)
+(184,180,0)
+(122,24,0)
+(194,172,0)
+(81,20,0)
+(27,180,0)
+(167,180,0)
+(121,71,0)
+(82,101,0)
+(99,24,0)
+(119,180,0)
+(170,72,0)
+(115,142,0)
+(195,122,0)
+(10,81,0)
+(156,172,0)
+(28,79,0)
+(83,180,0)
+(124,84,0)
+(79,101,0)
+(88,172,0)
+(41,180,0)
+(3,72,0)
+(199,180,0)
+(210,62,0)
+(13,5,0)
+(174,182,0)
+(72,180,0)
+(45,180,0)
+(75,130,0)
+(145,194,0)
+(105,136,0)
+(130,38,0)
+(168,52,0)
+(99,172,0)
+(22,71,0)
+(147,112,0)
+(160,87,0)
+(97,217,0)
+(74,9,0)
+(17,180,0)
+(158,139,0)
+(215,76,0)
+(129,99,0)
+(177,141,0)
+(196,217,0)
+(193,101,0)
+(160,69,0)
+(56,180,0)
+(30,169,0)
+(150,180,0)
+(113,122,0)
+(35,180,0)
+(178,32,0)
+(112,58,0)
+(172,13,0)
+(121,181,0)
+(190,84,0)
+(206,101,0)
+(134,121,0)
+(125,180,0)
+(1,82,0)
+(124,180,0)
+(62,172,0)
+(3,101,0)
+(189,157,0)
+(100,144,0)
+(101,193,0)
+(48,74,0)
+(89,70,0)
+(97,24,0)
+(18,180,0)
+(152,172,0)
+(162,180,0)
+(166,13,0)
+(37,35,0)
+(181,35,0)
+(218,177,0)
+(57,160,0)
+(196,106,0)
+(123,69,0)
+(73,149,0)
+(185,101,0)
+(58,112,0)
+(22,79,0)
+(135,102,0)
+(20,172,0)
+(72,3,0)
+(108,84,0)
+(121,222,0)
+(198,185,0)
+(75,36,0)
+(181,70,0)
+(68,124,0)
+(126,4,0)
+(21,87,0)
+(116,172,0)
+(32,152,0)
+(193,24,0)
+(222,169,0)
+(59,99,0)
+(146,58,0)
+(77,191,0)
+(121,197,0)
+(121,185,0)
+(61,36,0)
+(138,180,0)
+(188,47,0)
+(201,180,0)
+(206,218,0)
+(216,193,0)
+(111,94,0)
+(182,101,0)
+(15,99,0)
+(201,101,0)
+(153,180,0)
+(173,206,0)
+(78,180,0)
+(111,149,0)
+(91,52,0)
+(157,24,0)
+(31,136,0)
+(9,74,0)
+(221,149,0)
+(156,180,0)
+(94,111,0)
+(7,206,0)
+(171,13,0)
+(119,172,0)
+(26,102,0)
+(154,201,0)
+(205,172,0)
+(0,5,0)
+(217,180,0)
+(36,172,0)
+(92,194,0)
+(187,181,0)
+(143,208,0)
+(157,131,0)
+(121,92,0)
+(84,124,0)
+(51,141,0)
+(207,52,0)
+(4,126,0)
+(54,148,0)
+(107,149,0)
+(182,103,0)
+(136,101,0)
+(87,160,0)
+(196,127,0)
+(175,9,0)
+(163,125,0)
+(103,182,0)
+(43,182,0)
+(39,97,0)
+(121,47,0)
+(103,222,0)
+(164,3,0)
+(44,180,0)
+(99,104,0)
+(69,125,0)
+(172,149,0)
+(23,38,0)
+(165,9,0)
+(52,180,0)
+(20,180,0)
+(97,5,0)
+(125,172,0)
+(136,70,0)
+(80,22,0)
+(86,152,0)
+(19,101,0)
+(42,87,0)
+(34,52,0)
+(208,144,0)
+(84,101,0)
+(52,111,0)
+(196,131,0)
+(128,10,0)
+(96,122,0)
+(11,180,0)
+(121,81,0)
+(85,94,0)
+(176,180,0)
+(118,180,0)
+(35,172,0)
+(204,122,0)
+(87,101,0)
+(112,208,0)
+(63,4,0)
+(121,69,0)
+(79,22,0)
+(144,172,0)
+(197,139,0)
+(53,71,0)
+(60,58,0)
+(102,26,0)
+(157,172,0)
+(131,180,0)
+(122,142,0)
+(9,101,0)
+(196,121,0)
+(139,180,0)
+(65,3,0)
+(40,191,0)
+(139,172,0)
+(132,180,0)
+(25,88,0)
+(122,172,0)
+(208,112,0)
+(13,172,0)
+(121,208,0)
+(92,102,0)
+(140,185,0)
+(47,156,0)
+(179,180,0)
+(161,180,0)
+(183,205,0)
+(95,197,0)
+(114,10,0)
+(36,180,0)
+(220,62,0)
+(222,103,0)
+(220,74,0)
+(214,180,0)
+(32,148,0)
+(202,127,0)
+(49,149,0)
+(152,180,0)
+(104,99,0)
+(50,180,0)
+(144,180,0)
+(47,101,0)
+(71,119,0)
+(203,180,0)
+(169,172,0)
+(46,20,0)
+(219,38,0)
+(121,75,0)
+(52,24,0)
+(58,101,0)
+(133,180,0)
+(0,180,0)
+(38,101,0)
+(141,180,0)
+(69,160,0)
+(121,149,0)
+(76,24,0)
+(109,156,0)
+(197,76,0)
+(121,32,0)
+(212,119,0)
+(141,172,0)
+(185,205,0)
+(67,47,0)
+(55,76,0)
+(177,218,0)
+(188,67,1)
+(4,63,1)
+(218,206,1)
+(83,201,1)
+(47,101,1)
+(168,209,1)
+(111,94,1)
+(134,17,1)
+(121,71,1)
+(169,172,1)
+(122,195,1)
+(118,194,1)
+(121,222,1)
+(173,7,1)
+(8,10,1)
+(20,46,1)
+(72,170,1)
+(88,12,1)
+(136,105,1)
+(207,34,1)
+(124,68,1)
+(137,103,1)
+(121,177,1)
+(205,172,1)
+(134,83,1)
+(130,14,1)
+(0,24,1)
+(94,5,1)
+(160,87,1)
+(102,135,1)
+(135,26,1)
+(40,77,1)
+(81,10,1)
+(102,26,1)
+(71,22,1)
+(75,192,1)
+(128,209,1)
+(61,75,1)
+(97,5,1)
+(163,69,1)
+(13,5,1)
+(152,86,1)
+(82,1,1)
+(156,172,1)
+(100,208,1)
+(71,53,1)
+(145,92,1)
+(63,209,1)
+(182,101,1)
+(89,136,1)
+(127,202,1)
+(79,28,1)
+(147,58,1)
+(119,172,1)
+(121,47,1)
+(185,140,1)
+(42,139,1)
+(70,136,1)
+(203,141,1)
+(196,127,1)
+(202,104,1)
+(20,172,1)
+(66,98,1)
+(14,38,1)
+(15,209,1)
+(98,101,1)
+(134,50,1)
+(165,82,1)
+(29,102,1)
+(134,27,1)
+(99,172,1)
+(175,165,1)
+(106,64,1)
+(23,219,1)
+(35,172,1)
+(213,39,1)
+(139,158,1)
+(210,220,1)
+(62,172,1)
+(148,54,1)
+(64,88,1)
+(182,174,1)
+(103,182,1)
+(144,172,1)
+(109,47,1)
+(116,111,1)
+(32,148,1)
+(206,173,1)
+(74,48,1)
+(79,101,1)
+(30,222,1)
+(197,76,1)
+(69,160,1)
+(86,32,1)
+(97,213,1)
+(13,171,1)
+(76,215,1)
+(141,51,1)
+(205,183,1)
+(88,172,1)
+(121,75,1)
+(134,203,1)
+(185,101,1)
+(37,181,1)
+(134,167,1)
+(119,212,1)
+(148,191,1)
+(6,209,1)
+(121,181,1)
+(174,43,1)
+(1,88,1)
+(154,72,1)
+(95,76,1)
+(191,101,1)
+(157,211,1)
+(55,104,1)
+(170,3,1)
+(172,13,1)
+(129,15,1)
+(27,0,1)
+(84,101,1)
+(192,130,1)
+(141,172,1)
+(140,198,1)
+(139,172,1)
+(91,207,1)
+(41,144,1)
+(131,157,1)
+(134,184,1)
+(105,31,1)
+(68,84,1)
+(158,197,1)
+(114,128,1)
+(3,164,1)
+(67,209,1)
+(121,220,1)
+(9,101,1)
+(38,101,1)
+(92,102,1)
+(167,52,1)
+(48,9,1)
+(97,24,1)
+(26,33,1)
+(121,81,1)
+(222,103,1)
+(81,8,1)
+(143,112,1)
+(194,172,1)
+(10,101,1)
+(200,206,1)
+(36,61,1)
+(87,101,1)
+(92,29,1)
+(208,143,1)
+(157,172,1)
+(153,124,1)
+(96,126,1)
+(156,109,1)
+(38,23,1)
+(115,122,1)
+(193,24,1)
+(181,70,1)
+(181,187,1)
+(54,191,1)
+(9,175,1)
+(198,209,1)
+(121,69,1)
+(110,209,1)
+(2,74,1)
+(134,153,1)
+(21,42,1)
+(134,18,1)
+(47,188,1)
+(134,41,1)
+(76,24,1)
+(117,169,1)
+(46,81,1)
+(33,90,1)
+(184,35,1)
+(28,6,1)
+(16,218,1)
+(171,166,1)
+(196,217,1)
+(90,156,1)
+(85,66,1)
+(65,62,1)
+(57,87,1)
+(62,210,1)
+(52,111,1)
+(196,121,1)
+(82,101,1)
+(36,172,1)
+(74,9,1)
+(144,100,1)
+(72,3,1)
+(53,22,1)
+(112,58,1)
+(206,101,1)
+(220,2,1)
+(31,205,1)
+(164,65,1)
+(196,106,1)
+(58,101,1)
+(189,209,1)
+(75,130,1)
+(70,89,1)
+(166,116,1)
+(177,218,1)
+(77,209,1)
+(191,40,1)
+(126,4,1)
+(121,197,1)
+(18,36,1)
+(113,96,1)
+(22,80,1)
+(60,209,1)
+(215,55,1)
+(69,123,1)
+(3,101,1)
+(125,163,1)
+(177,16,1)
+(101,193,1)
+(134,118,1)
+(121,185,1)
+(104,99,1)
+(43,209,1)
+(216,19,1)
+(146,60,1)
+(7,209,1)
+(32,178,1)
+(0,120,1)
+(211,189,1)
+(84,108,1)
+(160,57,1)
+(195,204,1)
+(123,160,1)
+(169,30,1)
+(51,177,1)
+(124,84,1)
+(136,101,1)
+(87,21,1)
+(99,59,1)
+(193,216,1)
+(22,79,1)
+(108,190,1)
+(187,70,1)
+(12,25,1)
+(220,74,1)
+(59,129,1)
+(17,20,1)
+(208,112,1)
+(58,146,1)
+(93,182,1)
+(121,134,1)
+(134,115,1)
+(222,137,1)
+(218,200,1)
+(34,168,1)
+(183,185,1)
+(112,147,1)
+(201,154,1)
+(103,93,1)
+(212,71,1)
+(197,95,1)
+(0,5,1)
+(217,97,1)
+(134,117,1)
+(10,114,1)
+(201,101,1)
+(122,24,1)
+(121,32,1)
+(134,133,1)
+(209,172,1)
+(52,91,1)
+(50,119,1)
+(52,24,1)
+(204,113,1)
+(94,85,1)
+(152,172,1)
+(121,92,1)
+(130,38,1)
+(178,148,1)
+(196,131,1)
+(80,79,1)
+(26,101,1)
+(120,110,1)
+(194,145,1)
+(99,24,1)
+(25,126,1)
+(125,172,1)
+(122,172,1)
+(157,24,1)
+(52,172,1)
+(190,125,1)
+(35,37,1)
+(121,208,1)
+(219,209,1)
+(133,152,1)
+(39,209,1)
+(32,148,2)
+(52,209,2)
+(212,209,2)
+(185,209,2)
+(74,88,2)
+(88,172,2)
+(27,209,2)
+(152,209,2)
+(170,88,2)
+(183,209,2)
+(4,209,2)
+(184,209,2)
+(18,209,2)
+(187,209,2)
+(121,197,2)
+(208,209,2)
+(22,79,2)
+(14,209,2)
+(35,172,2)
+(222,209,2)
+(195,126,2)
+(175,88,2)
+(121,181,2)
+(9,88,2)
+(207,209,2)
+(0,24,2)
+(181,209,2)
+(69,104,2)
+(213,209,2)
+(185,101,2)
+(125,172,2)
+(141,209,2)
+(81,10,2)
+(99,172,2)
+(196,127,2)
+(157,172,2)
+(35,209,2)
+(6,209,2)
+(93,209,2)
+(16,209,2)
+(55,104,2)
+(47,101,2)
+(158,104,2)
+(205,172,2)
+(112,209,2)
+(136,209,2)
+(204,126,2)
+(121,209,2)
+(121,104,2)
+(52,111,2)
+(141,172,2)
+(134,209,2)
+(79,209,2)
+(177,209,2)
+(121,75,2)
+(134,104,2)
+(58,209,2)
+(147,209,2)
+(41,209,2)
+(120,209,2)
+(84,104,2)
+(121,177,2)
+(104,99,2)
+(206,209,2)
+(34,209,2)
+(129,209,2)
+(201,101,2)
+(219,209,2)
+(156,172,2)
+(154,88,2)
+(168,209,2)
+(133,209,2)
+(121,220,2)
+(160,87,2)
+(32,209,2)
+(121,88,2)
+(38,101,2)
+(122,172,2)
+(131,209,2)
+(121,71,2)
+(37,209,2)
+(163,104,2)
+(164,88,2)
+(91,209,2)
+(99,209,2)
+(47,209,2)
+(92,102,2)
+(191,209,2)
+(139,172,2)
+(69,160,2)
+(20,209,2)
+(62,88,2)
+(54,209,2)
+(76,24,2)
+(173,209,2)
+(122,24,2)
+(126,209,2)
+(193,24,2)
+(25,126,2)
+(217,209,2)
+(119,209,2)
+(205,209,2)
+(121,47,2)
+(1,88,2)
+(87,104,2)
+(144,172,2)
+(122,126,2)
+(110,209,2)
+(101,193,2)
+(33,209,2)
+(71,209,2)
+(196,131,2)
+(218,209,2)
+(114,209,2)
+(125,104,2)
+(36,172,2)
+(190,104,2)
+(70,136,2)
+(22,209,2)
+(198,209,2)
+(124,84,2)
+(76,104,2)
+(70,209,2)
+(145,209,2)
+(188,209,2)
+(10,101,2)
+(26,101,2)
+(87,101,2)
+(169,209,2)
+(48,88,2)
+(31,209,2)
+(127,104,2)
+(156,209,2)
+(157,209,2)
+(53,209,2)
+(68,104,2)
+(182,209,2)
+(112,58,2)
+(21,104,2)
+(94,5,2)
+(50,209,2)
+(152,172,2)
+(126,4,2)
+(84,101,2)
+(57,104,2)
+(143,209,2)
+(72,88,2)
+(99,24,2)
+(100,209,2)
+(157,24,2)
+(194,209,2)
+(63,209,2)
+(160,104,2)
+(144,209,2)
+(3,101,2)
+(58,101,2)
+(23,209,2)
+(123,104,2)
+(215,104,2)
+(60,209,2)
+(10,209,2)
+(174,209,2)
+(121,126,2)
+(89,209,2)
+(128,209,2)
+(191,101,2)
+(72,3,2)
+(117,209,2)
+(12,126,2)
+(40,209,2)
+(97,209,2)
+(3,88,2)
+(220,74,2)
+(121,69,2)
+(201,88,2)
+(148,191,2)
+(178,209,2)
+(7,209,2)
+(105,209,2)
+(211,209,2)
+(61,209,2)
+(67,209,2)
+(121,185,2)
+(130,38,2)
+(13,5,2)
+(194,172,2)
+(102,209,2)
+(28,209,2)
+(111,94,2)
+(39,209,2)
+(82,101,2)
+(46,209,2)
+(218,206,2)
+(177,218,2)
+(83,88,2)
+(92,209,2)
+(75,130,2)
+(153,104,2)
+(64,88,2)
+(51,209,2)
+(146,209,2)
+(0,209,2)
+(88,126,2)
+(17,209,2)
+(165,88,2)
+(196,106,2)
+(181,70,2)
+(192,209,2)
+(148,209,2)
+(197,76,2)
+(119,172,2)
+(104,209,2)
+(220,88,2)
+(135,209,2)
+(139,104,2)
+(103,182,2)
+(79,101,2)
+(134,88,2)
+(222,103,2)
+(137,209,2)
+(106,88,2)
+(52,172,2)
+(86,209,2)
+(124,104,2)
+(130,209,2)
+(82,88,2)
+(15,209,2)
+(102,26,2)
+(206,101,2)
+(95,104,2)
+(196,121,2)
+(172,13,2)
+(71,22,2)
+(52,24,2)
+(90,209,2)
+(109,209,2)
+(169,172,2)
+(0,5,2)
+(121,222,2)
+(121,81,2)
+(30,209,2)
+(74,9,2)
+(202,104,2)
+(200,209,2)
+(208,112,2)
+(140,209,2)
+(43,209,2)
+(96,126,2)
+(197,104,2)
+(9,101,2)
+(115,126,2)
+(81,209,2)
+(29,209,2)
+(26,209,2)
+(75,209,2)
+(196,217,2)
+(77,209,2)
+(20,172,2)
+(121,208,2)
+(121,32,2)
+(136,101,2)
+(182,101,2)
+(203,209,2)
+(8,209,2)
+(189,209,2)
+(210,88,2)
+(103,209,2)
+(113,126,2)
+(38,209,2)
+(167,209,2)
+(65,88,2)
+(59,209,2)
+(2,88,2)
+(134,126,2)
+(42,104,2)
+(36,209,2)
+(97,5,2)
+(108,104,2)
+(118,209,2)
+(121,92,2)
+(80,209,2)
+(97,24,2)
+(62,172,2)
+-----------------------------------
+(0,kvm_write_tsc(vcpu, msr)
+(1,svm)
+(2,dbgctl)
+(3,svm->vmcb)
+(4,boot_cpu_has(X86_FEATURE_LBRV)
+(5,struct msr_data *msr)
+(6,svm)
+(7,svm)
+(8,hsave_msr)
+(9,svm->vmcb)
+(10,svm->nested)
+(11,if (!kvm_mtrr_valid(vcpu, MSR_IA32_CR_PAT, data)
+(12,DEBUGCTL_RESERVED_BITS)
+(13,msr->data)
+(14,save)
+(15,vcpu)
+(16,sfmask)
+(17,break;)
+(18,break;)
+(19,svm)
+(20,svm->nested.hsave_msr = data)
+(21,vmcb)
+(22,svm->vmcb->save)
+(23,vmcb)
+(24,struct kvm_vcpu *vcpu)
+(25,data)
+(26,svm->vmcb)
+(27,break;)
+(28,vmcb)
+(29,sysenter_eip)
+(30,data)
+(31,svm)
+(32,svm->vmcb->save.sysenter_cs)
+(33,vmcb)
+(34,"unimplemented wrmsr: 0x%x data 0x%llx\\n")
+(35,svm->vmcb->save.sysenter_esp = data)
+(36,svm->vmcb->save.kernel_gs_base = data)
+(37,data)
+(38,svm->vmcb)
+(39,vcpu)
+(40,vmcb)
+(41,break;)
+(42,svm)
+(43,svm)
+(44,case MSR_IA32_DEBUGCTLMSR:)
+(45,case MSR_IA32_CR_PAT:)
+(46,data)
+(47,svm->sysenter_eip)
+(48,save)
+(49,ecx)
+(50,break;)
+(51,data)
+(52,vcpu_unimpl(vcpu, "unimplemented wrmsr: 0x%x data 0x%llx\\n", ecx, data)
+(53,cstar)
+(54,save)
+(55,vcpu)
+(56,case MSR_IA32_SYSENTER_CS:)
+(57,save)
+(58,svm->vmcb)
+(59,data)
+(60,svm)
+(61,data)
+(62,svm->vmcb->save.dbgctl = data)
+(63,X86_FEATURE_LBRV)
+(64,1)
+(65,svm)
+(66,msr)
+(67,svm)
+(68,VMCB_NPT)
+(69,svm->vmcb->save.g_pat)
+(70,svm->vmcb->save)
+(71,svm->vmcb->save.cstar)
+(72,mark_dirty(svm->vmcb, VMCB_LBR)
+(73,svm)
+(74,svm->vmcb->save)
+(75,svm->vmcb->save.kernel_gs_base)
+(76,vcpu->arch)
+(77,svm)
+(78,if (data & DEBUGCTL_RESERVED_BITS)
+(79,svm->vmcb)
+(80,save)
+(81,svm->nested.hsave_msr)
+(82,svm_disable_lbrv(svm)
+(83,break;)
+(84,svm->vmcb)
+(85,index)
+(86,data)
+(87,svm->vmcb)
+(88,data & DEBUGCTL_RESERVED_BITS)
+(89,save)
+(90,svm)
+(91,data)
+(92,svm->vmcb->save.sysenter_eip)
+(93,save)
+(94,msr->index)
+(95,pat)
+(96,vcpu)
+(97,kvm_set_msr_common(vcpu, msr)
+(98,ecx)
+(99,kvm_mtrr_valid(vcpu, MSR_IA32_CR_PAT, data)
+(100,data)
+(101,*svm = to_svm(vcpu)
+(102,svm->vmcb->save)
+(103,svm->vmcb->save)
+(104,!kvm_mtrr_valid(vcpu, MSR_IA32_CR_PAT, data)
+(105,vmcb)
+(106,return 1;)
+(107,data)
+(108,vmcb)
+(109,data)
+(110,vcpu)
+(111,ecx = msr->index)
+(112,svm->vmcb->save)
+(113,"%s: MSR_IA32_DEBUGCTL 0x%llx, nop\\n")
+(114,nested)
+(115,break;)
+(116,data)
+(117,break;)
+(118,break;)
+(119,svm->vmcb->save.cstar = data)
+(120,msr)
+(121,return 0;)
+(122,vcpu_unimpl(vcpu, "%s: MSR_IA32_DEBUGCTL 0x%llx, nop\\n",\n\\n\\t\\t\\t\\t    __func__, data)
+(123,g_pat)
+(124,mark_dirty(svm->vmcb, VMCB_NPT)
+(125,svm->vmcb->save.g_pat = data)
+(126,!boot_cpu_has(X86_FEATURE_LBRV)
+(127,return 1;)
+(128,svm)
+(129,MSR_IA32_CR_PAT)
+(130,svm->vmcb->save)
+(131,return svm_set_vm_cr(vcpu, data)
+(132,case MSR_SYSCALL_MASK:)
+(133,break;)
+(134,0)
+(135,save)
+(136,svm->vmcb)
+(137,lstar)
+(138,case MSR_IA32_SYSENTER_EIP:)
+(139,vcpu->arch.pat = data)
+(140,sysenter_esp)
+(141,svm->vmcb->save.sfmask = data)
+(142,)
+(143,star)
+(144,svm->vmcb->save.star = data)
+(145,data)
+(146,vmcb)
+(147,save)
+(148,svm->vmcb->save)
+(149,)
+(150,if (!boot_cpu_has(X86_FEATURE_LBRV)
+(151,case MSR_IA32_SYSENTER_ESP:)
+(152,svm->vmcb->save.sysenter_cs = data)
+(153,break;)
+(154,svm)
+(155,case MSR_CSTAR:)
+(156,svm->sysenter_eip = data)
+(157,svm_set_vm_cr(vcpu, data)
+(158,data)
+(159,case MSR_LSTAR:)
+(160,svm->vmcb->save)
+(161,case MSR_VM_HSAVE_PA:)
+(162,case MSR_STAR:)
+(163,data)
+(164,vmcb)
+(165,svm)
+(166,msr)
+(167,break;)
+(168,vcpu)
+(169,svm->vmcb->save.lstar = data)
+(170,VMCB_LBR)
+(171,data)
+(172,data = msr->data)
+(173,vmcb)
+(174,vmcb)
+(175,vmcb)
+(176,case MSR_KERNEL_GS_BASE:)
+(177,svm->vmcb->save.sfmask)
+(178,sysenter_cs)
+(179,case MSR_VM_IGNNE:)
+(180,)
+(181,svm->vmcb->save.sysenter_esp)
+(182,svm->vmcb)
+(183,data)
+(184,break;)
+(185,svm->sysenter_esp)
+(186,case MSR_IA32_TSC:)
+(187,sysenter_esp)
+(188,sysenter_eip)
+(189,vcpu)
+(190,svm)
+(191,svm->vmcb)
+(192,kernel_gs_base)
+(193,to_svm(vcpu)
+(194,svm->vmcb->save.sysenter_eip = data)
+(195,data)
+(196,RET)
+(197,vcpu->arch.pat)
+(198,svm)
+(199,default:)
+(200,save)
+(201,svm_enable_lbrv(svm)
+(202,1)
+(203,break;)
+(204,__func__)
+(205,svm->sysenter_esp = data)
+(206,svm->vmcb)
+(207,ecx)
+(208,svm->vmcb->save.star)
+(209,ecx)
+(210,data)
+(211,data)
+(212,data)
+(213,msr)
+(214,case MSR_VM_CR:)
+(215,arch)
+(216,vcpu)
+(217,return kvm_set_msr_common(vcpu, msr)
+(218,svm->vmcb->save)
+(219,svm)
+(220,svm->vmcb->save.dbgctl)
+(221,switch (ecx)
+(222,svm->vmcb->save.lstar)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

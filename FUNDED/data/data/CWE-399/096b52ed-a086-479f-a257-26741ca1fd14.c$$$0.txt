@@ -1,0 +1,1397 @@
+-----label-----
+1
+-----code-----
+static int o2hb_thread(void *data)
+{
+	int i, ret;
+	struct o2hb_region *reg = data;
+	struct o2hb_bio_wait_ctxt write_wc;
+	struct timeval before_hb, after_hb;
+	unsigned int elapsed_msec;
+
+	mlog(ML_HEARTBEAT|ML_KTHREAD, "hb thread running\n");
+
+	set_user_nice(current, MIN_NICE);
+
+	/* Pin node */
+	o2nm_depend_this_node();
+
+	while (!kthread_should_stop() &&
+	       !reg->hr_unclean_stop && !reg->hr_aborted_start) {
+		/* We track the time spent inside
+		 * o2hb_do_disk_heartbeat so that we avoid more than
+		 * hr_timeout_ms between disk writes. On busy systems
+		 * this should result in a heartbeat which is less
+		 * likely to time itself out. */
+		do_gettimeofday(&before_hb);
+
+		ret = o2hb_do_disk_heartbeat(reg);
+
+		do_gettimeofday(&after_hb);
+		elapsed_msec = o2hb_elapsed_msecs(&before_hb, &after_hb);
+
+		mlog(ML_HEARTBEAT,
+		     "start = %lu.%lu, end = %lu.%lu, msec = %u\n",
+		     before_hb.tv_sec, (unsigned long) before_hb.tv_usec,
+		     after_hb.tv_sec, (unsigned long) after_hb.tv_usec,
+		     elapsed_msec);
+
+		if (!kthread_should_stop() &&
+		    elapsed_msec < reg->hr_timeout_ms) {
+			/* the kthread api has blocked signals for us so no
+			 * need to record the return value. */
+			msleep_interruptible(reg->hr_timeout_ms - elapsed_msec);
+		}
+	}
+
+	o2hb_disarm_write_timeout(reg);
+
+	/* unclean stop is only used in very bad situation */
+	for(i = 0; !reg->hr_unclean_stop && i < reg->hr_blocks; i++)
+		o2hb_shutdown_slot(&reg->hr_slots[i]);
+
+	/* Explicit down notification - avoid forcing the other nodes
+	 * to timeout on this region when we could just as easily
+	 * write a clear generation - thus indicating to them that
+	 * this node has left this region.
+	 */
+	if (!reg->hr_unclean_stop && !reg->hr_aborted_start) {
+		o2hb_prepare_block(reg, 0);
+		ret = o2hb_issue_node_write(reg, &write_wc);
+		if (ret == 0)
+			o2hb_wait_on_io(reg, &write_wc);
+		else
+			mlog_errno(ret);
+	}
+
+	/* Unpin node */
+	o2nm_undepend_this_node();
+
+	mlog(ML_HEARTBEAT|ML_KTHREAD, "o2hb thread exiting\n");
+
+	return 0;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+5,6
+5,7
+7,8
+7,9
+10,11
+10,12
+10,13
+10,14
+10,15
+10,16
+10,17
+10,18
+10,19
+10,20
+10,21
+10,22
+10,23
+10,24
+10,25
+11,12
+12,13
+12,14
+12,15
+14,15
+16,17
+18,19
+19,20
+19,21
+20,21
+22,23
+22,24
+22,25
+25,26
+26,27
+28,29
+29,30
+29,31
+30,31
+32,33
+34,35
+35,36
+35,37
+35,38
+36,37
+38,39
+40,41
+42,43
+43,44
+43,45
+45,46
+47,48
+48,49
+48,50
+48,51
+49,50
+51,52
+51,53
+52,53
+54,55
+57,58
+58,59
+58,60
+58,61
+59,60
+61,62
+63,64
+65,66
+66,67
+67,68
+69,70
+69,71
+70,71
+70,72
+71,72
+71,73
+72,73
+73,74
+74,75
+76,77
+77,78
+77,79
+78,79
+81,82
+82,83
+82,84
+83,84
+86,87
+86,88
+86,89
+86,90
+86,91
+86,92
+87,88
+88,89
+88,90
+89,90
+91,92
+92,93
+94,95
+95,96
+95,97
+96,97
+98,99
+98,100
+99,100
+101,102
+103,104
+104,105
+104,106
+105,106
+107,108
+108,109
+110,111
+111,112
+111,113
+112,113
+114,115
+114,116
+114,117
+115,116
+117,118
+118,119
+120,121
+121,122
+123,124
+124,125
+124,126
+124,127
+124,128
+124,129
+124,130
+124,131
+124,132
+125,126
+127,128
+130,131
+130,132
+131,132
+134,135
+134,136
+135,136
+135,137
+138,139
+138,140
+139,140
+142,143
+142,144
+143,144
+146,147
+146,148
+147,148
+147,149
+150,151
+150,152
+151,152
+154,155
+156,157
+156,158
+157,158
+157,159
+158,159
+159,160
+160,161
+162,163
+162,164
+163,164
+165,166
+165,167
+166,167
+169,170
+170,171
+171,172
+171,173
+172,173
+174,175
+174,176
+175,176
+175,177
+176,177
+179,180
+181,182
+182,183
+182,184
+183,184
+185,186
+187,188
+187,189
+187,190
+187,191
+188,189
+189,190
+189,191
+190,191
+193,194
+193,195
+194,195
+195,196
+195,197
+196,197
+199,200
+199,201
+200,201
+202,203
+202,204
+203,204
+206,207
+207,208
+209,210
+210,211
+210,212
+211,212
+213,214
+214,215
+214,216
+215,216
+215,217
+216,217
+219,220
+221,222
+221,223
+222,223
+222,224
+223,224
+224,225
+224,226
+225,226
+228,229
+229,230
+229,231
+230,231
+233,234
+233,235
+233,236
+234,235
+235,236
+235,237
+235,238
+236,237
+238,239
+241,242
+242,243
+242,244
+243,244
+245,246
+245,247
+245,248
+246,247
+248,249
+250,251
+251,252
+253,254
+253,255
+253,256
+254,255
+254,256
+255,256
+258,259
+259,260
+259,261
+259,262
+260,261
+262,263
+264,265
+265,266
+267,268
+268,269
+268,270
+269,270
+271,272
+273,274
+274,275
+275,276
+277,278
+278,279
+278,280
+278,281
+279,280
+281,282
+281,283
+282,283
+284,285
+287,288
+-----nextToken-----
+2,4,6,8,9,13,15,17,21,23,24,27,31,33,37,39,41,44,46,50,53,55,56,60,62,64,68,75,79,80,84,85,90,93,97,100,102,106,109,113,116,119,122,126,128,129,132,133,136,137,140,141,144,145,148,149,152,153,155,161,164,167,168,173,177,178,180,184,186,191,192,197,198,201,204,205,208,212,217,218,220,226,227,231,232,237,239,240,244,247,249,252,256,257,261,263,266,270,272,276,280,283,285,286,288
+-----computeFrom-----
+51,52
+51,53
+70,71
+70,72
+71,72
+71,73
+95,96
+95,97
+111,112
+111,113
+157,158
+157,159
+162,163
+162,164
+174,175
+174,176
+189,190
+189,191
+193,194
+193,195
+199,200
+199,201
+222,223
+222,224
+242,243
+242,244
+254,255
+254,256
+281,282
+281,283
+-----guardedBy-----
+164,180
+167,177
+168,178
+231,263
+-----guardedByNegation-----
+256,272
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;WhileStatement;BinaryExpression;BinaryExpression;UnaryExpression;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;BinaryExpression;UnaryExpression;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;UnaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;BinaryExpression;UnaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ReturnStatement;LiteralExpression;
+-----ast_node-----
+static int o2hb_thread(void *data){	int i, ret;	struct o2hb_region *reg = data;	struct o2hb_bio_wait_ctxt write_wc;	struct timeval before_hb, after_hb;	unsigned int elapsed_msec;	mlog(ML_HEARTBEAT|ML_KTHREAD, "hb thread running\n");	set_user_nice(current, MIN_NICE);	/* Pin node */	o2nm_depend_this_node();	while (!kthread_should_stop() &&	       !reg->hr_unclean_stop && !reg->hr_aborted_start) {		/* We track the time spent inside		 * o2hb_do_disk_heartbeat so that we avoid more than		 * hr_timeout_ms between disk writes. On busy systems		 * this should result in a heartbeat which is less		 * likely to time itself out. */		do_gettimeofday(&before_hb);		ret = o2hb_do_disk_heartbeat(reg);		do_gettimeofday(&after_hb);		elapsed_msec = o2hb_elapsed_msecs(&before_hb, &after_hb);		mlog(ML_HEARTBEAT,		     "start = %lu.%lu, end = %lu.%lu, msec = %u\n",		     before_hb.tv_sec, (unsigned long) before_hb.tv_usec,		     after_hb.tv_sec, (unsigned long) after_hb.tv_usec,		     elapsed_msec);		if (!kthread_should_stop() &&		    elapsed_msec < reg->hr_timeout_ms) {			/* the kthread api has blocked signals for us so no			 * need to record the return value. */			msleep_interruptible(reg->hr_timeout_ms - elapsed_msec);		}	}	o2hb_disarm_write_timeout(reg);	/* unclean stop is only used in very bad situation */	for(i = 0; !reg->hr_unclean_stop && i < reg->hr_blocks; i++)		o2hb_shutdown_slot(&reg->hr_slots[i]);	/* Explicit down notification - avoid forcing the other nodes	 * to timeout on this region when we could just as easily	 * write a clear generation - thus indicating to them that	 * this node has left this region.	 */	if (!reg->hr_unclean_stop && !reg->hr_aborted_start) {		o2hb_prepare_block(reg, 0);		ret = o2hb_issue_node_write(reg, &write_wc);		if (ret == 0)			o2hb_wait_on_io(reg, &write_wc);		else			mlog_errno(ret);	}	/* Unpin node */	o2nm_undepend_this_node();	mlog(ML_HEARTBEAT|ML_KTHREAD, "o2hb thread exiting\n");	return 0;}
+static int
+o2hb_thread(void *data)
+o2hb_thread
+void *data
+void
+*data
+*
+data
+{	int i, ret;	struct o2hb_region *reg = data;	struct o2hb_bio_wait_ctxt write_wc;	struct timeval before_hb, after_hb;	unsigned int elapsed_msec;	mlog(ML_HEARTBEAT|ML_KTHREAD, "hb thread running\n");	set_user_nice(current, MIN_NICE);	/* Pin node */	o2nm_depend_this_node();	while (!kthread_should_stop() &&	       !reg->hr_unclean_stop && !reg->hr_aborted_start) {		/* We track the time spent inside		 * o2hb_do_disk_heartbeat so that we avoid more than		 * hr_timeout_ms between disk writes. On busy systems		 * this should result in a heartbeat which is less		 * likely to time itself out. */		do_gettimeofday(&before_hb);		ret = o2hb_do_disk_heartbeat(reg);		do_gettimeofday(&after_hb);		elapsed_msec = o2hb_elapsed_msecs(&before_hb, &after_hb);		mlog(ML_HEARTBEAT,		     "start = %lu.%lu, end = %lu.%lu, msec = %u\n",		     before_hb.tv_sec, (unsigned long) before_hb.tv_usec,		     after_hb.tv_sec, (unsigned long) after_hb.tv_usec,		     elapsed_msec);		if (!kthread_should_stop() &&		    elapsed_msec < reg->hr_timeout_ms) {			/* the kthread api has blocked signals for us so no			 * need to record the return value. */			msleep_interruptible(reg->hr_timeout_ms - elapsed_msec);		}	}	o2hb_disarm_write_timeout(reg);	/* unclean stop is only used in very bad situation */	for(i = 0; !reg->hr_unclean_stop && i < reg->hr_blocks; i++)		o2hb_shutdown_slot(&reg->hr_slots[i]);	/* Explicit down notification - avoid forcing the other nodes	 * to timeout on this region when we could just as easily	 * write a clear generation - thus indicating to them that	 * this node has left this region.	 */	if (!reg->hr_unclean_stop && !reg->hr_aborted_start) {		o2hb_prepare_block(reg, 0);		ret = o2hb_issue_node_write(reg, &write_wc);		if (ret == 0)			o2hb_wait_on_io(reg, &write_wc);		else			mlog_errno(ret);	}	/* Unpin node */	o2nm_undepend_this_node();	mlog(ML_HEARTBEAT|ML_KTHREAD, "o2hb thread exiting\n");	return 0;}
+int i, ret;
+int i, ret;
+int
+i
+i
+ret
+ret
+struct o2hb_region *reg = data;
+struct o2hb_region *reg = data;
+struct o2hb_region
+o2hb_region
+*reg = data
+*
+reg
+= data
+data
+data
+struct o2hb_bio_wait_ctxt write_wc;
+struct o2hb_bio_wait_ctxt write_wc;
+struct o2hb_bio_wait_ctxt
+o2hb_bio_wait_ctxt
+write_wc
+write_wc
+struct timeval before_hb, after_hb;
+struct timeval before_hb, after_hb;
+struct timeval
+timeval
+before_hb
+before_hb
+after_hb
+after_hb
+unsigned int elapsed_msec;
+unsigned int elapsed_msec;
+unsigned int
+elapsed_msec
+elapsed_msec
+mlog(ML_HEARTBEAT|ML_KTHREAD, "hb thread running\n");
+mlog(ML_HEARTBEAT|ML_KTHREAD, "hb thread running\n")
+mlog
+mlog
+ML_HEARTBEAT|ML_KTHREAD
+ML_HEARTBEAT
+ML_HEARTBEAT
+ML_KTHREAD
+ML_KTHREAD
+"hb thread running\n"
+set_user_nice(current, MIN_NICE);
+set_user_nice(current, MIN_NICE)
+set_user_nice
+set_user_nice
+current
+current
+MIN_NICE
+MIN_NICE
+o2nm_depend_this_node();
+o2nm_depend_this_node()
+o2nm_depend_this_node
+o2nm_depend_this_node
+while (!kthread_should_stop() &&	       !reg->hr_unclean_stop && !reg->hr_aborted_start) {		/* We track the time spent inside		 * o2hb_do_disk_heartbeat so that we avoid more than		 * hr_timeout_ms between disk writes. On busy systems		 * this should result in a heartbeat which is less		 * likely to time itself out. */		do_gettimeofday(&before_hb);		ret = o2hb_do_disk_heartbeat(reg);		do_gettimeofday(&after_hb);		elapsed_msec = o2hb_elapsed_msecs(&before_hb, &after_hb);		mlog(ML_HEARTBEAT,		     "start = %lu.%lu, end = %lu.%lu, msec = %u\n",		     before_hb.tv_sec, (unsigned long) before_hb.tv_usec,		     after_hb.tv_sec, (unsigned long) after_hb.tv_usec,		     elapsed_msec);		if (!kthread_should_stop() &&		    elapsed_msec < reg->hr_timeout_ms) {			/* the kthread api has blocked signals for us so no			 * need to record the return value. */			msleep_interruptible(reg->hr_timeout_ms - elapsed_msec);		}	}
+!kthread_should_stop() &&	       !reg->hr_unclean_stop && !reg->hr_aborted_start
+!kthread_should_stop() &&	       !reg->hr_unclean_stop
+!kthread_should_stop()
+kthread_should_stop()
+kthread_should_stop
+kthread_should_stop
+!reg->hr_unclean_stop
+reg->hr_unclean_stop
+reg
+reg
+hr_unclean_stop
+!reg->hr_aborted_start
+reg->hr_aborted_start
+reg
+reg
+hr_aborted_start
+{		/* We track the time spent inside		 * o2hb_do_disk_heartbeat so that we avoid more than		 * hr_timeout_ms between disk writes. On busy systems		 * this should result in a heartbeat which is less		 * likely to time itself out. */		do_gettimeofday(&before_hb);		ret = o2hb_do_disk_heartbeat(reg);		do_gettimeofday(&after_hb);		elapsed_msec = o2hb_elapsed_msecs(&before_hb, &after_hb);		mlog(ML_HEARTBEAT,		     "start = %lu.%lu, end = %lu.%lu, msec = %u\n",		     before_hb.tv_sec, (unsigned long) before_hb.tv_usec,		     after_hb.tv_sec, (unsigned long) after_hb.tv_usec,		     elapsed_msec);		if (!kthread_should_stop() &&		    elapsed_msec < reg->hr_timeout_ms) {			/* the kthread api has blocked signals for us so no			 * need to record the return value. */			msleep_interruptible(reg->hr_timeout_ms - elapsed_msec);		}	}
+do_gettimeofday(&before_hb);
+do_gettimeofday(&before_hb)
+do_gettimeofday
+do_gettimeofday
+&before_hb
+before_hb
+before_hb
+ret = o2hb_do_disk_heartbeat(reg);
+ret = o2hb_do_disk_heartbeat(reg)
+ret
+ret
+o2hb_do_disk_heartbeat(reg)
+o2hb_do_disk_heartbeat
+o2hb_do_disk_heartbeat
+reg
+reg
+do_gettimeofday(&after_hb);
+do_gettimeofday(&after_hb)
+do_gettimeofday
+do_gettimeofday
+&after_hb
+after_hb
+after_hb
+elapsed_msec = o2hb_elapsed_msecs(&before_hb, &after_hb);
+elapsed_msec = o2hb_elapsed_msecs(&before_hb, &after_hb)
+elapsed_msec
+elapsed_msec
+o2hb_elapsed_msecs(&before_hb, &after_hb)
+o2hb_elapsed_msecs
+o2hb_elapsed_msecs
+&before_hb
+before_hb
+before_hb
+&after_hb
+after_hb
+after_hb
+mlog(ML_HEARTBEAT,		     "start = %lu.%lu, end = %lu.%lu, msec = %u\n",		     before_hb.tv_sec, (unsigned long) before_hb.tv_usec,		     after_hb.tv_sec, (unsigned long) after_hb.tv_usec,		     elapsed_msec);
+mlog(ML_HEARTBEAT,		     "start = %lu.%lu, end = %lu.%lu, msec = %u\n",		     before_hb.tv_sec, (unsigned long) before_hb.tv_usec,		     after_hb.tv_sec, (unsigned long) after_hb.tv_usec,		     elapsed_msec)
+mlog
+mlog
+ML_HEARTBEAT
+ML_HEARTBEAT
+"start = %lu.%lu, end = %lu.%lu, msec = %u\n"
+before_hb.tv_sec
+before_hb
+before_hb
+tv_sec
+(unsigned long) before_hb.tv_usec
+unsigned long
+unsigned long
+
+before_hb.tv_usec
+before_hb
+before_hb
+tv_usec
+after_hb.tv_sec
+after_hb
+after_hb
+tv_sec
+(unsigned long) after_hb.tv_usec
+unsigned long
+unsigned long
+
+after_hb.tv_usec
+after_hb
+after_hb
+tv_usec
+elapsed_msec
+elapsed_msec
+if (!kthread_should_stop() &&		    elapsed_msec < reg->hr_timeout_ms) {			/* the kthread api has blocked signals for us so no			 * need to record the return value. */			msleep_interruptible(reg->hr_timeout_ms - elapsed_msec);		}
+!kthread_should_stop() &&		    elapsed_msec < reg->hr_timeout_ms
+!kthread_should_stop()
+kthread_should_stop()
+kthread_should_stop
+kthread_should_stop
+elapsed_msec < reg->hr_timeout_ms
+elapsed_msec
+elapsed_msec
+reg->hr_timeout_ms
+reg
+reg
+hr_timeout_ms
+{			/* the kthread api has blocked signals for us so no			 * need to record the return value. */			msleep_interruptible(reg->hr_timeout_ms - elapsed_msec);		}
+msleep_interruptible(reg->hr_timeout_ms - elapsed_msec);
+msleep_interruptible(reg->hr_timeout_ms - elapsed_msec)
+msleep_interruptible
+msleep_interruptible
+reg->hr_timeout_ms - elapsed_msec
+reg->hr_timeout_ms
+reg
+reg
+hr_timeout_ms
+elapsed_msec
+elapsed_msec
+o2hb_disarm_write_timeout(reg);
+o2hb_disarm_write_timeout(reg)
+o2hb_disarm_write_timeout
+o2hb_disarm_write_timeout
+reg
+reg
+for(i = 0; !reg->hr_unclean_stop && i < reg->hr_blocks; i++)		o2hb_shutdown_slot(&reg->hr_slots[i]);
+i = 0;
+i = 0
+i
+i
+0
+!reg->hr_unclean_stop && i < reg->hr_blocks
+!reg->hr_unclean_stop
+reg->hr_unclean_stop
+reg
+reg
+hr_unclean_stop
+i < reg->hr_blocks
+i
+i
+reg->hr_blocks
+reg
+reg
+hr_blocks
+i++
+i
+i
+o2hb_shutdown_slot(&reg->hr_slots[i]);
+o2hb_shutdown_slot(&reg->hr_slots[i])
+o2hb_shutdown_slot
+o2hb_shutdown_slot
+&reg->hr_slots[i]
+reg->hr_slots[i]
+reg->hr_slots
+reg
+reg
+hr_slots
+i
+i
+if (!reg->hr_unclean_stop && !reg->hr_aborted_start) {		o2hb_prepare_block(reg, 0);		ret = o2hb_issue_node_write(reg, &write_wc);		if (ret == 0)			o2hb_wait_on_io(reg, &write_wc);		else			mlog_errno(ret);	}
+!reg->hr_unclean_stop && !reg->hr_aborted_start
+!reg->hr_unclean_stop
+reg->hr_unclean_stop
+reg
+reg
+hr_unclean_stop
+!reg->hr_aborted_start
+reg->hr_aborted_start
+reg
+reg
+hr_aborted_start
+{		o2hb_prepare_block(reg, 0);		ret = o2hb_issue_node_write(reg, &write_wc);		if (ret == 0)			o2hb_wait_on_io(reg, &write_wc);		else			mlog_errno(ret);	}
+o2hb_prepare_block(reg, 0);
+o2hb_prepare_block(reg, 0)
+o2hb_prepare_block
+o2hb_prepare_block
+reg
+reg
+0
+ret = o2hb_issue_node_write(reg, &write_wc);
+ret = o2hb_issue_node_write(reg, &write_wc)
+ret
+ret
+o2hb_issue_node_write(reg, &write_wc)
+o2hb_issue_node_write
+o2hb_issue_node_write
+reg
+reg
+&write_wc
+write_wc
+write_wc
+if (ret == 0)			o2hb_wait_on_io(reg, &write_wc);		else			mlog_errno(ret);
+ret == 0
+ret
+ret
+0
+o2hb_wait_on_io(reg, &write_wc);
+o2hb_wait_on_io(reg, &write_wc)
+o2hb_wait_on_io
+o2hb_wait_on_io
+reg
+reg
+&write_wc
+write_wc
+write_wc
+mlog_errno(ret);
+mlog_errno(ret)
+mlog_errno
+mlog_errno
+ret
+ret
+o2nm_undepend_this_node();
+o2nm_undepend_this_node()
+o2nm_undepend_this_node
+o2nm_undepend_this_node
+mlog(ML_HEARTBEAT|ML_KTHREAD, "o2hb thread exiting\n");
+mlog(ML_HEARTBEAT|ML_KTHREAD, "o2hb thread exiting\n")
+mlog
+mlog
+ML_HEARTBEAT|ML_KTHREAD
+ML_HEARTBEAT
+ML_HEARTBEAT
+ML_KTHREAD
+ML_KTHREAD
+"o2hb thread exiting\n"
+return 0;
+0
+-----joern-----
+(77,28,0)
+(132,40,0)
+(139,86,0)
+(134,5,0)
+(28,29,0)
+(80,135,0)
+(126,12,0)
+(32,40,0)
+(128,125,0)
+(105,25,0)
+(124,30,0)
+(86,48,0)
+(11,64,0)
+(34,48,0)
+(44,94,0)
+(19,121,0)
+(115,34,0)
+(22,12,0)
+(135,80,0)
+(150,64,0)
+(64,11,0)
+(11,117,0)
+(126,40,0)
+(78,25,0)
+(34,134,0)
+(59,17,0)
+(74,118,0)
+(110,65,0)
+(122,109,0)
+(78,39,0)
+(79,32,0)
+(33,34,0)
+(96,40,0)
+(45,34,0)
+(29,28,0)
+(95,29,0)
+(18,128,0)
+(100,27,0)
+(118,21,0)
+(122,48,0)
+(30,25,0)
+(34,77,0)
+(60,34,0)
+(144,16,0)
+(62,85,0)
+(36,39,0)
+(148,65,0)
+(81,25,0)
+(146,40,0)
+(58,21,0)
+(86,57,0)
+(131,146,0)
+(147,115,0)
+(36,85,0)
+(121,19,0)
+(19,14,0)
+(0,133,0)
+(55,35,0)
+(149,78,0)
+(37,103,0)
+(59,41,0)
+(104,40,0)
+(114,40,0)
+(72,58,0)
+(52,77,0)
+(83,14,0)
+(71,13,0)
+(6,115,0)
+(134,35,0)
+(111,47,0)
+(75,150,0)
+(51,19,0)
+(151,40,0)
+(145,78,0)
+(27,17,0)
+(26,40,0)
+(93,64,0)
+(76,62,0)
+(49,15,0)
+(15,59,0)
+(15,25,0)
+(112,14,0)
+(25,40,0)
+(4,105,0)
+(2,77,0)
+(34,60,0)
+(110,121,0)
+(61,105,0)
+(39,78,0)
+(52,30,0)
+(142,81,0)
+(134,34,0)
+(57,25,0)
+(33,70,0)
+(107,13,0)
+(33,143,0)
+(97,40,0)
+(99,21,0)
+(77,48,0)
+(34,33,0)
+(13,40,0)
+(37,68,0)
+(65,110,0)
+(92,48,0)
+(54,50,0)
+(25,20,0)
+(89,25,0)
+(65,25,0)
+(28,133,0)
+(68,36,0)
+(137,57,0)
+(87,17,0)
+(62,25,0)
+(28,77,0)
+(84,40,0)
+(70,33,0)
+(31,58,0)
+(129,107,0)
+(125,128,0)
+(16,25,0)
+(121,110,0)
+(64,77,0)
+(3,81,0)
+(69,40,0)
+(85,36,0)
+(106,74,0)
+(81,130,0)
+(16,90,0)
+(140,35,0)
+(19,17,0)
+(8,60,0)
+(38,150,0)
+(91,41,0)
+(123,70,0)
+(50,118,0)
+(127,40,0)
+(46,12,0)
+(41,59,0)
+(9,32,0)
+(136,60,0)
+(105,61,0)
+(128,18,0)
+(53,15,0)
+(68,37,0)
+(58,25,0)
+(43,47,0)
+(102,135,0)
+(150,25,0)
+(63,130,0)
+(85,62,0)
+(35,134,0)
+(1,126,0)
+(118,80,0)
+(63,61,0)
+(14,19,0)
+(30,52,0)
+(94,10,0)
+(88,105,0)
+(47,40,0)
+(119,118,0)
+(24,40,0)
+(90,16,0)
+(56,30,0)
+(80,118,0)
+(101,109,0)
+(108,34,0)
+(66,50,0)
+(14,25,0)
+(41,91,0)
+(73,34,0)
+(80,25,0)
+(103,37,0)
+(143,33,0)
+(36,68,0)
+(98,80,0)
+(12,126,0)
+(82,90,0)
+(52,18,0)
+(64,150,0)
+(13,107,0)
+(61,63,0)
+(113,25,0)
+(10,94,0)
+(116,65,0)
+(7,40,0)
+(59,15,0)
+(133,28,0)
+(23,59,0)
+(57,86,0)
+(141,17,0)
+(42,62,0)
+(138,52,0)
+(67,70,0)
+(39,36,0)
+(130,63,0)
+(18,52,0)
+(10,48,0)
+(130,81,0)
+(120,107,0)
+(146,25,0)
+(109,122,0)
+(5,134,0)
+(34,115,0)
+(35,55,1)
+(8,134,1)
+(3,121,1)
+(28,29,1)
+(59,23,1)
+(150,75,1)
+(135,102,1)
+(34,134,1)
+(70,67,1)
+(147,45,1)
+(68,36,1)
+(45,73,1)
+(110,65,1)
+(103,69,1)
+(41,59,1)
+(44,68,1)
+(32,79,1)
+(73,77,1)
+(145,149,1)
+(134,5,1)
+(58,31,1)
+(122,109,1)
+(33,143,1)
+(30,124,1)
+(127,63,1)
+(77,28,1)
+(120,25,1)
+(15,49,1)
+(18,128,1)
+(133,0,1)
+(127,74,1)
+(19,17,1)
+(108,33,1)
+(34,115,1)
+(47,111,1)
+(121,110,1)
+(50,54,1)
+(76,42,1)
+(6,147,1)
+(128,125,1)
+(33,70,1)
+(87,141,1)
+(89,113,1)
+(81,25,1)
+(11,64,1)
+(126,12,1)
+(27,100,1)
+(1,12,1)
+(13,71,1)
+(15,25,1)
+(83,51,1)
+(57,25,1)
+(60,136,1)
+(81,142,1)
+(27,17,1)
+(148,27,1)
+(51,110,1)
+(124,56,1)
+(39,78,1)
+(37,103,1)
+(74,118,1)
+(103,18,1)
+(4,130,1)
+(101,86,1)
+(65,116,1)
+(63,130,1)
+(80,135,1)
+(88,4,1)
+(126,1,1)
+(56,138,1)
+(9,13,1)
+(116,148,1)
+(141,146,1)
+(136,8,1)
+(61,105,1)
+(140,115,1)
+(112,83,1)
+(95,133,1)
+(43,47,1)
+(54,66,1)
+(103,11,1)
+(64,150,1)
+(90,82,1)
+(115,6,1)
+(16,25,1)
+(123,60,1)
+(91,41,1)
+(82,144,1)
+(75,38,1)
+(111,126,1)
+(93,150,1)
+(50,118,1)
+(98,119,1)
+(138,128,1)
+(107,129,1)
+(146,25,1)
+(67,123,1)
+(14,25,1)
+(10,94,1)
+(29,95,1)
+(105,88,1)
+(59,15,1)
+(19,14,1)
+(62,25,1)
+(127,16,1)
+(119,58,1)
+(49,53,1)
+(94,44,1)
+(118,80,1)
+(2,122,1)
+(139,10,1)
+(42,39,1)
+(62,76,1)
+(149,37,1)
+(13,107,1)
+(55,140,1)
+(28,133,1)
+(34,33,1)
+(65,25,1)
+(102,98,1)
+(34,77,1)
+(34,60,1)
+(105,25,1)
+(53,121,1)
+(86,57,1)
+(59,17,1)
+(58,25,1)
+(34,108,1)
+(134,35,1)
+(52,77,1)
+(64,77,1)
+(36,85,1)
+(36,39,1)
+(12,46,1)
+(131,68,1)
+(25,89,1)
+(80,25,1)
+(74,106,1)
+(16,90,1)
+(18,52,1)
+(57,137,1)
+(109,101,1)
+(17,87,1)
+(129,120,1)
+(52,30,1)
+(30,25,1)
+(150,25,1)
+(78,25,1)
+(69,32,1)
+(14,112,1)
+(31,72,1)
+(0,2,1)
+(78,145,1)
+(100,91,1)
+(79,9,1)
+(148,17,1)
+(66,118,1)
+(72,63,1)
+(146,131,1)
+(25,20,1)
+(125,34,1)
+(144,50,1)
+(142,3,1)
+(130,81,1)
+(64,93,1)
+(68,37,1)
+(23,15,1)
+(38,18,1)
+(121,19,1)
+(46,22,1)
+(22,127,1)
+(63,61,1)
+(106,50,1)
+(137,139,1)
+(71,107,1)
+(85,62,1)
+(108,68,2)
+(60,68,2)
+(80,25,2)
+(52,128,2)
+(70,68,2)
+(36,37,2)
+(150,25,2)
+(16,25,2)
+(135,63,2)
+(148,121,2)
+(110,65,2)
+(15,25,2)
+(34,77,2)
+(115,68,2)
+(57,25,2)
+(68,37,2)
+(62,39,2)
+(150,18,2)
+(62,25,2)
+(105,25,2)
+(98,63,2)
+(100,121,2)
+(55,68,2)
+(58,25,2)
+(14,110,2)
+(33,68,2)
+(82,50,2)
+(67,68,2)
+(16,50,2)
+(90,50,2)
+(4,130,2)
+(130,81,2)
+(93,18,2)
+(105,130,2)
+(140,68,2)
+(147,68,2)
+(123,68,2)
+(64,77,2)
+(43,47,2)
+(13,107,2)
+(138,128,2)
+(146,25,2)
+(34,115,2)
+(94,68,2)
+(42,39,2)
+(11,64,2)
+(121,19,2)
+(68,36,2)
+(14,25,2)
+(27,121,2)
+(103,68,2)
+(41,59,2)
+(57,68,2)
+(149,37,2)
+(80,135,2)
+(76,39,2)
+(15,121,2)
+(29,68,2)
+(118,63,2)
+(128,125,2)
+(95,68,2)
+(63,61,2)
+(121,121,2)
+(145,37,2)
+(28,133,2)
+(19,110,2)
+(45,68,2)
+(34,68,2)
+(58,63,2)
+(0,68,2)
+(81,25,2)
+(49,121,2)
+(137,68,2)
+(8,68,2)
+(80,63,2)
+(118,80,2)
+(144,50,2)
+(28,68,2)
+(18,52,2)
+(6,68,2)
+(88,130,2)
+(125,68,2)
+(74,50,2)
+(18,128,2)
+(133,68,2)
+(50,118,2)
+(30,25,2)
+(37,68,2)
+(68,68,2)
+(124,128,2)
+(106,50,2)
+(66,63,2)
+(59,15,2)
+(41,121,2)
+(39,78,2)
+(136,68,2)
+(85,62,2)
+(64,150,2)
+(19,14,2)
+(44,68,2)
+(36,85,2)
+(28,29,2)
+(75,18,2)
+(101,68,2)
+(33,70,2)
+(19,17,2)
+(119,63,2)
+(65,121,2)
+(56,128,2)
+(77,28,2)
+(128,68,2)
+(112,110,2)
+(25,20,2)
+(109,68,2)
+(35,68,2)
+(91,121,2)
+(65,25,2)
+(23,121,2)
+(18,68,2)
+(37,103,2)
+(63,130,2)
+(34,134,2)
+(134,35,2)
+(34,33,2)
+(27,17,2)
+(86,68,2)
+(30,128,2)
+(34,60,2)
+(85,39,2)
+(126,12,2)
+(116,121,2)
+(78,37,2)
+(54,63,2)
+(38,18,2)
+(64,18,2)
+(122,68,2)
+(134,5,2)
+(110,121,2)
+(59,121,2)
+(61,105,2)
+(2,68,2)
+(102,63,2)
+(36,39,2)
+(72,63,2)
+(74,118,2)
+(86,57,2)
+(10,68,2)
+(77,68,2)
+(11,18,2)
+(50,63,2)
+(139,68,2)
+(52,77,2)
+(73,68,2)
+(33,143,2)
+(134,68,2)
+(53,121,2)
+(16,90,2)
+(59,17,2)
+(51,110,2)
+(52,30,2)
+(31,63,2)
+(10,94,2)
+(78,25,2)
+(121,110,2)
+(39,37,2)
+(61,130,2)
+(122,109,2)
+(83,110,2)
+(91,41,2)
+-----------------------------------
+(0,before_hb)
+(1,"o2hb thread exiting\\n")
+(2,elapsed_msec)
+(3,reg)
+(4,reg)
+(5,unsigned long)
+(6,tv_sec)
+(7,i)
+(8,after_hb)
+(9,current)
+(10,do_gettimeofday(&before_hb)
+(11,msleep_interruptible(reg->hr_timeout_ms - elapsed_msec)
+(12,ML_HEARTBEAT|ML_KTHREAD)
+(13,mlog(ML_HEARTBEAT|ML_KTHREAD, "hb thread running\\n")
+(14,reg->hr_blocks)
+(15,reg->hr_slots)
+(16,o2hb_wait_on_io(reg, &write_wc)
+(17,i = 0)
+(18,!kthread_should_stop()
+(19,i < reg->hr_blocks)
+(20,void *data)
+(21,)
+(22,ML_HEARTBEAT)
+(23,i)
+(24,write_wc)
+(25,*reg = data)
+(26,reg)
+(27,i++)
+(28,o2hb_elapsed_msecs(&before_hb, &after_hb)
+(29,&after_hb)
+(30,reg->hr_timeout_ms)
+(31,0)
+(32,set_user_nice(current, MIN_NICE)
+(33,(unsigned long)
+(34,mlog(ML_HEARTBEAT,\n\\n\\t\\t     "start = %lu.%lu, end = %lu.%lu, msec = %u\\n",\n\\n\\t\\t     before_hb.tv_sec, (unsigned long)
+(35,before_hb.tv_usec)
+(36,!reg->hr_unclean_stop && !reg->hr_aborted_start)
+(37,!kthread_should_stop()
+(38,reg)
+(39,!reg->hr_unclean_stop)
+(40,)
+(41,&reg->hr_slots[i])
+(42,reg)
+(43,RET)
+(44,before_hb)
+(45,"start = %lu.%lu, end = %lu.%lu, msec = %u\\n")
+(46,ML_KTHREAD)
+(47,return 0;)
+(48,)
+(49,hr_slots)
+(50,ret == 0)
+(51,i)
+(52,elapsed_msec < reg->hr_timeout_ms)
+(53,reg)
+(54,0)
+(55,tv_usec)
+(56,reg)
+(57,o2hb_do_disk_heartbeat(reg)
+(58,o2hb_prepare_block(reg, 0)
+(59,reg->hr_slots[i])
+(60,after_hb.tv_sec)
+(61,!reg->hr_aborted_start)
+(62,reg->hr_aborted_start)
+(63,!reg->hr_unclean_stop && !reg->hr_aborted_start)
+(64,reg->hr_timeout_ms - elapsed_msec)
+(65,reg->hr_unclean_stop)
+(66,ret)
+(67,tv_usec)
+(68,!kthread_should_stop()
+(69,o2nm_depend_this_node()
+(70,after_hb.tv_usec)
+(71,"hb thread running\\n")
+(72,reg)
+(73,ML_HEARTBEAT)
+(74,mlog_errno(ret)
+(75,hr_timeout_ms)
+(76,hr_aborted_start)
+(77,elapsed_msec = o2hb_elapsed_msecs(&before_hb, &after_hb)
+(78,reg->hr_unclean_stop)
+(79,MIN_NICE)
+(80,o2hb_issue_node_write(reg, &write_wc)
+(81,reg->hr_unclean_stop)
+(82,write_wc)
+(83,reg)
+(84,for(i = 0; !reg->hr_unclean_stop && i < reg->hr_blocks; i++)
+(85,!reg->hr_aborted_start)
+(86,ret = o2hb_do_disk_heartbeat(reg)
+(87,0)
+(88,hr_aborted_start)
+(89,data)
+(90,&write_wc)
+(91,o2hb_shutdown_slot(&reg->hr_slots[i])
+(92,if (!kthread_should_stop()
+(93,elapsed_msec)
+(94,&before_hb)
+(95,after_hb)
+(96,before_hb)
+(97,elapsed_msec)
+(98,reg)
+(99,if (ret == 0)
+(100,i)
+(101,after_hb)
+(102,write_wc)
+(103,kthread_should_stop()
+(104,ret)
+(105,reg->hr_aborted_start)
+(106,ret)
+(107,ML_HEARTBEAT|ML_KTHREAD)
+(108,elapsed_msec)
+(109,&after_hb)
+(110,!reg->hr_unclean_stop)
+(111,0)
+(112,hr_blocks)
+(113,reg)
+(114,after_hb)
+(115,before_hb.tv_sec)
+(116,hr_unclean_stop)
+(117,)
+(118,ret = o2hb_issue_node_write(reg, &write_wc)
+(119,ret)
+(120,ML_HEARTBEAT)
+(121,!reg->hr_unclean_stop && i < reg->hr_blocks)
+(122,do_gettimeofday(&after_hb)
+(123,after_hb)
+(124,hr_timeout_ms)
+(125,kthread_should_stop()
+(126,mlog(ML_HEARTBEAT|ML_KTHREAD, "o2hb thread exiting\\n")
+(127,o2nm_undepend_this_node()
+(128,!kthread_should_stop()
+(129,ML_KTHREAD)
+(130,!reg->hr_unclean_stop)
+(131,reg)
+(132,if (!reg->hr_unclean_stop && !reg->hr_aborted_start)
+(133,&before_hb)
+(134,(unsigned long)
+(135,&write_wc)
+(136,tv_sec)
+(137,reg)
+(138,elapsed_msec)
+(139,ret)
+(140,before_hb)
+(141,i)
+(142,hr_unclean_stop)
+(143,unsigned long)
+(144,reg)
+(145,hr_unclean_stop)
+(146,o2hb_disarm_write_timeout(reg)
+(147,before_hb)
+(148,reg)
+(149,reg)
+(150,reg->hr_timeout_ms)
+(151,while (!kthread_should_stop()
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

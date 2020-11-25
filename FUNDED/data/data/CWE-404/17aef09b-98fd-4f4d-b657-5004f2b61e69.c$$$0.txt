@@ -1,0 +1,1705 @@
+-----label-----
+1
+-----code-----
+static int binder_translate_fd_array(struct binder_fd_array_object *fda,
+				     struct binder_buffer_object *parent,
+				     struct binder_transaction *t,
+				     struct binder_thread *thread,
+				     struct binder_transaction *in_reply_to)
+{
+	binder_size_t fdi, fd_buf_size, num_installed_fds;
+	int target_fd;
+	uintptr_t parent_buffer;
+	u32 *fd_array;
+	struct binder_proc *proc = thread->proc;
+	struct binder_proc *target_proc = t->to_proc;
+
+	fd_buf_size = sizeof(u32) * fda->num_fds;
+	if (fda->num_fds >= SIZE_MAX / sizeof(u32)) {
+		binder_user_error("%d:%d got transaction with invalid number of fds (%lld)\n",
+				  proc->pid, thread->pid, (u64)fda->num_fds);
+		return -EINVAL;
+	}
+	if (fd_buf_size > parent->length ||
+	    fda->parent_offset > parent->length - fd_buf_size) {
+		/* No space for all file descriptors here. */
+		binder_user_error("%d:%d not enough space to store %lld fds in buffer\n",
+				  proc->pid, thread->pid, (u64)fda->num_fds);
+		return -EINVAL;
+	}
+	/*
+	 * Since the parent was already fixed up, convert it
+	 * back to the kernel address space to access it
+	 */
+	parent_buffer = parent->buffer -
+		binder_alloc_get_user_buffer_offset(&target_proc->alloc);
+	fd_array = (u32 *)(parent_buffer + fda->parent_offset);
+	if (!IS_ALIGNED((unsigned long)fd_array, sizeof(u32))) {
+		binder_user_error("%d:%d parent offset not aligned correctly.\n",
+				  proc->pid, thread->pid);
+		return -EINVAL;
+	}
+	for (fdi = 0; fdi < fda->num_fds; fdi++) {
+		target_fd = binder_translate_fd(fd_array[fdi], t, thread,
+						in_reply_to);
+		if (target_fd < 0)
+			goto err_translate_fd_failed;
+		fd_array[fdi] = target_fd;
+	}
+	return 0;
+
+err_translate_fd_failed:
+	/*
+	 * Failed to allocate fd or security error, free fds
+	 * installed so far.
+	 */
+	num_installed_fds = fdi;
+	for (fdi = 0; fdi < num_installed_fds; fdi++)
+		task_close_fd(target_proc, fd_array[fdi]);
+	return target_fd;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+3,8
+3,9
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+17,19
+18,19
+20,21
+20,22
+23,24
+23,25
+24,25
+26,27
+26,28
+29,30
+29,31
+30,31
+32,33
+32,34
+35,36
+35,37
+35,38
+35,39
+35,40
+35,41
+35,42
+35,43
+35,44
+35,45
+35,46
+35,47
+35,48
+35,49
+35,50
+35,51
+35,52
+36,37
+37,38
+37,39
+37,40
+37,41
+38,39
+40,41
+42,43
+44,45
+46,47
+47,48
+47,49
+49,50
+51,52
+52,53
+52,54
+53,54
+55,56
+57,58
+58,59
+58,60
+59,60
+61,62
+61,63
+64,65
+65,66
+65,67
+66,67
+68,69
+68,70
+68,71
+71,72
+72,73
+72,74
+73,74
+76,77
+77,78
+77,79
+78,79
+80,81
+80,82
+80,83
+83,84
+84,85
+84,86
+85,86
+88,89
+89,90
+89,91
+90,91
+92,93
+92,94
+93,94
+94,95
+94,96
+95,96
+98,99
+98,100
+99,100
+102,103
+102,104
+103,104
+103,105
+104,105
+104,106
+105,106
+108,109
+108,110
+109,110
+111,112
+112,113
+112,114
+113,114
+116,117
+116,118
+117,118
+118,119
+118,120
+118,121
+118,122
+118,123
+119,120
+122,123
+122,124
+123,124
+126,127
+126,128
+127,128
+130,131
+130,132
+131,132
+131,133
+132,133
+135,136
+135,137
+136,137
+139,140
+140,141
+141,142
+143,144
+143,145
+144,145
+144,146
+145,146
+145,147
+146,147
+148,149
+148,150
+149,150
+152,153
+152,154
+153,154
+153,155
+154,155
+157,158
+157,159
+158,159
+158,160
+159,160
+162,163
+164,165
+164,166
+165,166
+166,167
+166,168
+166,169
+166,170
+166,171
+167,168
+170,171
+170,172
+171,172
+174,175
+174,176
+175,176
+178,179
+178,180
+179,180
+179,181
+180,181
+183,184
+183,185
+184,185
+187,188
+188,189
+189,190
+191,192
+192,193
+192,194
+193,194
+195,196
+195,197
+196,197
+196,198
+197,198
+200,201
+200,202
+201,202
+203,204
+204,205
+204,206
+205,206
+208,209
+209,210
+209,211
+210,211
+212,213
+212,214
+213,214
+213,215
+214,215
+216,217
+218,219
+219,220
+219,221
+220,221
+222,223
+222,224
+223,224
+226,227
+226,228
+227,228
+228,229
+228,230
+228,231
+229,230
+231,232
+231,233
+232,233
+232,234
+235,236
+237,238
+238,239
+238,240
+239,240
+242,243
+242,244
+243,244
+244,245
+244,246
+244,247
+244,248
+245,246
+248,249
+248,250
+249,250
+252,253
+252,254
+253,254
+256,257
+257,258
+258,259
+260,261
+260,262
+260,263
+260,264
+261,262
+262,263
+262,264
+263,264
+266,267
+266,268
+267,268
+269,270
+269,271
+270,271
+273,274
+274,275
+276,277
+276,278
+276,279
+277,278
+278,279
+278,280
+279,280
+281,282
+281,283
+281,284
+281,285
+281,286
+282,283
+284,285
+284,286
+285,286
+287,288
+289,290
+291,292
+293,294
+295,296
+295,297
+296,297
+296,298
+297,298
+300,301
+302,303
+303,304
+303,305
+304,305
+304,306
+305,306
+307,308
+309,310
+311,312
+313,314
+313,315
+315,316
+316,317
+316,318
+317,318
+319,320
+321,322
+321,323
+321,324
+321,325
+322,323
+323,324
+323,325
+324,325
+327,328
+327,329
+328,329
+330,331
+332,333
+333,334
+335,336
+336,337
+336,338
+336,339
+337,338
+339,340
+341,342
+341,343
+342,343
+344,345
+346,347
+347,348
+-----nextToken-----
+2,4,7,9,10,13,15,16,19,21,22,25,27,28,31,33,34,39,41,43,45,48,50,54,56,60,62,63,67,69,70,74,75,79,81,82,86,87,91,96,97,100,101,106,107,110,114,115,120,121,124,125,128,129,133,134,137,138,142,147,150,151,155,156,160,161,163,168,169,172,173,176,177,181,182,185,186,190,194,198,199,202,206,207,211,215,217,221,224,225,230,233,234,236,240,241,246,247,250,251,254,255,259,264,265,268,271,272,275,280,283,286,288,290,292,294,298,299,301,306,308,310,312,314,318,320,325,326,329,331,334,338,340,343,345,348
+-----computeFrom-----
+89,90
+89,91
+92,93
+92,94
+103,104
+103,105
+108,109
+108,110
+144,145
+144,146
+145,146
+145,147
+152,153
+152,154
+157,158
+157,159
+192,193
+192,194
+195,196
+195,197
+209,210
+209,211
+219,220
+219,221
+262,263
+262,264
+266,267
+266,268
+278,279
+278,280
+296,297
+296,298
+303,304
+303,305
+316,317
+316,318
+323,324
+323,325
+327,328
+327,329
+-----guardedBy-----
+106,137
+107,138
+155,185
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;Declarator;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;TypeIdExpression;TypeId;NamedTypeSpecifier;Name;Declarator;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;TypeIdExpression;TypeId;NamedTypeSpecifier;Name;Declarator;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;FieldReference;IdExpression;Name;Name;ReturnStatement;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;FieldReference;IdExpression;Name;Name;ReturnStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;Pointer;UnaryExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;IdExpression;Name;TypeIdExpression;TypeId;NamedTypeSpecifier;Name;Declarator;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ReturnStatement;UnaryExpression;IdExpression;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;GotoStatement;Name;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ReturnStatement;LiteralExpression;LabelStatement;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+static int binder_translate_fd_array(struct binder_fd_array_object *fda,				     struct binder_buffer_object *parent,				     struct binder_transaction *t,				     struct binder_thread *thread,				     struct binder_transaction *in_reply_to){	binder_size_t fdi, fd_buf_size, num_installed_fds;	int target_fd;	uintptr_t parent_buffer;	u32 *fd_array;	struct binder_proc *proc = thread->proc;	struct binder_proc *target_proc = t->to_proc;	fd_buf_size = sizeof(u32) * fda->num_fds;	if (fda->num_fds >= SIZE_MAX / sizeof(u32)) {		binder_user_error("%d:%d got transaction with invalid number of fds (%lld)\n",				  proc->pid, thread->pid, (u64)fda->num_fds);		return -EINVAL;	}	if (fd_buf_size > parent->length ||	    fda->parent_offset > parent->length - fd_buf_size) {		/* No space for all file descriptors here. */		binder_user_error("%d:%d not enough space to store %lld fds in buffer\n",				  proc->pid, thread->pid, (u64)fda->num_fds);		return -EINVAL;	}	/*	 * Since the parent was already fixed up, convert it	 * back to the kernel address space to access it	 */	parent_buffer = parent->buffer -		binder_alloc_get_user_buffer_offset(&target_proc->alloc);	fd_array = (u32 *)(parent_buffer + fda->parent_offset);	if (!IS_ALIGNED((unsigned long)fd_array, sizeof(u32))) {		binder_user_error("%d:%d parent offset not aligned correctly.\n",				  proc->pid, thread->pid);		return -EINVAL;	}	for (fdi = 0; fdi < fda->num_fds; fdi++) {		target_fd = binder_translate_fd(fd_array[fdi], t, thread,						in_reply_to);		if (target_fd < 0)			goto err_translate_fd_failed;		fd_array[fdi] = target_fd;	}	return 0;err_translate_fd_failed:	/*	 * Failed to allocate fd or security error, free fds	 * installed so far.	 */	num_installed_fds = fdi;	for (fdi = 0; fdi < num_installed_fds; fdi++)		task_close_fd(target_proc, fd_array[fdi]);	return target_fd;}
+static int
+binder_translate_fd_array(struct binder_fd_array_object *fda,				     struct binder_buffer_object *parent,				     struct binder_transaction *t,				     struct binder_thread *thread,				     struct binder_transaction *in_reply_to)
+binder_translate_fd_array
+struct binder_fd_array_object *fda
+struct binder_fd_array_object
+binder_fd_array_object
+*fda
+*
+fda
+struct binder_buffer_object *parent
+struct binder_buffer_object
+binder_buffer_object
+*parent
+*
+parent
+struct binder_transaction *t
+struct binder_transaction
+binder_transaction
+*t
+*
+t
+struct binder_thread *thread
+struct binder_thread
+binder_thread
+*thread
+*
+thread
+struct binder_transaction *in_reply_to
+struct binder_transaction
+binder_transaction
+*in_reply_to
+*
+in_reply_to
+{	binder_size_t fdi, fd_buf_size, num_installed_fds;	int target_fd;	uintptr_t parent_buffer;	u32 *fd_array;	struct binder_proc *proc = thread->proc;	struct binder_proc *target_proc = t->to_proc;	fd_buf_size = sizeof(u32) * fda->num_fds;	if (fda->num_fds >= SIZE_MAX / sizeof(u32)) {		binder_user_error("%d:%d got transaction with invalid number of fds (%lld)\n",				  proc->pid, thread->pid, (u64)fda->num_fds);		return -EINVAL;	}	if (fd_buf_size > parent->length ||	    fda->parent_offset > parent->length - fd_buf_size) {		/* No space for all file descriptors here. */		binder_user_error("%d:%d not enough space to store %lld fds in buffer\n",				  proc->pid, thread->pid, (u64)fda->num_fds);		return -EINVAL;	}	/*	 * Since the parent was already fixed up, convert it	 * back to the kernel address space to access it	 */	parent_buffer = parent->buffer -		binder_alloc_get_user_buffer_offset(&target_proc->alloc);	fd_array = (u32 *)(parent_buffer + fda->parent_offset);	if (!IS_ALIGNED((unsigned long)fd_array, sizeof(u32))) {		binder_user_error("%d:%d parent offset not aligned correctly.\n",				  proc->pid, thread->pid);		return -EINVAL;	}	for (fdi = 0; fdi < fda->num_fds; fdi++) {		target_fd = binder_translate_fd(fd_array[fdi], t, thread,						in_reply_to);		if (target_fd < 0)			goto err_translate_fd_failed;		fd_array[fdi] = target_fd;	}	return 0;err_translate_fd_failed:	/*	 * Failed to allocate fd or security error, free fds	 * installed so far.	 */	num_installed_fds = fdi;	for (fdi = 0; fdi < num_installed_fds; fdi++)		task_close_fd(target_proc, fd_array[fdi]);	return target_fd;}
+binder_size_t fdi, fd_buf_size, num_installed_fds;
+binder_size_t fdi, fd_buf_size, num_installed_fds;
+binder_size_t
+binder_size_t
+fdi
+fdi
+fd_buf_size
+fd_buf_size
+num_installed_fds
+num_installed_fds
+int target_fd;
+int target_fd;
+int
+target_fd
+target_fd
+uintptr_t parent_buffer;
+uintptr_t parent_buffer;
+uintptr_t
+uintptr_t
+parent_buffer
+parent_buffer
+u32 *fd_array;
+u32 *fd_array;
+u32
+u32
+*fd_array
+*
+fd_array
+struct binder_proc *proc = thread->proc;
+struct binder_proc *proc = thread->proc;
+struct binder_proc
+binder_proc
+*proc = thread->proc
+*
+proc
+= thread->proc
+thread->proc
+thread
+thread
+proc
+struct binder_proc *target_proc = t->to_proc;
+struct binder_proc *target_proc = t->to_proc;
+struct binder_proc
+binder_proc
+*target_proc = t->to_proc
+*
+target_proc
+= t->to_proc
+t->to_proc
+t
+t
+to_proc
+fd_buf_size = sizeof(u32) * fda->num_fds;
+fd_buf_size = sizeof(u32) * fda->num_fds
+fd_buf_size
+fd_buf_size
+sizeof(u32) * fda->num_fds
+sizeof(u32)
+u32
+u32
+u32
+
+fda->num_fds
+fda
+fda
+num_fds
+if (fda->num_fds >= SIZE_MAX / sizeof(u32)) {		binder_user_error("%d:%d got transaction with invalid number of fds (%lld)\n",				  proc->pid, thread->pid, (u64)fda->num_fds);		return -EINVAL;	}
+fda->num_fds >= SIZE_MAX / sizeof(u32)
+fda->num_fds
+fda
+fda
+num_fds
+SIZE_MAX / sizeof(u32)
+SIZE_MAX
+SIZE_MAX
+sizeof(u32)
+u32
+u32
+u32
+
+{		binder_user_error("%d:%d got transaction with invalid number of fds (%lld)\n",				  proc->pid, thread->pid, (u64)fda->num_fds);		return -EINVAL;	}
+binder_user_error("%d:%d got transaction with invalid number of fds (%lld)\n",				  proc->pid, thread->pid, (u64)fda->num_fds);
+binder_user_error("%d:%d got transaction with invalid number of fds (%lld)\n",				  proc->pid, thread->pid, (u64)fda->num_fds)
+binder_user_error
+binder_user_error
+"%d:%d got transaction with invalid number of fds (%lld)\n"
+proc->pid
+proc
+proc
+pid
+thread->pid
+thread
+thread
+pid
+(u64)fda->num_fds
+u64
+u64
+u64
+
+fda->num_fds
+fda
+fda
+num_fds
+return -EINVAL;
+-EINVAL
+EINVAL
+EINVAL
+if (fd_buf_size > parent->length ||	    fda->parent_offset > parent->length - fd_buf_size) {		/* No space for all file descriptors here. */		binder_user_error("%d:%d not enough space to store %lld fds in buffer\n",				  proc->pid, thread->pid, (u64)fda->num_fds);		return -EINVAL;	}
+fd_buf_size > parent->length ||	    fda->parent_offset > parent->length - fd_buf_size
+fd_buf_size > parent->length
+fd_buf_size
+fd_buf_size
+parent->length
+parent
+parent
+length
+fda->parent_offset > parent->length - fd_buf_size
+fda->parent_offset
+fda
+fda
+parent_offset
+parent->length - fd_buf_size
+parent->length
+parent
+parent
+length
+fd_buf_size
+fd_buf_size
+{		/* No space for all file descriptors here. */		binder_user_error("%d:%d not enough space to store %lld fds in buffer\n",				  proc->pid, thread->pid, (u64)fda->num_fds);		return -EINVAL;	}
+binder_user_error("%d:%d not enough space to store %lld fds in buffer\n",				  proc->pid, thread->pid, (u64)fda->num_fds);
+binder_user_error("%d:%d not enough space to store %lld fds in buffer\n",				  proc->pid, thread->pid, (u64)fda->num_fds)
+binder_user_error
+binder_user_error
+"%d:%d not enough space to store %lld fds in buffer\n"
+proc->pid
+proc
+proc
+pid
+thread->pid
+thread
+thread
+pid
+(u64)fda->num_fds
+u64
+u64
+u64
+
+fda->num_fds
+fda
+fda
+num_fds
+return -EINVAL;
+-EINVAL
+EINVAL
+EINVAL
+parent_buffer = parent->buffer -		binder_alloc_get_user_buffer_offset(&target_proc->alloc);
+parent_buffer = parent->buffer -		binder_alloc_get_user_buffer_offset(&target_proc->alloc)
+parent_buffer
+parent_buffer
+parent->buffer -		binder_alloc_get_user_buffer_offset(&target_proc->alloc)
+parent->buffer
+parent
+parent
+buffer
+binder_alloc_get_user_buffer_offset(&target_proc->alloc)
+binder_alloc_get_user_buffer_offset
+binder_alloc_get_user_buffer_offset
+&target_proc->alloc
+target_proc->alloc
+target_proc
+target_proc
+alloc
+fd_array = (u32 *)(parent_buffer + fda->parent_offset);
+fd_array = (u32 *)(parent_buffer + fda->parent_offset)
+fd_array
+fd_array
+(u32 *)(parent_buffer + fda->parent_offset)
+u32 *
+u32
+u32
+*
+*
+(parent_buffer + fda->parent_offset)
+parent_buffer + fda->parent_offset
+parent_buffer
+parent_buffer
+fda->parent_offset
+fda
+fda
+parent_offset
+if (!IS_ALIGNED((unsigned long)fd_array, sizeof(u32))) {		binder_user_error("%d:%d parent offset not aligned correctly.\n",				  proc->pid, thread->pid);		return -EINVAL;	}
+!IS_ALIGNED((unsigned long)fd_array, sizeof(u32))
+IS_ALIGNED((unsigned long)fd_array, sizeof(u32))
+IS_ALIGNED
+IS_ALIGNED
+(unsigned long)fd_array
+unsigned long
+unsigned long
+
+fd_array
+fd_array
+sizeof(u32)
+u32
+u32
+u32
+
+{		binder_user_error("%d:%d parent offset not aligned correctly.\n",				  proc->pid, thread->pid);		return -EINVAL;	}
+binder_user_error("%d:%d parent offset not aligned correctly.\n",				  proc->pid, thread->pid);
+binder_user_error("%d:%d parent offset not aligned correctly.\n",				  proc->pid, thread->pid)
+binder_user_error
+binder_user_error
+"%d:%d parent offset not aligned correctly.\n"
+proc->pid
+proc
+proc
+pid
+thread->pid
+thread
+thread
+pid
+return -EINVAL;
+-EINVAL
+EINVAL
+EINVAL
+for (fdi = 0; fdi < fda->num_fds; fdi++) {		target_fd = binder_translate_fd(fd_array[fdi], t, thread,						in_reply_to);		if (target_fd < 0)			goto err_translate_fd_failed;		fd_array[fdi] = target_fd;	}
+fdi = 0;
+fdi = 0
+fdi
+fdi
+0
+fdi < fda->num_fds
+fdi
+fdi
+fda->num_fds
+fda
+fda
+num_fds
+fdi++
+fdi
+fdi
+{		target_fd = binder_translate_fd(fd_array[fdi], t, thread,						in_reply_to);		if (target_fd < 0)			goto err_translate_fd_failed;		fd_array[fdi] = target_fd;	}
+target_fd = binder_translate_fd(fd_array[fdi], t, thread,						in_reply_to);
+target_fd = binder_translate_fd(fd_array[fdi], t, thread,						in_reply_to)
+target_fd
+target_fd
+binder_translate_fd(fd_array[fdi], t, thread,						in_reply_to)
+binder_translate_fd
+binder_translate_fd
+fd_array[fdi]
+fd_array
+fd_array
+fdi
+fdi
+t
+t
+thread
+thread
+in_reply_to
+in_reply_to
+if (target_fd < 0)			goto err_translate_fd_failed;
+target_fd < 0
+target_fd
+target_fd
+0
+goto err_translate_fd_failed;
+err_translate_fd_failed
+fd_array[fdi] = target_fd;
+fd_array[fdi] = target_fd
+fd_array[fdi]
+fd_array
+fd_array
+fdi
+fdi
+target_fd
+target_fd
+return 0;
+0
+err_translate_fd_failed:	/*	 * Failed to allocate fd or security error, free fds	 * installed so far.	 */	num_installed_fds = fdi;
+err_translate_fd_failed
+num_installed_fds = fdi;
+num_installed_fds = fdi
+num_installed_fds
+num_installed_fds
+fdi
+fdi
+for (fdi = 0; fdi < num_installed_fds; fdi++)		task_close_fd(target_proc, fd_array[fdi]);
+fdi = 0;
+fdi = 0
+fdi
+fdi
+0
+fdi < num_installed_fds
+fdi
+fdi
+num_installed_fds
+num_installed_fds
+fdi++
+fdi
+fdi
+task_close_fd(target_proc, fd_array[fdi]);
+task_close_fd(target_proc, fd_array[fdi])
+task_close_fd
+task_close_fd
+target_proc
+target_proc
+fd_array[fdi]
+fd_array
+fd_array
+fdi
+fdi
+return target_fd;
+target_fd
+target_fd
+-----joern-----
+(166,182,0)
+(9,146,0)
+(37,144,0)
+(153,182,0)
+(132,159,0)
+(98,44,0)
+(149,47,0)
+(4,51,0)
+(44,49,0)
+(34,78,0)
+(84,182,0)
+(165,124,0)
+(103,27,0)
+(98,164,0)
+(94,47,0)
+(64,155,0)
+(118,84,0)
+(158,6,0)
+(60,149,0)
+(105,182,0)
+(19,44,0)
+(83,125,0)
+(118,129,0)
+(133,104,0)
+(88,173,0)
+(143,75,0)
+(115,37,0)
+(75,174,0)
+(145,142,0)
+(77,92,0)
+(63,171,0)
+(113,126,0)
+(87,14,0)
+(56,125,0)
+(96,142,0)
+(119,49,0)
+(15,149,0)
+(92,7,0)
+(56,58,0)
+(90,111,0)
+(155,67,0)
+(87,182,0)
+(129,163,0)
+(175,52,0)
+(180,26,0)
+(167,21,0)
+(96,17,0)
+(57,32,0)
+(122,124,0)
+(144,37,0)
+(69,47,0)
+(162,60,0)
+(14,42,0)
+(124,151,0)
+(70,84,0)
+(5,94,0)
+(3,87,0)
+(42,14,0)
+(62,71,0)
+(173,106,0)
+(66,92,0)
+(161,154,0)
+(125,184,0)
+(175,39,0)
+(181,151,0)
+(14,34,0)
+(120,182,0)
+(86,176,0)
+(46,51,0)
+(65,42,0)
+(89,131,0)
+(13,87,0)
+(36,74,0)
+(111,150,0)
+(141,154,0)
+(51,31,0)
+(128,30,0)
+(30,128,0)
+(142,96,0)
+(106,142,0)
+(153,56,0)
+(126,144,0)
+(134,101,0)
+(71,74,0)
+(164,98,0)
+(159,114,0)
+(110,71,0)
+(2,33,0)
+(79,47,0)
+(127,174,0)
+(17,176,0)
+(59,127,0)
+(122,66,0)
+(171,74,0)
+(125,56,0)
+(17,182,0)
+(52,67,0)
+(103,175,0)
+(125,67,0)
+(16,96,0)
+(25,34,0)
+(125,150,0)
+(178,128,0)
+(44,182,0)
+(7,78,0)
+(3,49,0)
+(155,142,0)
+(144,127,0)
+(130,58,0)
+(93,56,0)
+(3,146,0)
+(28,58,0)
+(175,6,0)
+(60,21,0)
+(31,101,0)
+(21,111,0)
+(1,75,0)
+(97,129,0)
+(14,87,0)
+(171,28,0)
+(7,92,0)
+(167,65,0)
+(100,101,0)
+(99,182,0)
+(49,3,0)
+(10,62,0)
+(51,67,0)
+(111,21,0)
+(144,126,0)
+(107,182,0)
+(54,21,0)
+(101,17,0)
+(168,103,0)
+(98,159,0)
+(102,173,0)
+(75,36,0)
+(176,67,0)
+(65,167,0)
+(66,154,0)
+(68,17,0)
+(45,167,0)
+(50,125,0)
+(61,176,0)
+(116,36,0)
+(32,74,0)
+(169,125,0)
+(53,182,0)
+(35,182,0)
+(6,17,0)
+(151,78,0)
+(41,167,0)
+(24,39,0)
+(124,122,0)
+(151,124,0)
+(175,103,0)
+(125,33,0)
+(148,183,0)
+(117,175,0)
+(137,71,0)
+(82,97,0)
+(42,65,0)
+(142,106,0)
+(149,60,0)
+(183,172,0)
+(104,26,0)
+(36,75,0)
+(12,148,0)
+(6,175,0)
+(73,56,0)
+(85,151,0)
+(121,52,0)
+(127,144,0)
+(92,37,0)
+(124,37,0)
+(114,159,0)
+(159,98,0)
+(37,182,0)
+(142,172,0)
+(18,31,0)
+(103,168,0)
+(33,44,0)
+(157,34,0)
+(112,153,0)
+(31,163,0)
+(146,174,0)
+(154,66,0)
+(104,30,0)
+(0,155,0)
+(147,149,0)
+(177,98,0)
+(140,62,0)
+(159,132,0)
+(48,33,0)
+(131,24,0)
+(156,146,0)
+(49,44,0)
+(28,56,0)
+(138,6,0)
+(149,28,0)
+(31,51,0)
+(135,73,0)
+(171,44,0)
+(22,7,0)
+(27,103,0)
+(176,17,0)
+(71,182,0)
+(154,174,0)
+(173,174,0)
+(40,171,0)
+(49,119,0)
+(8,182,0)
+(152,168,0)
+(38,3,0)
+(128,174,0)
+(118,153,0)
+(95,111,0)
+(62,47,0)
+(142,155,0)
+(81,182,0)
+(26,104,0)
+(92,66,0)
+(106,173,0)
+(139,168,0)
+(136,96,0)
+(52,175,0)
+(146,3,0)
+(55,74,0)
+(33,125,0)
+(168,174,0)
+(170,73,0)
+(20,182,0)
+(11,74,0)
+(149,44,0)
+(76,52,0)
+(160,127,0)
+(84,171,0)
+(118,183,0)
+(23,182,0)
+(72,28,0)
+(33,74,0)
+(123,182,0)
+(34,14,0)
+(109,182,0)
+(80,7,0)
+(106,43,0)
+(66,122,0)
+(33,28,0)
+(29,132,0)
+(118,24,0)
+(43,106,0)
+(30,104,0)
+(179,182,0)
+(21,182,0)
+(101,31,0)
+(108,128,0)
+(74,11,1)
+(79,71,1)
+(131,89,1)
+(49,119,1)
+(83,33,1)
+(156,9,1)
+(0,96,1)
+(85,181,1)
+(75,174,1)
+(70,36,1)
+(155,64,1)
+(2,48,1)
+(171,74,1)
+(158,117,1)
+(36,74,1)
+(86,61,1)
+(116,74,1)
+(33,74,1)
+(118,183,1)
+(147,162,1)
+(59,160,1)
+(84,70,1)
+(32,74,1)
+(138,158,1)
+(62,140,1)
+(151,78,1)
+(167,45,1)
+(124,37,1)
+(22,80,1)
+(72,171,1)
+(125,150,1)
+(96,17,1)
+(112,62,1)
+(168,174,1)
+(18,114,1)
+(31,51,1)
+(14,34,1)
+(122,124,1)
+(146,156,1)
+(127,174,1)
+(16,136,1)
+(104,26,1)
+(52,121,1)
+(118,24,1)
+(71,137,1)
+(45,41,1)
+(114,159,1)
+(137,110,1)
+(124,151,1)
+(175,103,1)
+(62,71,1)
+(84,171,1)
+(100,134,1)
+(171,44,1)
+(75,143,1)
+(88,155,1)
+(19,87,1)
+(40,63,1)
+(160,126,1)
+(15,147,1)
+(125,184,1)
+(175,52,1)
+(3,87,1)
+(52,67,1)
+(65,167,1)
+(101,17,1)
+(118,153,1)
+(94,47,1)
+(50,169,1)
+(125,67,1)
+(118,84,1)
+(89,175,1)
+(136,145,1)
+(155,67,1)
+(140,10,1)
+(149,44,1)
+(142,106,1)
+(61,68,1)
+(142,155,1)
+(180,133,1)
+(144,127,1)
+(63,73,1)
+(36,75,1)
+(110,91,1)
+(6,138,1)
+(111,150,1)
+(122,66,1)
+(29,98,1)
+(77,7,1)
+(177,44,1)
+(51,4,1)
+(133,128,1)
+(168,139,1)
+(60,149,1)
+(41,34,1)
+(173,174,1)
+(115,21,1)
+(5,60,1)
+(11,55,1)
+(111,95,1)
+(95,90,1)
+(30,128,1)
+(49,3,1)
+(26,180,1)
+(7,22,1)
+(181,165,1)
+(64,0,1)
+(103,168,1)
+(28,72,1)
+(76,6,1)
+(159,132,1)
+(117,122,1)
+(128,174,1)
+(48,93,1)
+(66,92,1)
+(152,52,1)
+(116,32,1)
+(54,17,1)
+(129,97,1)
+(91,73,1)
+(128,108,1)
+(33,2,1)
+(121,76,1)
+(145,30,1)
+(139,152,1)
+(162,62,1)
+(7,78,1)
+(4,46,1)
+(80,154,1)
+(44,49,1)
+(90,54,1)
+(151,85,1)
+(106,173,1)
+(102,88,1)
+(1,116,1)
+(141,124,1)
+(93,36,1)
+(134,18,1)
+(28,56,1)
+(157,25,1)
+(46,101,1)
+(101,100,1)
+(176,67,1)
+(135,56,1)
+(32,57,1)
+(167,21,1)
+(97,82,1)
+(34,78,1)
+(178,37,1)
+(24,131,1)
+(176,86,1)
+(170,135,1)
+(118,129,1)
+(73,170,1)
+(125,50,1)
+(92,7,1)
+(33,44,1)
+(143,1,1)
+(103,27,1)
+(38,19,1)
+(33,28,1)
+(73,56,1)
+(71,74,1)
+(153,56,1)
+(6,17,1)
+(98,164,1)
+(47,69,1)
+(14,42,1)
+(12,142,1)
+(42,65,1)
+(34,157,1)
+(17,176,1)
+(82,31,1)
+(69,79,1)
+(108,178,1)
+(98,44,1)
+(51,67,1)
+(62,47,1)
+(37,144,1)
+(183,148,1)
+(154,174,1)
+(30,104,1)
+(94,5,1)
+(98,177,1)
+(175,6,1)
+(149,28,1)
+(153,112,1)
+(55,114,1)
+(169,83,1)
+(132,29,1)
+(125,33,1)
+(173,102,1)
+(144,126,1)
+(10,47,1)
+(149,15,1)
+(92,77,1)
+(57,28,1)
+(149,47,1)
+(3,146,1)
+(148,12,1)
+(154,161,1)
+(165,30,1)
+(21,111,1)
+(31,101,1)
+(142,96,1)
+(10,94,1)
+(161,141,1)
+(60,21,1)
+(66,154,1)
+(106,43,1)
+(87,14,1)
+(126,113,1)
+(171,40,1)
+(113,115,1)
+(146,174,1)
+(25,13,1)
+(127,59,1)
+(13,122,1)
+(56,125,1)
+(159,98,1)
+(92,37,1)
+(96,16,1)
+(9,38,1)
+(106,173,2)
+(71,74,2)
+(33,36,2)
+(21,111,2)
+(121,122,2)
+(42,65,2)
+(135,36,2)
+(31,114,2)
+(84,171,2)
+(55,114,2)
+(65,167,2)
+(137,73,2)
+(36,74,2)
+(92,124,2)
+(2,36,2)
+(142,96,2)
+(10,73,2)
+(36,75,2)
+(52,67,2)
+(3,87,2)
+(49,119,2)
+(114,122,2)
+(88,30,2)
+(155,67,2)
+(144,127,2)
+(125,184,2)
+(77,124,2)
+(149,62,2)
+(14,42,2)
+(11,114,2)
+(29,122,2)
+(143,73,2)
+(141,124,2)
+(87,14,2)
+(92,37,2)
+(128,174,2)
+(144,126,2)
+(16,30,2)
+(14,122,2)
+(116,114,2)
+(50,36,2)
+(171,74,2)
+(84,36,2)
+(125,33,2)
+(5,62,2)
+(158,122,2)
+(33,44,2)
+(49,122,2)
+(0,30,2)
+(1,114,2)
+(102,30,2)
+(173,174,2)
+(161,124,2)
+(140,62,2)
+(94,62,2)
+(151,78,2)
+(51,67,2)
+(134,114,2)
+(96,30,2)
+(122,124,2)
+(122,66,2)
+(96,17,2)
+(175,122,2)
+(28,56,2)
+(79,73,2)
+(149,28,2)
+(75,73,2)
+(18,114,2)
+(34,78,2)
+(114,159,2)
+(136,30,2)
+(169,36,2)
+(147,62,2)
+(65,122,2)
+(82,114,2)
+(38,122,2)
+(83,36,2)
+(142,106,2)
+(177,122,2)
+(62,73,2)
+(57,73,2)
+(31,51,2)
+(36,73,2)
+(28,73,2)
+(91,73,2)
+(104,26,2)
+(162,62,2)
+(106,30,2)
+(33,74,2)
+(98,164,2)
+(175,103,2)
+(10,62,2)
+(41,122,2)
+(170,36,2)
+(111,150,2)
+(49,3,2)
+(4,114,2)
+(46,114,2)
+(66,154,2)
+(124,151,2)
+(40,73,2)
+(75,114,2)
+(93,36,2)
+(9,122,2)
+(140,73,2)
+(155,30,2)
+(118,153,2)
+(44,122,2)
+(159,122,2)
+(42,122,2)
+(64,30,2)
+(25,122,2)
+(175,52,2)
+(80,124,2)
+(36,114,2)
+(145,30,2)
+(125,67,2)
+(132,122,2)
+(171,73,2)
+(47,73,2)
+(149,47,2)
+(34,122,2)
+(173,30,2)
+(125,36,2)
+(74,114,2)
+(138,122,2)
+(76,122,2)
+(45,122,2)
+(167,21,2)
+(75,174,2)
+(30,104,2)
+(13,122,2)
+(156,122,2)
+(12,30,2)
+(122,30,2)
+(6,122,2)
+(22,124,2)
+(44,49,2)
+(101,17,2)
+(7,78,2)
+(94,47,2)
+(154,124,2)
+(7,124,2)
+(118,84,2)
+(71,73,2)
+(6,17,2)
+(153,73,2)
+(143,114,2)
+(92,7,2)
+(98,122,2)
+(3,122,2)
+(66,124,2)
+(3,146,2)
+(73,56,2)
+(183,30,2)
+(15,62,2)
+(62,71,2)
+(118,183,2)
+(60,62,2)
+(85,30,2)
+(103,27,2)
+(70,36,2)
+(17,176,2)
+(32,74,2)
+(124,30,2)
+(72,73,2)
+(139,122,2)
+(117,122,2)
+(103,168,2)
+(103,122,2)
+(151,30,2)
+(89,122,2)
+(98,44,2)
+(153,56,2)
+(142,30,2)
+(118,24,2)
+(52,122,2)
+(167,122,2)
+(33,28,2)
+(37,144,2)
+(168,122,2)
+(66,92,2)
+(159,132,2)
+(152,122,2)
+(168,174,2)
+(125,150,2)
+(56,36,2)
+(60,21,2)
+(62,62,2)
+(100,114,2)
+(148,30,2)
+(73,36,2)
+(87,122,2)
+(32,73,2)
+(157,122,2)
+(69,73,2)
+(118,129,2)
+(56,125,2)
+(31,101,2)
+(171,44,2)
+(131,122,2)
+(142,155,2)
+(154,174,2)
+(116,73,2)
+(14,34,2)
+(63,73,2)
+(127,174,2)
+(175,6,2)
+(19,122,2)
+(48,36,2)
+(51,114,2)
+(1,73,2)
+(112,73,2)
+(181,30,2)
+(159,98,2)
+(101,114,2)
+(24,122,2)
+(124,37,2)
+(149,44,2)
+(129,114,2)
+(110,73,2)
+(176,67,2)
+(146,122,2)
+(165,30,2)
+(30,128,2)
+(60,149,2)
+(97,114,2)
+(146,174,2)
+(62,47,2)
+(106,43,2)
+-----------------------------------
+(0,thread)
+(1,fda)
+(2,fdi)
+(3,parent_buffer + fda->parent_offset)
+(4,pid)
+(5,fdi)
+(6,proc->pid)
+(7,parent->length)
+(8,err_translate_fd_failed:)
+(9,fda)
+(10,fdi)
+(11,0)
+(12,EINVAL)
+(13,parent_buffer)
+(14,parent->buffer -\n\\n\\t\\tbinder_alloc_get_user_buffer_offset(&target_proc->alloc)
+(15,fdi)
+(16,pid)
+(17,*proc = thread->proc)
+(18,"%d:%d parent offset not aligned correctly.\\n")
+(19,fd_array)
+(20,fdi)
+(21,*target_proc = t->to_proc)
+(22,length)
+(23,parent_buffer)
+(24,return -EINVAL;)
+(25,parent)
+(26,sizeof(u32)
+(27,u64)
+(28,fd_array[fdi] = target_fd)
+(29,u32)
+(30,fda->num_fds >= SIZE_MAX / sizeof(u32)
+(31,binder_user_error("%d:%d parent offset not aligned correctly.\\n",\n\\n\\t\\t\\t\\t  proc->pid, thread->pid)
+(32,fdi++)
+(33,fd_array[fdi])
+(34,parent->buffer)
+(35,proc)
+(36,fdi < fda->num_fds)
+(37,fd_buf_size = sizeof(u32)
+(38,parent_buffer)
+(39,)
+(40,fdi)
+(41,target_proc)
+(42,binder_alloc_get_user_buffer_offset(&target_proc->alloc)
+(43,u64)
+(44,fd_array = (u32 *)
+(45,alloc)
+(46,thread)
+(47,fdi = 0)
+(48,fd_array)
+(49,(u32 *)
+(50,in_reply_to)
+(51,thread->pid)
+(52,thread->pid)
+(53,target_fd)
+(54,target_proc)
+(55,fdi)
+(56,target_fd = binder_translate_fd(fd_array[fdi], t, thread,\n\\n\\t\\t\\t\\t\\t\\tin_reply_to)
+(57,fdi)
+(58,)
+(59,num_fds)
+(60,task_close_fd(target_proc, fd_array[fdi])
+(61,thread)
+(62,fdi < num_installed_fds)
+(63,fd_array)
+(64,pid)
+(65,&target_proc->alloc)
+(66,fda->parent_offset > parent->length - fd_buf_size)
+(67,struct binder_thread *thread)
+(68,proc)
+(69,0)
+(70,0)
+(71,num_installed_fds = fdi)
+(72,target_fd)
+(73,target_fd < 0)
+(74,fdi = 0)
+(75,fda->num_fds)
+(76,thread)
+(77,fd_buf_size)
+(78,struct binder_buffer_object *parent)
+(79,fdi)
+(80,parent)
+(81,if (fda->num_fds >= SIZE_MAX / sizeof(u32)
+(82,EINVAL)
+(83,t)
+(84,return 0;)
+(85,length)
+(86,proc)
+(87,parent_buffer = parent->buffer -\n\\n\\t\\tbinder_alloc_get_user_buffer_offset(&target_proc->alloc)
+(88,fda)
+(89,EINVAL)
+(90,t)
+(91,goto err_translate_fd_failed;)
+(92,parent->length - fd_buf_size)
+(93,target_fd)
+(94,fdi++)
+(95,to_proc)
+(96,proc->pid)
+(97,-EINVAL)
+(98,(unsigned long)
+(99,target_proc)
+(100,pid)
+(101,proc->pid)
+(102,num_fds)
+(103,(u64)
+(104,SIZE_MAX / sizeof(u32)
+(105,if (!IS_ALIGNED((unsigned long)
+(106,(u64)
+(107,num_installed_fds)
+(108,num_fds)
+(109,fd_array)
+(110,num_installed_fds)
+(111,t->to_proc)
+(112,target_fd)
+(113,u32)
+(114,!IS_ALIGNED((unsigned long)
+(115,fd_buf_size)
+(116,fdi)
+(117,"%d:%d not enough space to store %lld fds in buffer\\n")
+(118,RET)
+(119,u32 *)
+(120,for (fdi = 0; fdi < num_installed_fds; fdi++)
+(121,pid)
+(122,fd_buf_size > parent->length ||\n\\n\\t    fda->parent_offset > parent->length - fd_buf_size)
+(123,for (fdi = 0; fdi < fda->num_fds; fdi++)
+(124,fd_buf_size > parent->length)
+(125,binder_translate_fd(fd_array[fdi], t, thread,\n\\n\\t\\t\\t\\t\\t\\tin_reply_to)
+(126,sizeof(u32)
+(127,fda->num_fds)
+(128,fda->num_fds)
+(129,return -EINVAL;)
+(130,if (target_fd < 0)
+(131,-EINVAL)
+(132,sizeof(u32)
+(133,SIZE_MAX)
+(134,proc)
+(135,target_fd)
+(136,proc)
+(137,fdi)
+(138,pid)
+(139,num_fds)
+(140,num_installed_fds)
+(141,fda)
+(142,binder_user_error("%d:%d got transaction with invalid number of fds (%lld)
+(143,num_fds)
+(144,sizeof(u32)
+(145,"%d:%d got transaction with invalid number of fds (%lld)
+(146,fda->parent_offset)
+(147,fd_array)
+(148,-EINVAL)
+(149,fd_array[fdi])
+(150,struct binder_transaction *t)
+(151,parent->length)
+(152,fda)
+(153,return target_fd;)
+(154,fda->parent_offset)
+(155,thread->pid)
+(156,parent_offset)
+(157,buffer)
+(158,proc)
+(159,IS_ALIGNED((unsigned long)
+(160,fda)
+(161,parent_offset)
+(162,target_proc)
+(163,)
+(164,unsigned long)
+(165,fd_buf_size)
+(166,fd_buf_size)
+(167,target_proc->alloc)
+(168,fda->num_fds)
+(169,thread)
+(170,0)
+(171,fd_array[fdi])
+(172,)
+(173,fda->num_fds)
+(174,struct binder_fd_array_object *fda)
+(175,binder_user_error("%d:%d not enough space to store %lld fds in buffer\\n",\n\\n\\t\\t\\t\\t  proc->pid, thread->pid, (u64)
+(176,thread->proc)
+(177,fd_array)
+(178,fda)
+(179,if (fd_buf_size > parent->length ||\n\\n\\t    fda->parent_offset > parent->length - fd_buf_size)
+(180,u32)
+(181,parent)
+(182,)
+(183,return -EINVAL;)
+(184,struct binder_transaction *in_reply_to)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

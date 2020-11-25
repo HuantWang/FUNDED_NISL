@@ -1,0 +1,3210 @@
+-----label-----
+0
+-----code-----
+static void init_cyrix(struct cpuinfo_x86 *c)
+{
+	unsigned char dir0, dir0_msn, dir0_lsn, dir1 = 0;
+	char *buf = c->x86_model_id;
+	const char *p = NULL;
+
+	/*
+	 * Bit 31 in normal CPUID used for nonstandard 3DNow ID;
+	 * 3DNow is IDd by bit 31 in extended CPUID (1*32+31) anyway
+	 */
+	clear_cpu_cap(c, 0*32+31);
+
+	/* Cyrix used bit 24 in extended (AMD) CPUID for Cyrix MMX extensions */
+	if (test_cpu_cap(c, 1*32+24)) {
+		clear_cpu_cap(c, 1*32+24);
+		set_cpu_cap(c, X86_FEATURE_CXMMX);
+	}
+
+	do_cyrix_devid(&dir0, &dir1);
+
+	check_cx686_slop(c);
+
+	Cx86_dir0_msb = dir0_msn = dir0 >> 4; /* identifies CPU "family"   */
+	dir0_lsn = dir0 & 0xf;                /* model or clock multiplier */
+
+	/* common case step number/rev -- exceptions handled below */
+	c->x86_model = (dir1 >> 4) + 1;
+	c->x86_mask = dir1 & 0xf;
+
+	/* Now cook; the original recipe is by Channing Corn, from Cyrix.
+	 * We do the same thing for each generation: we work out
+	 * the model, multiplier and stepping.  Black magic included,
+	 * to make the silicon step/rev numbers match the printed ones.
+	 */
+
+	switch (dir0_msn) {
+		unsigned char tmp;
+
+	case 0: /* Cx486SLC/DLC/SRx/DRx */
+		p = Cx486_name[dir0_lsn & 7];
+		break;
+
+	case 1: /* Cx486S/DX/DX2/DX4 */
+		p = (dir0_lsn & 8) ? Cx486D_name[dir0_lsn & 5]
+			: Cx486S_name[dir0_lsn & 3];
+		break;
+
+	case 2: /* 5x86 */
+		Cx86_cb[2] = cyrix_model_mult1[dir0_lsn & 5];
+		p = Cx86_cb+2;
+		break;
+
+	case 3: /* 6x86/6x86L */
+		Cx86_cb[1] = ' ';
+		Cx86_cb[2] = cyrix_model_mult1[dir0_lsn & 5];
+		if (dir1 > 0x21) { /* 686L */
+			Cx86_cb[0] = 'L';
+			p = Cx86_cb;
+			(c->x86_model)++;
+		} else             /* 686 */
+			p = Cx86_cb+1;
+		/* Emulate MTRRs using Cyrix's ARRs. */
+		set_cpu_cap(c, X86_FEATURE_CYRIX_ARR);
+		/* 6x86's contain this bug */
+		set_cpu_bug(c, X86_BUG_COMA);
+		break;
+
+	case 4: /* MediaGX/GXm or Geode GXM/GXLV/GX1 */
+#ifdef CONFIG_PCI
+	{
+		u32 vendor, device;
+		/*
+		 * It isn't really a PCI quirk directly, but the cure is the
+		 * same. The MediaGX has deep magic SMM stuff that handles the
+		 * SB emulation. It throws away the fifo on disable_dma() which
+		 * is wrong and ruins the audio.
+		 *
+		 *  Bug2: VSA1 has a wrap bug so that using maximum sized DMA
+		 *  causes bad things. According to NatSemi VSA2 has another
+		 *  bug to do with 'hlt'. I've not seen any boards using VSA2
+		 *  and X doesn't seem to support it either so who cares 8).
+		 *  VSA1 we work around however.
+		 */
+
+		printk(KERN_INFO "Working around Cyrix MediaGX virtual DMA bugs.\n");
+		isa_dma_bridge_buggy = 2;
+
+		/* We do this before the PCI layer is running. However we
+		   are safe here as we know the bridge must be a Cyrix
+		   companion and must be present */
+		vendor = read_pci_config_16(0, 0, 0x12, PCI_VENDOR_ID);
+		device = read_pci_config_16(0, 0, 0x12, PCI_DEVICE_ID);
+
+		/*
+		 *  The 5510/5520 companion chips have a funky PIT.
+		 */
+		if (vendor == PCI_VENDOR_ID_CYRIX &&
+			(device == PCI_DEVICE_ID_CYRIX_5510 ||
+					device == PCI_DEVICE_ID_CYRIX_5520))
+			mark_tsc_unstable("cyrix 5510/5520 detected");
+	}
+#endif
+		c->x86_cache_size = 16;	/* Yep 16K integrated cache thats it */
+
+		/* GXm supports extended cpuid levels 'ala' AMD */
+		if (c->cpuid_level == 2) {
+			/* Enable cxMMX extensions (GX1 Datasheet 54) */
+			setCx86(CX86_CCR7, getCx86(CX86_CCR7) | 1);
+
+			/*
+			 * GXm : 0x30 ... 0x5f GXm  datasheet 51
+			 * GXlv: 0x6x          GXlv datasheet 54
+			 *  ?  : 0x7x
+			 * GX1 : 0x8x          GX1  datasheet 56
+			 */
+			if ((0x30 <= dir1 && dir1 <= 0x6f) ||
+					(0x80 <= dir1 && dir1 <= 0x8f))
+				geode_configure();
+			return;
+		} else { /* MediaGX */
+			Cx86_cb[2] = (dir0_lsn & 1) ? '3' : '4';
+			p = Cx86_cb+2;
+			c->x86_model = (dir1 & 0x20) ? 1 : 2;
+		}
+		break;
+
+	case 5: /* 6x86MX/M II */
+		if (dir1 > 7) {
+			dir0_msn++;  /* M II */
+			/* Enable MMX extensions (App note 108) */
+			setCx86(CX86_CCR7, getCx86(CX86_CCR7)|1);
+		} else {
+			/* A 6x86MX - it has the bug. */
+			set_cpu_bug(c, X86_BUG_COMA);
+		}
+		tmp = (!(dir0_lsn & 7) || dir0_lsn & 1) ? 2 : 0;
+		Cx86_cb[tmp] = cyrix_model_mult2[dir0_lsn & 7];
+		p = Cx86_cb+tmp;
+		if (((dir1 & 0x0f) > 4) || ((dir1 & 0xf0) == 0x20))
+			(c->x86_model)++;
+		/* Emulate MTRRs using Cyrix's ARRs. */
+		set_cpu_cap(c, X86_FEATURE_CYRIX_ARR);
+		break;
+
+	case 0xf:  /* Cyrix 486 without DEVID registers */
+		switch (dir0_lsn) {
+		case 0xd:  /* either a 486SLC or DLC w/o DEVID */
+			dir0_msn = 0;
+			p = Cx486_name[(cpu_has_fpu ? 1 : 0)];
+			break;
+
+		case 0xe:  /* a 486S A step */
+			dir0_msn = 0;
+			p = Cx486S_name[0];
+			break;
+		}
+		break;
+
+	default:  /* unknown (shouldn't happen, we know everyone ;-) */
+		dir0_msn = 7;
+		break;
+	}
+	strcpy(buf, Cx86_model[dir0_msn & 7]);
+	if (p)
+		strcat(buf, p);
+	return;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+11,14
+11,15
+11,16
+11,17
+11,18
+11,19
+11,20
+11,21
+11,22
+11,23
+11,24
+11,25
+11,26
+12,13
+13,14
+13,15
+13,16
+13,17
+13,18
+15,16
+17,18
+19,20
+21,22
+21,23
+23,24
+25,26
+26,27
+26,28
+28,29
+28,30
+28,31
+31,32
+32,33
+32,34
+33,34
+36,37
+37,38
+37,39
+39,40
+39,41
+39,42
+42,43
+43,44
+45,46
+46,47
+46,48
+46,49
+47,48
+49,50
+51,52
+51,53
+52,53
+52,54
+56,57
+56,58
+57,58
+57,59
+57,60
+58,59
+60,61
+62,63
+62,64
+63,64
+63,65
+67,68
+67,69
+68,69
+69,70
+69,71
+69,72
+70,71
+72,73
+74,75
+74,76
+75,76
+75,77
+79,80
+80,81
+80,82
+80,83
+81,82
+83,84
+85,86
+87,88
+88,89
+88,90
+88,91
+89,90
+91,92
+92,93
+94,95
+95,96
+97,98
+98,99
+98,100
+99,100
+101,102
+103,104
+104,105
+104,106
+105,106
+107,108
+107,109
+108,109
+110,111
+110,112
+111,112
+114,115
+115,116
+115,117
+116,117
+118,119
+118,120
+119,120
+122,123
+123,124
+123,125
+124,125
+124,126
+125,126
+128,129
+128,130
+129,130
+130,131
+130,132
+131,132
+135,136
+136,137
+136,138
+137,138
+137,139
+138,139
+141,142
+141,143
+142,143
+145,146
+145,147
+146,147
+148,149
+148,150
+148,151
+148,152
+148,153
+148,154
+148,155
+148,156
+148,157
+148,158
+148,159
+148,160
+148,161
+148,162
+148,163
+148,164
+148,165
+148,166
+148,167
+148,168
+148,169
+148,170
+148,171
+148,172
+148,173
+148,174
+148,175
+148,176
+148,177
+148,178
+148,179
+148,180
+148,181
+148,182
+148,183
+148,184
+149,150
+150,151
+150,152
+152,153
+154,155
+156,157
+157,158
+157,159
+158,159
+160,161
+160,162
+161,162
+163,164
+163,165
+164,165
+168,169
+170,171
+171,172
+171,173
+172,173
+174,175
+174,176
+174,177
+175,176
+176,177
+176,178
+177,178
+180,181
+180,182
+181,182
+183,184
+183,185
+184,185
+187,188
+187,189
+188,189
+190,191
+190,192
+191,192
+195,196
+197,198
+198,199
+198,200
+199,200
+199,201
+200,201
+203,204
+203,205
+204,205
+206,207
+206,208
+207,208
+210,211
+211,212
+211,213
+212,213
+214,215
+214,216
+215,216
+219,220
+221,222
+222,223
+222,224
+223,224
+223,225
+224,225
+228,229
+229,230
+229,231
+230,231
+230,232
+231,232
+234,235
+234,236
+235,236
+237,238
+237,239
+238,239
+241,242
+241,243
+241,244
+242,243
+242,244
+243,244
+246,247
+246,248
+246,249
+247,248
+248,249
+248,250
+249,250
+249,251
+250,251
+254,255
+255,256
+255,257
+256,257
+258,259
+260,261
+261,262
+262,263
+263,264
+263,265
+264,265
+267,268
+268,269
+268,270
+269,270
+271,272
+271,273
+272,273
+275,276
+276,277
+276,278
+276,279
+277,278
+279,280
+281,282
+283,284
+284,285
+284,286
+284,287
+285,286
+287,288
+289,290
+292,293
+294,295
+295,296
+295,297
+296,297
+296,298
+297,298
+301,302
+301,303
+301,304
+302,303
+302,304
+303,304
+303,305
+304,305
+308,309
+308,310
+308,311
+309,310
+310,311
+310,312
+310,313
+311,312
+313,314
+315,316
+315,317
+316,317
+316,318
+317,318
+319,320
+322,323
+322,324
+323,324
+323,325
+324,325
+325,326
+325,327
+326,327
+326,328
+328,329
+330,331
+330,332
+331,332
+334,335
+335,336
+335,337
+336,337
+336,338
+338,339
+340,341
+340,342
+341,342
+344,345
+345,346
+346,347
+349,350
+349,351
+349,352
+350,351
+351,352
+351,353
+352,353
+352,354
+353,354
+356,357
+356,358
+356,359
+357,358
+358,359
+358,360
+359,360
+364,365
+365,366
+365,367
+366,367
+368,369
+368,370
+369,370
+372,373
+373,374
+373,375
+374,375
+374,376
+375,376
+378,379
+378,380
+378,381
+379,380
+380,381
+380,382
+381,382
+387,388
+389,390
+389,391
+389,392
+390,391
+390,392
+391,392
+394,395
+394,396
+395,396
+396,397
+397,398
+399,400
+400,401
+400,402
+400,403
+401,402
+403,404
+405,406
+405,407
+406,407
+406,408
+407,408
+409,410
+412,413
+413,414
+414,415
+414,416
+414,417
+415,416
+417,418
+419,420
+421,422
+422,423
+422,424
+423,424
+425,426
+425,427
+425,428
+426,427
+427,428
+427,429
+428,429
+429,430
+430,431
+430,432
+431,432
+434,435
+434,436
+435,436
+440,441
+441,442
+441,443
+442,443
+442,444
+443,444
+445,446
+447,448
+447,449
+448,449
+450,451
+450,452
+451,452
+454,455
+455,456
+455,457
+456,457
+458,459
+458,460
+459,460
+461,462
+463,464
+463,465
+464,465
+464,466
+465,466
+466,467
+466,468
+467,468
+468,469
+468,470
+469,470
+473,474
+474,475
+474,476
+475,476
+476,477
+476,478
+477,478
+481,482
+482,483
+483,484
+484,485
+484,486
+485,486
+488,489
+489,490
+489,491
+489,492
+490,491
+492,493
+494,495
+497,498
+499,500
+499,501
+500,501
+502,503
+502,504
+502,505
+502,506
+502,507
+502,508
+502,509
+502,510
+503,504
+505,506
+506,507
+506,508
+507,508
+510,511
+511,512
+511,513
+512,513
+514,515
+514,516
+515,516
+517,518
+518,519
+518,520
+518,521
+519,520
+524,525
+526,527
+527,528
+527,529
+528,529
+531,532
+532,533
+532,534
+533,534
+535,536
+535,537
+536,537
+542,543
+543,544
+543,545
+544,545
+548,549
+549,550
+549,551
+549,552
+550,551
+552,553
+554,555
+554,556
+555,556
+557,558
+557,559
+558,559
+561,562
+561,563
+562,563
+564,565
+565,566
+565,567
+565,568
+566,567
+568,569
+570,571
+-----nextToken-----
+2,4,7,9,10,14,16,18,20,22,24,27,29,30,34,35,38,40,41,44,48,50,53,54,55,59,61,64,65,66,71,73,76,77,78,82,84,86,90,93,96,100,102,106,109,112,113,117,120,121,126,127,132,133,134,139,140,143,144,147,151,153,155,159,162,165,166,167,169,173,178,179,182,185,186,189,192,193,194,196,201,202,205,208,209,213,216,217,218,220,225,226,227,232,233,236,239,240,244,245,251,252,253,257,259,265,266,270,273,274,278,280,282,286,288,290,291,293,298,299,300,305,306,307,312,314,318,320,321,327,329,332,333,337,339,342,343,347,348,354,355,360,361,362,363,367,370,371,376,377,382,383,384,385,386,388,392,393,398,402,404,408,410,411,416,418,420,424,432,433,436,437,438,439,444,446,449,452,453,457,460,462,470,471,472,478,479,480,486,487,491,493,495,496,498,501,504,508,509,513,516,520,521,522,523,525,529,530,534,537,538,539,540,541,545,546,547,551,553,556,559,560,563,567,569,571,572
+-----computeFrom-----
+51,52
+51,53
+52,53
+52,54
+62,63
+62,64
+63,64
+63,65
+74,75
+74,76
+75,76
+75,77
+104,105
+104,106
+107,108
+107,109
+110,111
+110,112
+115,116
+115,117
+118,119
+118,120
+123,124
+123,125
+128,129
+128,130
+130,131
+130,132
+136,137
+136,138
+141,142
+141,143
+157,158
+157,159
+163,164
+163,165
+171,172
+171,173
+176,177
+176,178
+183,184
+183,185
+190,191
+190,192
+198,199
+198,200
+206,207
+206,208
+211,212
+211,213
+214,215
+214,216
+222,223
+222,224
+229,230
+229,231
+237,238
+237,239
+242,243
+242,244
+248,249
+248,250
+255,256
+255,257
+268,269
+268,270
+271,272
+271,273
+295,296
+295,297
+302,303
+302,304
+315,316
+315,317
+323,324
+323,325
+325,326
+325,327
+326,327
+326,328
+330,331
+330,332
+335,336
+335,337
+336,337
+336,338
+340,341
+340,342
+351,352
+351,353
+358,359
+358,360
+365,366
+365,367
+368,369
+368,370
+373,374
+373,375
+380,381
+380,382
+390,391
+390,392
+405,406
+405,407
+422,423
+422,424
+427,428
+427,429
+430,431
+430,432
+434,435
+434,436
+441,442
+441,443
+450,451
+450,452
+455,456
+455,457
+458,459
+458,460
+464,465
+464,466
+466,467
+466,468
+468,469
+468,470
+474,475
+474,476
+476,477
+476,478
+506,507
+506,508
+511,512
+511,513
+527,528
+527,529
+532,533
+532,534
+543,544
+543,545
+557,558
+557,559
+-----guardedBy-----
+-----guardedByNegation-----
+305,376
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;Declarator;Name;Declarator;Name;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;EqualsInitializer;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;BinaryExpression;LiteralExpression;LiteralExpression;LiteralExpression;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;BinaryExpression;LiteralExpression;LiteralExpression;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;BinaryExpression;LiteralExpression;LiteralExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;LiteralExpression;SwitchStatement;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;CaseStatement;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;BreakStatement;CaseStatement;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;ConditionalExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;ArraySubscriptExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;ArraySubscriptExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;BreakStatement;CaseStatement;LiteralExpression;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;ArraySubscriptExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;BreakStatement;CaseStatement;LiteralExpression;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;ArraySubscriptExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;UnaryExpression;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;BreakStatement;CaseStatement;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;BinaryExpression;LiteralExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;UnaryExpression;BinaryExpression;BinaryExpression;LiteralExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ReturnStatement;CompoundStatement;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;ConditionalExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;ConditionalExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;LiteralExpression;BreakStatement;CaseStatement;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;ConditionalExpression;UnaryExpression;BinaryExpression;UnaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;LiteralExpression;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;UnaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;UnaryExpression;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;BreakStatement;CaseStatement;LiteralExpression;SwitchStatement;IdExpression;Name;CompoundStatement;CaseStatement;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;UnaryExpression;ConditionalExpression;IdExpression;Name;LiteralExpression;LiteralExpression;BreakStatement;CaseStatement;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;BreakStatement;BreakStatement;DefaultStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BreakStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ReturnStatement;
+-----ast_node-----
+static void init_cyrix(struct cpuinfo_x86 *c){	unsigned char dir0, dir0_msn, dir0_lsn, dir1 = 0;	char *buf = c->x86_model_id;	const char *p = NULL;	/*	 * Bit 31 in normal CPUID used for nonstandard 3DNow ID;	 * 3DNow is IDd by bit 31 in extended CPUID (1*32+31) anyway	 */	clear_cpu_cap(c, 0*32+31);	/* Cyrix used bit 24 in extended (AMD) CPUID for Cyrix MMX extensions */	if (test_cpu_cap(c, 1*32+24)) {		clear_cpu_cap(c, 1*32+24);		set_cpu_cap(c, X86_FEATURE_CXMMX);	}	do_cyrix_devid(&dir0, &dir1);	check_cx686_slop(c);	Cx86_dir0_msb = dir0_msn = dir0 >> 4; /* identifies CPU "family"   */	dir0_lsn = dir0 & 0xf;                /* model or clock multiplier */	/* common case step number/rev -- exceptions handled below */	c->x86_model = (dir1 >> 4) + 1;	c->x86_mask = dir1 & 0xf;	/* Now cook; the original recipe is by Channing Corn, from Cyrix.	 * We do the same thing for each generation: we work out	 * the model, multiplier and stepping.  Black magic included,	 * to make the silicon step/rev numbers match the printed ones.	 */	switch (dir0_msn) {		unsigned char tmp;	case 0: /* Cx486SLC/DLC/SRx/DRx */		p = Cx486_name[dir0_lsn & 7];		break;	case 1: /* Cx486S/DX/DX2/DX4 */		p = (dir0_lsn & 8) ? Cx486D_name[dir0_lsn & 5]			: Cx486S_name[dir0_lsn & 3];		break;	case 2: /* 5x86 */		Cx86_cb[2] = cyrix_model_mult1[dir0_lsn & 5];		p = Cx86_cb+2;		break;	case 3: /* 6x86/6x86L */		Cx86_cb[1] = ' ';		Cx86_cb[2] = cyrix_model_mult1[dir0_lsn & 5];		if (dir1 > 0x21) { /* 686L */			Cx86_cb[0] = 'L';			p = Cx86_cb;			(c->x86_model)++;		} else             /* 686 */			p = Cx86_cb+1;		/* Emulate MTRRs using Cyrix's ARRs. */		set_cpu_cap(c, X86_FEATURE_CYRIX_ARR);		/* 6x86's contain this bug */		set_cpu_bug(c, X86_BUG_COMA);		break;	case 4: /* MediaGX/GXm or Geode GXM/GXLV/GX1 */#ifdef CONFIG_PCI	{		u32 vendor, device;		/*		 * It isn't really a PCI quirk directly, but the cure is the		 * same. The MediaGX has deep magic SMM stuff that handles the		 * SB emulation. It throws away the fifo on disable_dma() which		 * is wrong and ruins the audio.		 *		 *  Bug2: VSA1 has a wrap bug so that using maximum sized DMA		 *  causes bad things. According to NatSemi VSA2 has another		 *  bug to do with 'hlt'. I've not seen any boards using VSA2		 *  and X doesn't seem to support it either so who cares 8).		 *  VSA1 we work around however.		 */		printk(KERN_INFO "Working around Cyrix MediaGX virtual DMA bugs.\n");		isa_dma_bridge_buggy = 2;		/* We do this before the PCI layer is running. However we		   are safe here as we know the bridge must be a Cyrix		   companion and must be present */		vendor = read_pci_config_16(0, 0, 0x12, PCI_VENDOR_ID);		device = read_pci_config_16(0, 0, 0x12, PCI_DEVICE_ID);		/*		 *  The 5510/5520 companion chips have a funky PIT.		 */		if (vendor == PCI_VENDOR_ID_CYRIX &&			(device == PCI_DEVICE_ID_CYRIX_5510 ||					device == PCI_DEVICE_ID_CYRIX_5520))			mark_tsc_unstable("cyrix 5510/5520 detected");	}#endif		c->x86_cache_size = 16;	/* Yep 16K integrated cache thats it */		/* GXm supports extended cpuid levels 'ala' AMD */		if (c->cpuid_level == 2) {			/* Enable cxMMX extensions (GX1 Datasheet 54) */			setCx86(CX86_CCR7, getCx86(CX86_CCR7) | 1);			/*			 * GXm : 0x30 ... 0x5f GXm  datasheet 51			 * GXlv: 0x6x          GXlv datasheet 54			 *  ?  : 0x7x			 * GX1 : 0x8x          GX1  datasheet 56			 */			if ((0x30 <= dir1 && dir1 <= 0x6f) ||					(0x80 <= dir1 && dir1 <= 0x8f))				geode_configure();			return;		} else { /* MediaGX */			Cx86_cb[2] = (dir0_lsn & 1) ? '3' : '4';			p = Cx86_cb+2;			c->x86_model = (dir1 & 0x20) ? 1 : 2;		}		break;	case 5: /* 6x86MX/M II */		if (dir1 > 7) {			dir0_msn++;  /* M II */			/* Enable MMX extensions (App note 108) */			setCx86(CX86_CCR7, getCx86(CX86_CCR7)|1);		} else {			/* A 6x86MX - it has the bug. */			set_cpu_bug(c, X86_BUG_COMA);		}		tmp = (!(dir0_lsn & 7) || dir0_lsn & 1) ? 2 : 0;		Cx86_cb[tmp] = cyrix_model_mult2[dir0_lsn & 7];		p = Cx86_cb+tmp;		if (((dir1 & 0x0f) > 4) || ((dir1 & 0xf0) == 0x20))			(c->x86_model)++;		/* Emulate MTRRs using Cyrix's ARRs. */		set_cpu_cap(c, X86_FEATURE_CYRIX_ARR);		break;	case 0xf:  /* Cyrix 486 without DEVID registers */		switch (dir0_lsn) {		case 0xd:  /* either a 486SLC or DLC w/o DEVID */			dir0_msn = 0;			p = Cx486_name[(cpu_has_fpu ? 1 : 0)];			break;		case 0xe:  /* a 486S A step */			dir0_msn = 0;			p = Cx486S_name[0];			break;		}		break;	default:  /* unknown (shouldn't happen, we know everyone ;-) */		dir0_msn = 7;		break;	}	strcpy(buf, Cx86_model[dir0_msn & 7]);	if (p)		strcat(buf, p);	return;}
+static void
+init_cyrix(struct cpuinfo_x86 *c)
+init_cyrix
+struct cpuinfo_x86 *c
+struct cpuinfo_x86
+cpuinfo_x86
+*c
+*
+c
+{	unsigned char dir0, dir0_msn, dir0_lsn, dir1 = 0;	char *buf = c->x86_model_id;	const char *p = NULL;	/*	 * Bit 31 in normal CPUID used for nonstandard 3DNow ID;	 * 3DNow is IDd by bit 31 in extended CPUID (1*32+31) anyway	 */	clear_cpu_cap(c, 0*32+31);	/* Cyrix used bit 24 in extended (AMD) CPUID for Cyrix MMX extensions */	if (test_cpu_cap(c, 1*32+24)) {		clear_cpu_cap(c, 1*32+24);		set_cpu_cap(c, X86_FEATURE_CXMMX);	}	do_cyrix_devid(&dir0, &dir1);	check_cx686_slop(c);	Cx86_dir0_msb = dir0_msn = dir0 >> 4; /* identifies CPU "family"   */	dir0_lsn = dir0 & 0xf;                /* model or clock multiplier */	/* common case step number/rev -- exceptions handled below */	c->x86_model = (dir1 >> 4) + 1;	c->x86_mask = dir1 & 0xf;	/* Now cook; the original recipe is by Channing Corn, from Cyrix.	 * We do the same thing for each generation: we work out	 * the model, multiplier and stepping.  Black magic included,	 * to make the silicon step/rev numbers match the printed ones.	 */	switch (dir0_msn) {		unsigned char tmp;	case 0: /* Cx486SLC/DLC/SRx/DRx */		p = Cx486_name[dir0_lsn & 7];		break;	case 1: /* Cx486S/DX/DX2/DX4 */		p = (dir0_lsn & 8) ? Cx486D_name[dir0_lsn & 5]			: Cx486S_name[dir0_lsn & 3];		break;	case 2: /* 5x86 */		Cx86_cb[2] = cyrix_model_mult1[dir0_lsn & 5];		p = Cx86_cb+2;		break;	case 3: /* 6x86/6x86L */		Cx86_cb[1] = ' ';		Cx86_cb[2] = cyrix_model_mult1[dir0_lsn & 5];		if (dir1 > 0x21) { /* 686L */			Cx86_cb[0] = 'L';			p = Cx86_cb;			(c->x86_model)++;		} else             /* 686 */			p = Cx86_cb+1;		/* Emulate MTRRs using Cyrix's ARRs. */		set_cpu_cap(c, X86_FEATURE_CYRIX_ARR);		/* 6x86's contain this bug */		set_cpu_bug(c, X86_BUG_COMA);		break;	case 4: /* MediaGX/GXm or Geode GXM/GXLV/GX1 */#ifdef CONFIG_PCI	{		u32 vendor, device;		/*		 * It isn't really a PCI quirk directly, but the cure is the		 * same. The MediaGX has deep magic SMM stuff that handles the		 * SB emulation. It throws away the fifo on disable_dma() which		 * is wrong and ruins the audio.		 *		 *  Bug2: VSA1 has a wrap bug so that using maximum sized DMA		 *  causes bad things. According to NatSemi VSA2 has another		 *  bug to do with 'hlt'. I've not seen any boards using VSA2		 *  and X doesn't seem to support it either so who cares 8).		 *  VSA1 we work around however.		 */		printk(KERN_INFO "Working around Cyrix MediaGX virtual DMA bugs.\n");		isa_dma_bridge_buggy = 2;		/* We do this before the PCI layer is running. However we		   are safe here as we know the bridge must be a Cyrix		   companion and must be present */		vendor = read_pci_config_16(0, 0, 0x12, PCI_VENDOR_ID);		device = read_pci_config_16(0, 0, 0x12, PCI_DEVICE_ID);		/*		 *  The 5510/5520 companion chips have a funky PIT.		 */		if (vendor == PCI_VENDOR_ID_CYRIX &&			(device == PCI_DEVICE_ID_CYRIX_5510 ||					device == PCI_DEVICE_ID_CYRIX_5520))			mark_tsc_unstable("cyrix 5510/5520 detected");	}#endif		c->x86_cache_size = 16;	/* Yep 16K integrated cache thats it */		/* GXm supports extended cpuid levels 'ala' AMD */		if (c->cpuid_level == 2) {			/* Enable cxMMX extensions (GX1 Datasheet 54) */			setCx86(CX86_CCR7, getCx86(CX86_CCR7) | 1);			/*			 * GXm : 0x30 ... 0x5f GXm  datasheet 51			 * GXlv: 0x6x          GXlv datasheet 54			 *  ?  : 0x7x			 * GX1 : 0x8x          GX1  datasheet 56			 */			if ((0x30 <= dir1 && dir1 <= 0x6f) ||					(0x80 <= dir1 && dir1 <= 0x8f))				geode_configure();			return;		} else { /* MediaGX */			Cx86_cb[2] = (dir0_lsn & 1) ? '3' : '4';			p = Cx86_cb+2;			c->x86_model = (dir1 & 0x20) ? 1 : 2;		}		break;	case 5: /* 6x86MX/M II */		if (dir1 > 7) {			dir0_msn++;  /* M II */			/* Enable MMX extensions (App note 108) */			setCx86(CX86_CCR7, getCx86(CX86_CCR7)|1);		} else {			/* A 6x86MX - it has the bug. */			set_cpu_bug(c, X86_BUG_COMA);		}		tmp = (!(dir0_lsn & 7) || dir0_lsn & 1) ? 2 : 0;		Cx86_cb[tmp] = cyrix_model_mult2[dir0_lsn & 7];		p = Cx86_cb+tmp;		if (((dir1 & 0x0f) > 4) || ((dir1 & 0xf0) == 0x20))			(c->x86_model)++;		/* Emulate MTRRs using Cyrix's ARRs. */		set_cpu_cap(c, X86_FEATURE_CYRIX_ARR);		break;	case 0xf:  /* Cyrix 486 without DEVID registers */		switch (dir0_lsn) {		case 0xd:  /* either a 486SLC or DLC w/o DEVID */			dir0_msn = 0;			p = Cx486_name[(cpu_has_fpu ? 1 : 0)];			break;		case 0xe:  /* a 486S A step */			dir0_msn = 0;			p = Cx486S_name[0];			break;		}		break;	default:  /* unknown (shouldn't happen, we know everyone ;-) */		dir0_msn = 7;		break;	}	strcpy(buf, Cx86_model[dir0_msn & 7]);	if (p)		strcat(buf, p);	return;}
+unsigned char dir0, dir0_msn, dir0_lsn, dir1 = 0;
+unsigned char dir0, dir0_msn, dir0_lsn, dir1 = 0;
+unsigned char
+dir0
+dir0
+dir0_msn
+dir0_msn
+dir0_lsn
+dir0_lsn
+dir1 = 0
+dir1
+= 0
+0
+char *buf = c->x86_model_id;
+char *buf = c->x86_model_id;
+char
+*buf = c->x86_model_id
+*
+buf
+= c->x86_model_id
+c->x86_model_id
+c
+c
+x86_model_id
+const char *p = NULL;
+const char *p = NULL;
+const char
+*p = NULL
+*
+p
+= NULL
+NULL
+NULL
+clear_cpu_cap(c, 0*32+31);
+clear_cpu_cap(c, 0*32+31)
+clear_cpu_cap
+clear_cpu_cap
+c
+c
+0*32+31
+0*32
+0
+32
+31
+if (test_cpu_cap(c, 1*32+24)) {		clear_cpu_cap(c, 1*32+24);		set_cpu_cap(c, X86_FEATURE_CXMMX);	}
+test_cpu_cap(c, 1*32+24)
+test_cpu_cap
+test_cpu_cap
+c
+c
+1*32+24
+1*32
+1
+32
+24
+{		clear_cpu_cap(c, 1*32+24);		set_cpu_cap(c, X86_FEATURE_CXMMX);	}
+clear_cpu_cap(c, 1*32+24);
+clear_cpu_cap(c, 1*32+24)
+clear_cpu_cap
+clear_cpu_cap
+c
+c
+1*32+24
+1*32
+1
+32
+24
+set_cpu_cap(c, X86_FEATURE_CXMMX);
+set_cpu_cap(c, X86_FEATURE_CXMMX)
+set_cpu_cap
+set_cpu_cap
+c
+c
+X86_FEATURE_CXMMX
+X86_FEATURE_CXMMX
+do_cyrix_devid(&dir0, &dir1);
+do_cyrix_devid(&dir0, &dir1)
+do_cyrix_devid
+do_cyrix_devid
+&dir0
+dir0
+dir0
+&dir1
+dir1
+dir1
+check_cx686_slop(c);
+check_cx686_slop(c)
+check_cx686_slop
+check_cx686_slop
+c
+c
+Cx86_dir0_msb = dir0_msn = dir0 >> 4;
+Cx86_dir0_msb = dir0_msn = dir0 >> 4
+Cx86_dir0_msb
+Cx86_dir0_msb
+dir0_msn = dir0 >> 4
+dir0_msn
+dir0_msn
+dir0 >> 4
+dir0
+dir0
+4
+dir0_lsn = dir0 & 0xf;
+dir0_lsn = dir0 & 0xf
+dir0_lsn
+dir0_lsn
+dir0 & 0xf
+dir0
+dir0
+0xf
+c->x86_model = (dir1 >> 4) + 1;
+c->x86_model = (dir1 >> 4) + 1
+c->x86_model
+c
+c
+x86_model
+(dir1 >> 4) + 1
+(dir1 >> 4)
+dir1 >> 4
+dir1
+dir1
+4
+1
+c->x86_mask = dir1 & 0xf;
+c->x86_mask = dir1 & 0xf
+c->x86_mask
+c
+c
+x86_mask
+dir1 & 0xf
+dir1
+dir1
+0xf
+switch (dir0_msn) {		unsigned char tmp;	case 0: /* Cx486SLC/DLC/SRx/DRx */		p = Cx486_name[dir0_lsn & 7];		break;	case 1: /* Cx486S/DX/DX2/DX4 */		p = (dir0_lsn & 8) ? Cx486D_name[dir0_lsn & 5]			: Cx486S_name[dir0_lsn & 3];		break;	case 2: /* 5x86 */		Cx86_cb[2] = cyrix_model_mult1[dir0_lsn & 5];		p = Cx86_cb+2;		break;	case 3: /* 6x86/6x86L */		Cx86_cb[1] = ' ';		Cx86_cb[2] = cyrix_model_mult1[dir0_lsn & 5];		if (dir1 > 0x21) { /* 686L */			Cx86_cb[0] = 'L';			p = Cx86_cb;			(c->x86_model)++;		} else             /* 686 */			p = Cx86_cb+1;		/* Emulate MTRRs using Cyrix's ARRs. */		set_cpu_cap(c, X86_FEATURE_CYRIX_ARR);		/* 6x86's contain this bug */		set_cpu_bug(c, X86_BUG_COMA);		break;	case 4: /* MediaGX/GXm or Geode GXM/GXLV/GX1 */#ifdef CONFIG_PCI	{		u32 vendor, device;		/*		 * It isn't really a PCI quirk directly, but the cure is the		 * same. The MediaGX has deep magic SMM stuff that handles the		 * SB emulation. It throws away the fifo on disable_dma() which		 * is wrong and ruins the audio.		 *		 *  Bug2: VSA1 has a wrap bug so that using maximum sized DMA		 *  causes bad things. According to NatSemi VSA2 has another		 *  bug to do with 'hlt'. I've not seen any boards using VSA2		 *  and X doesn't seem to support it either so who cares 8).		 *  VSA1 we work around however.		 */		printk(KERN_INFO "Working around Cyrix MediaGX virtual DMA bugs.\n");		isa_dma_bridge_buggy = 2;		/* We do this before the PCI layer is running. However we		   are safe here as we know the bridge must be a Cyrix		   companion and must be present */		vendor = read_pci_config_16(0, 0, 0x12, PCI_VENDOR_ID);		device = read_pci_config_16(0, 0, 0x12, PCI_DEVICE_ID);		/*		 *  The 5510/5520 companion chips have a funky PIT.		 */		if (vendor == PCI_VENDOR_ID_CYRIX &&			(device == PCI_DEVICE_ID_CYRIX_5510 ||					device == PCI_DEVICE_ID_CYRIX_5520))			mark_tsc_unstable("cyrix 5510/5520 detected");	}#endif		c->x86_cache_size = 16;	/* Yep 16K integrated cache thats it */		/* GXm supports extended cpuid levels 'ala' AMD */		if (c->cpuid_level == 2) {			/* Enable cxMMX extensions (GX1 Datasheet 54) */			setCx86(CX86_CCR7, getCx86(CX86_CCR7) | 1);			/*			 * GXm : 0x30 ... 0x5f GXm  datasheet 51			 * GXlv: 0x6x          GXlv datasheet 54			 *  ?  : 0x7x			 * GX1 : 0x8x          GX1  datasheet 56			 */			if ((0x30 <= dir1 && dir1 <= 0x6f) ||					(0x80 <= dir1 && dir1 <= 0x8f))				geode_configure();			return;		} else { /* MediaGX */			Cx86_cb[2] = (dir0_lsn & 1) ? '3' : '4';			p = Cx86_cb+2;			c->x86_model = (dir1 & 0x20) ? 1 : 2;		}		break;	case 5: /* 6x86MX/M II */		if (dir1 > 7) {			dir0_msn++;  /* M II */			/* Enable MMX extensions (App note 108) */			setCx86(CX86_CCR7, getCx86(CX86_CCR7)|1);		} else {			/* A 6x86MX - it has the bug. */			set_cpu_bug(c, X86_BUG_COMA);		}		tmp = (!(dir0_lsn & 7) || dir0_lsn & 1) ? 2 : 0;		Cx86_cb[tmp] = cyrix_model_mult2[dir0_lsn & 7];		p = Cx86_cb+tmp;		if (((dir1 & 0x0f) > 4) || ((dir1 & 0xf0) == 0x20))			(c->x86_model)++;		/* Emulate MTRRs using Cyrix's ARRs. */		set_cpu_cap(c, X86_FEATURE_CYRIX_ARR);		break;	case 0xf:  /* Cyrix 486 without DEVID registers */		switch (dir0_lsn) {		case 0xd:  /* either a 486SLC or DLC w/o DEVID */			dir0_msn = 0;			p = Cx486_name[(cpu_has_fpu ? 1 : 0)];			break;		case 0xe:  /* a 486S A step */			dir0_msn = 0;			p = Cx486S_name[0];			break;		}		break;	default:  /* unknown (shouldn't happen, we know everyone ;-) */		dir0_msn = 7;		break;	}
+dir0_msn
+dir0_msn
+{		unsigned char tmp;	case 0: /* Cx486SLC/DLC/SRx/DRx */		p = Cx486_name[dir0_lsn & 7];		break;	case 1: /* Cx486S/DX/DX2/DX4 */		p = (dir0_lsn & 8) ? Cx486D_name[dir0_lsn & 5]			: Cx486S_name[dir0_lsn & 3];		break;	case 2: /* 5x86 */		Cx86_cb[2] = cyrix_model_mult1[dir0_lsn & 5];		p = Cx86_cb+2;		break;	case 3: /* 6x86/6x86L */		Cx86_cb[1] = ' ';		Cx86_cb[2] = cyrix_model_mult1[dir0_lsn & 5];		if (dir1 > 0x21) { /* 686L */			Cx86_cb[0] = 'L';			p = Cx86_cb;			(c->x86_model)++;		} else             /* 686 */			p = Cx86_cb+1;		/* Emulate MTRRs using Cyrix's ARRs. */		set_cpu_cap(c, X86_FEATURE_CYRIX_ARR);		/* 6x86's contain this bug */		set_cpu_bug(c, X86_BUG_COMA);		break;	case 4: /* MediaGX/GXm or Geode GXM/GXLV/GX1 */#ifdef CONFIG_PCI	{		u32 vendor, device;		/*		 * It isn't really a PCI quirk directly, but the cure is the		 * same. The MediaGX has deep magic SMM stuff that handles the		 * SB emulation. It throws away the fifo on disable_dma() which		 * is wrong and ruins the audio.		 *		 *  Bug2: VSA1 has a wrap bug so that using maximum sized DMA		 *  causes bad things. According to NatSemi VSA2 has another		 *  bug to do with 'hlt'. I've not seen any boards using VSA2		 *  and X doesn't seem to support it either so who cares 8).		 *  VSA1 we work around however.		 */		printk(KERN_INFO "Working around Cyrix MediaGX virtual DMA bugs.\n");		isa_dma_bridge_buggy = 2;		/* We do this before the PCI layer is running. However we		   are safe here as we know the bridge must be a Cyrix		   companion and must be present */		vendor = read_pci_config_16(0, 0, 0x12, PCI_VENDOR_ID);		device = read_pci_config_16(0, 0, 0x12, PCI_DEVICE_ID);		/*		 *  The 5510/5520 companion chips have a funky PIT.		 */		if (vendor == PCI_VENDOR_ID_CYRIX &&			(device == PCI_DEVICE_ID_CYRIX_5510 ||					device == PCI_DEVICE_ID_CYRIX_5520))			mark_tsc_unstable("cyrix 5510/5520 detected");	}#endif		c->x86_cache_size = 16;	/* Yep 16K integrated cache thats it */		/* GXm supports extended cpuid levels 'ala' AMD */		if (c->cpuid_level == 2) {			/* Enable cxMMX extensions (GX1 Datasheet 54) */			setCx86(CX86_CCR7, getCx86(CX86_CCR7) | 1);			/*			 * GXm : 0x30 ... 0x5f GXm  datasheet 51			 * GXlv: 0x6x          GXlv datasheet 54			 *  ?  : 0x7x			 * GX1 : 0x8x          GX1  datasheet 56			 */			if ((0x30 <= dir1 && dir1 <= 0x6f) ||					(0x80 <= dir1 && dir1 <= 0x8f))				geode_configure();			return;		} else { /* MediaGX */			Cx86_cb[2] = (dir0_lsn & 1) ? '3' : '4';			p = Cx86_cb+2;			c->x86_model = (dir1 & 0x20) ? 1 : 2;		}		break;	case 5: /* 6x86MX/M II */		if (dir1 > 7) {			dir0_msn++;  /* M II */			/* Enable MMX extensions (App note 108) */			setCx86(CX86_CCR7, getCx86(CX86_CCR7)|1);		} else {			/* A 6x86MX - it has the bug. */			set_cpu_bug(c, X86_BUG_COMA);		}		tmp = (!(dir0_lsn & 7) || dir0_lsn & 1) ? 2 : 0;		Cx86_cb[tmp] = cyrix_model_mult2[dir0_lsn & 7];		p = Cx86_cb+tmp;		if (((dir1 & 0x0f) > 4) || ((dir1 & 0xf0) == 0x20))			(c->x86_model)++;		/* Emulate MTRRs using Cyrix's ARRs. */		set_cpu_cap(c, X86_FEATURE_CYRIX_ARR);		break;	case 0xf:  /* Cyrix 486 without DEVID registers */		switch (dir0_lsn) {		case 0xd:  /* either a 486SLC or DLC w/o DEVID */			dir0_msn = 0;			p = Cx486_name[(cpu_has_fpu ? 1 : 0)];			break;		case 0xe:  /* a 486S A step */			dir0_msn = 0;			p = Cx486S_name[0];			break;		}		break;	default:  /* unknown (shouldn't happen, we know everyone ;-) */		dir0_msn = 7;		break;	}
+unsigned char tmp;
+unsigned char tmp;
+unsigned char
+tmp
+tmp
+case 0:
+0
+p = Cx486_name[dir0_lsn & 7];
+p = Cx486_name[dir0_lsn & 7]
+p
+p
+Cx486_name[dir0_lsn & 7]
+Cx486_name
+Cx486_name
+dir0_lsn & 7
+dir0_lsn
+dir0_lsn
+7
+break;
+case 1:
+1
+p = (dir0_lsn & 8) ? Cx486D_name[dir0_lsn & 5]			: Cx486S_name[dir0_lsn & 3];
+p = (dir0_lsn & 8) ? Cx486D_name[dir0_lsn & 5]			: Cx486S_name[dir0_lsn & 3]
+p
+p
+(dir0_lsn & 8) ? Cx486D_name[dir0_lsn & 5]			: Cx486S_name[dir0_lsn & 3]
+(dir0_lsn & 8)
+dir0_lsn & 8
+dir0_lsn
+dir0_lsn
+8
+Cx486D_name[dir0_lsn & 5]
+Cx486D_name
+Cx486D_name
+dir0_lsn & 5
+dir0_lsn
+dir0_lsn
+5
+Cx486S_name[dir0_lsn & 3]
+Cx486S_name
+Cx486S_name
+dir0_lsn & 3
+dir0_lsn
+dir0_lsn
+3
+break;
+case 2:
+2
+Cx86_cb[2] = cyrix_model_mult1[dir0_lsn & 5];
+Cx86_cb[2] = cyrix_model_mult1[dir0_lsn & 5]
+Cx86_cb[2]
+Cx86_cb
+Cx86_cb
+2
+cyrix_model_mult1[dir0_lsn & 5]
+cyrix_model_mult1
+cyrix_model_mult1
+dir0_lsn & 5
+dir0_lsn
+dir0_lsn
+5
+p = Cx86_cb+2;
+p = Cx86_cb+2
+p
+p
+Cx86_cb+2
+Cx86_cb
+Cx86_cb
+2
+break;
+case 3:
+3
+Cx86_cb[1] = ' ';
+Cx86_cb[1] = ' '
+Cx86_cb[1]
+Cx86_cb
+Cx86_cb
+1
+' '
+Cx86_cb[2] = cyrix_model_mult1[dir0_lsn & 5];
+Cx86_cb[2] = cyrix_model_mult1[dir0_lsn & 5]
+Cx86_cb[2]
+Cx86_cb
+Cx86_cb
+2
+cyrix_model_mult1[dir0_lsn & 5]
+cyrix_model_mult1
+cyrix_model_mult1
+dir0_lsn & 5
+dir0_lsn
+dir0_lsn
+5
+if (dir1 > 0x21) { /* 686L */			Cx86_cb[0] = 'L';			p = Cx86_cb;			(c->x86_model)++;		} else             /* 686 */			p = Cx86_cb+1;
+dir1 > 0x21
+dir1
+dir1
+0x21
+{ /* 686L */			Cx86_cb[0] = 'L';			p = Cx86_cb;			(c->x86_model)++;		}
+Cx86_cb[0] = 'L';
+Cx86_cb[0] = 'L'
+Cx86_cb[0]
+Cx86_cb
+Cx86_cb
+0
+'L'
+p = Cx86_cb;
+p = Cx86_cb
+p
+p
+Cx86_cb
+Cx86_cb
+(c->x86_model)++;
+(c->x86_model)++
+(c->x86_model)
+c->x86_model
+c
+c
+x86_model
+p = Cx86_cb+1;
+p = Cx86_cb+1
+p
+p
+Cx86_cb+1
+Cx86_cb
+Cx86_cb
+1
+set_cpu_cap(c, X86_FEATURE_CYRIX_ARR);
+set_cpu_cap(c, X86_FEATURE_CYRIX_ARR)
+set_cpu_cap
+set_cpu_cap
+c
+c
+X86_FEATURE_CYRIX_ARR
+X86_FEATURE_CYRIX_ARR
+set_cpu_bug(c, X86_BUG_COMA);
+set_cpu_bug(c, X86_BUG_COMA)
+set_cpu_bug
+set_cpu_bug
+c
+c
+X86_BUG_COMA
+X86_BUG_COMA
+break;
+case 4:
+4
+c->x86_cache_size = 16;
+c->x86_cache_size = 16
+c->x86_cache_size
+c
+c
+x86_cache_size
+16
+if (c->cpuid_level == 2) {			/* Enable cxMMX extensions (GX1 Datasheet 54) */			setCx86(CX86_CCR7, getCx86(CX86_CCR7) | 1);			/*			 * GXm : 0x30 ... 0x5f GXm  datasheet 51			 * GXlv: 0x6x          GXlv datasheet 54			 *  ?  : 0x7x			 * GX1 : 0x8x          GX1  datasheet 56			 */			if ((0x30 <= dir1 && dir1 <= 0x6f) ||					(0x80 <= dir1 && dir1 <= 0x8f))				geode_configure();			return;		} else { /* MediaGX */			Cx86_cb[2] = (dir0_lsn & 1) ? '3' : '4';			p = Cx86_cb+2;			c->x86_model = (dir1 & 0x20) ? 1 : 2;		}
+c->cpuid_level == 2
+c->cpuid_level
+c
+c
+cpuid_level
+2
+{			/* Enable cxMMX extensions (GX1 Datasheet 54) */			setCx86(CX86_CCR7, getCx86(CX86_CCR7) | 1);			/*			 * GXm : 0x30 ... 0x5f GXm  datasheet 51			 * GXlv: 0x6x          GXlv datasheet 54			 *  ?  : 0x7x			 * GX1 : 0x8x          GX1  datasheet 56			 */			if ((0x30 <= dir1 && dir1 <= 0x6f) ||					(0x80 <= dir1 && dir1 <= 0x8f))				geode_configure();			return;		}
+setCx86(CX86_CCR7, getCx86(CX86_CCR7) | 1);
+setCx86(CX86_CCR7, getCx86(CX86_CCR7) | 1)
+setCx86
+setCx86
+CX86_CCR7
+CX86_CCR7
+getCx86(CX86_CCR7) | 1
+getCx86(CX86_CCR7)
+getCx86
+getCx86
+CX86_CCR7
+CX86_CCR7
+1
+if ((0x30 <= dir1 && dir1 <= 0x6f) ||					(0x80 <= dir1 && dir1 <= 0x8f))				geode_configure();
+(0x30 <= dir1 && dir1 <= 0x6f) ||					(0x80 <= dir1 && dir1 <= 0x8f)
+(0x30 <= dir1 && dir1 <= 0x6f)
+0x30 <= dir1 && dir1 <= 0x6f
+0x30 <= dir1
+0x30
+dir1
+dir1
+dir1 <= 0x6f
+dir1
+dir1
+0x6f
+(0x80 <= dir1 && dir1 <= 0x8f)
+0x80 <= dir1 && dir1 <= 0x8f
+0x80 <= dir1
+0x80
+dir1
+dir1
+dir1 <= 0x8f
+dir1
+dir1
+0x8f
+geode_configure();
+geode_configure()
+geode_configure
+geode_configure
+return;
+{ /* MediaGX */			Cx86_cb[2] = (dir0_lsn & 1) ? '3' : '4';			p = Cx86_cb+2;			c->x86_model = (dir1 & 0x20) ? 1 : 2;		}
+Cx86_cb[2] = (dir0_lsn & 1) ? '3' : '4';
+Cx86_cb[2] = (dir0_lsn & 1) ? '3' : '4'
+Cx86_cb[2]
+Cx86_cb
+Cx86_cb
+2
+(dir0_lsn & 1) ? '3' : '4'
+(dir0_lsn & 1)
+dir0_lsn & 1
+dir0_lsn
+dir0_lsn
+1
+'3'
+'4'
+p = Cx86_cb+2;
+p = Cx86_cb+2
+p
+p
+Cx86_cb+2
+Cx86_cb
+Cx86_cb
+2
+c->x86_model = (dir1 & 0x20) ? 1 : 2;
+c->x86_model = (dir1 & 0x20) ? 1 : 2
+c->x86_model
+c
+c
+x86_model
+(dir1 & 0x20) ? 1 : 2
+(dir1 & 0x20)
+dir1 & 0x20
+dir1
+dir1
+0x20
+1
+2
+break;
+case 5:
+5
+if (dir1 > 7) {			dir0_msn++;  /* M II */			/* Enable MMX extensions (App note 108) */			setCx86(CX86_CCR7, getCx86(CX86_CCR7)|1);		} else {			/* A 6x86MX - it has the bug. */			set_cpu_bug(c, X86_BUG_COMA);		}
+dir1 > 7
+dir1
+dir1
+7
+{			dir0_msn++;  /* M II */			/* Enable MMX extensions (App note 108) */			setCx86(CX86_CCR7, getCx86(CX86_CCR7)|1);		}
+dir0_msn++;
+dir0_msn++
+dir0_msn
+dir0_msn
+setCx86(CX86_CCR7, getCx86(CX86_CCR7)|1);
+setCx86(CX86_CCR7, getCx86(CX86_CCR7)|1)
+setCx86
+setCx86
+CX86_CCR7
+CX86_CCR7
+getCx86(CX86_CCR7)|1
+getCx86(CX86_CCR7)
+getCx86
+getCx86
+CX86_CCR7
+CX86_CCR7
+1
+{			/* A 6x86MX - it has the bug. */			set_cpu_bug(c, X86_BUG_COMA);		}
+set_cpu_bug(c, X86_BUG_COMA);
+set_cpu_bug(c, X86_BUG_COMA)
+set_cpu_bug
+set_cpu_bug
+c
+c
+X86_BUG_COMA
+X86_BUG_COMA
+tmp = (!(dir0_lsn & 7) || dir0_lsn & 1) ? 2 : 0;
+tmp = (!(dir0_lsn & 7) || dir0_lsn & 1) ? 2 : 0
+tmp
+tmp
+(!(dir0_lsn & 7) || dir0_lsn & 1) ? 2 : 0
+(!(dir0_lsn & 7) || dir0_lsn & 1)
+!(dir0_lsn & 7) || dir0_lsn & 1
+!(dir0_lsn & 7)
+(dir0_lsn & 7)
+dir0_lsn & 7
+dir0_lsn
+dir0_lsn
+7
+dir0_lsn & 1
+dir0_lsn
+dir0_lsn
+1
+2
+0
+Cx86_cb[tmp] = cyrix_model_mult2[dir0_lsn & 7];
+Cx86_cb[tmp] = cyrix_model_mult2[dir0_lsn & 7]
+Cx86_cb[tmp]
+Cx86_cb
+Cx86_cb
+tmp
+tmp
+cyrix_model_mult2[dir0_lsn & 7]
+cyrix_model_mult2
+cyrix_model_mult2
+dir0_lsn & 7
+dir0_lsn
+dir0_lsn
+7
+p = Cx86_cb+tmp;
+p = Cx86_cb+tmp
+p
+p
+Cx86_cb+tmp
+Cx86_cb
+Cx86_cb
+tmp
+tmp
+if (((dir1 & 0x0f) > 4) || ((dir1 & 0xf0) == 0x20))			(c->x86_model)++;
+((dir1 & 0x0f) > 4) || ((dir1 & 0xf0) == 0x20)
+((dir1 & 0x0f) > 4)
+(dir1 & 0x0f) > 4
+(dir1 & 0x0f)
+dir1 & 0x0f
+dir1
+dir1
+0x0f
+4
+((dir1 & 0xf0) == 0x20)
+(dir1 & 0xf0) == 0x20
+(dir1 & 0xf0)
+dir1 & 0xf0
+dir1
+dir1
+0xf0
+0x20
+(c->x86_model)++;
+(c->x86_model)++
+(c->x86_model)
+c->x86_model
+c
+c
+x86_model
+set_cpu_cap(c, X86_FEATURE_CYRIX_ARR);
+set_cpu_cap(c, X86_FEATURE_CYRIX_ARR)
+set_cpu_cap
+set_cpu_cap
+c
+c
+X86_FEATURE_CYRIX_ARR
+X86_FEATURE_CYRIX_ARR
+break;
+case 0xf:
+0xf
+switch (dir0_lsn) {		case 0xd:  /* either a 486SLC or DLC w/o DEVID */			dir0_msn = 0;			p = Cx486_name[(cpu_has_fpu ? 1 : 0)];			break;		case 0xe:  /* a 486S A step */			dir0_msn = 0;			p = Cx486S_name[0];			break;		}
+dir0_lsn
+dir0_lsn
+{		case 0xd:  /* either a 486SLC or DLC w/o DEVID */			dir0_msn = 0;			p = Cx486_name[(cpu_has_fpu ? 1 : 0)];			break;		case 0xe:  /* a 486S A step */			dir0_msn = 0;			p = Cx486S_name[0];			break;		}
+case 0xd:
+0xd
+dir0_msn = 0;
+dir0_msn = 0
+dir0_msn
+dir0_msn
+0
+p = Cx486_name[(cpu_has_fpu ? 1 : 0)];
+p = Cx486_name[(cpu_has_fpu ? 1 : 0)]
+p
+p
+Cx486_name[(cpu_has_fpu ? 1 : 0)]
+Cx486_name
+Cx486_name
+(cpu_has_fpu ? 1 : 0)
+cpu_has_fpu ? 1 : 0
+cpu_has_fpu
+cpu_has_fpu
+1
+0
+break;
+case 0xe:
+0xe
+dir0_msn = 0;
+dir0_msn = 0
+dir0_msn
+dir0_msn
+0
+p = Cx486S_name[0];
+p = Cx486S_name[0]
+p
+p
+Cx486S_name[0]
+Cx486S_name
+Cx486S_name
+0
+break;
+break;
+default:
+dir0_msn = 7;
+dir0_msn = 7
+dir0_msn
+dir0_msn
+7
+break;
+strcpy(buf, Cx86_model[dir0_msn & 7]);
+strcpy(buf, Cx86_model[dir0_msn & 7])
+strcpy
+strcpy
+buf
+buf
+Cx86_model[dir0_msn & 7]
+Cx86_model
+Cx86_model
+dir0_msn & 7
+dir0_msn
+dir0_msn
+7
+if (p)		strcat(buf, p);
+p
+p
+strcat(buf, p);
+strcat(buf, p)
+strcat
+strcat
+buf
+buf
+p
+p
+return;
+-----joern-----
+(94,141,0)
+(61,31,0)
+(286,5,0)
+(350,357,0)
+(269,202,0)
+(314,5,0)
+(359,15,0)
+(45,348,0)
+(161,109,0)
+(275,55,0)
+(315,190,0)
+(57,212,0)
+(159,241,0)
+(192,263,0)
+(347,239,0)
+(2,43,0)
+(369,5,0)
+(339,203,0)
+(121,157,0)
+(375,356,0)
+(211,106,0)
+(370,185,0)
+(132,268,0)
+(50,270,0)
+(67,141,0)
+(3,366,0)
+(299,164,0)
+(187,211,0)
+(9,71,0)
+(317,21,0)
+(88,5,0)
+(139,197,0)
+(120,39,0)
+(172,324,0)
+(42,213,0)
+(286,192,0)
+(200,355,0)
+(336,352,0)
+(190,31,0)
+(26,47,0)
+(40,5,0)
+(233,377,0)
+(82,372,0)
+(320,18,0)
+(249,5,0)
+(225,137,0)
+(356,375,0)
+(104,267,0)
+(135,48,0)
+(294,5,0)
+(285,108,0)
+(46,5,0)
+(313,355,0)
+(288,355,0)
+(342,4,0)
+(1,90,0)
+(358,9,0)
+(262,335,0)
+(212,11,0)
+(273,102,0)
+(138,181,0)
+(378,368,0)
+(252,21,0)
+(261,367,0)
+(221,151,0)
+(188,36,0)
+(149,176,0)
+(218,288,0)
+(47,48,0)
+(145,342,0)
+(76,218,0)
+(250,48,0)
+(288,218,0)
+(75,39,0)
+(73,198,0)
+(184,136,0)
+(56,44,0)
+(242,189,0)
+(102,15,0)
+(306,196,0)
+(64,353,0)
+(236,152,0)
+(4,342,0)
+(341,320,0)
+(76,144,0)
+(111,18,0)
+(55,309,0)
+(205,170,0)
+(194,274,0)
+(232,109,0)
+(336,202,0)
+(173,258,0)
+(36,14,0)
+(328,213,0)
+(93,165,0)
+(63,135,0)
+(167,5,0)
+(278,267,0)
+(6,152,0)
+(91,197,0)
+(161,355,0)
+(198,5,0)
+(284,15,0)
+(311,293,0)
+(349,355,0)
+(191,283,0)
+(152,236,0)
+(35,5,0)
+(345,56,0)
+(19,61,0)
+(48,355,0)
+(177,185,0)
+(153,48,0)
+(160,302,0)
+(362,280,0)
+(335,262,0)
+(334,246,0)
+(208,348,0)
+(20,5,0)
+(39,297,0)
+(172,47,0)
+(23,192,0)
+(272,43,0)
+(359,48,0)
+(227,136,0)
+(230,355,0)
+(332,13,0)
+(275,250,0)
+(379,254,0)
+(356,259,0)
+(164,44,0)
+(114,153,0)
+(22,5,0)
+(319,76,0)
+(29,152,0)
+(367,18,0)
+(175,355,0)
+(18,355,0)
+(283,125,0)
+(210,283,0)
+(379,237,0)
+(166,346,0)
+(117,263,0)
+(325,14,0)
+(48,241,0)
+(285,202,0)
+(197,91,0)
+(31,61,0)
+(17,256,0)
+(153,324,0)
+(124,277,0)
+(151,221,0)
+(8,130,0)
+(306,218,0)
+(240,202,0)
+(245,336,0)
+(240,221,0)
+(7,188,0)
+(103,346,0)
+(367,209,0)
+(32,285,0)
+(204,106,0)
+(137,176,0)
+(239,347,0)
+(222,52,0)
+(164,137,0)
+(277,258,0)
+(86,236,0)
+(130,8,0)
+(130,309,0)
+(258,277,0)
+(224,355,0)
+(16,133,0)
+(30,324,0)
+(172,63,0)
+(151,18,0)
+(322,288,0)
+(79,189,0)
+(142,359,0)
+(248,349,0)
+(17,353,0)
+(44,269,0)
+(361,5,0)
+(166,198,0)
+(56,355,0)
+(268,22,0)
+(9,202,0)
+(49,355,0)
+(101,251,0)
+(215,250,0)
+(188,297,0)
+(51,5,0)
+(277,309,0)
+(298,252,0)
+(36,188,0)
+(195,176,0)
+(331,5,0)
+(302,202,0)
+(246,130,0)
+(164,211,0)
+(189,202,0)
+(249,172,0)
+(281,8,0)
+(360,355,0)
+(140,269,0)
+(251,18,0)
+(15,102,0)
+(244,52,0)
+(164,249,0)
+(182,48,0)
+(123,275,0)
+(237,355,0)
+(14,297,0)
+(235,5,0)
+(59,109,0)
+(66,141,0)
+(226,229,0)
+(329,157,0)
+(25,372,0)
+(376,177,0)
+(229,198,0)
+(95,274,0)
+(78,66,0)
+(172,249,0)
+(364,220,0)
+(183,347,0)
+(12,373,0)
+(231,111,0)
+(116,19,0)
+(58,5,0)
+(107,236,0)
+(228,197,0)
+(259,356,0)
+(266,5,0)
+(178,44,0)
+(96,39,0)
+(264,116,0)
+(143,251,0)
+(276,293,0)
+(218,270,0)
+(372,125,0)
+(238,355,0)
+(220,364,0)
+(90,355,0)
+(247,76,0)
+(56,144,0)
+(68,98,0)
+(190,18,0)
+(110,4,0)
+(209,355,0)
+(211,141,0)
+(289,320,0)
+(346,166,0)
+(80,28,0)
+(134,297,0)
+(217,270,0)
+(38,246,0)
+(28,293,0)
+(209,13,0)
+(76,66,0)
+(324,172,0)
+(179,141,0)
+(76,181,0)
+(243,11,0)
+(223,135,0)
+(28,48,0)
+(14,36,0)
+(340,232,0)
+(126,166,0)
+(154,368,0)
+(201,269,0)
+(122,355,0)
+(11,18,0)
+(144,56,0)
+(290,377,0)
+(162,364,0)
+(346,103,0)
+(285,161,0)
+(257,263,0)
+(27,18,0)
+(312,133,0)
+(302,5,0)
+(102,5,0)
+(270,218,0)
+(213,5,0)
+(186,165,0)
+(292,304,0)
+(364,113,0)
+(221,355,0)
+(169,144,0)
+(31,320,0)
+(301,5,0)
+(106,211,0)
+(131,239,0)
+(199,113,0)
+(293,28,0)
+(113,364,0)
+(36,308,0)
+(229,22,0)
+(232,18,0)
+(380,375,0)
+(371,366,0)
+(305,175,0)
+(276,5,0)
+(198,166,0)
+(291,275,0)
+(321,202,0)
+(351,355,0)
+(246,202,0)
+(293,276,0)
+(115,306,0)
+(168,258,0)
+(54,232,0)
+(250,275,0)
+(321,5,0)
+(366,48,0)
+(327,5,0)
+(280,5,0)
+(164,177,0)
+(330,342,0)
+(347,304,0)
+(113,352,0)
+(47,172,0)
+(255,373,0)
+(125,372,0)
+(214,190,0)
+(335,202,0)
+(13,209,0)
+(146,267,0)
+(43,202,0)
+(109,161,0)
+(89,372,0)
+(85,262,0)
+(11,212,0)
+(287,5,0)
+(99,259,0)
+(174,17,0)
+(300,280,0)
+(164,175,0)
+(209,367,0)
+(181,141,0)
+(100,43,0)
+(193,185,0)
+(156,14,0)
+(69,252,0)
+(0,66,0)
+(324,153,0)
+(373,58,0)
+(346,368,0)
+(108,285,0)
+(282,240,0)
+(60,335,0)
+(91,90,0)
+(253,227,0)
+(136,227,0)
+(260,135,0)
+(105,151,0)
+(307,21,0)
+(4,141,0)
+(127,39,0)
+(206,321,0)
+(318,18,0)
+(170,312,0)
+(216,5,0)
+(34,166,0)
+(147,356,0)
+(176,198,0)
+(368,346,0)
+(241,48,0)
+(357,268,0)
+(374,164,0)
+(354,9,0)
+(297,39,0)
+(128,5,0)
+(265,285,0)
+(21,5,0)
+(90,91,0)
+(24,335,0)
+(144,76,0)
+(308,283,0)
+(326,357,0)
+(90,202,0)
+(236,107,0)
+(98,239,0)
+(107,212,0)
+(343,16,0)
+(192,286,0)
+(256,17,0)
+(87,8,0)
+(70,5,0)
+(135,63,0)
+(271,16,0)
+(164,277,0)
+(112,229,0)
+(83,241,0)
+(297,21,0)
+(320,31,0)
+(283,308,0)
+(19,116,0)
+(63,172,0)
+(348,286,0)
+(164,102,0)
+(76,213,0)
+(344,218,0)
+(22,268,0)
+(303,141,0)
+(333,227,0)
+(368,48,0)
+(8,111,0)
+(155,188,0)
+(366,103,0)
+(234,220,0)
+(365,125,0)
+(113,202,0)
+(269,44,0)
+(116,18,0)
+(338,88,0)
+(33,153,0)
+(148,250,0)
+(150,47,0)
+(363,249,0)
+(137,5,0)
+(119,28,0)
+(263,192,0)
+(254,304,0)
+(349,202,0)
+(106,267,0)
+(353,17,0)
+(323,256,0)
+(267,106,0)
+(19,165,0)
+(185,177,0)
+(212,107,0)
+(337,312,0)
+(180,116,0)
+(164,136,0)
+(31,190,0)
+(136,5,0)
+(129,11,0)
+(316,175,0)
+(103,366,0)
+(263,48,0)
+(268,357,0)
+(280,202,0)
+(164,4,0)
+(72,5,0)
+(189,161,0)
+(15,359,0)
+(84,336,0)
+(74,63,0)
+(357,48,0)
+(157,202,0)
+(164,16,0)
+(239,98,0)
+(41,21,0)
+(256,202,0)
+(207,170,0)
+(118,321,0)
+(165,18,0)
+(65,5,0)
+(296,58,0)
+(43,161,0)
+(152,18,0)
+(43,272,0)
+(37,181,0)
+(274,55,0)
+(163,5,0)
+(111,8,0)
+(81,220,0)
+(157,88,0)
+(97,91,0)
+(55,275,0)
+(10,359,0)
+(165,19,0)
+(272,133,0)
+(44,355,0)
+(279,372,0)
+(176,137,0)
+(310,111,0)
+(52,18,0)
+(375,196,0)
+(377,276,0)
+(109,232,0)
+(308,36,0)
+(158,353,0)
+(61,19,0)
+(62,302,0)
+(171,240,0)
+(77,151,0)
+(125,21,0)
+(277,258,1)
+(305,316,1)
+(164,177,1)
+(17,174,1)
+(174,353,1)
+(108,285,1)
+(164,102,1)
+(135,260,1)
+(325,156,1)
+(288,218,1)
+(297,39,1)
+(13,332,1)
+(193,376,1)
+(28,119,1)
+(126,346,1)
+(76,181,1)
+(217,344,1)
+(19,165,1)
+(164,277,1)
+(379,237,1)
+(259,99,1)
+(345,369,1)
+(88,338,1)
+(157,329,1)
+(356,147,1)
+(212,11,1)
+(116,264,1)
+(76,66,1)
+(110,181,1)
+(166,126,1)
+(254,295,1)
+(153,48,1)
+(146,104,1)
+(308,36,1)
+(346,103,1)
+(246,202,1)
+(58,296,1)
+(164,374,1)
+(11,18,1)
+(212,57,1)
+(320,18,1)
+(368,48,1)
+(87,111,1)
+(189,202,1)
+(267,278,1)
+(209,13,1)
+(170,205,1)
+(4,342,1)
+(143,286,1)
+(45,208,1)
+(359,10,1)
+(262,85,1)
+(6,29,1)
+(301,302,1)
+(285,161,1)
+(164,16,1)
+(36,188,1)
+(104,204,1)
+(46,102,1)
+(172,63,1)
+(95,194,1)
+(17,353,1)
+(85,335,1)
+(343,312,1)
+(125,372,1)
+(36,14,1)
+(316,44,1)
+(295,61,1)
+(166,346,1)
+(61,19,1)
+(27,318,1)
+(336,84,1)
+(345,46,1)
+(278,104,1)
+(107,212,1)
+(68,183,1)
+(181,37,1)
+(359,48,1)
+(175,305,1)
+(346,368,1)
+(60,24,1)
+(164,136,1)
+(159,182,1)
+(332,256,1)
+(154,103,1)
+(147,259,1)
+(139,1,1)
+(291,250,1)
+(274,95,1)
+(135,48,1)
+(161,109,1)
+(251,101,1)
+(48,241,1)
+(169,345,1)
+(229,226,1)
+(43,2,1)
+(194,262,1)
+(373,12,1)
+(300,362,1)
+(239,131,1)
+(268,357,1)
+(131,98,1)
+(302,202,1)
+(172,47,1)
+(12,255,1)
+(239,98,1)
+(251,18,1)
+(273,219,1)
+(371,3,1)
+(282,161,1)
+(34,346,1)
+(24,88,1)
+(326,132,1)
+(258,168,1)
+(222,219,1)
+(215,148,1)
+(280,202,1)
+(361,249,1)
+(69,219,1)
+(145,330,1)
+(191,297,1)
+(263,117,1)
+(111,310,1)
+(162,220,1)
+(226,112,1)
+(229,198,1)
+(153,33,1)
+(246,38,1)
+(250,215,1)
+(252,298,1)
+(134,125,1)
+(380,306,1)
+(55,275,1)
+(349,248,1)
+(270,50,1)
+(308,283,1)
+(30,47,1)
+(365,252,1)
+(142,284,1)
+(339,308,1)
+(245,113,1)
+(286,192,1)
+(358,354,1)
+(9,358,1)
+(366,48,1)
+(243,129,1)
+(293,28,1)
+(106,267,1)
+(50,217,1)
+(118,206,1)
+(366,371,1)
+(190,214,1)
+(90,202,1)
+(209,367,1)
+(340,189,1)
+(93,186,1)
+(137,176,1)
+(210,191,1)
+(173,124,1)
+(97,197,1)
+(198,166,1)
+(220,81,1)
+(107,236,1)
+(155,14,1)
+(47,48,1)
+(115,52,1)
+(52,18,1)
+(42,219,1)
+(140,201,1)
+(63,135,1)
+(237,164,1)
+(75,134,1)
+(121,308,1)
+(120,75,1)
+(187,66,1)
+(150,363,1)
+(89,82,1)
+(91,197,1)
+(377,233,1)
+(186,347,1)
+(256,202,1)
+(166,34,1)
+(23,348,1)
+(164,4,1)
+(240,171,1)
+(271,343,1)
+(2,100,1)
+(327,213,1)
+(345,65,1)
+(248,209,1)
+(101,143,1)
+(345,72,1)
+(364,162,1)
+(296,373,1)
+(130,8,1)
+(231,246,1)
+(43,202,1)
+(334,277,1)
+(345,327,1)
+(184,276,1)
+(129,236,1)
+(160,321,1)
+(312,337,1)
+(185,370,1)
+(232,54,1)
+(275,291,1)
+(195,225,1)
+(8,281,1)
+(183,262,1)
+(322,349,1)
+(113,364,1)
+(10,142,1)
+(333,184,1)
+(221,151,1)
+(18,27,1)
+(121,203,1)
+(242,79,1)
+(275,250,1)
+(180,165,1)
+(92,219,1)
+(279,89,1)
+(314,130,1)
+(311,377,1)
+(267,146,1)
+(357,48,1)
+(114,30,1)
+(76,218,1)
+(82,365,1)
+(342,145,1)
+(345,361,1)
+(176,149,1)
+(206,177,1)
+(16,271,1)
+(83,159,1)
+(8,111,1)
+(99,380,1)
+(100,16,1)
+(319,247,1)
+(109,59,1)
+(374,299,1)
+(168,173,1)
+(344,322,1)
+(152,18,1)
+(369,179,1)
+(14,325,1)
+(204,187,1)
+(56,144,1)
+(336,202,1)
+(379,254,1)
+(236,86,1)
+(177,185,1)
+(349,202,1)
+(62,160,1)
+(164,137,1)
+(7,155,1)
+(302,62,1)
+(264,180,1)
+(54,340,1)
+(189,242,1)
+(219,221,1)
+(372,25,1)
+(348,45,1)
+(199,256,1)
+(234,199,1)
+(315,320,1)
+(78,92,1)
+(158,64,1)
+(205,207,1)
+(98,68,1)
+(22,268,1)
+(256,17,1)
+(29,137,1)
+(9,202,1)
+(225,22,1)
+(328,42,1)
+(96,120,1)
+(250,48,1)
+(357,350,1)
+(192,263,1)
+(218,270,1)
+(67,4,1)
+(285,202,1)
+(324,153,1)
+(337,170,1)
+(284,273,1)
+(280,300,1)
+(253,333,1)
+(25,279,1)
+(164,44,1)
+(281,111,1)
+(84,245,1)
+(103,366,1)
+(356,259,1)
+(283,210,1)
+(178,18,1)
+(201,178,1)
+(207,251,1)
+(138,92,1)
+(197,228,1)
+(0,78,1)
+(237,53,1)
+(127,96,1)
+(369,67,1)
+(320,289,1)
+(38,334,1)
+(241,83,1)
+(350,326,1)
+(112,198,1)
+(213,328,1)
+(369,92,1)
+(164,211,1)
+(105,77,1)
+(363,219,1)
+(148,274,1)
+(179,211,1)
+(310,231,1)
+(8,87,1)
+(247,169,1)
+(364,220,1)
+(156,283,1)
+(11,243,1)
+(47,26,1)
+(53,56,1)
+(233,290,1)
+(28,48,1)
+(214,315,1)
+(208,58,1)
+(80,311,1)
+(347,239,1)
+(375,356,1)
+(1,175,1)
+(329,121,1)
+(65,280,1)
+(59,232,1)
+(172,324,1)
+(91,97,1)
+(254,61,1)
+(151,18,1)
+(132,229,1)
+(306,115,1)
+(335,60,1)
+(354,52,1)
+(188,7,1)
+(260,223,1)
+(111,18,1)
+(31,190,1)
+(76,319,1)
+(86,152,1)
+(269,202,1)
+(367,18,1)
+(72,136,1)
+(353,158,1)
+(257,23,1)
+(249,172,1)
+(79,48,1)
+(332,336,1)
+(262,335,1)
+(261,13,1)
+(203,339,1)
+(211,106,1)
+(151,105,1)
+(56,44,1)
+(321,118,1)
+(298,69,1)
+(44,269,1)
+(149,195,1)
+(31,320,1)
+(188,297,1)
+(330,110,1)
+(323,90,1)
+(232,18,1)
+(144,76,1)
+(276,293,1)
+(14,297,1)
+(265,107,1)
+(362,108,1)
+(244,222,1)
+(119,80,1)
+(362,107,1)
+(275,123,1)
+(376,251,1)
+(269,140,1)
+(124,55,1)
+(236,152,1)
+(165,18,1)
+(283,125,1)
+(378,154,1)
+(345,314,1)
+(370,193,1)
+(73,9,1)
+(227,253,1)
+(73,375,1)
+(165,93,1)
+(39,127,1)
+(61,31,1)
+(285,32,1)
+(228,139,1)
+(263,48,1)
+(74,47,1)
+(306,218,1)
+(43,161,1)
+(321,202,1)
+(64,323,1)
+(164,175,1)
+(136,227,1)
+(37,138,1)
+(57,11,1)
+(76,213,1)
+(299,53,1)
+(368,378,1)
+(32,265,1)
+(341,19,1)
+(289,341,1)
+(117,257,1)
+(367,261,1)
+(338,157,1)
+(164,249,1)
+(206,272,1)
+(335,202,1)
+(19,116,1)
+(116,18,1)
+(81,234,1)
+(272,43,1)
+(113,202,1)
+(109,232,1)
+(345,301,1)
+(90,91,1)
+(290,219,1)
+(152,6,1)
+(102,15,1)
+(157,202,1)
+(3,73,1)
+(255,219,1)
+(240,202,1)
+(171,282,1)
+(66,0,1)
+(123,250,1)
+(77,240,1)
+(176,198,1)
+(33,114,1)
+(182,288,1)
+(52,244,1)
+(26,150,1)
+(15,359,1)
+(223,74,1)
+(190,18,1)
+(286,219,2)
+(52,18,2)
+(137,176,2)
+(283,125,2)
+(0,92,2)
+(153,47,2)
+(320,18,2)
+(3,219,2)
+(108,107,2)
+(156,283,2)
+(371,219,2)
+(164,177,2)
+(233,219,2)
+(302,219,2)
+(280,202,2)
+(36,188,2)
+(29,219,2)
+(275,262,2)
+(145,92,2)
+(281,111,2)
+(379,237,2)
+(247,262,2)
+(124,262,2)
+(107,219,2)
+(84,256,2)
+(348,219,2)
+(314,262,2)
+(262,219,2)
+(14,283,2)
+(78,92,2)
+(23,219,2)
+(286,192,2)
+(106,92,2)
+(154,103,2)
+(249,172,2)
+(8,262,2)
+(288,218,2)
+(359,219,2)
+(165,18,2)
+(31,19,2)
+(192,219,2)
+(80,219,2)
+(335,219,2)
+(250,48,2)
+(210,219,2)
+(365,219,2)
+(60,219,2)
+(164,4,2)
+(319,219,2)
+(239,262,2)
+(269,202,2)
+(144,76,2)
+(370,251,2)
+(271,251,2)
+(123,250,2)
+(246,262,2)
+(107,236,2)
+(131,262,2)
+(369,219,2)
+(56,44,2)
+(102,15,2)
+(337,251,2)
+(280,219,2)
+(169,219,2)
+(160,219,2)
+(209,367,2)
+(117,219,2)
+(46,219,2)
+(88,219,2)
+(119,219,2)
+(111,18,2)
+(87,111,2)
+(164,175,2)
+(32,107,2)
+(199,256,2)
+(43,251,2)
+(36,14,2)
+(164,16,2)
+(188,297,2)
+(347,262,2)
+(116,165,2)
+(284,219,2)
+(315,320,2)
+(186,262,2)
+(367,18,2)
+(300,219,2)
+(153,48,2)
+(268,219,2)
+(257,219,2)
+(148,262,2)
+(285,161,2)
+(356,52,2)
+(144,219,2)
+(356,259,2)
+(368,48,2)
+(358,52,2)
+(44,269,2)
+(108,285,2)
+(15,219,2)
+(297,39,2)
+(45,219,2)
+(137,219,2)
+(48,241,2)
+(343,251,2)
+(208,219,2)
+(162,256,2)
+(311,219,2)
+(188,14,2)
+(377,219,2)
+(190,18,2)
+(172,63,2)
+(91,197,2)
+(205,251,2)
+(30,47,2)
+(72,219,2)
+(375,356,2)
+(227,219,2)
+(89,219,2)
+(198,219,2)
+(98,262,2)
+(364,220,2)
+(165,262,2)
+(172,219,2)
+(215,262,2)
+(206,219,2)
+(329,219,2)
+(229,219,2)
+(213,219,2)
+(312,251,2)
+(69,219,2)
+(42,219,2)
+(14,297,2)
+(277,262,2)
+(150,219,2)
+(56,144,2)
+(273,219,2)
+(346,103,2)
+(296,219,2)
+(63,47,2)
+(96,219,2)
+(363,219,2)
+(325,283,2)
+(298,219,2)
+(234,256,2)
+(92,219,2)
+(76,218,2)
+(19,116,2)
+(104,92,2)
+(293,219,2)
+(126,346,2)
+(47,219,2)
+(2,251,2)
+(109,232,2)
+(247,219,2)
+(90,202,2)
+(364,256,2)
+(9,52,2)
+(10,219,2)
+(278,104,2)
+(11,18,2)
+(380,52,2)
+(221,151,2)
+(258,262,2)
+(251,18,2)
+(260,47,2)
+(61,31,2)
+(164,249,2)
+(43,161,2)
+(107,212,2)
+(259,52,2)
+(375,52,2)
+(285,202,2)
+(321,202,2)
+(161,109,2)
+(164,102,2)
+(295,61,2)
+(28,48,2)
+(61,262,2)
+(113,256,2)
+(74,47,2)
+(47,48,2)
+(341,19,2)
+(4,342,2)
+(240,202,2)
+(63,135,2)
+(204,92,2)
+(334,262,2)
+(362,219,2)
+(346,219,2)
+(229,198,2)
+(244,219,2)
+(75,219,2)
+(184,219,2)
+(172,47,2)
+(194,262,2)
+(256,202,2)
+(333,219,2)
+(187,92,2)
+(157,219,2)
+(34,346,2)
+(129,236,2)
+(223,47,2)
+(379,254,2)
+(342,92,2)
+(164,44,2)
+(125,372,2)
+(301,219,2)
+(7,14,2)
+(267,92,2)
+(134,219,2)
+(55,275,2)
+(103,219,2)
+(110,92,2)
+(253,219,2)
+(264,165,2)
+(209,13,2)
+(347,239,2)
+(68,262,2)
+(22,268,2)
+(157,202,2)
+(328,219,2)
+(65,219,2)
+(101,219,2)
+(82,219,2)
+(324,153,2)
+(22,219,2)
+(262,335,2)
+(326,219,2)
+(38,262,2)
+(359,48,2)
+(192,263,2)
+(164,137,2)
+(366,48,2)
+(268,357,2)
+(181,92,2)
+(236,152,2)
+(164,277,2)
+(147,52,2)
+(250,262,2)
+(149,219,2)
+(102,219,2)
+(39,219,2)
+(361,219,2)
+(19,165,2)
+(4,92,2)
+(73,219,2)
+(308,283,2)
+(67,92,2)
+(232,18,2)
+(306,52,2)
+(76,181,2)
+(237,262,2)
+(374,53,2)
+(191,219,2)
+(113,202,2)
+(324,47,2)
+(272,43,2)
+(357,48,2)
+(56,219,2)
+(308,219,2)
+(93,262,2)
+(338,219,2)
+(172,324,2)
+(81,256,2)
+(176,219,2)
+(164,136,2)
+(378,103,2)
+(330,92,2)
+(115,52,2)
+(76,213,2)
+(43,202,2)
+(339,308,2)
+(120,219,2)
+(143,219,2)
+(76,66,2)
+(28,219,2)
+(166,219,2)
+(99,52,2)
+(135,48,2)
+(164,211,2)
+(155,14,2)
+(152,219,2)
+(6,219,2)
+(189,202,2)
+(207,251,2)
+(283,219,2)
+(11,236,2)
+(136,227,2)
+(146,104,2)
+(279,219,2)
+(212,236,2)
+(90,91,2)
+(239,98,2)
+(177,251,2)
+(166,346,2)
+(212,11,2)
+(190,320,2)
+(198,166,2)
+(275,250,2)
+(9,202,2)
+(31,320,2)
+(276,219,2)
+(308,36,2)
+(357,219,2)
+(218,270,2)
+(220,256,2)
+(246,202,2)
+(249,219,2)
+(252,219,2)
+(214,320,2)
+(185,251,2)
+(177,185,2)
+(321,219,2)
+(346,368,2)
+(100,251,2)
+(336,202,2)
+(272,251,2)
+(103,366,2)
+(225,219,2)
+(222,219,2)
+(130,8,2)
+(293,28,2)
+(16,251,2)
+(350,219,2)
+(285,107,2)
+(125,219,2)
+(52,219,2)
+(255,219,2)
+(142,219,2)
+(245,256,2)
+(236,219,2)
+(345,219,2)
+(193,251,2)
+(274,262,2)
+(276,293,2)
+(319,262,2)
+(12,219,2)
+(76,219,2)
+(61,19,2)
+(366,219,2)
+(237,219,2)
+(168,262,2)
+(179,92,2)
+(263,219,2)
+(25,219,2)
+(144,262,2)
+(132,219,2)
+(95,262,2)
+(327,219,2)
+(290,219,2)
+(349,202,2)
+(17,353,2)
+(138,92,2)
+(136,219,2)
+(36,283,2)
+(116,18,2)
+(15,359,2)
+(226,219,2)
+(112,219,2)
+(37,92,2)
+(277,258,2)
+(26,219,2)
+(368,103,2)
+(211,106,2)
+(58,219,2)
+(53,262,2)
+(251,219,2)
+(8,111,2)
+(297,219,2)
+(62,219,2)
+(121,219,2)
+(231,262,2)
+(183,262,2)
+(170,251,2)
+(176,198,2)
+(118,219,2)
+(211,92,2)
+(24,219,2)
+(310,262,2)
+(243,236,2)
+(127,219,2)
+(164,53,2)
+(195,219,2)
+(19,262,2)
+(55,262,2)
+(169,262,2)
+(254,262,2)
+(85,219,2)
+(53,219,2)
+(373,219,2)
+(76,262,2)
+(152,18,2)
+(336,256,2)
+(180,165,2)
+(256,17,2)
+(111,262,2)
+(56,262,2)
+(31,190,2)
+(66,92,2)
+(345,262,2)
+(203,308,2)
+(291,250,2)
+(57,236,2)
+(173,262,2)
+(320,19,2)
+(263,48,2)
+(86,219,2)
+(135,47,2)
+(113,364,2)
+(354,52,2)
+(265,107,2)
+(151,18,2)
+(376,251,2)
+(106,267,2)
+(299,53,2)
+(372,219,2)
+(306,218,2)
+(335,202,2)
+(289,19,2)
+(114,47,2)
+(130,262,2)
+(33,47,2)
+(302,202,2)
+-----------------------------------
+(0,0)
+(1,c)
+(2,x86_model)
+(3,dir0_lsn)
+(4,p = Cx486S_name[0])
+(5,)
+(6,0x0f)
+(7,PCI_DEVICE_ID_CYRIX_5520)
+(8,(dir1 & 0x20)
+(9,set_cpu_bug(c, X86_BUG_COMA)
+(10,7)
+(11,dir1 & 0xf0)
+(12,1)
+(13,&dir0)
+(14,device == PCI_DEVICE_ID_CYRIX_5510)
+(15,Cx486_name[dir0_lsn & 7])
+(16,p = Cx86_cb)
+(17,1*32+24)
+(18,dir1 = 0)
+(19,0x30 <= dir1 && dir1 <= 0x6f)
+(20,case 0xf:)
+(21,)
+(22,Cx86_cb[tmp] = cyrix_model_mult2[dir0_lsn & 7])
+(23,cyrix_model_mult1)
+(24,c)
+(25,PCI_VENDOR_ID)
+(26,8)
+(27,0)
+(28,dir0_lsn & 5)
+(29,dir1)
+(30,Cx486S_name)
+(31,0x80 <= dir1 && dir1 <= 0x8f)
+(32,x86_model)
+(33,3)
+(34,2)
+(35,default:)
+(36,device == PCI_DEVICE_ID_CYRIX_5510 ||\n\\n\\t\\t\\t\\t\\tdevice == PCI_DEVICE_ID_CYRIX_5520)
+(37,0)
+(38,x86_model)
+(39,read_pci_config_16(0, 0, 0x12, PCI_DEVICE_ID)
+(40,if (dir1 > 7)
+(41,vendor)
+(42,dir0_msn)
+(43,c->x86_model)
+(44,*buf = c->x86_model_id)
+(45,2)
+(46,break;)
+(47,dir0_lsn & 8)
+(48,dir0_lsn = dir0 & 0xf)
+(49,dir1)
+(50,4)
+(51,if (c->cpuid_level == 2)
+(52,dir1 > 7)
+(53,p)
+(54,4)
+(55,Cx86_cb[2] = (dir0_lsn & 1)
+(56,strcpy(buf, Cx86_model[dir0_msn & 7])
+(57,0x20)
+(58,Cx86_cb[1] = \' \')
+(59,1)
+(60,cpuid_level)
+(61,(0x30 <= dir1 && dir1 <= 0x6f)
+(62,X86_BUG_COMA)
+(63,Cx486D_name[dir0_lsn & 5])
+(64,1)
+(65,break;)
+(66,dir0_msn = 0)
+(67,break;)
+(68,CX86_CCR7)
+(69,isa_dma_bridge_buggy)
+(70,case 2:)
+(71,)
+(72,break;)
+(73,tmp)
+(74,Cx486D_name)
+(75,0)
+(76,dir0_msn & 7)
+(77,dir1)
+(78,dir0_msn)
+(79,c)
+(80,dir0_lsn)
+(81,32)
+(82,0)
+(83,0xf)
+(84,X86_FEATURE_CXMMX)
+(85,2)
+(86,4)
+(87,1)
+(88,c->x86_cache_size = 16)
+(89,0)
+(90,clear_cpu_cap(c, 0*32+31)
+(91,0*32+31)
+(92,dir0_lsn)
+(93,dir1)
+(94,case 0xd:)
+(95,2)
+(96,0x12)
+(97,31)
+(98,getCx86(CX86_CCR7)
+(99,CX86_CCR7)
+(100,c)
+(101,0x21)
+(102,p = Cx486_name[dir0_lsn & 7])
+(103,!(dir0_lsn & 7)
+(104,cpu_has_fpu)
+(105,0xf)
+(106,Cx486_name[(cpu_has_fpu ? 1 : 0)
+(107,((dir1 & 0x0f)
+(108,(c->x86_model)
+(109,(dir1 >> 4)
+(110,p)
+(111,dir1 & 0x20)
+(112,Cx86_cb)
+(113,clear_cpu_cap(c, 1*32+24)
+(114,dir0_lsn)
+(115,dir0_msn)
+(116,dir1 <= 0x6f)
+(117,5)
+(118,X86_FEATURE_CYRIX_ARR)
+(119,5)
+(120,0)
+(121,c)
+(122,p)
+(123,\'3\')
+(124,p)
+(125,vendor = read_pci_config_16(0, 0, 0x12, PCI_VENDOR_ID)
+(126,0)
+(127,PCI_DEVICE_ID)
+(128,tmp)
+(129,dir1)
+(130,c->x86_model = (dir1 & 0x20)
+(131,1)
+(132,cyrix_model_mult2)
+(133,)
+(134,device)
+(135,dir0_lsn & 5)
+(136,p = Cx86_cb+2)
+(137,p = Cx86_cb+tmp)
+(138,dir0_msn)
+(139,0)
+(140,x86_model_id)
+(141,)
+(142,dir0_lsn)
+(143,dir1)
+(144,Cx86_model[dir0_msn & 7])
+(145,0)
+(146,1)
+(147,1)
+(148,dir0_lsn)
+(149,tmp)
+(150,dir0_lsn)
+(151,dir1 & 0xf)
+(152,dir1 & 0x0f)
+(153,dir0_lsn & 3)
+(154,dir0_lsn)
+(155,device)
+(156,device)
+(157,c->x86_cache_size)
+(158,32)
+(159,dir0)
+(160,c)
+(161,c->x86_model = (dir1 >> 4)
+(162,24)
+(163,case 0:)
+(164,strcat(buf, p)
+(165,0x30 <= dir1)
+(166,(!(dir0_lsn & 7)
+(167,if (dir1 > 0x21)
+(168,2)
+(169,Cx86_model)
+(170,Cx86_cb[0])
+(171,x86_mask)
+(172,(dir0_lsn & 8)
+(173,Cx86_cb)
+(174,24)
+(175,*p = NULL)
+(176,Cx86_cb+tmp)
+(177,p = Cx86_cb+1)
+(178,buf)
+(179,break;)
+(180,dir1)
+(181,dir0_msn = 0)
+(182,dir0_lsn)
+(183,CX86_CCR7)
+(184,p)
+(185,Cx86_cb+1)
+(186,0x30)
+(187,p)
+(188,device == PCI_DEVICE_ID_CYRIX_5520)
+(189,c->x86_model)
+(190,dir1 <= 0x8f)
+(191,vendor)
+(192,cyrix_model_mult1[dir0_lsn & 5])
+(193,Cx86_cb)
+(194,Cx86_cb)
+(195,Cx86_cb)
+(196,)
+(197,0*32)
+(198,tmp = (!(dir0_lsn & 7)
+(199,c)
+(200,dir0_lsn)
+(201,c)
+(202,struct cpuinfo_x86 *c)
+(203,mark_tsc_unstable("cyrix 5510/5520 detected")
+(204,Cx486_name)
+(205,0)
+(206,c)
+(207,Cx86_cb)
+(208,Cx86_cb)
+(209,do_cyrix_devid(&dir0, &dir1)
+(210,PCI_VENDOR_ID_CYRIX)
+(211,p = Cx486_name[(cpu_has_fpu ? 1 : 0)
+(212,(dir1 & 0xf0)
+(213,dir0_msn = 7)
+(214,0x8f)
+(215,1)
+(216,case 4:)
+(217,dir0)
+(218,dir0_msn = dir0 >> 4)
+(219,dir0_msn)
+(220,1*32)
+(221,c->x86_mask = dir1 & 0xf)
+(222,dir1)
+(223,dir0_lsn)
+(224,dir0_msn)
+(225,p)
+(226,tmp)
+(227,Cx86_cb+2)
+(228,32)
+(229,Cx86_cb[tmp])
+(230,dir0)
+(231,dir1)
+(232,dir1 >> 4)
+(233,2)
+(234,1)
+(235,if (((dir1 & 0x0f)
+(236,(dir1 & 0x0f)
+(237,return;)
+(238,if (test_cpu_cap(c, 1*32+24)
+(239,getCx86(CX86_CCR7)
+(240,c->x86_mask)
+(241,dir0 & 0xf)
+(242,x86_model)
+(243,0xf0)
+(244,7)
+(245,c)
+(246,c->x86_model)
+(247,dir0_msn)
+(248,c)
+(249,p = (dir0_lsn & 8)
+(250,dir0_lsn & 1)
+(251,dir1 > 0x21)
+(252,isa_dma_bridge_buggy = 2)
+(253,2)
+(254,return;)
+(255,Cx86_cb)
+(256,test_cpu_cap(c, 1*32+24)
+(257,dir0_lsn)
+(258,Cx86_cb+2)
+(259,getCx86(CX86_CCR7)
+(260,5)
+(261,dir1)
+(262,c->cpuid_level == 2)
+(263,dir0_lsn & 5)
+(264,0x6f)
+(265,c)
+(266,case 3:)
+(267,cpu_has_fpu ? 1 : 0)
+(268,cyrix_model_mult2[dir0_lsn & 7])
+(269,c->x86_model_id)
+(270,dir0 >> 4)
+(271,Cx86_cb)
+(272,(c->x86_model)
+(273,p)
+(274,Cx86_cb[2])
+(275,(dir0_lsn & 1)
+(276,Cx86_cb[2] = cyrix_model_mult1[dir0_lsn & 5])
+(277,p = Cx86_cb+2)
+(278,0)
+(279,0x12)
+(280,set_cpu_cap(c, X86_FEATURE_CYRIX_ARR)
+(281,2)
+(282,c)
+(283,vendor == PCI_VENDOR_ID_CYRIX)
+(284,Cx486_name)
+(285,c->x86_model)
+(286,Cx86_cb[2] = cyrix_model_mult1[dir0_lsn & 5])
+(287,case 5:)
+(288,Cx86_dir0_msb = dir0_msn = dir0 >> 4)
+(289,dir1)
+(290,Cx86_cb)
+(291,\'4\')
+(292,if ((0x30 <= dir1 && dir1 <= 0x6f)
+(293,cyrix_model_mult1[dir0_lsn & 5])
+(294,case 1:)
+(295,geode_configure()
+(296,\' \')
+(297,device = read_pci_config_16(0, 0, 0x12, PCI_DEVICE_ID)
+(298,2)
+(299,buf)
+(300,X86_FEATURE_CYRIX_ARR)
+(301,break;)
+(302,set_cpu_bug(c, X86_BUG_COMA)
+(303,case 0xe:)
+(304,)
+(305,NULL)
+(306,dir0_msn++)
+(307,if (vendor == PCI_VENDOR_ID_CYRIX &&\n\\n\\t\\t\\t(device == PCI_DEVICE_ID_CYRIX_5510 ||\n\\n\\t\\t\\t\\t\\tdevice == PCI_DEVICE_ID_CYRIX_5520)
+(308,vendor == PCI_VENDOR_ID_CYRIX &&\n\\n\\t\\t\\t(device == PCI_DEVICE_ID_CYRIX_5510 ||\n\\n\\t\\t\\t\\t\\tdevice == PCI_DEVICE_ID_CYRIX_5520)
+(309,)
+(310,0x20)
+(311,cyrix_model_mult1)
+(312,Cx86_cb[0] = \'L\')
+(313,switch (dir0_msn)
+(314,break;)
+(315,dir1)
+(316,p)
+(317,device)
+(318,dir1)
+(319,7)
+(320,0x80 <= dir1)
+(321,set_cpu_cap(c, X86_FEATURE_CYRIX_ARR)
+(322,Cx86_dir0_msb)
+(323,c)
+(324,Cx486S_name[dir0_lsn & 3])
+(325,PCI_DEVICE_ID_CYRIX_5510)
+(326,dir0_lsn)
+(327,break;)
+(328,7)
+(329,x86_cache_size)
+(330,Cx486S_name)
+(331,switch (dir0_lsn)
+(332,dir0)
+(333,Cx86_cb)
+(334,c)
+(335,c->cpuid_level)
+(336,set_cpu_cap(c, X86_FEATURE_CXMMX)
+(337,\'L\')
+(338,16)
+(339,"cyrix 5510/5520 detected")
+(340,dir1)
+(341,0x80)
+(342,Cx486S_name[0])
+(343,p)
+(344,dir0_msn)
+(345,buf)
+(346,!(dir0_lsn & 7)
+(347,setCx86(CX86_CCR7, getCx86(CX86_CCR7)
+(348,Cx86_cb[2])
+(349,check_cx686_slop(c)
+(350,7)
+(351,buf)
+(352,)
+(353,1*32)
+(354,c)
+(355,)
+(356,getCx86(CX86_CCR7)
+(357,dir0_lsn & 7)
+(358,X86_BUG_COMA)
+(359,dir0_lsn & 7)
+(360,if (p)
+(361,break;)
+(362,c)
+(363,p)
+(364,1*32+24)
+(365,vendor)
+(366,dir0_lsn & 7)
+(367,&dir1)
+(368,dir0_lsn & 1)
+(369,break;)
+(370,1)
+(371,7)
+(372,read_pci_config_16(0, 0, 0x12, PCI_VENDOR_ID)
+(373,Cx86_cb[1])
+(374,p)
+(375,setCx86(CX86_CCR7, getCx86(CX86_CCR7)
+(376,p)
+(377,Cx86_cb[2])
+(378,1)
+(379,RET)
+(380,CX86_CCR7)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

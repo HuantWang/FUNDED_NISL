@@ -1,0 +1,2026 @@
+-----label-----
+0
+-----code-----
+static int of_dra7_atl_clk_probe(struct platform_device *pdev)
+{
+	struct device_node *node = pdev->dev.of_node;
+	struct dra7_atl_clock_info *cinfo;
+	int i;
+	int ret = 0;
+
+	if (!node)
+		return -ENODEV;
+
+	cinfo = devm_kzalloc(&pdev->dev, sizeof(*cinfo), GFP_KERNEL);
+	if (!cinfo)
+		return -ENOMEM;
+
+	cinfo->iobase = of_iomap(node, 0);
+	cinfo->dev = &pdev->dev;
+	pm_runtime_enable(cinfo->dev);
+	pm_runtime_irq_safe(cinfo->dev);
+
+	pm_runtime_get_sync(cinfo->dev);
+	atl_write(cinfo, DRA7_ATL_PCLKMUX_REG(0), DRA7_ATL_PCLKMUX);
+
+	for (i = 0; i < DRA7_ATL_INSTANCES; i++) {
+		struct device_node *cfg_node;
+		char prop[5];
+		struct dra7_atl_desc *cdesc;
+		struct of_phandle_args clkspec;
+		struct clk *clk;
+		int rc;
+
+		rc = of_parse_phandle_with_args(node, "ti,provided-clocks",
+						NULL, i, &clkspec);
+
+		if (rc) {
+			pr_err("%s: failed to lookup atl clock %d\n", __func__,
+			       i);
+			return -EINVAL;
+		}
+
+		clk = of_clk_get_from_provider(&clkspec);
+		if (IS_ERR(clk)) {
+			pr_err("%s: failed to get atl clock %d from provider\n",
+			       __func__, i);
+			return PTR_ERR(clk);
+		}
+
+		cdesc = to_atl_desc(__clk_get_hw(clk));
+		cdesc->cinfo = cinfo;
+		cdesc->id = i;
+
+		/* Get configuration for the ATL instances */
+		snprintf(prop, sizeof(prop), "atl%u", i);
+		cfg_node = of_get_child_by_name(node, prop);
+		if (cfg_node) {
+			ret = of_property_read_u32(cfg_node, "bws",
+						   &cdesc->bws);
+			ret |= of_property_read_u32(cfg_node, "aws",
+						    &cdesc->aws);
+			if (!ret) {
+				cdesc->valid = true;
+				atl_write(cinfo, DRA7_ATL_BWSMUX_REG(i),
+					  cdesc->bws);
+				atl_write(cinfo, DRA7_ATL_AWSMUX_REG(i),
+					  cdesc->aws);
+			}
+			of_node_put(cfg_node);
+		}
+
+		cdesc->probed = true;
+		/*
+		 * Enable the clock if it has been asked prior to loading the
+		 * hw driver
+		 */
+		if (cdesc->enabled)
+			atl_clk_enable(__clk_get_hw(clk));
+	}
+	pm_runtime_put_sync(cinfo->dev);
+
+	return ret;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+11,14
+11,15
+11,16
+11,17
+11,18
+11,19
+11,20
+11,21
+11,22
+11,23
+11,24
+11,25
+11,26
+11,27
+12,13
+13,14
+13,15
+14,15
+16,17
+16,18
+16,19
+19,20
+20,21
+20,22
+21,22
+21,23
+22,23
+26,27
+27,28
+27,29
+28,29
+30,31
+30,32
+33,34
+34,35
+34,36
+36,37
+38,39
+39,40
+39,41
+41,42
+41,43
+43,44
+45,46
+45,47
+46,47
+47,48
+49,50
+50,51
+51,52
+53,54
+54,55
+54,56
+55,56
+57,58
+57,59
+57,60
+57,61
+58,59
+60,61
+61,62
+61,63
+62,63
+65,66
+66,67
+67,68
+68,69
+70,71
+72,73
+72,74
+73,74
+74,75
+76,77
+77,78
+78,79
+80,81
+81,82
+81,83
+82,83
+82,84
+83,84
+86,87
+86,88
+86,89
+87,88
+89,90
+92,93
+93,94
+93,95
+94,95
+94,96
+95,96
+98,99
+99,100
+99,101
+100,101
+103,104
+104,105
+104,106
+105,106
+107,108
+107,109
+108,109
+111,112
+112,113
+112,114
+113,114
+115,116
+115,117
+116,117
+119,120
+120,121
+120,122
+121,122
+123,124
+123,125
+124,125
+127,128
+128,129
+128,130
+128,131
+128,132
+129,130
+131,132
+133,134
+133,135
+134,135
+137,138
+139,140
+139,141
+139,142
+139,143
+140,141
+141,142
+141,143
+142,143
+145,146
+145,147
+146,147
+148,149
+150,151
+151,152
+153,154
+153,155
+153,156
+153,157
+153,158
+153,159
+153,160
+153,161
+153,162
+153,163
+153,164
+153,165
+153,166
+153,167
+153,168
+153,169
+153,170
+153,171
+154,155
+155,156
+155,157
+156,157
+158,159
+158,160
+161,162
+162,163
+162,164
+164,165
+164,166
+166,167
+168,169
+169,170
+169,171
+170,171
+172,173
+172,174
+175,176
+176,177
+176,178
+177,178
+179,180
+181,182
+182,183
+182,184
+183,184
+185,186
+185,187
+188,189
+189,190
+189,191
+191,192
+193,194
+194,195
+194,196
+195,196
+197,198
+197,199
+197,200
+197,201
+197,202
+197,203
+198,199
+200,201
+203,204
+205,206
+207,208
+208,209
+210,211
+210,212
+211,212
+213,214
+213,215
+214,215
+215,216
+215,217
+215,218
+215,219
+216,217
+219,220
+221,222
+223,224
+224,225
+225,226
+227,228
+228,229
+228,230
+229,230
+231,232
+231,233
+232,233
+234,235
+235,236
+237,238
+237,239
+238,239
+238,240
+239,240
+241,242
+243,244
+243,245
+244,245
+245,246
+245,247
+245,248
+245,249
+246,247
+249,250
+251,252
+253,254
+254,255
+254,256
+255,256
+257,258
+259,260
+260,261
+260,262
+261,262
+263,264
+263,265
+264,265
+266,267
+266,268
+267,268
+269,270
+271,272
+272,273
+272,274
+273,274
+273,275
+274,275
+277,278
+279,280
+280,281
+280,282
+281,282
+281,283
+282,283
+285,286
+287,288
+288,289
+288,290
+288,291
+288,292
+288,293
+289,290
+291,292
+293,294
+294,295
+295,296
+298,299
+300,301
+301,302
+301,303
+302,303
+304,305
+304,306
+304,307
+305,306
+307,308
+309,310
+311,312
+311,313
+312,313
+314,315
+314,316
+314,317
+314,318
+315,316
+316,317
+316,318
+317,318
+319,320
+319,321
+319,322
+319,323
+320,321
+322,323
+325,326
+326,327
+326,328
+327,328
+330,331
+331,332
+331,333
+332,333
+334,335
+334,336
+334,337
+334,338
+335,336
+337,338
+340,341
+341,342
+341,343
+342,343
+345,346
+345,347
+346,347
+347,348
+349,350
+349,351
+349,352
+350,351
+351,352
+351,353
+352,353
+352,354
+353,354
+357,358
+358,359
+358,360
+358,361
+358,362
+359,360
+361,362
+363,364
+363,365
+364,365
+366,367
+368,369
+368,370
+369,370
+372,373
+373,374
+373,375
+373,376
+373,377
+374,375
+376,377
+378,379
+378,380
+379,380
+381,382
+383,384
+383,385
+384,385
+387,388
+388,389
+388,390
+389,390
+391,392
+393,394
+394,395
+394,396
+395,396
+395,397
+396,397
+400,401
+400,402
+401,402
+401,403
+402,403
+405,406
+406,407
+406,408
+407,408
+409,410
+409,411
+410,411
+412,413
+414,415
+415,416
+415,417
+416,417
+418,419
+418,420
+419,420
+422,423
+423,424
+-----nextToken-----
+2,4,7,9,10,15,17,18,23,24,25,29,31,32,35,37,40,42,44,48,52,56,59,63,64,69,71,75,79,84,85,88,90,91,96,97,101,102,106,109,110,114,117,118,122,125,126,130,132,135,136,138,143,144,147,149,152,157,159,160,163,165,167,171,173,174,178,180,184,186,187,190,192,196,199,201,202,204,206,209,212,217,218,220,222,226,230,233,236,240,242,247,248,250,252,256,258,262,265,268,270,275,276,278,283,284,286,290,292,296,297,299,303,306,308,310,313,318,321,323,324,328,329,333,336,338,339,343,344,348,354,355,356,360,362,365,367,370,371,375,377,380,382,385,386,390,392,397,398,399,403,404,408,411,413,417,420,421,424
+-----computeFrom-----
+54,55
+54,56
+81,82
+81,83
+93,94
+93,95
+141,142
+141,143
+145,146
+145,147
+194,195
+194,196
+228,229
+228,230
+260,261
+260,262
+272,273
+272,274
+280,281
+280,282
+301,302
+301,303
+316,317
+316,318
+331,332
+331,333
+351,352
+351,353
+394,395
+394,396
+-----guardedBy-----
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FieldReference;FieldReference;IdExpression;Name;Name;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;IfStatement;UnaryExpression;IdExpression;Name;ReturnStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;UnaryExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;IdExpression;Name;ReturnStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;ArrayDeclarator;Name;ArrayModifier;LiteralExpression;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;UnaryExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;UnaryExpression;FieldReference;IdExpression;Name;Name;IfStatement;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;IfStatement;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+static int of_dra7_atl_clk_probe(struct platform_device *pdev){	struct device_node *node = pdev->dev.of_node;	struct dra7_atl_clock_info *cinfo;	int i;	int ret = 0;	if (!node)		return -ENODEV;	cinfo = devm_kzalloc(&pdev->dev, sizeof(*cinfo), GFP_KERNEL);	if (!cinfo)		return -ENOMEM;	cinfo->iobase = of_iomap(node, 0);	cinfo->dev = &pdev->dev;	pm_runtime_enable(cinfo->dev);	pm_runtime_irq_safe(cinfo->dev);	pm_runtime_get_sync(cinfo->dev);	atl_write(cinfo, DRA7_ATL_PCLKMUX_REG(0), DRA7_ATL_PCLKMUX);	for (i = 0; i < DRA7_ATL_INSTANCES; i++) {		struct device_node *cfg_node;		char prop[5];		struct dra7_atl_desc *cdesc;		struct of_phandle_args clkspec;		struct clk *clk;		int rc;		rc = of_parse_phandle_with_args(node, "ti,provided-clocks",						NULL, i, &clkspec);		if (rc) {			pr_err("%s: failed to lookup atl clock %d\n", __func__,			       i);			return -EINVAL;		}		clk = of_clk_get_from_provider(&clkspec);		if (IS_ERR(clk)) {			pr_err("%s: failed to get atl clock %d from provider\n",			       __func__, i);			return PTR_ERR(clk);		}		cdesc = to_atl_desc(__clk_get_hw(clk));		cdesc->cinfo = cinfo;		cdesc->id = i;		/* Get configuration for the ATL instances */		snprintf(prop, sizeof(prop), "atl%u", i);		cfg_node = of_get_child_by_name(node, prop);		if (cfg_node) {			ret = of_property_read_u32(cfg_node, "bws",						   &cdesc->bws);			ret |= of_property_read_u32(cfg_node, "aws",						    &cdesc->aws);			if (!ret) {				cdesc->valid = true;				atl_write(cinfo, DRA7_ATL_BWSMUX_REG(i),					  cdesc->bws);				atl_write(cinfo, DRA7_ATL_AWSMUX_REG(i),					  cdesc->aws);			}			of_node_put(cfg_node);		}		cdesc->probed = true;		/*		 * Enable the clock if it has been asked prior to loading the		 * hw driver		 */		if (cdesc->enabled)			atl_clk_enable(__clk_get_hw(clk));	}	pm_runtime_put_sync(cinfo->dev);	return ret;}
+static int
+of_dra7_atl_clk_probe(struct platform_device *pdev)
+of_dra7_atl_clk_probe
+struct platform_device *pdev
+struct platform_device
+platform_device
+*pdev
+*
+pdev
+{	struct device_node *node = pdev->dev.of_node;	struct dra7_atl_clock_info *cinfo;	int i;	int ret = 0;	if (!node)		return -ENODEV;	cinfo = devm_kzalloc(&pdev->dev, sizeof(*cinfo), GFP_KERNEL);	if (!cinfo)		return -ENOMEM;	cinfo->iobase = of_iomap(node, 0);	cinfo->dev = &pdev->dev;	pm_runtime_enable(cinfo->dev);	pm_runtime_irq_safe(cinfo->dev);	pm_runtime_get_sync(cinfo->dev);	atl_write(cinfo, DRA7_ATL_PCLKMUX_REG(0), DRA7_ATL_PCLKMUX);	for (i = 0; i < DRA7_ATL_INSTANCES; i++) {		struct device_node *cfg_node;		char prop[5];		struct dra7_atl_desc *cdesc;		struct of_phandle_args clkspec;		struct clk *clk;		int rc;		rc = of_parse_phandle_with_args(node, "ti,provided-clocks",						NULL, i, &clkspec);		if (rc) {			pr_err("%s: failed to lookup atl clock %d\n", __func__,			       i);			return -EINVAL;		}		clk = of_clk_get_from_provider(&clkspec);		if (IS_ERR(clk)) {			pr_err("%s: failed to get atl clock %d from provider\n",			       __func__, i);			return PTR_ERR(clk);		}		cdesc = to_atl_desc(__clk_get_hw(clk));		cdesc->cinfo = cinfo;		cdesc->id = i;		/* Get configuration for the ATL instances */		snprintf(prop, sizeof(prop), "atl%u", i);		cfg_node = of_get_child_by_name(node, prop);		if (cfg_node) {			ret = of_property_read_u32(cfg_node, "bws",						   &cdesc->bws);			ret |= of_property_read_u32(cfg_node, "aws",						    &cdesc->aws);			if (!ret) {				cdesc->valid = true;				atl_write(cinfo, DRA7_ATL_BWSMUX_REG(i),					  cdesc->bws);				atl_write(cinfo, DRA7_ATL_AWSMUX_REG(i),					  cdesc->aws);			}			of_node_put(cfg_node);		}		cdesc->probed = true;		/*		 * Enable the clock if it has been asked prior to loading the		 * hw driver		 */		if (cdesc->enabled)			atl_clk_enable(__clk_get_hw(clk));	}	pm_runtime_put_sync(cinfo->dev);	return ret;}
+struct device_node *node = pdev->dev.of_node;
+struct device_node *node = pdev->dev.of_node;
+struct device_node
+device_node
+*node = pdev->dev.of_node
+*
+node
+= pdev->dev.of_node
+pdev->dev.of_node
+pdev->dev
+pdev
+pdev
+dev
+of_node
+struct dra7_atl_clock_info *cinfo;
+struct dra7_atl_clock_info *cinfo;
+struct dra7_atl_clock_info
+dra7_atl_clock_info
+*cinfo
+*
+cinfo
+int i;
+int i;
+int
+i
+i
+int ret = 0;
+int ret = 0;
+int
+ret = 0
+ret
+= 0
+0
+if (!node)		return -ENODEV;
+!node
+node
+node
+return -ENODEV;
+-ENODEV
+ENODEV
+ENODEV
+cinfo = devm_kzalloc(&pdev->dev, sizeof(*cinfo), GFP_KERNEL);
+cinfo = devm_kzalloc(&pdev->dev, sizeof(*cinfo), GFP_KERNEL)
+cinfo
+cinfo
+devm_kzalloc(&pdev->dev, sizeof(*cinfo), GFP_KERNEL)
+devm_kzalloc
+devm_kzalloc
+&pdev->dev
+pdev->dev
+pdev
+pdev
+dev
+sizeof(*cinfo)
+(*cinfo)
+*cinfo
+cinfo
+cinfo
+GFP_KERNEL
+GFP_KERNEL
+if (!cinfo)		return -ENOMEM;
+!cinfo
+cinfo
+cinfo
+return -ENOMEM;
+-ENOMEM
+ENOMEM
+ENOMEM
+cinfo->iobase = of_iomap(node, 0);
+cinfo->iobase = of_iomap(node, 0)
+cinfo->iobase
+cinfo
+cinfo
+iobase
+of_iomap(node, 0)
+of_iomap
+of_iomap
+node
+node
+0
+cinfo->dev = &pdev->dev;
+cinfo->dev = &pdev->dev
+cinfo->dev
+cinfo
+cinfo
+dev
+&pdev->dev
+pdev->dev
+pdev
+pdev
+dev
+pm_runtime_enable(cinfo->dev);
+pm_runtime_enable(cinfo->dev)
+pm_runtime_enable
+pm_runtime_enable
+cinfo->dev
+cinfo
+cinfo
+dev
+pm_runtime_irq_safe(cinfo->dev);
+pm_runtime_irq_safe(cinfo->dev)
+pm_runtime_irq_safe
+pm_runtime_irq_safe
+cinfo->dev
+cinfo
+cinfo
+dev
+pm_runtime_get_sync(cinfo->dev);
+pm_runtime_get_sync(cinfo->dev)
+pm_runtime_get_sync
+pm_runtime_get_sync
+cinfo->dev
+cinfo
+cinfo
+dev
+atl_write(cinfo, DRA7_ATL_PCLKMUX_REG(0), DRA7_ATL_PCLKMUX);
+atl_write(cinfo, DRA7_ATL_PCLKMUX_REG(0), DRA7_ATL_PCLKMUX)
+atl_write
+atl_write
+cinfo
+cinfo
+DRA7_ATL_PCLKMUX_REG(0)
+DRA7_ATL_PCLKMUX_REG
+DRA7_ATL_PCLKMUX_REG
+0
+DRA7_ATL_PCLKMUX
+DRA7_ATL_PCLKMUX
+for (i = 0; i < DRA7_ATL_INSTANCES; i++) {		struct device_node *cfg_node;		char prop[5];		struct dra7_atl_desc *cdesc;		struct of_phandle_args clkspec;		struct clk *clk;		int rc;		rc = of_parse_phandle_with_args(node, "ti,provided-clocks",						NULL, i, &clkspec);		if (rc) {			pr_err("%s: failed to lookup atl clock %d\n", __func__,			       i);			return -EINVAL;		}		clk = of_clk_get_from_provider(&clkspec);		if (IS_ERR(clk)) {			pr_err("%s: failed to get atl clock %d from provider\n",			       __func__, i);			return PTR_ERR(clk);		}		cdesc = to_atl_desc(__clk_get_hw(clk));		cdesc->cinfo = cinfo;		cdesc->id = i;		/* Get configuration for the ATL instances */		snprintf(prop, sizeof(prop), "atl%u", i);		cfg_node = of_get_child_by_name(node, prop);		if (cfg_node) {			ret = of_property_read_u32(cfg_node, "bws",						   &cdesc->bws);			ret |= of_property_read_u32(cfg_node, "aws",						    &cdesc->aws);			if (!ret) {				cdesc->valid = true;				atl_write(cinfo, DRA7_ATL_BWSMUX_REG(i),					  cdesc->bws);				atl_write(cinfo, DRA7_ATL_AWSMUX_REG(i),					  cdesc->aws);			}			of_node_put(cfg_node);		}		cdesc->probed = true;		/*		 * Enable the clock if it has been asked prior to loading the		 * hw driver		 */		if (cdesc->enabled)			atl_clk_enable(__clk_get_hw(clk));	}
+i = 0;
+i = 0
+i
+i
+0
+i < DRA7_ATL_INSTANCES
+i
+i
+DRA7_ATL_INSTANCES
+DRA7_ATL_INSTANCES
+i++
+i
+i
+{		struct device_node *cfg_node;		char prop[5];		struct dra7_atl_desc *cdesc;		struct of_phandle_args clkspec;		struct clk *clk;		int rc;		rc = of_parse_phandle_with_args(node, "ti,provided-clocks",						NULL, i, &clkspec);		if (rc) {			pr_err("%s: failed to lookup atl clock %d\n", __func__,			       i);			return -EINVAL;		}		clk = of_clk_get_from_provider(&clkspec);		if (IS_ERR(clk)) {			pr_err("%s: failed to get atl clock %d from provider\n",			       __func__, i);			return PTR_ERR(clk);		}		cdesc = to_atl_desc(__clk_get_hw(clk));		cdesc->cinfo = cinfo;		cdesc->id = i;		/* Get configuration for the ATL instances */		snprintf(prop, sizeof(prop), "atl%u", i);		cfg_node = of_get_child_by_name(node, prop);		if (cfg_node) {			ret = of_property_read_u32(cfg_node, "bws",						   &cdesc->bws);			ret |= of_property_read_u32(cfg_node, "aws",						    &cdesc->aws);			if (!ret) {				cdesc->valid = true;				atl_write(cinfo, DRA7_ATL_BWSMUX_REG(i),					  cdesc->bws);				atl_write(cinfo, DRA7_ATL_AWSMUX_REG(i),					  cdesc->aws);			}			of_node_put(cfg_node);		}		cdesc->probed = true;		/*		 * Enable the clock if it has been asked prior to loading the		 * hw driver		 */		if (cdesc->enabled)			atl_clk_enable(__clk_get_hw(clk));	}
+struct device_node *cfg_node;
+struct device_node *cfg_node;
+struct device_node
+device_node
+*cfg_node
+*
+cfg_node
+char prop[5];
+char prop[5];
+char
+prop[5]
+prop
+[5]
+5
+struct dra7_atl_desc *cdesc;
+struct dra7_atl_desc *cdesc;
+struct dra7_atl_desc
+dra7_atl_desc
+*cdesc
+*
+cdesc
+struct of_phandle_args clkspec;
+struct of_phandle_args clkspec;
+struct of_phandle_args
+of_phandle_args
+clkspec
+clkspec
+struct clk *clk;
+struct clk *clk;
+struct clk
+clk
+*clk
+*
+clk
+int rc;
+int rc;
+int
+rc
+rc
+rc = of_parse_phandle_with_args(node, "ti,provided-clocks",						NULL, i, &clkspec);
+rc = of_parse_phandle_with_args(node, "ti,provided-clocks",						NULL, i, &clkspec)
+rc
+rc
+of_parse_phandle_with_args(node, "ti,provided-clocks",						NULL, i, &clkspec)
+of_parse_phandle_with_args
+of_parse_phandle_with_args
+node
+node
+"ti,provided-clocks"
+NULL
+NULL
+i
+i
+&clkspec
+clkspec
+clkspec
+if (rc) {			pr_err("%s: failed to lookup atl clock %d\n", __func__,			       i);			return -EINVAL;		}
+rc
+rc
+{			pr_err("%s: failed to lookup atl clock %d\n", __func__,			       i);			return -EINVAL;		}
+pr_err("%s: failed to lookup atl clock %d\n", __func__,			       i);
+pr_err("%s: failed to lookup atl clock %d\n", __func__,			       i)
+pr_err
+pr_err
+"%s: failed to lookup atl clock %d\n"
+__func__
+__func__
+i
+i
+return -EINVAL;
+-EINVAL
+EINVAL
+EINVAL
+clk = of_clk_get_from_provider(&clkspec);
+clk = of_clk_get_from_provider(&clkspec)
+clk
+clk
+of_clk_get_from_provider(&clkspec)
+of_clk_get_from_provider
+of_clk_get_from_provider
+&clkspec
+clkspec
+clkspec
+if (IS_ERR(clk)) {			pr_err("%s: failed to get atl clock %d from provider\n",			       __func__, i);			return PTR_ERR(clk);		}
+IS_ERR(clk)
+IS_ERR
+IS_ERR
+clk
+clk
+{			pr_err("%s: failed to get atl clock %d from provider\n",			       __func__, i);			return PTR_ERR(clk);		}
+pr_err("%s: failed to get atl clock %d from provider\n",			       __func__, i);
+pr_err("%s: failed to get atl clock %d from provider\n",			       __func__, i)
+pr_err
+pr_err
+"%s: failed to get atl clock %d from provider\n"
+__func__
+__func__
+i
+i
+return PTR_ERR(clk);
+PTR_ERR(clk)
+PTR_ERR
+PTR_ERR
+clk
+clk
+cdesc = to_atl_desc(__clk_get_hw(clk));
+cdesc = to_atl_desc(__clk_get_hw(clk))
+cdesc
+cdesc
+to_atl_desc(__clk_get_hw(clk))
+to_atl_desc
+to_atl_desc
+__clk_get_hw(clk)
+__clk_get_hw
+__clk_get_hw
+clk
+clk
+cdesc->cinfo = cinfo;
+cdesc->cinfo = cinfo
+cdesc->cinfo
+cdesc
+cdesc
+cinfo
+cinfo
+cinfo
+cdesc->id = i;
+cdesc->id = i
+cdesc->id
+cdesc
+cdesc
+id
+i
+i
+snprintf(prop, sizeof(prop), "atl%u", i);
+snprintf(prop, sizeof(prop), "atl%u", i)
+snprintf
+snprintf
+prop
+prop
+sizeof(prop)
+(prop)
+prop
+prop
+"atl%u"
+i
+i
+cfg_node = of_get_child_by_name(node, prop);
+cfg_node = of_get_child_by_name(node, prop)
+cfg_node
+cfg_node
+of_get_child_by_name(node, prop)
+of_get_child_by_name
+of_get_child_by_name
+node
+node
+prop
+prop
+if (cfg_node) {			ret = of_property_read_u32(cfg_node, "bws",						   &cdesc->bws);			ret |= of_property_read_u32(cfg_node, "aws",						    &cdesc->aws);			if (!ret) {				cdesc->valid = true;				atl_write(cinfo, DRA7_ATL_BWSMUX_REG(i),					  cdesc->bws);				atl_write(cinfo, DRA7_ATL_AWSMUX_REG(i),					  cdesc->aws);			}			of_node_put(cfg_node);		}
+cfg_node
+cfg_node
+{			ret = of_property_read_u32(cfg_node, "bws",						   &cdesc->bws);			ret |= of_property_read_u32(cfg_node, "aws",						    &cdesc->aws);			if (!ret) {				cdesc->valid = true;				atl_write(cinfo, DRA7_ATL_BWSMUX_REG(i),					  cdesc->bws);				atl_write(cinfo, DRA7_ATL_AWSMUX_REG(i),					  cdesc->aws);			}			of_node_put(cfg_node);		}
+ret = of_property_read_u32(cfg_node, "bws",						   &cdesc->bws);
+ret = of_property_read_u32(cfg_node, "bws",						   &cdesc->bws)
+ret
+ret
+of_property_read_u32(cfg_node, "bws",						   &cdesc->bws)
+of_property_read_u32
+of_property_read_u32
+cfg_node
+cfg_node
+"bws"
+&cdesc->bws
+cdesc->bws
+cdesc
+cdesc
+bws
+ret |= of_property_read_u32(cfg_node, "aws",						    &cdesc->aws);
+ret |= of_property_read_u32(cfg_node, "aws",						    &cdesc->aws)
+ret
+ret
+of_property_read_u32(cfg_node, "aws",						    &cdesc->aws)
+of_property_read_u32
+of_property_read_u32
+cfg_node
+cfg_node
+"aws"
+&cdesc->aws
+cdesc->aws
+cdesc
+cdesc
+aws
+if (!ret) {				cdesc->valid = true;				atl_write(cinfo, DRA7_ATL_BWSMUX_REG(i),					  cdesc->bws);				atl_write(cinfo, DRA7_ATL_AWSMUX_REG(i),					  cdesc->aws);			}
+!ret
+ret
+ret
+{				cdesc->valid = true;				atl_write(cinfo, DRA7_ATL_BWSMUX_REG(i),					  cdesc->bws);				atl_write(cinfo, DRA7_ATL_AWSMUX_REG(i),					  cdesc->aws);			}
+cdesc->valid = true;
+cdesc->valid = true
+cdesc->valid
+cdesc
+cdesc
+valid
+true
+atl_write(cinfo, DRA7_ATL_BWSMUX_REG(i),					  cdesc->bws);
+atl_write(cinfo, DRA7_ATL_BWSMUX_REG(i),					  cdesc->bws)
+atl_write
+atl_write
+cinfo
+cinfo
+DRA7_ATL_BWSMUX_REG(i)
+DRA7_ATL_BWSMUX_REG
+DRA7_ATL_BWSMUX_REG
+i
+i
+cdesc->bws
+cdesc
+cdesc
+bws
+atl_write(cinfo, DRA7_ATL_AWSMUX_REG(i),					  cdesc->aws);
+atl_write(cinfo, DRA7_ATL_AWSMUX_REG(i),					  cdesc->aws)
+atl_write
+atl_write
+cinfo
+cinfo
+DRA7_ATL_AWSMUX_REG(i)
+DRA7_ATL_AWSMUX_REG
+DRA7_ATL_AWSMUX_REG
+i
+i
+cdesc->aws
+cdesc
+cdesc
+aws
+of_node_put(cfg_node);
+of_node_put(cfg_node)
+of_node_put
+of_node_put
+cfg_node
+cfg_node
+cdesc->probed = true;
+cdesc->probed = true
+cdesc->probed
+cdesc
+cdesc
+probed
+true
+if (cdesc->enabled)			atl_clk_enable(__clk_get_hw(clk));
+cdesc->enabled
+cdesc
+cdesc
+enabled
+atl_clk_enable(__clk_get_hw(clk));
+atl_clk_enable(__clk_get_hw(clk))
+atl_clk_enable
+atl_clk_enable
+__clk_get_hw(clk)
+__clk_get_hw
+__clk_get_hw
+clk
+clk
+pm_runtime_put_sync(cinfo->dev);
+pm_runtime_put_sync(cinfo->dev)
+pm_runtime_put_sync
+pm_runtime_put_sync
+cinfo->dev
+cinfo
+cinfo
+dev
+return ret;
+ret
+ret
+-----joern-----
+(31,202,0)
+(92,159,0)
+(212,171,0)
+(44,104,0)
+(180,15,0)
+(22,199,0)
+(151,100,0)
+(54,90,0)
+(171,193,0)
+(80,16,0)
+(78,116,0)
+(40,98,0)
+(96,28,0)
+(201,77,0)
+(193,171,0)
+(197,199,0)
+(71,12,0)
+(26,110,0)
+(82,142,0)
+(150,190,0)
+(119,90,0)
+(139,90,0)
+(126,53,0)
+(32,78,0)
+(190,112,0)
+(55,153,0)
+(158,195,0)
+(3,145,0)
+(118,180,0)
+(145,184,0)
+(169,117,0)
+(110,171,0)
+(106,116,0)
+(35,171,0)
+(47,75,0)
+(142,132,0)
+(117,23,0)
+(180,118,0)
+(72,159,0)
+(154,167,0)
+(140,131,0)
+(21,159,0)
+(207,199,0)
+(117,90,0)
+(85,118,0)
+(65,6,0)
+(10,157,0)
+(211,161,0)
+(120,127,0)
+(51,90,0)
+(172,178,0)
+(46,201,0)
+(180,116,0)
+(124,184,0)
+(155,96,0)
+(200,202,0)
+(132,142,0)
+(168,92,0)
+(144,111,0)
+(8,0,0)
+(20,96,0)
+(171,199,0)
+(11,77,0)
+(145,37,0)
+(25,136,0)
+(71,90,0)
+(62,211,0)
+(105,210,0)
+(106,212,0)
+(69,75,0)
+(39,180,0)
+(179,89,0)
+(77,199,0)
+(106,15,0)
+(191,46,0)
+(50,178,0)
+(68,202,0)
+(14,57,0)
+(178,50,0)
+(94,165,0)
+(192,180,0)
+(95,199,0)
+(79,93,0)
+(130,87,0)
+(190,125,0)
+(45,174,0)
+(81,199,0)
+(64,207,0)
+(146,100,0)
+(84,192,0)
+(210,98,0)
+(19,152,0)
+(160,98,0)
+(167,171,0)
+(63,72,0)
+(157,106,0)
+(13,159,0)
+(5,183,0)
+(175,116,0)
+(181,100,0)
+(184,152,0)
+(149,183,0)
+(58,92,0)
+(16,178,0)
+(196,199,0)
+(110,207,0)
+(103,153,0)
+(37,90,0)
+(46,110,0)
+(131,139,0)
+(107,12,0)
+(36,151,0)
+(136,4,0)
+(135,19,0)
+(150,161,0)
+(131,116,0)
+(104,159,0)
+(195,171,0)
+(97,89,0)
+(184,90,0)
+(180,192,0)
+(108,142,0)
+(192,171,0)
+(87,116,0)
+(112,171,0)
+(127,111,0)
+(117,111,0)
+(7,189,0)
+(150,0,0)
+(198,19,0)
+(102,136,0)
+(113,191,0)
+(118,159,0)
+(138,65,0)
+(166,174,0)
+(141,199,0)
+(111,127,0)
+(189,7,0)
+(189,5,0)
+(17,104,0)
+(143,23,0)
+(40,202,0)
+(78,29,0)
+(127,93,0)
+(150,46,0)
+(104,173,0)
+(101,72,0)
+(167,68,0)
+(56,40,0)
+(150,117,0)
+(112,87,0)
+(145,116,0)
+(23,90,0)
+(75,69,0)
+(53,92,0)
+(76,167,0)
+(74,78,0)
+(164,209,0)
+(122,183,0)
+(93,199,0)
+(61,112,0)
+(194,15,0)
+(176,4,0)
+(52,199,0)
+(116,90,0)
+(111,98,0)
+(92,199,0)
+(156,104,0)
+(19,186,0)
+(48,164,0)
+(12,71,0)
+(178,100,0)
+(100,90,0)
+(131,184,0)
+(86,65,0)
+(187,178,0)
+(128,151,0)
+(153,199,0)
+(37,145,0)
+(132,100,0)
+(204,50,0)
+(202,93,0)
+(136,116,0)
+(88,199,0)
+(116,189,0)
+(152,184,0)
+(182,7,0)
+(67,110,0)
+(111,40,0)
+(185,131,0)
+(18,23,0)
+(106,157,0)
+(212,106,0)
+(65,116,0)
+(49,111,0)
+(129,12,0)
+(16,199,0)
+(146,93,0)
+(153,209,0)
+(121,159,0)
+(60,201,0)
+(4,136,0)
+(136,90,0)
+(57,100,0)
+(195,194,0)
+(83,153,0)
+(12,116,0)
+(9,124,0)
+(190,201,0)
+(24,212,0)
+(206,146,0)
+(42,212,0)
+(151,29,0)
+(210,93,0)
+(174,159,0)
+(6,90,0)
+(178,16,0)
+(147,103,0)
+(66,132,0)
+(46,112,0)
+(46,195,0)
+(34,8,0)
+(190,110,0)
+(68,167,0)
+(133,195,0)
+(7,182,0)
+(190,195,0)
+(124,116,0)
+(33,90,0)
+(178,159,0)
+(123,178,0)
+(87,199,0)
+(163,201,0)
+(41,178,0)
+(100,132,0)
+(2,146,0)
+(93,146,0)
+(46,173,0)
+(99,190,0)
+(157,159,0)
+(162,49,0)
+(190,124,0)
+(202,40,0)
+(77,159,0)
+(75,153,0)
+(201,171,0)
+(193,103,0)
+(109,90,0)
+(202,68,0)
+(28,127,0)
+(43,127,0)
+(89,171,0)
+(5,189,0)
+(137,92,0)
+(208,55,0)
+(28,96,0)
+(170,145,0)
+(209,153,0)
+(73,182,0)
+(183,186,0)
+(103,193,0)
+(203,106,0)
+(29,90,0)
+(142,186,0)
+(27,194,0)
+(209,164,0)
+(115,112,0)
+(205,199,0)
+(30,199,0)
+(148,21,0)
+(114,90,0)
+(139,131,0)
+(70,124,0)
+(96,171,0)
+(38,90,0)
+(183,5,0)
+(29,151,0)
+(6,65,0)
+(127,28,0)
+(174,125,0)
+(165,116,0)
+(91,99,0)
+(1,189,0)
+(92,53,0)
+(191,153,0)
+(46,78,0)
+(12,184,0)
+(46,124,0)
+(65,184,0)
+(190,78,0)
+(152,19,0)
+(134,174,0)
+(189,116,0)
+(188,192,0)
+(202,93,1)
+(89,97,1)
+(26,177,1)
+(104,159,1)
+(61,171,1)
+(183,186,1)
+(75,47,1)
+(175,57,1)
+(63,159,1)
+(153,209,1)
+(18,100,1)
+(44,55,1)
+(110,171,1)
+(26,210,1)
+(0,8,1)
+(132,66,1)
+(166,45,1)
+(5,183,1)
+(124,116,1)
+(106,116,1)
+(156,17,1)
+(189,7,1)
+(32,165,1)
+(195,171,1)
+(187,123,1)
+(80,72,1)
+(99,91,1)
+(167,76,1)
+(20,43,1)
+(60,87,1)
+(19,198,1)
+(117,23,1)
+(72,159,1)
+(72,101,1)
+(150,46,1)
+(180,192,1)
+(21,148,1)
+(35,55,1)
+(212,24,1)
+(144,40,1)
+(48,83,1)
+(126,58,1)
+(101,63,1)
+(145,3,1)
+(14,23,1)
+(46,110,1)
+(3,170,1)
+(158,49,1)
+(28,96,1)
+(97,179,1)
+(58,77,1)
+(194,27,1)
+(47,89,1)
+(66,142,1)
+(117,111,1)
+(24,42,1)
+(208,153,1)
+(93,146,1)
+(168,137,1)
+(31,56,1)
+(36,78,1)
+(103,153,1)
+(198,135,1)
+(29,151,1)
+(165,94,1)
+(190,99,1)
+(157,10,1)
+(107,129,1)
+(211,62,1)
+(96,171,1)
+(73,5,1)
+(131,116,1)
+(67,26,1)
+(169,71,1)
+(190,201,1)
+(176,25,1)
+(46,191,1)
+(190,110,1)
+(4,176,1)
+(193,103,1)
+(77,159,1)
+(71,12,1)
+(190,124,1)
+(183,149,1)
+(127,28,1)
+(195,133,1)
+(113,104,1)
+(201,163,1)
+(7,182,1)
+(68,167,1)
+(127,93,1)
+(55,208,1)
+(85,39,1)
+(192,171,1)
+(116,189,1)
+(150,161,1)
+(204,172,1)
+(13,136,1)
+(210,105,1)
+(12,116,1)
+(6,65,1)
+(59,16,1)
+(172,187,1)
+(8,34,1)
+(77,11,1)
+(145,184,1)
+(139,131,1)
+(108,181,1)
+(106,157,1)
+(122,175,1)
+(150,190,1)
+(55,153,1)
+(174,159,1)
+(145,116,1)
+(37,145,1)
+(154,200,1)
+(46,78,1)
+(105,180,1)
+(12,107,1)
+(123,41,1)
+(76,154,1)
+(112,115,1)
+(65,86,1)
+(117,169,1)
+(178,100,1)
+(190,78,1)
+(100,132,1)
+(46,195,1)
+(191,113,1)
+(103,147,1)
+(174,166,1)
+(46,112,1)
+(63,21,1)
+(102,4,1)
+(11,201,1)
+(70,9,1)
+(46,124,1)
+(164,48,1)
+(151,100,1)
+(115,61,1)
+(79,92,1)
+(163,60,1)
+(189,5,1)
+(132,142,1)
+(171,193,1)
+(92,159,1)
+(65,116,1)
+(212,171,1)
+(138,139,1)
+(118,85,1)
+(53,126,1)
+(69,75,1)
+(151,128,1)
+(155,20,1)
+(34,165,1)
+(150,0,1)
+(12,184,1)
+(106,212,1)
+(184,152,1)
+(39,106,1)
+(133,158,1)
+(75,153,1)
+(87,130,1)
+(157,159,1)
+(202,68,1)
+(149,122,1)
+(207,64,1)
+(180,116,1)
+(1,7,1)
+(110,67,1)
+(130,112,1)
+(180,118,1)
+(136,102,1)
+(131,185,1)
+(185,140,1)
+(142,82,1)
+(41,80,1)
+(83,59,1)
+(92,53,1)
+(105,49,1)
+(112,171,1)
+(16,178,1)
+(137,53,1)
+(78,116,1)
+(118,159,1)
+(19,186,1)
+(49,162,1)
+(27,195,1)
+(165,116,1)
+(182,73,1)
+(17,44,1)
+(146,100,1)
+(209,164,1)
+(179,207,1)
+(203,194,1)
+(87,116,1)
+(84,118,1)
+(111,40,1)
+(200,31,1)
+(45,134,1)
+(148,89,1)
+(49,111,1)
+(210,93,1)
+(201,171,1)
+(56,177,1)
+(146,206,1)
+(10,203,1)
+(78,74,1)
+(50,204,1)
+(140,37,1)
+(159,121,1)
+(189,1,1)
+(190,112,1)
+(128,36,1)
+(62,57,1)
+(111,127,1)
+(46,201,1)
+(135,124,1)
+(161,211,1)
+(178,159,1)
+(148,69,1)
+(142,186,1)
+(25,6,1)
+(136,4,1)
+(74,32,1)
+(57,100,1)
+(178,50,1)
+(170,184,1)
+(2,79,1)
+(120,144,1)
+(177,93,1)
+(131,184,1)
+(9,29,1)
+(57,14,1)
+(94,116,1)
+(91,174,1)
+(82,108,1)
+(42,157,1)
+(192,188,1)
+(147,35,1)
+(162,111,1)
+(89,171,1)
+(96,155,1)
+(43,120,1)
+(190,195,1)
+(188,84,1)
+(121,13,1)
+(206,2,1)
+(134,59,1)
+(21,159,1)
+(191,153,1)
+(136,116,1)
+(65,184,1)
+(129,72,1)
+(143,18,1)
+(40,202,1)
+(86,138,1)
+(152,19,1)
+(167,171,1)
+(23,143,1)
+(150,117,1)
+(92,168,1)
+(104,156,1)
+(64,110,1)
+(124,70,1)
+(5,183,2)
+(46,55,2)
+(96,171,2)
+(117,72,2)
+(128,165,2)
+(118,49,2)
+(34,165,2)
+(10,49,2)
+(7,57,2)
+(46,110,2)
+(152,165,2)
+(123,72,2)
+(137,55,2)
+(72,159,2)
+(94,57,2)
+(202,93,2)
+(7,182,2)
+(24,49,2)
+(69,75,2)
+(62,57,2)
+(89,55,2)
+(179,55,2)
+(208,59,2)
+(136,116,2)
+(25,165,2)
+(131,116,2)
+(40,202,2)
+(189,5,2)
+(46,195,2)
+(67,55,2)
+(111,127,2)
+(72,55,2)
+(144,177,2)
+(65,165,2)
+(44,55,2)
+(183,57,2)
+(209,164,2)
+(55,153,2)
+(28,96,2)
+(50,72,2)
+(198,165,2)
+(53,55,2)
+(127,93,2)
+(174,159,2)
+(41,72,2)
+(190,78,2)
+(158,49,2)
+(21,159,2)
+(26,55,2)
+(195,49,2)
+(152,19,2)
+(150,161,2)
+(201,171,2)
+(71,72,2)
+(12,72,2)
+(139,165,2)
+(134,59,2)
+(192,49,2)
+(105,177,2)
+(172,72,2)
+(187,72,2)
+(83,59,2)
+(132,142,2)
+(202,68,2)
+(42,49,2)
+(192,171,2)
+(112,171,2)
+(78,165,2)
+(102,165,2)
+(190,201,2)
+(136,165,2)
+(161,57,2)
+(189,7,2)
+(136,4,2)
+(203,49,2)
+(147,55,2)
+(9,165,2)
+(107,72,2)
+(193,103,2)
+(130,55,2)
+(175,57,2)
+(164,59,2)
+(21,55,2)
+(69,89,2)
+(36,165,2)
+(49,177,2)
+(169,72,2)
+(176,165,2)
+(135,165,2)
+(60,55,2)
+(28,177,2)
+(49,111,2)
+(184,165,2)
+(93,146,2)
+(77,55,2)
+(13,165,2)
+(174,59,2)
+(46,124,2)
+(148,55,2)
+(146,55,2)
+(115,55,2)
+(180,192,2)
+(150,0,2)
+(80,72,2)
+(101,55,2)
+(37,145,2)
+(68,177,2)
+(189,57,2)
+(121,165,2)
+(78,116,2)
+(178,159,2)
+(180,116,2)
+(87,55,2)
+(139,131,2)
+(92,55,2)
+(2,55,2)
+(37,165,2)
+(65,116,2)
+(27,49,2)
+(210,93,2)
+(12,116,2)
+(178,100,2)
+(190,59,2)
+(61,55,2)
+(110,171,2)
+(127,28,2)
+(106,157,2)
+(74,165,2)
+(103,153,2)
+(111,40,2)
+(86,165,2)
+(195,171,2)
+(191,153,2)
+(209,59,2)
+(40,177,2)
+(191,55,2)
+(76,177,2)
+(1,57,2)
+(70,165,2)
+(145,165,2)
+(56,177,2)
+(207,55,2)
+(156,55,2)
+(178,50,2)
+(167,171,2)
+(72,165,2)
+(77,159,2)
+(103,55,2)
+(75,89,2)
+(29,165,2)
+(171,193,2)
+(63,55,2)
+(150,190,2)
+(11,55,2)
+(16,72,2)
+(106,116,2)
+(202,177,2)
+(19,186,2)
+(57,100,2)
+(58,55,2)
+(65,184,2)
+(55,59,2)
+(133,49,2)
+(155,177,2)
+(112,55,2)
+(46,78,2)
+(212,171,2)
+(159,165,2)
+(116,57,2)
+(16,178,2)
+(150,46,2)
+(47,89,2)
+(167,177,2)
+(212,49,2)
+(163,55,2)
+(166,59,2)
+(120,177,2)
+(165,116,2)
+(118,159,2)
+(138,165,2)
+(17,55,2)
+(183,186,2)
+(206,55,2)
+(68,167,2)
+(110,55,2)
+(89,171,2)
+(111,177,2)
+(177,55,2)
+(5,57,2)
+(104,159,2)
+(31,177,2)
+(75,153,2)
+(117,111,2)
+(35,55,2)
+(210,177,2)
+(106,212,2)
+(157,159,2)
+(188,49,2)
+(170,165,2)
+(6,165,2)
+(85,49,2)
+(145,184,2)
+(46,112,2)
+(64,55,2)
+(190,110,2)
+(96,177,2)
+(193,55,2)
+(162,177,2)
+(142,186,2)
+(87,116,2)
+(124,165,2)
+(8,165,2)
+(145,116,2)
+(12,184,2)
+(0,165,2)
+(185,165,2)
+(39,49,2)
+(117,23,2)
+(131,184,2)
+(4,165,2)
+(113,55,2)
+(116,189,2)
+(48,59,2)
+(204,72,2)
+(92,53,2)
+(157,49,2)
+(194,49,2)
+(180,118,2)
+(93,55,2)
+(190,112,2)
+(184,152,2)
+(131,165,2)
+(146,100,2)
+(99,59,2)
+(63,165,2)
+(124,116,2)
+(140,165,2)
+(19,165,2)
+(100,132,2)
+(29,151,2)
+(151,165,2)
+(59,72,2)
+(6,65,2)
+(190,195,2)
+(171,55,2)
+(178,72,2)
+(151,100,2)
+(168,55,2)
+(45,59,2)
+(200,177,2)
+(190,124,2)
+(129,72,2)
+(32,165,2)
+(20,177,2)
+(84,49,2)
+(46,201,2)
+(153,59,2)
+(165,57,2)
+(150,117,2)
+(153,209,2)
+(180,49,2)
+(122,57,2)
+(126,55,2)
+(211,57,2)
+(71,12,2)
+(79,55,2)
+(104,55,2)
+(201,55,2)
+(106,49,2)
+(43,177,2)
+(3,165,2)
+(97,55,2)
+(91,59,2)
+(92,159,2)
+(182,57,2)
+(154,177,2)
+(127,177,2)
+(73,57,2)
+(149,57,2)
+(101,165,2)
+-----------------------------------
+(0,return -ENOMEM;)
+(1,GFP_KERNEL)
+(2,node)
+(3,dev)
+(4,DRA7_ATL_PCLKMUX_REG(0)
+(5,&pdev->dev)
+(6,pm_runtime_get_sync(cinfo->dev)
+(7,sizeof(*cinfo)
+(8,-ENOMEM)
+(9,cinfo)
+(10,i)
+(11,i)
+(12,cinfo->dev)
+(13,i)
+(14,node)
+(15,)
+(16,rc = of_parse_phandle_with_args(node, "ti,provided-clocks",\n\\n\\t\\t\\t\\t\\t\\tNULL, i, &clkspec)
+(17,__func__)
+(18,ret)
+(19,pdev->dev)
+(20,cdesc)
+(21,i++)
+(22,cdesc)
+(23,ret = 0)
+(24,bws)
+(25,cinfo)
+(26,cdesc)
+(27,true)
+(28,&cdesc->aws)
+(29,cinfo->iobase = of_iomap(node, 0)
+(30,clk)
+(31,cfg_node)
+(32,cinfo)
+(33,i)
+(34,ENOMEM)
+(35,cdesc)
+(36,node)
+(37,pm_runtime_enable(cinfo->dev)
+(38,node)
+(39,cinfo)
+(40,ret = of_property_read_u32(cfg_node, "bws",\n\\n\\t\\t\\t\\t\\t\\t   &cdesc->bws)
+(41,node)
+(42,cdesc)
+(43,"aws")
+(44,"%s: failed to get atl clock %d from provider\\n")
+(45,__func__)
+(46,return PTR_ERR(clk)
+(47,clk)
+(48,clkspec)
+(49,!ret)
+(50,&clkspec)
+(51,if (!cinfo)
+(52,if (rc)
+(53,sizeof(prop)
+(54,for (i = 0; i < DRA7_ATL_INSTANCES; i++)
+(55,IS_ERR(clk)
+(56,ret)
+(57,!node)
+(58,prop)
+(59,rc)
+(60,cdesc)
+(61,cdesc)
+(62,ENODEV)
+(63,i)
+(64,true)
+(65,cinfo->dev)
+(66,of_node)
+(67,probed)
+(68,&cdesc->bws)
+(69,atl_clk_enable(__clk_get_hw(clk)
+(70,dev)
+(71,pm_runtime_put_sync(cinfo->dev)
+(72,i < DRA7_ATL_INSTANCES)
+(73,cinfo)
+(74,iobase)
+(75,__clk_get_hw(clk)
+(76,bws)
+(77,cdesc->id = i)
+(78,cinfo->iobase)
+(79,cfg_node)
+(80,rc)
+(81,if (IS_ERR(clk)
+(82,dev)
+(83,clk)
+(84,cdesc)
+(85,i)
+(86,dev)
+(87,cdesc->cinfo = cinfo)
+(88,cfg_node)
+(89,cdesc->enabled)
+(90,)
+(91,EINVAL)
+(92,snprintf(prop, sizeof(prop)
+(93,cfg_node = of_get_child_by_name(node, prop)
+(94,cinfo)
+(95,if (cfg_node)
+(96,cdesc->aws)
+(97,enabled)
+(98,)
+(99,-EINVAL)
+(100,*node = pdev->dev.of_node)
+(101,DRA7_ATL_INSTANCES)
+(102,DRA7_ATL_PCLKMUX)
+(103,__clk_get_hw(clk)
+(104,pr_err("%s: failed to get atl clock %d from provider\\n",\n\\n\\t\\t\\t       __func__, i)
+(105,cfg_node)
+(106,atl_write(cinfo, DRA7_ATL_BWSMUX_REG(i)
+(107,dev)
+(108,pdev)
+(109,cinfo)
+(110,cdesc->probed)
+(111,ret |= of_property_read_u32(cfg_node, "aws",\n\\n\\t\\t\\t\\t\\t\\t    &cdesc->aws)
+(112,cdesc->cinfo)
+(113,clk)
+(114,if (!node)
+(115,cinfo)
+(116,cinfo = devm_kzalloc(&pdev->dev, sizeof(*cinfo)
+(117,return ret;)
+(118,DRA7_ATL_AWSMUX_REG(i)
+(119,ret)
+(120,cfg_node)
+(121,0)
+(122,pdev)
+(123,"ti,provided-clocks")
+(124,cinfo->dev)
+(125,)
+(126,prop)
+(127,of_property_read_u32(cfg_node, "aws",\n\\n\\t\\t\\t\\t\\t\\t    &cdesc->aws)
+(128,0)
+(129,cinfo)
+(130,cinfo)
+(131,cinfo->dev)
+(132,pdev->dev.of_node)
+(133,valid)
+(134,"%s: failed to lookup atl clock %d\\n")
+(135,pdev)
+(136,atl_write(cinfo, DRA7_ATL_PCLKMUX_REG(0)
+(137,"atl%u")
+(138,cinfo)
+(139,pm_runtime_irq_safe(cinfo->dev)
+(140,cinfo)
+(141,clkspec)
+(142,pdev->dev)
+(143,0)
+(144,ret)
+(145,cinfo->dev)
+(146,of_get_child_by_name(node, prop)
+(147,clk)
+(148,i)
+(149,dev)
+(150,RET)
+(151,of_iomap(node, 0)
+(152,&pdev->dev)
+(153,clk = of_clk_get_from_provider(&clkspec)
+(154,cdesc)
+(155,aws)
+(156,i)
+(157,DRA7_ATL_BWSMUX_REG(i)
+(158,cdesc)
+(159,i = 0)
+(160,if (!ret)
+(161,return -ENODEV;)
+(162,ret)
+(163,id)
+(164,&clkspec)
+(165,!cinfo)
+(166,i)
+(167,cdesc->bws)
+(168,i)
+(169,ret)
+(170,cinfo)
+(171,cdesc = to_atl_desc(__clk_get_hw(clk)
+(172,i)
+(173,)
+(174,pr_err("%s: failed to lookup atl clock %d\\n", __func__,\n\\n\\t\\t\\t       i)
+(175,cinfo)
+(176,0)
+(177,cfg_node)
+(178,of_parse_phandle_with_args(node, "ti,provided-clocks",\n\\n\\t\\t\\t\\t\\t\\tNULL, i, &clkspec)
+(179,cdesc)
+(180,atl_write(cinfo, DRA7_ATL_AWSMUX_REG(i)
+(181,node)
+(182,*cinfo)
+(183,pdev->dev)
+(184,cinfo->dev = &pdev->dev)
+(185,dev)
+(186,struct platform_device *pdev)
+(187,NULL)
+(188,aws)
+(189,devm_kzalloc(&pdev->dev, sizeof(*cinfo)
+(190,return -EINVAL;)
+(191,PTR_ERR(clk)
+(192,cdesc->aws)
+(193,to_atl_desc(__clk_get_hw(clk)
+(194,cdesc->valid = true)
+(195,cdesc->valid)
+(196,if (cdesc->enabled)
+(197,rc)
+(198,dev)
+(199,)
+(200,"bws")
+(201,cdesc->id)
+(202,of_property_read_u32(cfg_node, "bws",\n\\n\\t\\t\\t\\t\\t\\t   &cdesc->bws)
+(203,cinfo)
+(204,clkspec)
+(205,prop)
+(206,prop)
+(207,cdesc->probed = true)
+(208,clk)
+(209,of_clk_get_from_provider(&clkspec)
+(210,of_node_put(cfg_node)
+(211,-ENODEV)
+(212,cdesc->bws)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

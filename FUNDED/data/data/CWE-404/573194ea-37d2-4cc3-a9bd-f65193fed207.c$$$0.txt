@@ -1,0 +1,1117 @@
+-----label-----
+0
+-----code-----
+static void mqueue_evict_inode(struct inode *inode)
+{
+	struct mqueue_inode_info *info;
+	struct user_struct *user;
+	struct ipc_namespace *ipc_ns;
+	struct msg_msg *msg, *nmsg;
+	LIST_HEAD(tmp_msg);
+
+	clear_inode(inode);
+
+	if (S_ISDIR(inode->i_mode))
+		return;
+
+	ipc_ns = get_ns_from_inode(inode);
+	info = MQUEUE_I(inode);
+	spin_lock(&info->lock);
+	while ((msg = msg_get(info)) != NULL)
+		list_add_tail(&msg->m_list, &tmp_msg);
+	kfree(info->node_cache);
+	spin_unlock(&info->lock);
+
+	list_for_each_entry_safe(msg, nmsg, &tmp_msg, m_list) {
+		list_del(&msg->m_list);
+		free_msg(msg);
+	}
+
+	user = info->user;
+	if (user) {
+		unsigned long mq_bytes, mq_treesize;
+
+		/* Total amount of bytes accounted for the mqueue */
+		mq_treesize = info->attr.mq_maxmsg * sizeof(struct msg_msg) +
+			min_t(unsigned int, info->attr.mq_maxmsg, MQ_PRIO_MAX) *
+			sizeof(struct posix_msg_tree_node);
+
+		mq_bytes = mq_treesize + (info->attr.mq_maxmsg *
+					  info->attr.mq_msgsize);
+
+		spin_lock(&mq_lock);
+		user->mq_bytes -= mq_bytes;
+		/*
+		 * get_ns_from_inode() ensures that the
+		 * (ipc_ns = sb->s_fs_info) is either a valid ipc_ns
+		 * to which we now hold a reference, or it is NULL.
+		 * We can't put it here under mq_lock, though.
+		 */
+		if (ipc_ns)
+			ipc_ns->mq_queues_count--;
+		spin_unlock(&mq_lock);
+		free_uid(user);
+	}
+	if (ipc_ns)
+		put_ipc_ns(ipc_ns);
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+11,14
+11,15
+11,16
+11,17
+11,18
+11,19
+11,20
+11,21
+11,22
+11,23
+11,24
+11,25
+11,26
+11,27
+11,28
+11,29
+11,30
+12,13
+13,14
+13,15
+14,15
+16,17
+16,18
+19,20
+20,21
+20,22
+21,22
+23,24
+23,25
+26,27
+27,28
+27,29
+28,29
+30,31
+30,32
+33,34
+34,35
+34,36
+34,37
+35,36
+37,38
+37,39
+40,41
+40,42
+43,44
+44,45
+44,46
+45,46
+47,48
+48,49
+50,51
+51,52
+51,53
+52,53
+54,55
+56,57
+56,58
+57,58
+57,59
+58,59
+60,61
+60,62
+61,62
+65,66
+66,67
+66,68
+67,68
+69,70
+69,71
+70,71
+72,73
+74,75
+75,76
+75,77
+76,77
+78,79
+78,80
+79,80
+81,82
+83,84
+84,85
+84,86
+85,86
+87,88
+88,89
+88,90
+89,90
+92,93
+92,94
+93,94
+93,95
+94,95
+95,96
+95,97
+96,97
+98,99
+98,100
+99,100
+101,102
+103,104
+105,106
+106,107
+106,108
+106,109
+107,108
+109,110
+110,111
+110,112
+111,112
+114,115
+115,116
+117,118
+118,119
+118,120
+119,120
+121,122
+121,123
+122,123
+125,126
+126,127
+126,128
+127,128
+129,130
+130,131
+130,132
+131,132
+134,135
+135,136
+135,137
+135,138
+135,139
+135,140
+136,137
+138,139
+140,141
+142,143
+143,144
+145,146
+147,148
+148,149
+148,150
+149,150
+150,151
+150,152
+151,152
+153,154
+154,155
+154,156
+155,156
+158,159
+159,160
+159,161
+160,161
+162,163
+164,165
+165,166
+165,167
+166,167
+168,169
+168,170
+169,170
+172,173
+172,174
+173,174
+175,176
+175,177
+175,178
+175,179
+175,180
+175,181
+175,182
+175,183
+176,177
+177,178
+177,179
+177,180
+179,180
+181,182
+183,184
+184,185
+185,186
+185,187
+186,187
+188,189
+188,190
+189,190
+191,192
+192,193
+192,194
+193,194
+193,195
+194,195
+194,196
+195,196
+199,200
+199,201
+200,201
+200,202
+201,202
+205,206
+206,207
+206,208
+207,208
+209,210
+210,211
+210,212
+213,214
+214,215
+214,216
+215,216
+215,217
+216,217
+219,220
+221,222
+221,223
+222,223
+224,225
+225,226
+226,227
+226,228
+227,228
+230,231
+231,232
+231,233
+232,233
+234,235
+235,236
+237,238
+238,239
+238,240
+239,240
+241,242
+243,244
+243,245
+244,245
+246,247
+247,248
+247,249
+248,249
+250,251
+-----nextToken-----
+2,4,7,9,10,15,17,18,22,24,25,29,31,32,36,38,39,41,42,46,49,53,55,59,62,63,64,68,71,73,77,80,82,86,90,91,97,100,102,104,108,112,113,116,120,123,124,128,132,133,137,139,141,144,146,152,156,157,161,163,167,170,171,174,178,180,182,187,190,196,197,198,202,203,204,208,211,212,217,218,220,223,228,229,233,236,240,242,245,249,251
+-----computeFrom-----
+66,67
+66,68
+75,76
+75,77
+93,94
+93,95
+95,96
+95,97
+165,166
+165,167
+185,186
+185,187
+188,189
+188,190
+192,193
+192,194
+214,215
+214,216
+-----guardedBy-----
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ReturnStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;WhileStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;ProblemStatement;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IfStatement;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;Declarator;Name;ProblemStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;ReferenceOperator;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;IdExpression;Name;ExpressionStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;
+-----ast_node-----
+static void mqueue_evict_inode(struct inode *inode){	struct mqueue_inode_info *info;	struct user_struct *user;	struct ipc_namespace *ipc_ns;	struct msg_msg *msg, *nmsg;	LIST_HEAD(tmp_msg);	clear_inode(inode);	if (S_ISDIR(inode->i_mode))		return;	ipc_ns = get_ns_from_inode(inode);	info = MQUEUE_I(inode);	spin_lock(&info->lock);	while ((msg = msg_get(info)) != NULL)		list_add_tail(&msg->m_list, &tmp_msg);	kfree(info->node_cache);	spin_unlock(&info->lock);	list_for_each_entry_safe(msg, nmsg, &tmp_msg, m_list) {		list_del(&msg->m_list);		free_msg(msg);	}	user = info->user;	if (user) {		unsigned long mq_bytes, mq_treesize;		/* Total amount of bytes accounted for the mqueue */		mq_treesize = info->attr.mq_maxmsg * sizeof(struct msg_msg) +			min_t(unsigned int, info->attr.mq_maxmsg, MQ_PRIO_MAX) *			sizeof(struct posix_msg_tree_node);		mq_bytes = mq_treesize + (info->attr.mq_maxmsg *					  info->attr.mq_msgsize);		spin_lock(&mq_lock);		user->mq_bytes -= mq_bytes;		/*		 * get_ns_from_inode() ensures that the		 * (ipc_ns = sb->s_fs_info) is either a valid ipc_ns		 * to which we now hold a reference, or it is NULL.		 * We can't put it here under mq_lock, though.		 */		if (ipc_ns)			ipc_ns->mq_queues_count--;		spin_unlock(&mq_lock);		free_uid(user);	}	if (ipc_ns)		put_ipc_ns(ipc_ns);}
+static void
+mqueue_evict_inode(struct inode *inode)
+mqueue_evict_inode
+struct inode *inode
+struct inode
+inode
+*inode
+*
+inode
+{	struct mqueue_inode_info *info;	struct user_struct *user;	struct ipc_namespace *ipc_ns;	struct msg_msg *msg, *nmsg;	LIST_HEAD(tmp_msg);	clear_inode(inode);	if (S_ISDIR(inode->i_mode))		return;	ipc_ns = get_ns_from_inode(inode);	info = MQUEUE_I(inode);	spin_lock(&info->lock);	while ((msg = msg_get(info)) != NULL)		list_add_tail(&msg->m_list, &tmp_msg);	kfree(info->node_cache);	spin_unlock(&info->lock);	list_for_each_entry_safe(msg, nmsg, &tmp_msg, m_list) {		list_del(&msg->m_list);		free_msg(msg);	}	user = info->user;	if (user) {		unsigned long mq_bytes, mq_treesize;		/* Total amount of bytes accounted for the mqueue */		mq_treesize = info->attr.mq_maxmsg * sizeof(struct msg_msg) +			min_t(unsigned int, info->attr.mq_maxmsg, MQ_PRIO_MAX) *			sizeof(struct posix_msg_tree_node);		mq_bytes = mq_treesize + (info->attr.mq_maxmsg *					  info->attr.mq_msgsize);		spin_lock(&mq_lock);		user->mq_bytes -= mq_bytes;		/*		 * get_ns_from_inode() ensures that the		 * (ipc_ns = sb->s_fs_info) is either a valid ipc_ns		 * to which we now hold a reference, or it is NULL.		 * We can't put it here under mq_lock, though.		 */		if (ipc_ns)			ipc_ns->mq_queues_count--;		spin_unlock(&mq_lock);		free_uid(user);	}	if (ipc_ns)		put_ipc_ns(ipc_ns);}
+struct mqueue_inode_info *info;
+struct mqueue_inode_info *info;
+struct mqueue_inode_info
+mqueue_inode_info
+*info
+*
+info
+struct user_struct *user;
+struct user_struct *user;
+struct user_struct
+user_struct
+*user
+*
+user
+struct ipc_namespace *ipc_ns;
+struct ipc_namespace *ipc_ns;
+struct ipc_namespace
+ipc_namespace
+*ipc_ns
+*
+ipc_ns
+struct msg_msg *msg, *nmsg;
+struct msg_msg *msg, *nmsg;
+struct msg_msg
+msg_msg
+*msg
+*
+msg
+*nmsg
+*
+nmsg
+LIST_HEAD(tmp_msg);
+LIST_HEAD(tmp_msg);
+LIST_HEAD
+LIST_HEAD
+(tmp_msg)
+tmp_msg
+tmp_msg
+clear_inode(inode);
+clear_inode(inode)
+clear_inode
+clear_inode
+inode
+inode
+if (S_ISDIR(inode->i_mode))		return;
+S_ISDIR(inode->i_mode)
+S_ISDIR
+S_ISDIR
+inode->i_mode
+inode
+inode
+i_mode
+return;
+ipc_ns = get_ns_from_inode(inode);
+ipc_ns = get_ns_from_inode(inode)
+ipc_ns
+ipc_ns
+get_ns_from_inode(inode)
+get_ns_from_inode
+get_ns_from_inode
+inode
+inode
+info = MQUEUE_I(inode);
+info = MQUEUE_I(inode)
+info
+info
+MQUEUE_I(inode)
+MQUEUE_I
+MQUEUE_I
+inode
+inode
+spin_lock(&info->lock);
+spin_lock(&info->lock)
+spin_lock
+spin_lock
+&info->lock
+info->lock
+info
+info
+lock
+while ((msg = msg_get(info)) != NULL)		list_add_tail(&msg->m_list, &tmp_msg);
+(msg = msg_get(info)) != NULL
+(msg = msg_get(info))
+msg = msg_get(info)
+msg
+msg
+msg_get(info)
+msg_get
+msg_get
+info
+info
+NULL
+NULL
+list_add_tail(&msg->m_list, &tmp_msg);
+list_add_tail(&msg->m_list, &tmp_msg)
+list_add_tail
+list_add_tail
+&msg->m_list
+msg->m_list
+msg
+msg
+m_list
+&tmp_msg
+tmp_msg
+tmp_msg
+kfree(info->node_cache);
+kfree(info->node_cache)
+kfree
+kfree
+info->node_cache
+info
+info
+node_cache
+spin_unlock(&info->lock);
+spin_unlock(&info->lock)
+spin_unlock
+spin_unlock
+&info->lock
+info->lock
+info
+info
+lock
+list_for_each_entry_safe(msg, nmsg, &tmp_msg, m_list)
+list_for_each_entry_safe(msg, nmsg, &tmp_msg, m_list)
+list_for_each_entry_safe
+list_for_each_entry_safe
+msg
+msg
+nmsg
+nmsg
+&tmp_msg
+tmp_msg
+tmp_msg
+m_list
+m_list
+)
+{		list_del(&msg->m_list);		free_msg(msg);	}
+list_del(&msg->m_list);
+list_del(&msg->m_list)
+list_del
+list_del
+&msg->m_list
+msg->m_list
+msg
+msg
+m_list
+free_msg(msg);
+free_msg(msg)
+free_msg
+free_msg
+msg
+msg
+user = info->user;
+user = info->user
+user
+user
+info->user
+info
+info
+user
+if (user) {		unsigned long mq_bytes, mq_treesize;		/* Total amount of bytes accounted for the mqueue */		mq_treesize = info->attr.mq_maxmsg * sizeof(struct msg_msg) +			min_t(unsigned int, info->attr.mq_maxmsg, MQ_PRIO_MAX) *			sizeof(struct posix_msg_tree_node);		mq_bytes = mq_treesize + (info->attr.mq_maxmsg *					  info->attr.mq_msgsize);		spin_lock(&mq_lock);		user->mq_bytes -= mq_bytes;		/*		 * get_ns_from_inode() ensures that the		 * (ipc_ns = sb->s_fs_info) is either a valid ipc_ns		 * to which we now hold a reference, or it is NULL.		 * We can't put it here under mq_lock, though.		 */		if (ipc_ns)			ipc_ns->mq_queues_count--;		spin_unlock(&mq_lock);		free_uid(user);	}
+user
+user
+{		unsigned long mq_bytes, mq_treesize;		/* Total amount of bytes accounted for the mqueue */		mq_treesize = info->attr.mq_maxmsg * sizeof(struct msg_msg) +			min_t(unsigned int, info->attr.mq_maxmsg, MQ_PRIO_MAX) *			sizeof(struct posix_msg_tree_node);		mq_bytes = mq_treesize + (info->attr.mq_maxmsg *					  info->attr.mq_msgsize);		spin_lock(&mq_lock);		user->mq_bytes -= mq_bytes;		/*		 * get_ns_from_inode() ensures that the		 * (ipc_ns = sb->s_fs_info) is either a valid ipc_ns		 * to which we now hold a reference, or it is NULL.		 * We can't put it here under mq_lock, though.		 */		if (ipc_ns)			ipc_ns->mq_queues_count--;		spin_unlock(&mq_lock);		free_uid(user);	}
+unsigned long mq_bytes, mq_treesize;
+unsigned long mq_bytes, mq_treesize;
+unsigned long
+mq_bytes
+mq_bytes
+mq_treesize
+mq_treesize
+mq_treesize = info->attr.mq_maxmsg * sizeof(struct msg_msg) +			min_t(unsigned int, info->attr.mq_maxmsg, MQ_PRIO_MAX) *			sizeof(struct posix_msg_tree_node);
+mq_bytes = mq_treesize + (info->attr.mq_maxmsg *					  info->attr.mq_msgsize);
+mq_bytes = mq_treesize + (info->attr.mq_maxmsg *					  info->attr.mq_msgsize)
+mq_bytes
+mq_bytes
+mq_treesize + (info->attr.mq_maxmsg *					  info->attr.mq_msgsize)
+mq_treesize
+mq_treesize
+(info->attr.mq_maxmsg *					  info->attr.mq_msgsize)
+info->attr.mq_maxmsg *					  info->attr.mq_msgsize
+info->attr.mq_maxmsg
+info->attr
+info
+info
+attr
+mq_maxmsg
+info->attr.mq_msgsize
+info->attr
+info
+info
+attr
+mq_msgsize
+spin_lock(&mq_lock);
+spin_lock(&mq_lock);
+spin_lock
+spin_lock
+(&mq_lock)
+&mq_lock
+&
+mq_lock
+user->mq_bytes -= mq_bytes;
+user->mq_bytes -= mq_bytes
+user->mq_bytes
+user
+user
+mq_bytes
+mq_bytes
+mq_bytes
+if (ipc_ns)			ipc_ns->mq_queues_count--;
+ipc_ns
+ipc_ns
+ipc_ns->mq_queues_count--;
+ipc_ns->mq_queues_count--
+ipc_ns->mq_queues_count
+ipc_ns
+ipc_ns
+mq_queues_count
+spin_unlock(&mq_lock);
+spin_unlock(&mq_lock)
+spin_unlock
+spin_unlock
+&mq_lock
+mq_lock
+mq_lock
+free_uid(user);
+free_uid(user)
+free_uid
+free_uid
+user
+user
+if (ipc_ns)		put_ipc_ns(ipc_ns);
+ipc_ns
+ipc_ns
+put_ipc_ns(ipc_ns);
+put_ipc_ns(ipc_ns)
+put_ipc_ns
+put_ipc_ns
+ipc_ns
+ipc_ns
+-----joern-----
+(94,40,0)
+(93,64,0)
+(55,112,0)
+(57,40,0)
+(74,46,0)
+(18,5,0)
+(105,7,0)
+(58,22,0)
+(7,92,0)
+(17,7,0)
+(28,12,0)
+(73,43,0)
+(92,86,0)
+(26,0,0)
+(74,44,0)
+(12,99,0)
+(55,69,0)
+(24,22,0)
+(82,91,0)
+(8,22,0)
+(111,57,0)
+(87,30,0)
+(77,3,0)
+(29,20,0)
+(35,99,0)
+(52,72,0)
+(41,29,0)
+(104,51,0)
+(35,69,0)
+(94,21,0)
+(60,82,0)
+(90,69,0)
+(39,22,0)
+(70,40,0)
+(101,22,0)
+(97,22,0)
+(16,3,0)
+(100,2,0)
+(46,22,0)
+(96,76,0)
+(66,0,0)
+(5,22,0)
+(27,1,0)
+(54,35,0)
+(102,45,0)
+(56,55,0)
+(26,42,0)
+(69,100,0)
+(92,62,0)
+(77,69,0)
+(9,21,0)
+(97,112,0)
+(49,45,0)
+(81,22,0)
+(109,12,0)
+(82,2,0)
+(49,95,0)
+(62,92,0)
+(32,90,0)
+(44,69,0)
+(90,111,0)
+(78,21,0)
+(59,22,0)
+(62,69,0)
+(40,94,0)
+(73,14,0)
+(85,82,0)
+(50,52,0)
+(34,44,0)
+(75,100,0)
+(10,94,0)
+(19,77,0)
+(95,49,0)
+(69,22,0)
+(20,29,0)
+(112,55,0)
+(80,99,0)
+(98,92,0)
+(67,64,0)
+(42,26,0)
+(58,64,0)
+(99,35,0)
+(0,26,0)
+(83,111,0)
+(65,71,0)
+(88,44,0)
+(103,55,0)
+(36,69,0)
+(11,13,0)
+(33,22,0)
+(31,22,0)
+(20,21,0)
+(15,1,0)
+(48,59,0)
+(43,73,0)
+(6,65,0)
+(72,52,0)
+(3,77,0)
+(64,69,0)
+(13,59,0)
+(14,73,0)
+(23,62,0)
+(1,59,0)
+(25,0,0)
+(106,21,0)
+(37,2,0)
+(57,3,0)
+(95,7,0)
+(59,37,0)
+(106,99,0)
+(5,2,0)
+(7,95,0)
+(57,111,0)
+(51,21,0)
+(0,92,0)
+(30,22,0)
+(91,82,0)
+(61,1,0)
+(3,57,0)
+(63,37,0)
+(51,94,0)
+(53,106,0)
+(86,92,0)
+(64,58,0)
+(100,69,0)
+(44,74,0)
+(99,22,0)
+(68,21,0)
+(107,22,0)
+(45,49,0)
+(46,74,0)
+(47,77,0)
+(108,35,0)
+(79,90,0)
+(37,59,0)
+(42,71,0)
+(4,22,0)
+(40,57,0)
+(84,86,0)
+(12,51,0)
+(65,92,0)
+(72,21,0)
+(43,21,0)
+(1,61,0)
+(112,97,0)
+(111,90,0)
+(71,22,0)
+(112,55,1)
+(16,77,1)
+(79,3,1)
+(5,18,1)
+(92,62,1)
+(108,80,1)
+(36,59,1)
+(0,66,1)
+(98,49,1)
+(18,30,1)
+(12,28,1)
+(25,46,1)
+(7,92,1)
+(11,38,1)
+(6,42,1)
+(54,108,1)
+(7,17,1)
+(56,103,1)
+(102,95,1)
+(86,84,1)
+(44,34,1)
+(86,92,1)
+(98,97,1)
+(34,88,1)
+(97,112,1)
+(106,53,1)
+(64,67,1)
+(90,32,1)
+(84,92,1)
+(88,58,1)
+(59,37,1)
+(73,14,1)
+(69,100,1)
+(99,35,1)
+(72,52,1)
+(65,6,1)
+(15,27,1)
+(12,99,1)
+(20,29,1)
+(44,69,1)
+(50,61,1)
+(64,69,1)
+(17,105,1)
+(105,86,1)
+(62,23,1)
+(49,95,1)
+(77,69,1)
+(85,60,1)
+(110,99,1)
+(47,19,1)
+(38,106,1)
+(51,104,1)
+(83,90,1)
+(51,94,1)
+(23,98,1)
+(96,38,1)
+(37,63,1)
+(76,91,1)
+(42,26,1)
+(62,69,1)
+(35,54,1)
+(13,59,1)
+(111,83,1)
+(60,5,1)
+(48,91,1)
+(32,79,1)
+(93,86,1)
+(94,40,1)
+(65,92,1)
+(100,2,1)
+(50,89,1)
+(82,2,1)
+(96,13,1)
+(49,45,1)
+(13,11,1)
+(46,74,1)
+(27,89,1)
+(57,111,1)
+(77,47,1)
+(66,25,1)
+(0,92,1)
+(43,73,1)
+(19,70,1)
+(45,102,1)
+(5,2,1)
+(109,20,1)
+(104,12,1)
+(38,110,1)
+(37,2,1)
+(73,110,1)
+(100,75,1)
+(1,15,1)
+(80,65,1)
+(74,44,1)
+(103,69,1)
+(96,76,1)
+(95,7,1)
+(111,90,1)
+(55,69,1)
+(53,72,1)
+(29,41,1)
+(63,48,1)
+(35,69,1)
+(55,56,1)
+(52,50,1)
+(40,57,1)
+(26,0,1)
+(41,94,1)
+(3,16,1)
+(1,59,1)
+(58,64,1)
+(106,99,1)
+(3,77,1)
+(30,87,1)
+(67,93,1)
+(89,51,1)
+(90,69,1)
+(10,43,1)
+(61,1,1)
+(75,36,1)
+(57,3,1)
+(82,85,1)
+(70,10,1)
+(91,82,1)
+(28,109,1)
+(92,91,2)
+(58,64,2)
+(75,91,2)
+(99,35,2)
+(20,29,2)
+(67,91,2)
+(1,89,2)
+(1,59,2)
+(19,110,2)
+(98,91,2)
+(23,86,2)
+(94,110,2)
+(104,110,2)
+(64,91,2)
+(15,89,2)
+(88,91,2)
+(57,3,2)
+(26,91,2)
+(16,110,2)
+(97,91,2)
+(57,110,2)
+(86,91,2)
+(100,91,2)
+(13,38,2)
+(58,91,2)
+(102,86,2)
+(90,69,2)
+(6,91,2)
+(17,86,2)
+(36,91,2)
+(111,110,2)
+(84,86,2)
+(50,110,2)
+(62,91,2)
+(97,112,2)
+(91,82,2)
+(45,86,2)
+(70,110,2)
+(112,91,2)
+(69,91,2)
+(35,91,2)
+(95,7,2)
+(0,92,2)
+(54,91,2)
+(25,91,2)
+(7,86,2)
+(77,110,2)
+(65,92,2)
+(72,52,2)
+(96,76,2)
+(27,89,2)
+(52,110,2)
+(106,110,2)
+(40,57,2)
+(86,92,2)
+(109,110,2)
+(83,110,2)
+(95,86,2)
+(44,91,2)
+(84,91,2)
+(74,44,2)
+(26,0,2)
+(29,110,2)
+(49,95,2)
+(42,26,2)
+(49,86,2)
+(74,91,2)
+(51,94,2)
+(72,110,2)
+(47,110,2)
+(65,91,2)
+(112,55,2)
+(11,38,2)
+(13,59,2)
+(56,91,2)
+(42,91,2)
+(46,91,2)
+(73,110,2)
+(53,110,2)
+(35,69,2)
+(37,91,2)
+(61,1,2)
+(79,110,2)
+(51,110,2)
+(111,90,2)
+(43,73,2)
+(28,110,2)
+(3,110,2)
+(55,69,2)
+(48,91,2)
+(59,37,2)
+(63,91,2)
+(37,2,2)
+(98,86,2)
+(94,40,2)
+(0,91,2)
+(105,86,2)
+(76,91,2)
+(49,45,2)
+(46,74,2)
+(40,110,2)
+(86,86,2)
+(43,110,2)
+(12,110,2)
+(38,91,2)
+(73,14,2)
+(82,2,2)
+(12,99,2)
+(108,91,2)
+(66,91,2)
+(10,110,2)
+(34,91,2)
+(55,91,2)
+(32,110,2)
+(106,99,2)
+(62,69,2)
+(69,100,2)
+(61,89,2)
+(80,91,2)
+(93,91,2)
+(7,92,2)
+(3,77,2)
+(41,110,2)
+(59,91,2)
+(23,91,2)
+(103,91,2)
+(64,69,2)
+(100,2,2)
+(92,86,2)
+(92,62,2)
+(44,69,2)
+(62,86,2)
+(57,111,2)
+(110,91,2)
+(99,91,2)
+(90,110,2)
+(5,2,2)
+(20,110,2)
+(89,110,2)
+(77,69,2)
+-----------------------------------
+(0,msg->m_list)
+(1,ipc_ns->mq_queues_count)
+(2,struct inode *inode)
+(3,info->attr.mq_maxmsg)
+(4,if (S_ISDIR(inode->i_mode)
+(5,clear_inode(inode)
+(6,msg)
+(7,msg->m_list)
+(8,ipc_ns)
+(9,mq_bytes)
+(10,mq_bytes)
+(11,ipc_ns)
+(12,user->mq_bytes)
+(13,put_ipc_ns(ipc_ns)
+(14,struct posix_msg_tree_node)
+(15,mq_queues_count)
+(16,mq_maxmsg)
+(17,m_list)
+(18,inode)
+(19,info)
+(20,spin_lock(&mq_lock)
+(21,)
+(22,)
+(23,info)
+(24,if (ipc_ns)
+(25,msg)
+(26,&msg->m_list)
+(27,ipc_ns)
+(28,mq_bytes)
+(29,&mq_lock)
+(30,LIST_HEAD(tmp_msg)
+(31,info)
+(32,attr)
+(33,nmsg)
+(34,lock)
+(35,info->user)
+(36,info)
+(37,get_ns_from_inode(inode)
+(38,ipc_ns)
+(39,user)
+(40,mq_treesize + (info->attr.mq_maxmsg *\n\\n\\t\\t\\t\\t\\t  info->attr.mq_msgsize)
+(41,mq_lock)
+(42,list_del(&msg->m_list)
+(43,*\n\\n\\t\\t\\tsizeof(struct posix_msg_tree_node)
+(44,info->lock)
+(45,&tmp_msg)
+(46,spin_unlock(&info->lock)
+(47,attr)
+(48,ipc_ns)
+(49,list_add_tail(&msg->m_list, &tmp_msg)
+(50,mq_lock)
+(51,user->mq_bytes -= mq_bytes)
+(52,&mq_lock)
+(53,user)
+(54,user)
+(55,info->lock)
+(56,lock)
+(57,info->attr.mq_maxmsg *\n\\n\\t\\t\\t\\t\\t  info->attr.mq_msgsize)
+(58,kfree(info->node_cache)
+(59,ipc_ns = get_ns_from_inode(inode)
+(60,inode)
+(61,ipc_ns->mq_queues_count--)
+(62,msg_get(info)
+(63,inode)
+(64,info->node_cache)
+(65,free_msg(msg)
+(66,m_list)
+(67,node_cache)
+(68,mq_treesize)
+(69,info = MQUEUE_I(inode)
+(70,mq_treesize)
+(71,)
+(72,spin_unlock(&mq_lock)
+(73,sizeof(struct posix_msg_tree_node)
+(74,&info->lock)
+(75,inode)
+(76,return;)
+(77,info->attr)
+(78,if (ipc_ns)
+(79,info)
+(80,user)
+(81,if (user)
+(82,inode->i_mode)
+(83,mq_msgsize)
+(84,NULL)
+(85,i_mode)
+(86,(msg = msg_get(info)
+(87,tmp_msg)
+(88,info)
+(89,ipc_ns)
+(90,info->attr)
+(91,S_ISDIR(inode->i_mode)
+(92,msg = msg_get(info)
+(93,info)
+(94,mq_bytes = mq_treesize + (info->attr.mq_maxmsg *\n\\n\\t\\t\\t\\t\\t  info->attr.mq_msgsize)
+(95,&msg->m_list)
+(96,RET)
+(97,spin_lock(&info->lock)
+(98,msg)
+(99,user = info->user)
+(100,MQUEUE_I(inode)
+(101,while ((msg = msg_get(info)
+(102,tmp_msg)
+(103,info)
+(104,mq_bytes)
+(105,msg)
+(106,free_uid(user)
+(107,msg)
+(108,info)
+(109,user)
+(110,user)
+(111,info->attr.mq_msgsize)
+(112,&info->lock)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

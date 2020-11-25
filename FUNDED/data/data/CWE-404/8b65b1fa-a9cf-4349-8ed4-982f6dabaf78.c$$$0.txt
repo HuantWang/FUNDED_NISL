@@ -1,0 +1,3462 @@
+-----label-----
+1
+-----code-----
+unsigned char * pnp_parse_current_resources(unsigned char * p, unsigned char * end, struct pnp_resource_table * res)
+{
+	int len;
+
+	if (!p)
+		return NULL;
+
+	/* Blank the resource table values */
+	pnp_init_resource_table(res);
+
+	while ((char *)p < (char *)end) {
+
+		if(p[0] & LARGE_TAG) { /* large tag */
+			len = (p[2] << 8) | p[1];
+			switch (p[0] & 0x7f) {
+			case LARGE_TAG_MEM:
+			{
+				int io = *(short *) &p[4];
+				int size = *(short *) &p[10];
+				if (len != 9)
+					goto lrg_err;
+				current_memresource(res, io, size);
+				break;
+			}
+			case LARGE_TAG_ANSISTR:
+			{
+				/* ignore this for now */
+				break;
+			}
+			case LARGE_TAG_VENDOR:
+			{
+				/* do nothing */
+				break;
+			}
+			case LARGE_TAG_MEM32:
+			{
+				int io = *(int *) &p[4];
+				int size = *(int *) &p[16];
+				if (len != 17)
+					goto lrg_err;
+				current_memresource(res, io, size);
+				break;
+			}
+			case LARGE_TAG_FIXEDMEM32:
+			{
+				int io = *(int *) &p[4];
+				int size = *(int *) &p[8];
+				if (len != 9)
+					goto lrg_err;
+				current_memresource(res, io, size);
+				break;
+			}
+			default: /* an unkown tag */
+			{
+				lrg_err:
+				pnp_warn("parser: Unknown large tag '0x%x'.", p[0] & 0x7f);
+				break;
+			}
+			} /* switch */
+			p += len + 3;
+			continue;
+		} /* end large tag */
+
+		/* small tag */
+		len = p[0] & 0x07;
+		switch ((p[0]>>3) & 0x0f) {
+		case SMALL_TAG_IRQ:
+		{
+			int i, mask, irq = -1;
+			if (len < 2 || len > 3)
+				goto sm_err;
+			mask= p[1] + p[2]*256;
+			for (i=0;i<16;i++, mask=mask>>1)
+				if(mask & 0x01) irq=i;
+			current_irqresource(res, irq);
+			break;
+		}
+		case SMALL_TAG_DMA:
+		{
+			int i, mask, dma = -1;
+			if (len != 2)
+				goto sm_err;
+			mask = p[1];
+			for (i=0;i<8;i++, mask = mask>>1)
+				if(mask & 0x01) dma=i;
+			current_dmaresource(res, dma);
+			break;
+		}
+		case SMALL_TAG_PORT:
+		{
+			int io= p[2] + p[3] *256;
+			int size = p[7];
+			if (len != 7)
+				goto sm_err;
+			current_ioresource(res, io, size);
+			break;
+		}
+		case SMALL_TAG_VENDOR:
+		{
+			/* do nothing */
+			break;
+		}
+		case SMALL_TAG_FIXEDPORT:
+		{
+			int io = p[1] + p[2] * 256;
+			int size = p[3];
+			if (len != 3)
+				goto sm_err;
+			current_ioresource(res, io, size);
+			break;
+		}
+		case SMALL_TAG_END:
+		{
+			p = p + 2;
+        		return (unsigned char *)p;
+			break;
+		}
+		default: /* an unkown tag */
+		{
+			sm_err:
+			pnp_warn("parser: Unknown small tag '0x%x'.", p[0]>>3);
+			break;
+		}
+		}
+                p += len + 1;
+	}
+	pnp_err("parser: Resource structure does not contain an end tag.");
+
+	return NULL;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+3,8
+6,7
+6,8
+8,9
+8,10
+11,12
+11,13
+13,14
+13,15
+16,17
+16,18
+17,18
+19,20
+19,21
+22,23
+22,24
+22,25
+22,26
+22,27
+22,28
+23,24
+24,25
+24,26
+26,27
+28,29
+28,30
+29,30
+30,31
+32,33
+33,34
+35,36
+36,37
+36,38
+37,38
+39,40
+41,42
+41,43
+42,43
+42,44
+43,44
+43,45
+44,45
+44,46
+46,47
+48,49
+50,51
+50,52
+51,52
+51,53
+53,54
+55,56
+57,58
+57,59
+57,60
+57,61
+58,59
+58,60
+59,60
+59,61
+60,61
+60,62
+61,62
+64,65
+66,67
+66,68
+66,69
+66,70
+67,68
+68,69
+68,70
+69,70
+71,72
+71,73
+72,73
+73,74
+73,75
+74,75
+74,76
+75,76
+79,80
+79,81
+80,81
+83,84
+83,85
+84,85
+84,86
+85,86
+85,87
+86,87
+90,91
+90,92
+90,93
+90,94
+90,95
+90,96
+90,97
+90,98
+90,99
+90,100
+90,101
+90,102
+91,92
+92,93
+94,95
+94,96
+94,97
+94,98
+94,99
+95,96
+96,97
+96,98
+98,99
+98,100
+100,101
+101,102
+102,103
+102,104
+103,104
+103,105
+105,106
+107,108
+108,109
+108,110
+109,110
+112,113
+113,114
+113,115
+115,116
+115,117
+117,118
+118,119
+119,120
+119,121
+120,121
+120,122
+122,123
+124,125
+125,126
+125,127
+126,127
+129,130
+129,131
+130,131
+130,132
+131,132
+134,135
+136,137
+137,138
+137,139
+137,140
+137,141
+138,139
+140,141
+142,143
+144,145
+147,148
+148,149
+150,151
+152,153
+153,154
+155,156
+157,158
+158,159
+160,161
+160,162
+160,163
+160,164
+160,165
+161,162
+162,163
+162,164
+164,165
+164,166
+166,167
+167,168
+168,169
+168,170
+169,170
+169,171
+171,172
+173,174
+174,175
+174,176
+175,176
+178,179
+179,180
+179,181
+181,182
+181,183
+183,184
+184,185
+185,186
+185,187
+186,187
+186,188
+188,189
+190,191
+191,192
+191,193
+192,193
+195,196
+195,197
+196,197
+196,198
+197,198
+200,201
+202,203
+203,204
+203,205
+203,206
+203,207
+204,205
+206,207
+208,209
+210,211
+213,214
+214,215
+216,217
+216,218
+216,219
+216,220
+216,221
+217,218
+218,219
+218,220
+220,221
+220,222
+222,223
+223,224
+224,225
+224,226
+225,226
+225,227
+227,228
+229,230
+230,231
+230,232
+231,232
+234,235
+235,236
+235,237
+237,238
+237,239
+239,240
+240,241
+241,242
+241,243
+242,243
+242,244
+244,245
+246,247
+247,248
+247,249
+248,249
+251,252
+251,253
+252,253
+252,254
+253,254
+256,257
+258,259
+259,260
+259,261
+259,262
+259,263
+260,261
+262,263
+264,265
+266,267
+270,271
+270,272
+271,272
+271,273
+273,274
+274,275
+274,276
+274,277
+275,276
+278,279
+278,280
+279,280
+279,281
+280,281
+285,286
+286,287
+286,288
+287,288
+289,290
+289,291
+290,291
+294,295
+295,296
+295,297
+296,297
+298,299
+298,300
+299,300
+299,301
+300,301
+304,305
+304,306
+305,306
+305,307
+306,307
+307,308
+307,309
+308,309
+308,310
+309,310
+314,315
+314,316
+314,317
+314,318
+314,319
+314,320
+314,321
+314,322
+314,323
+314,324
+314,325
+314,326
+314,327
+314,328
+315,316
+316,317
+318,319
+318,320
+318,321
+318,322
+318,323
+318,324
+319,320
+320,321
+320,322
+320,323
+320,324
+322,323
+324,325
+326,327
+326,328
+328,329
+329,330
+331,332
+331,333
+332,333
+332,334
+333,334
+333,335
+334,335
+337,338
+337,339
+338,339
+341,342
+343,344
+344,345
+344,346
+345,346
+347,348
+347,349
+348,349
+348,350
+349,350
+352,353
+352,354
+353,354
+353,355
+354,355
+358,359
+358,360
+358,361
+358,362
+359,360
+360,361
+360,362
+361,362
+364,365
+364,366
+365,366
+368,369
+368,370
+369,370
+370,371
+372,373
+372,374
+373,374
+375,376
+375,377
+376,377
+379,380
+379,381
+380,381
+380,382
+381,382
+384,385
+385,386
+385,387
+386,387
+388,389
+390,391
+391,392
+391,393
+391,394
+392,393
+394,395
+396,397
+399,400
+400,401
+402,403
+402,404
+402,405
+402,406
+402,407
+402,408
+403,404
+404,405
+404,406
+404,407
+404,408
+406,407
+408,409
+410,411
+410,412
+412,413
+413,414
+415,416
+415,417
+416,417
+416,418
+417,418
+420,421
+422,423
+423,424
+423,425
+424,425
+426,427
+426,428
+427,428
+430,431
+430,432
+430,433
+430,434
+431,432
+432,433
+432,434
+433,434
+436,437
+436,438
+437,438
+440,441
+440,442
+441,442
+442,443
+444,445
+444,446
+445,446
+447,448
+447,449
+448,449
+451,452
+451,453
+452,453
+452,454
+453,454
+456,457
+457,458
+457,459
+458,459
+460,461
+462,463
+463,464
+463,465
+463,466
+464,465
+466,467
+468,469
+471,472
+472,473
+474,475
+474,476
+474,477
+474,478
+474,479
+475,476
+476,477
+476,478
+478,479
+478,480
+480,481
+481,482
+481,483
+482,483
+482,484
+483,484
+486,487
+486,488
+487,488
+487,489
+488,489
+492,493
+493,494
+493,495
+495,496
+495,497
+497,498
+498,499
+498,500
+499,500
+502,503
+502,504
+503,504
+503,505
+504,505
+507,508
+509,510
+510,511
+510,512
+510,513
+510,514
+511,512
+513,514
+515,516
+517,518
+520,521
+521,522
+523,524
+525,526
+526,527
+528,529
+528,530
+528,531
+528,532
+528,533
+529,530
+530,531
+530,532
+532,533
+532,534
+534,535
+535,536
+535,537
+536,537
+536,538
+537,538
+540,541
+540,542
+541,542
+541,543
+542,543
+546,547
+547,548
+547,549
+549,550
+549,551
+551,552
+552,553
+552,554
+553,554
+556,557
+556,558
+557,558
+557,559
+558,559
+561,562
+563,564
+564,565
+564,566
+564,567
+564,568
+565,566
+567,568
+569,570
+571,572
+574,575
+575,576
+577,578
+577,579
+577,580
+578,579
+579,580
+579,581
+580,581
+582,583
+582,584
+583,584
+586,587
+587,588
+587,589
+588,589
+588,590
+590,591
+592,593
+596,597
+596,598
+597,598
+597,599
+599,600
+600,601
+600,602
+600,603
+601,602
+604,605
+604,606
+605,606
+605,607
+606,607
+611,612
+612,613
+612,614
+613,614
+615,616
+615,617
+616,617
+619,620
+620,621
+620,622
+621,622
+624,625
+625,626
+-----nextToken-----
+2,4,5,7,9,10,12,14,15,18,20,21,25,27,31,34,38,40,45,47,49,52,54,56,62,63,65,70,76,77,78,81,82,87,88,89,93,97,99,104,106,110,111,114,116,121,123,127,128,132,133,135,139,141,143,145,146,149,151,154,156,159,163,165,170,172,176,177,180,182,187,189,193,194,198,199,201,205,207,209,211,212,215,219,221,226,228,232,233,236,238,243,245,249,250,254,255,257,261,263,265,267,268,269,272,276,277,281,282,283,284,288,291,292,293,297,301,302,303,310,311,312,313,317,321,323,325,327,330,335,336,339,340,342,346,350,351,355,356,357,362,363,366,367,371,374,377,378,382,383,387,389,393,395,397,398,401,405,407,409,411,414,418,419,421,425,428,429,434,435,438,439,443,446,449,450,454,455,459,461,465,467,469,470,473,477,479,484,485,489,490,491,494,496,500,501,505,506,508,512,514,516,518,519,522,524,527,531,533,538,539,543,544,545,548,550,554,555,559,560,562,566,568,570,572,573,576,581,584,585,589,591,593,594,595,598,602,603,607,608,609,610,614,617,618,622,623,626
+-----computeFrom-----
+42,43
+42,44
+59,60
+59,61
+68,69
+68,70
+71,72
+71,73
+73,74
+73,75
+84,85
+84,86
+130,131
+130,132
+196,197
+196,198
+252,253
+252,254
+278,279
+278,280
+286,287
+286,288
+289,290
+289,291
+295,296
+295,297
+298,299
+298,300
+305,306
+305,307
+307,308
+307,309
+332,333
+332,334
+333,334
+333,335
+337,338
+337,339
+344,345
+344,346
+347,348
+347,349
+352,353
+352,354
+360,361
+360,362
+364,365
+364,366
+372,373
+372,374
+375,376
+375,377
+380,381
+380,382
+385,386
+385,387
+416,417
+416,418
+423,424
+423,425
+432,433
+432,434
+436,437
+436,438
+444,445
+444,446
+447,448
+447,449
+452,453
+452,454
+457,458
+457,459
+481,482
+481,483
+486,487
+486,488
+503,504
+503,505
+535,536
+535,537
+540,541
+540,542
+557,558
+557,559
+579,580
+579,581
+582,583
+582,584
+604,605
+604,606
+612,613
+612,614
+615,616
+615,617
+-----guardedBy-----
+62,288
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;IfStatement;UnaryExpression;IdExpression;Name;ReturnStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;WhileStatement;BinaryExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;IdExpression;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;UnaryExpression;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;SwitchStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;LiteralExpression;CompoundStatement;CaseStatement;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;UnaryExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;UnaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;UnaryExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;UnaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;GotoStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;CompoundStatement;BreakStatement;CaseStatement;IdExpression;Name;CompoundStatement;BreakStatement;CaseStatement;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;UnaryExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;UnaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;UnaryExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;UnaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;GotoStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;UnaryExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;UnaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;UnaryExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;UnaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;GotoStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;BreakStatement;DefaultStatement;CompoundStatement;LabelStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;LiteralExpression;BreakStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;ContinueStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;LiteralExpression;SwitchStatement;BinaryExpression;UnaryExpression;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;LiteralExpression;LiteralExpression;CompoundStatement;CaseStatement;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;Declarator;Name;Declarator;Name;EqualsInitializer;UnaryExpression;LiteralExpression;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;LiteralExpression;GotoStatement;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionList;UnaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;Declarator;Name;Declarator;Name;EqualsInitializer;UnaryExpression;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;GotoStatement;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionList;UnaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;GotoStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;CompoundStatement;BreakStatement;CaseStatement;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;GotoStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;ReturnStatement;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;IdExpression;Name;BreakStatement;DefaultStatement;CompoundStatement;LabelStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;LiteralExpression;BreakStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+unsigned char * pnp_parse_current_resources(unsigned char * p, unsigned char * end, struct pnp_resource_table * res){	int len;	if (!p)		return NULL;	/* Blank the resource table values */	pnp_init_resource_table(res);	while ((char *)p < (char *)end) {		if(p[0] & LARGE_TAG) { /* large tag */			len = (p[2] << 8) | p[1];			switch (p[0] & 0x7f) {			case LARGE_TAG_MEM:			{				int io = *(short *) &p[4];				int size = *(short *) &p[10];				if (len != 9)					goto lrg_err;				current_memresource(res, io, size);				break;			}			case LARGE_TAG_ANSISTR:			{				/* ignore this for now */				break;			}			case LARGE_TAG_VENDOR:			{				/* do nothing */				break;			}			case LARGE_TAG_MEM32:			{				int io = *(int *) &p[4];				int size = *(int *) &p[16];				if (len != 17)					goto lrg_err;				current_memresource(res, io, size);				break;			}			case LARGE_TAG_FIXEDMEM32:			{				int io = *(int *) &p[4];				int size = *(int *) &p[8];				if (len != 9)					goto lrg_err;				current_memresource(res, io, size);				break;			}			default: /* an unkown tag */			{				lrg_err:				pnp_warn("parser: Unknown large tag '0x%x'.", p[0] & 0x7f);				break;			}			} /* switch */			p += len + 3;			continue;		} /* end large tag */		/* small tag */		len = p[0] & 0x07;		switch ((p[0]>>3) & 0x0f) {		case SMALL_TAG_IRQ:		{			int i, mask, irq = -1;			if (len < 2 || len > 3)				goto sm_err;			mask= p[1] + p[2]*256;			for (i=0;i<16;i++, mask=mask>>1)				if(mask & 0x01) irq=i;			current_irqresource(res, irq);			break;		}		case SMALL_TAG_DMA:		{			int i, mask, dma = -1;			if (len != 2)				goto sm_err;			mask = p[1];			for (i=0;i<8;i++, mask = mask>>1)				if(mask & 0x01) dma=i;			current_dmaresource(res, dma);			break;		}		case SMALL_TAG_PORT:		{			int io= p[2] + p[3] *256;			int size = p[7];			if (len != 7)				goto sm_err;			current_ioresource(res, io, size);			break;		}		case SMALL_TAG_VENDOR:		{			/* do nothing */			break;		}		case SMALL_TAG_FIXEDPORT:		{			int io = p[1] + p[2] * 256;			int size = p[3];			if (len != 3)				goto sm_err;			current_ioresource(res, io, size);			break;		}		case SMALL_TAG_END:		{			p = p + 2;        		return (unsigned char *)p;			break;		}		default: /* an unkown tag */		{			sm_err:			pnp_warn("parser: Unknown small tag '0x%x'.", p[0]>>3);			break;		}		}                p += len + 1;	}	pnp_err("parser: Resource structure does not contain an end tag.");	return NULL;}
+unsigned char
+* pnp_parse_current_resources(unsigned char * p, unsigned char * end, struct pnp_resource_table * res)
+*
+pnp_parse_current_resources
+unsigned char * p
+unsigned char
+* p
+*
+p
+unsigned char * end
+unsigned char
+* end
+*
+end
+struct pnp_resource_table * res
+struct pnp_resource_table
+pnp_resource_table
+* res
+*
+res
+{	int len;	if (!p)		return NULL;	/* Blank the resource table values */	pnp_init_resource_table(res);	while ((char *)p < (char *)end) {		if(p[0] & LARGE_TAG) { /* large tag */			len = (p[2] << 8) | p[1];			switch (p[0] & 0x7f) {			case LARGE_TAG_MEM:			{				int io = *(short *) &p[4];				int size = *(short *) &p[10];				if (len != 9)					goto lrg_err;				current_memresource(res, io, size);				break;			}			case LARGE_TAG_ANSISTR:			{				/* ignore this for now */				break;			}			case LARGE_TAG_VENDOR:			{				/* do nothing */				break;			}			case LARGE_TAG_MEM32:			{				int io = *(int *) &p[4];				int size = *(int *) &p[16];				if (len != 17)					goto lrg_err;				current_memresource(res, io, size);				break;			}			case LARGE_TAG_FIXEDMEM32:			{				int io = *(int *) &p[4];				int size = *(int *) &p[8];				if (len != 9)					goto lrg_err;				current_memresource(res, io, size);				break;			}			default: /* an unkown tag */			{				lrg_err:				pnp_warn("parser: Unknown large tag '0x%x'.", p[0] & 0x7f);				break;			}			} /* switch */			p += len + 3;			continue;		} /* end large tag */		/* small tag */		len = p[0] & 0x07;		switch ((p[0]>>3) & 0x0f) {		case SMALL_TAG_IRQ:		{			int i, mask, irq = -1;			if (len < 2 || len > 3)				goto sm_err;			mask= p[1] + p[2]*256;			for (i=0;i<16;i++, mask=mask>>1)				if(mask & 0x01) irq=i;			current_irqresource(res, irq);			break;		}		case SMALL_TAG_DMA:		{			int i, mask, dma = -1;			if (len != 2)				goto sm_err;			mask = p[1];			for (i=0;i<8;i++, mask = mask>>1)				if(mask & 0x01) dma=i;			current_dmaresource(res, dma);			break;		}		case SMALL_TAG_PORT:		{			int io= p[2] + p[3] *256;			int size = p[7];			if (len != 7)				goto sm_err;			current_ioresource(res, io, size);			break;		}		case SMALL_TAG_VENDOR:		{			/* do nothing */			break;		}		case SMALL_TAG_FIXEDPORT:		{			int io = p[1] + p[2] * 256;			int size = p[3];			if (len != 3)				goto sm_err;			current_ioresource(res, io, size);			break;		}		case SMALL_TAG_END:		{			p = p + 2;        		return (unsigned char *)p;			break;		}		default: /* an unkown tag */		{			sm_err:			pnp_warn("parser: Unknown small tag '0x%x'.", p[0]>>3);			break;		}		}                p += len + 1;	}	pnp_err("parser: Resource structure does not contain an end tag.");	return NULL;}
+int len;
+int len;
+int
+len
+len
+if (!p)		return NULL;
+!p
+p
+p
+return NULL;
+NULL
+NULL
+pnp_init_resource_table(res);
+pnp_init_resource_table(res)
+pnp_init_resource_table
+pnp_init_resource_table
+res
+res
+while ((char *)p < (char *)end) {		if(p[0] & LARGE_TAG) { /* large tag */			len = (p[2] << 8) | p[1];			switch (p[0] & 0x7f) {			case LARGE_TAG_MEM:			{				int io = *(short *) &p[4];				int size = *(short *) &p[10];				if (len != 9)					goto lrg_err;				current_memresource(res, io, size);				break;			}			case LARGE_TAG_ANSISTR:			{				/* ignore this for now */				break;			}			case LARGE_TAG_VENDOR:			{				/* do nothing */				break;			}			case LARGE_TAG_MEM32:			{				int io = *(int *) &p[4];				int size = *(int *) &p[16];				if (len != 17)					goto lrg_err;				current_memresource(res, io, size);				break;			}			case LARGE_TAG_FIXEDMEM32:			{				int io = *(int *) &p[4];				int size = *(int *) &p[8];				if (len != 9)					goto lrg_err;				current_memresource(res, io, size);				break;			}			default: /* an unkown tag */			{				lrg_err:				pnp_warn("parser: Unknown large tag '0x%x'.", p[0] & 0x7f);				break;			}			} /* switch */			p += len + 3;			continue;		} /* end large tag */		/* small tag */		len = p[0] & 0x07;		switch ((p[0]>>3) & 0x0f) {		case SMALL_TAG_IRQ:		{			int i, mask, irq = -1;			if (len < 2 || len > 3)				goto sm_err;			mask= p[1] + p[2]*256;			for (i=0;i<16;i++, mask=mask>>1)				if(mask & 0x01) irq=i;			current_irqresource(res, irq);			break;		}		case SMALL_TAG_DMA:		{			int i, mask, dma = -1;			if (len != 2)				goto sm_err;			mask = p[1];			for (i=0;i<8;i++, mask = mask>>1)				if(mask & 0x01) dma=i;			current_dmaresource(res, dma);			break;		}		case SMALL_TAG_PORT:		{			int io= p[2] + p[3] *256;			int size = p[7];			if (len != 7)				goto sm_err;			current_ioresource(res, io, size);			break;		}		case SMALL_TAG_VENDOR:		{			/* do nothing */			break;		}		case SMALL_TAG_FIXEDPORT:		{			int io = p[1] + p[2] * 256;			int size = p[3];			if (len != 3)				goto sm_err;			current_ioresource(res, io, size);			break;		}		case SMALL_TAG_END:		{			p = p + 2;        		return (unsigned char *)p;			break;		}		default: /* an unkown tag */		{			sm_err:			pnp_warn("parser: Unknown small tag '0x%x'.", p[0]>>3);			break;		}		}                p += len + 1;	}
+(char *)p < (char *)end
+(char *)p
+char *
+char
+*
+*
+p
+p
+(char *)end
+char *
+char
+*
+*
+end
+end
+{		if(p[0] & LARGE_TAG) { /* large tag */			len = (p[2] << 8) | p[1];			switch (p[0] & 0x7f) {			case LARGE_TAG_MEM:			{				int io = *(short *) &p[4];				int size = *(short *) &p[10];				if (len != 9)					goto lrg_err;				current_memresource(res, io, size);				break;			}			case LARGE_TAG_ANSISTR:			{				/* ignore this for now */				break;			}			case LARGE_TAG_VENDOR:			{				/* do nothing */				break;			}			case LARGE_TAG_MEM32:			{				int io = *(int *) &p[4];				int size = *(int *) &p[16];				if (len != 17)					goto lrg_err;				current_memresource(res, io, size);				break;			}			case LARGE_TAG_FIXEDMEM32:			{				int io = *(int *) &p[4];				int size = *(int *) &p[8];				if (len != 9)					goto lrg_err;				current_memresource(res, io, size);				break;			}			default: /* an unkown tag */			{				lrg_err:				pnp_warn("parser: Unknown large tag '0x%x'.", p[0] & 0x7f);				break;			}			} /* switch */			p += len + 3;			continue;		} /* end large tag */		/* small tag */		len = p[0] & 0x07;		switch ((p[0]>>3) & 0x0f) {		case SMALL_TAG_IRQ:		{			int i, mask, irq = -1;			if (len < 2 || len > 3)				goto sm_err;			mask= p[1] + p[2]*256;			for (i=0;i<16;i++, mask=mask>>1)				if(mask & 0x01) irq=i;			current_irqresource(res, irq);			break;		}		case SMALL_TAG_DMA:		{			int i, mask, dma = -1;			if (len != 2)				goto sm_err;			mask = p[1];			for (i=0;i<8;i++, mask = mask>>1)				if(mask & 0x01) dma=i;			current_dmaresource(res, dma);			break;		}		case SMALL_TAG_PORT:		{			int io= p[2] + p[3] *256;			int size = p[7];			if (len != 7)				goto sm_err;			current_ioresource(res, io, size);			break;		}		case SMALL_TAG_VENDOR:		{			/* do nothing */			break;		}		case SMALL_TAG_FIXEDPORT:		{			int io = p[1] + p[2] * 256;			int size = p[3];			if (len != 3)				goto sm_err;			current_ioresource(res, io, size);			break;		}		case SMALL_TAG_END:		{			p = p + 2;        		return (unsigned char *)p;			break;		}		default: /* an unkown tag */		{			sm_err:			pnp_warn("parser: Unknown small tag '0x%x'.", p[0]>>3);			break;		}		}                p += len + 1;	}
+if(p[0] & LARGE_TAG) { /* large tag */			len = (p[2] << 8) | p[1];			switch (p[0] & 0x7f) {			case LARGE_TAG_MEM:			{				int io = *(short *) &p[4];				int size = *(short *) &p[10];				if (len != 9)					goto lrg_err;				current_memresource(res, io, size);				break;			}			case LARGE_TAG_ANSISTR:			{				/* ignore this for now */				break;			}			case LARGE_TAG_VENDOR:			{				/* do nothing */				break;			}			case LARGE_TAG_MEM32:			{				int io = *(int *) &p[4];				int size = *(int *) &p[16];				if (len != 17)					goto lrg_err;				current_memresource(res, io, size);				break;			}			case LARGE_TAG_FIXEDMEM32:			{				int io = *(int *) &p[4];				int size = *(int *) &p[8];				if (len != 9)					goto lrg_err;				current_memresource(res, io, size);				break;			}			default: /* an unkown tag */			{				lrg_err:				pnp_warn("parser: Unknown large tag '0x%x'.", p[0] & 0x7f);				break;			}			} /* switch */			p += len + 3;			continue;		}
+p[0] & LARGE_TAG
+p[0]
+p
+p
+0
+LARGE_TAG
+LARGE_TAG
+{ /* large tag */			len = (p[2] << 8) | p[1];			switch (p[0] & 0x7f) {			case LARGE_TAG_MEM:			{				int io = *(short *) &p[4];				int size = *(short *) &p[10];				if (len != 9)					goto lrg_err;				current_memresource(res, io, size);				break;			}			case LARGE_TAG_ANSISTR:			{				/* ignore this for now */				break;			}			case LARGE_TAG_VENDOR:			{				/* do nothing */				break;			}			case LARGE_TAG_MEM32:			{				int io = *(int *) &p[4];				int size = *(int *) &p[16];				if (len != 17)					goto lrg_err;				current_memresource(res, io, size);				break;			}			case LARGE_TAG_FIXEDMEM32:			{				int io = *(int *) &p[4];				int size = *(int *) &p[8];				if (len != 9)					goto lrg_err;				current_memresource(res, io, size);				break;			}			default: /* an unkown tag */			{				lrg_err:				pnp_warn("parser: Unknown large tag '0x%x'.", p[0] & 0x7f);				break;			}			} /* switch */			p += len + 3;			continue;		}
+len = (p[2] << 8) | p[1];
+len = (p[2] << 8) | p[1]
+len
+len
+(p[2] << 8) | p[1]
+(p[2] << 8)
+p[2] << 8
+p[2]
+p
+p
+2
+8
+p[1]
+p
+p
+1
+switch (p[0] & 0x7f) {			case LARGE_TAG_MEM:			{				int io = *(short *) &p[4];				int size = *(short *) &p[10];				if (len != 9)					goto lrg_err;				current_memresource(res, io, size);				break;			}			case LARGE_TAG_ANSISTR:			{				/* ignore this for now */				break;			}			case LARGE_TAG_VENDOR:			{				/* do nothing */				break;			}			case LARGE_TAG_MEM32:			{				int io = *(int *) &p[4];				int size = *(int *) &p[16];				if (len != 17)					goto lrg_err;				current_memresource(res, io, size);				break;			}			case LARGE_TAG_FIXEDMEM32:			{				int io = *(int *) &p[4];				int size = *(int *) &p[8];				if (len != 9)					goto lrg_err;				current_memresource(res, io, size);				break;			}			default: /* an unkown tag */			{				lrg_err:				pnp_warn("parser: Unknown large tag '0x%x'.", p[0] & 0x7f);				break;			}			}
+p[0] & 0x7f
+p[0]
+p
+p
+0
+0x7f
+{			case LARGE_TAG_MEM:			{				int io = *(short *) &p[4];				int size = *(short *) &p[10];				if (len != 9)					goto lrg_err;				current_memresource(res, io, size);				break;			}			case LARGE_TAG_ANSISTR:			{				/* ignore this for now */				break;			}			case LARGE_TAG_VENDOR:			{				/* do nothing */				break;			}			case LARGE_TAG_MEM32:			{				int io = *(int *) &p[4];				int size = *(int *) &p[16];				if (len != 17)					goto lrg_err;				current_memresource(res, io, size);				break;			}			case LARGE_TAG_FIXEDMEM32:			{				int io = *(int *) &p[4];				int size = *(int *) &p[8];				if (len != 9)					goto lrg_err;				current_memresource(res, io, size);				break;			}			default: /* an unkown tag */			{				lrg_err:				pnp_warn("parser: Unknown large tag '0x%x'.", p[0] & 0x7f);				break;			}			}
+case LARGE_TAG_MEM:
+LARGE_TAG_MEM
+LARGE_TAG_MEM
+{				int io = *(short *) &p[4];				int size = *(short *) &p[10];				if (len != 9)					goto lrg_err;				current_memresource(res, io, size);				break;			}
+int io = *(short *) &p[4];
+int io = *(short *) &p[4];
+int
+io = *(short *) &p[4]
+io
+= *(short *) &p[4]
+*(short *) &p[4]
+(short *) &p[4]
+short *
+short
+*
+*
+&p[4]
+p[4]
+p
+p
+4
+int size = *(short *) &p[10];
+int size = *(short *) &p[10];
+int
+size = *(short *) &p[10]
+size
+= *(short *) &p[10]
+*(short *) &p[10]
+(short *) &p[10]
+short *
+short
+*
+*
+&p[10]
+p[10]
+p
+p
+10
+if (len != 9)					goto lrg_err;
+len != 9
+len
+len
+9
+goto lrg_err;
+lrg_err
+current_memresource(res, io, size);
+current_memresource(res, io, size)
+current_memresource
+current_memresource
+res
+res
+io
+io
+size
+size
+break;
+case LARGE_TAG_ANSISTR:
+LARGE_TAG_ANSISTR
+LARGE_TAG_ANSISTR
+{				/* ignore this for now */				break;			}
+break;
+case LARGE_TAG_VENDOR:
+LARGE_TAG_VENDOR
+LARGE_TAG_VENDOR
+{				/* do nothing */				break;			}
+break;
+case LARGE_TAG_MEM32:
+LARGE_TAG_MEM32
+LARGE_TAG_MEM32
+{				int io = *(int *) &p[4];				int size = *(int *) &p[16];				if (len != 17)					goto lrg_err;				current_memresource(res, io, size);				break;			}
+int io = *(int *) &p[4];
+int io = *(int *) &p[4];
+int
+io = *(int *) &p[4]
+io
+= *(int *) &p[4]
+*(int *) &p[4]
+(int *) &p[4]
+int *
+int
+*
+*
+&p[4]
+p[4]
+p
+p
+4
+int size = *(int *) &p[16];
+int size = *(int *) &p[16];
+int
+size = *(int *) &p[16]
+size
+= *(int *) &p[16]
+*(int *) &p[16]
+(int *) &p[16]
+int *
+int
+*
+*
+&p[16]
+p[16]
+p
+p
+16
+if (len != 17)					goto lrg_err;
+len != 17
+len
+len
+17
+goto lrg_err;
+lrg_err
+current_memresource(res, io, size);
+current_memresource(res, io, size)
+current_memresource
+current_memresource
+res
+res
+io
+io
+size
+size
+break;
+case LARGE_TAG_FIXEDMEM32:
+LARGE_TAG_FIXEDMEM32
+LARGE_TAG_FIXEDMEM32
+{				int io = *(int *) &p[4];				int size = *(int *) &p[8];				if (len != 9)					goto lrg_err;				current_memresource(res, io, size);				break;			}
+int io = *(int *) &p[4];
+int io = *(int *) &p[4];
+int
+io = *(int *) &p[4]
+io
+= *(int *) &p[4]
+*(int *) &p[4]
+(int *) &p[4]
+int *
+int
+*
+*
+&p[4]
+p[4]
+p
+p
+4
+int size = *(int *) &p[8];
+int size = *(int *) &p[8];
+int
+size = *(int *) &p[8]
+size
+= *(int *) &p[8]
+*(int *) &p[8]
+(int *) &p[8]
+int *
+int
+*
+*
+&p[8]
+p[8]
+p
+p
+8
+if (len != 9)					goto lrg_err;
+len != 9
+len
+len
+9
+goto lrg_err;
+lrg_err
+current_memresource(res, io, size);
+current_memresource(res, io, size)
+current_memresource
+current_memresource
+res
+res
+io
+io
+size
+size
+break;
+default:
+{				lrg_err:				pnp_warn("parser: Unknown large tag '0x%x'.", p[0] & 0x7f);				break;			}
+lrg_err:				pnp_warn("parser: Unknown large tag '0x%x'.", p[0] & 0x7f);
+lrg_err
+pnp_warn("parser: Unknown large tag '0x%x'.", p[0] & 0x7f);
+pnp_warn("parser: Unknown large tag '0x%x'.", p[0] & 0x7f)
+pnp_warn
+pnp_warn
+"parser: Unknown large tag '0x%x'."
+p[0] & 0x7f
+p[0]
+p
+p
+0
+0x7f
+break;
+p += len + 3;
+p += len + 3
+p
+p
+len + 3
+len
+len
+3
+continue;
+len = p[0] & 0x07;
+len = p[0] & 0x07
+len
+len
+p[0] & 0x07
+p[0]
+p
+p
+0
+0x07
+switch ((p[0]>>3) & 0x0f) {		case SMALL_TAG_IRQ:		{			int i, mask, irq = -1;			if (len < 2 || len > 3)				goto sm_err;			mask= p[1] + p[2]*256;			for (i=0;i<16;i++, mask=mask>>1)				if(mask & 0x01) irq=i;			current_irqresource(res, irq);			break;		}		case SMALL_TAG_DMA:		{			int i, mask, dma = -1;			if (len != 2)				goto sm_err;			mask = p[1];			for (i=0;i<8;i++, mask = mask>>1)				if(mask & 0x01) dma=i;			current_dmaresource(res, dma);			break;		}		case SMALL_TAG_PORT:		{			int io= p[2] + p[3] *256;			int size = p[7];			if (len != 7)				goto sm_err;			current_ioresource(res, io, size);			break;		}		case SMALL_TAG_VENDOR:		{			/* do nothing */			break;		}		case SMALL_TAG_FIXEDPORT:		{			int io = p[1] + p[2] * 256;			int size = p[3];			if (len != 3)				goto sm_err;			current_ioresource(res, io, size);			break;		}		case SMALL_TAG_END:		{			p = p + 2;        		return (unsigned char *)p;			break;		}		default: /* an unkown tag */		{			sm_err:			pnp_warn("parser: Unknown small tag '0x%x'.", p[0]>>3);			break;		}		}
+(p[0]>>3) & 0x0f
+(p[0]>>3)
+p[0]>>3
+p[0]
+p
+p
+0
+3
+0x0f
+{		case SMALL_TAG_IRQ:		{			int i, mask, irq = -1;			if (len < 2 || len > 3)				goto sm_err;			mask= p[1] + p[2]*256;			for (i=0;i<16;i++, mask=mask>>1)				if(mask & 0x01) irq=i;			current_irqresource(res, irq);			break;		}		case SMALL_TAG_DMA:		{			int i, mask, dma = -1;			if (len != 2)				goto sm_err;			mask = p[1];			for (i=0;i<8;i++, mask = mask>>1)				if(mask & 0x01) dma=i;			current_dmaresource(res, dma);			break;		}		case SMALL_TAG_PORT:		{			int io= p[2] + p[3] *256;			int size = p[7];			if (len != 7)				goto sm_err;			current_ioresource(res, io, size);			break;		}		case SMALL_TAG_VENDOR:		{			/* do nothing */			break;		}		case SMALL_TAG_FIXEDPORT:		{			int io = p[1] + p[2] * 256;			int size = p[3];			if (len != 3)				goto sm_err;			current_ioresource(res, io, size);			break;		}		case SMALL_TAG_END:		{			p = p + 2;        		return (unsigned char *)p;			break;		}		default: /* an unkown tag */		{			sm_err:			pnp_warn("parser: Unknown small tag '0x%x'.", p[0]>>3);			break;		}		}
+case SMALL_TAG_IRQ:
+SMALL_TAG_IRQ
+SMALL_TAG_IRQ
+{			int i, mask, irq = -1;			if (len < 2 || len > 3)				goto sm_err;			mask= p[1] + p[2]*256;			for (i=0;i<16;i++, mask=mask>>1)				if(mask & 0x01) irq=i;			current_irqresource(res, irq);			break;		}
+int i, mask, irq = -1;
+int i, mask, irq = -1;
+int
+i
+i
+mask
+mask
+irq = -1
+irq
+= -1
+-1
+1
+if (len < 2 || len > 3)				goto sm_err;
+len < 2 || len > 3
+len < 2
+len
+len
+2
+len > 3
+len
+len
+3
+goto sm_err;
+sm_err
+mask= p[1] + p[2]*256;
+mask= p[1] + p[2]*256
+mask
+mask
+p[1] + p[2]*256
+p[1]
+p
+p
+1
+p[2]*256
+p[2]
+p
+p
+2
+256
+for (i=0;i<16;i++, mask=mask>>1)				if(mask & 0x01) irq=i;
+i=0;
+i=0
+i
+i
+0
+i<16
+i
+i
+16
+i++, mask=mask>>1
+i++
+i
+i
+mask=mask>>1
+mask
+mask
+mask>>1
+mask
+mask
+1
+if(mask & 0x01) irq=i;
+mask & 0x01
+mask
+mask
+0x01
+irq=i;
+irq=i
+irq
+irq
+i
+i
+current_irqresource(res, irq);
+current_irqresource(res, irq)
+current_irqresource
+current_irqresource
+res
+res
+irq
+irq
+break;
+case SMALL_TAG_DMA:
+SMALL_TAG_DMA
+SMALL_TAG_DMA
+{			int i, mask, dma = -1;			if (len != 2)				goto sm_err;			mask = p[1];			for (i=0;i<8;i++, mask = mask>>1)				if(mask & 0x01) dma=i;			current_dmaresource(res, dma);			break;		}
+int i, mask, dma = -1;
+int i, mask, dma = -1;
+int
+i
+i
+mask
+mask
+dma = -1
+dma
+= -1
+-1
+1
+if (len != 2)				goto sm_err;
+len != 2
+len
+len
+2
+goto sm_err;
+sm_err
+mask = p[1];
+mask = p[1]
+mask
+mask
+p[1]
+p
+p
+1
+for (i=0;i<8;i++, mask = mask>>1)				if(mask & 0x01) dma=i;
+i=0;
+i=0
+i
+i
+0
+i<8
+i
+i
+8
+i++, mask = mask>>1
+i++
+i
+i
+mask = mask>>1
+mask
+mask
+mask>>1
+mask
+mask
+1
+if(mask & 0x01) dma=i;
+mask & 0x01
+mask
+mask
+0x01
+dma=i;
+dma=i
+dma
+dma
+i
+i
+current_dmaresource(res, dma);
+current_dmaresource(res, dma)
+current_dmaresource
+current_dmaresource
+res
+res
+dma
+dma
+break;
+case SMALL_TAG_PORT:
+SMALL_TAG_PORT
+SMALL_TAG_PORT
+{			int io= p[2] + p[3] *256;			int size = p[7];			if (len != 7)				goto sm_err;			current_ioresource(res, io, size);			break;		}
+int io= p[2] + p[3] *256;
+int io= p[2] + p[3] *256;
+int
+io= p[2] + p[3] *256
+io
+= p[2] + p[3] *256
+p[2] + p[3] *256
+p[2]
+p
+p
+2
+p[3] *256
+p[3]
+p
+p
+3
+256
+int size = p[7];
+int size = p[7];
+int
+size = p[7]
+size
+= p[7]
+p[7]
+p
+p
+7
+if (len != 7)				goto sm_err;
+len != 7
+len
+len
+7
+goto sm_err;
+sm_err
+current_ioresource(res, io, size);
+current_ioresource(res, io, size)
+current_ioresource
+current_ioresource
+res
+res
+io
+io
+size
+size
+break;
+case SMALL_TAG_VENDOR:
+SMALL_TAG_VENDOR
+SMALL_TAG_VENDOR
+{			/* do nothing */			break;		}
+break;
+case SMALL_TAG_FIXEDPORT:
+SMALL_TAG_FIXEDPORT
+SMALL_TAG_FIXEDPORT
+{			int io = p[1] + p[2] * 256;			int size = p[3];			if (len != 3)				goto sm_err;			current_ioresource(res, io, size);			break;		}
+int io = p[1] + p[2] * 256;
+int io = p[1] + p[2] * 256;
+int
+io = p[1] + p[2] * 256
+io
+= p[1] + p[2] * 256
+p[1] + p[2] * 256
+p[1]
+p
+p
+1
+p[2] * 256
+p[2]
+p
+p
+2
+256
+int size = p[3];
+int size = p[3];
+int
+size = p[3]
+size
+= p[3]
+p[3]
+p
+p
+3
+if (len != 3)				goto sm_err;
+len != 3
+len
+len
+3
+goto sm_err;
+sm_err
+current_ioresource(res, io, size);
+current_ioresource(res, io, size)
+current_ioresource
+current_ioresource
+res
+res
+io
+io
+size
+size
+break;
+case SMALL_TAG_END:
+SMALL_TAG_END
+SMALL_TAG_END
+{			p = p + 2;        		return (unsigned char *)p;			break;		}
+p = p + 2;
+p = p + 2
+p
+p
+p + 2
+p
+p
+2
+return (unsigned char *)p;
+(unsigned char *)p
+unsigned char *
+unsigned char
+*
+*
+p
+p
+break;
+default:
+{			sm_err:			pnp_warn("parser: Unknown small tag '0x%x'.", p[0]>>3);			break;		}
+sm_err:			pnp_warn("parser: Unknown small tag '0x%x'.", p[0]>>3);
+sm_err
+pnp_warn("parser: Unknown small tag '0x%x'.", p[0]>>3);
+pnp_warn("parser: Unknown small tag '0x%x'.", p[0]>>3)
+pnp_warn
+pnp_warn
+"parser: Unknown small tag '0x%x'."
+p[0]>>3
+p[0]
+p
+p
+0
+3
+break;
+p += len + 1;
+p += len + 1
+p
+p
+len + 1
+len
+len
+1
+pnp_err("parser: Resource structure does not contain an end tag.");
+pnp_err("parser: Resource structure does not contain an end tag.")
+pnp_err
+pnp_err
+"parser: Resource structure does not contain an end tag."
+return NULL;
+NULL
+NULL
+-----joern-----
+(119,142,0)
+(304,149,0)
+(55,290,0)
+(64,222,0)
+(143,368,0)
+(72,314,0)
+(217,198,0)
+(53,277,0)
+(281,209,0)
+(115,9,0)
+(141,301,0)
+(5,361,0)
+(353,14,0)
+(340,192,0)
+(17,181,0)
+(173,139,0)
+(32,360,0)
+(314,59,0)
+(118,85,0)
+(302,349,0)
+(139,332,0)
+(172,161,0)
+(129,31,0)
+(233,272,0)
+(176,308,0)
+(161,162,0)
+(237,201,0)
+(338,97,0)
+(309,217,0)
+(275,261,0)
+(82,167,0)
+(149,156,0)
+(210,360,0)
+(126,78,0)
+(116,302,0)
+(244,165,0)
+(157,230,0)
+(74,289,0)
+(251,78,0)
+(321,68,0)
+(336,142,0)
+(10,272,0)
+(7,128,0)
+(220,126,0)
+(208,150,0)
+(250,78,0)
+(27,230,0)
+(203,187,0)
+(101,272,0)
+(92,126,0)
+(233,156,0)
+(243,373,0)
+(249,314,0)
+(125,332,0)
+(40,326,0)
+(211,64,0)
+(301,78,0)
+(91,76,0)
+(191,126,0)
+(361,78,0)
+(16,113,0)
+(31,129,0)
+(334,250,0)
+(256,327,0)
+(318,368,0)
+(232,344,0)
+(114,237,0)
+(245,321,0)
+(372,272,0)
+(343,112,0)
+(216,116,0)
+(313,325,0)
+(305,7,0)
+(369,309,0)
+(43,320,0)
+(270,76,0)
+(112,78,0)
+(75,305,0)
+(137,125,0)
+(146,14,0)
+(240,297,0)
+(172,201,0)
+(134,201,0)
+(63,259,0)
+(20,251,0)
+(357,14,0)
+(272,35,0)
+(316,60,0)
+(250,156,0)
+(95,78,0)
+(335,99,0)
+(173,85,0)
+(136,259,0)
+(172,342,0)
+(254,301,0)
+(129,272,0)
+(169,162,0)
+(10,78,0)
+(289,273,0)
+(239,81,0)
+(347,165,0)
+(78,78,0)
+(327,113,0)
+(310,332,0)
+(14,349,0)
+(179,214,0)
+(88,49,0)
+(25,10,0)
+(207,243,0)
+(186,272,0)
+(234,306,0)
+(262,68,0)
+(251,272,0)
+(149,315,0)
+(238,68,0)
+(170,230,0)
+(216,31,0)
+(266,158,0)
+(263,156,0)
+(36,263,0)
+(100,235,0)
+(230,170,0)
+(69,124,0)
+(250,272,0)
+(315,149,0)
+(285,24,0)
+(162,272,0)
+(168,149,0)
+(352,307,0)
+(90,157,0)
+(266,325,0)
+(230,321,0)
+(114,272,0)
+(97,332,0)
+(138,173,0)
+(263,78,0)
+(9,76,0)
+(275,290,0)
+(0,142,0)
+(140,251,0)
+(232,78,0)
+(241,192,0)
+(251,156,0)
+(60,316,0)
+(157,321,0)
+(122,83,0)
+(144,221,0)
+(6,96,0)
+(33,197,0)
+(306,322,0)
+(4,360,0)
+(96,68,0)
+(19,224,0)
+(268,139,0)
+(146,214,0)
+(206,78,0)
+(173,182,0)
+(76,360,0)
+(235,100,0)
+(179,250,0)
+(235,156,0)
+(160,309,0)
+(233,320,0)
+(114,156,0)
+(59,45,0)
+(129,156,0)
+(307,125,0)
+(148,356,0)
+(296,22,0)
+(272,54,0)
+(198,217,0)
+(361,117,0)
+(118,325,0)
+(161,342,0)
+(186,78,0)
+(177,367,0)
+(246,156,0)
+(174,296,0)
+(356,226,0)
+(274,173,0)
+(78,156,0)
+(257,192,0)
+(126,272,0)
+(237,49,0)
+(21,142,0)
+(345,112,0)
+(64,140,0)
+(158,156,0)
+(128,68,0)
+(164,24,0)
+(181,142,0)
+(52,277,0)
+(247,233,0)
+(129,78,0)
+(252,68,0)
+(251,20,0)
+(71,197,0)
+(145,244,0)
+(66,332,0)
+(149,78,0)
+(64,105,0)
+(153,349,0)
+(314,76,0)
+(173,322,0)
+(49,88,0)
+(312,281,0)
+(328,251,0)
+(25,60,0)
+(325,313,0)
+(290,55,0)
+(10,25,0)
+(235,272,0)
+(263,272,0)
+(126,156,0)
+(257,182,0)
+(282,214,0)
+(47,84,0)
+(117,361,0)
+(54,124,0)
+(232,156,0)
+(267,357,0)
+(295,135,0)
+(188,332,0)
+(76,270,0)
+(140,64,0)
+(214,179,0)
+(293,68,0)
+(264,273,0)
+(372,246,0)
+(98,232,0)
+(367,332,0)
+(272,78,0)
+(357,182,0)
+(221,156,0)
+(348,135,0)
+(59,314,0)
+(89,139,0)
+(271,273,0)
+(147,235,0)
+(360,68,0)
+(194,372,0)
+(344,192,0)
+(165,254,0)
+(196,206,0)
+(331,119,0)
+(325,266,0)
+(199,232,0)
+(307,209,0)
+(298,206,0)
+(112,272,0)
+(162,156,0)
+(351,124,0)
+(165,79,0)
+(281,117,0)
+(24,165,0)
+(226,356,0)
+(261,275,0)
+(18,43,0)
+(70,305,0)
+(288,186,0)
+(88,78,0)
+(272,156,0)
+(370,253,0)
+(205,246,0)
+(29,73,0)
+(213,316,0)
+(322,306,0)
+(229,165,0)
+(372,78,0)
+(309,360,0)
+(54,272,0)
+(44,277,0)
+(31,216,0)
+(50,342,0)
+(37,349,0)
+(30,59,0)
+(371,68,0)
+(339,79,0)
+(100,234,0)
+(132,10,0)
+(253,272,0)
+(317,170,0)
+(193,188,0)
+(258,35,0)
+(354,187,0)
+(62,99,0)
+(56,172,0)
+(290,275,0)
+(209,307,0)
+(250,179,0)
+(133,9,0)
+(200,234,0)
+(102,342,0)
+(108,206,0)
+(255,321,0)
+(105,64,0)
+(85,139,0)
+(305,75,0)
+(206,272,0)
+(86,316,0)
+(278,172,0)
+(58,351,0)
+(340,60,0)
+(163,271,0)
+(113,156,0)
+(232,272,0)
+(337,253,0)
+(108,275,0)
+(184,125,0)
+(280,139,0)
+(171,273,0)
+(49,237,0)
+(197,165,0)
+(259,182,0)
+(323,332,0)
+(81,224,0)
+(87,35,0)
+(358,173,0)
+(277,320,0)
+(223,198,0)
+(350,135,0)
+(167,182,0)
+(48,221,0)
+(357,302,0)
+(1,372,0)
+(51,181,0)
+(246,372,0)
+(309,182,0)
+(311,332,0)
+(157,348,0)
+(55,125,0)
+(157,182,0)
+(294,43,0)
+(178,157,0)
+(167,273,0)
+(124,351,0)
+(244,78,0)
+(260,55,0)
+(158,266,0)
+(355,192,0)
+(301,254,0)
+(286,162,0)
+(117,281,0)
+(373,243,0)
+(226,78,0)
+(206,108,0)
+(253,156,0)
+(67,226,0)
+(126,220,0)
+(112,156,0)
+(276,68,0)
+(185,192,0)
+(305,156,0)
+(73,156,0)
+(78,79,0)
+(253,78,0)
+(305,246,0)
+(351,221,0)
+(341,217,0)
+(342,68,0)
+(60,25,0)
+(303,257,0)
+(78,244,0)
+(297,270,0)
+(315,254,0)
+(12,349,0)
+(65,373,0)
+(374,336,0)
+(373,367,0)
+(195,257,0)
+(149,272,0)
+(42,315,0)
+(231,360,0)
+(368,68,0)
+(158,78,0)
+(111,119,0)
+(99,22,0)
+(124,35,0)
+(281,312,0)
+(248,158,0)
+(84,356,0)
+(186,156,0)
+(53,166,0)
+(316,78,0)
+(22,99,0)
+(350,166,0)
+(219,114,0)
+(291,271,0)
+(9,59,0)
+(299,357,0)
+(279,308,0)
+(301,156,0)
+(270,297,0)
+(110,321,0)
+(284,172,0)
+(362,350,0)
+(204,85,0)
+(236,321,0)
+(23,259,0)
+(189,348,0)
+(41,302,0)
+(46,332,0)
+(296,124,0)
+(80,88,0)
+(61,233,0)
+(357,349,0)
+(214,146,0)
+(234,100,0)
+(361,156,0)
+(235,78,0)
+(202,342,0)
+(265,357,0)
+(336,45,0)
+(186,270,0)
+(259,125,0)
+(109,150,0)
+(306,234,0)
+(34,88,0)
+(291,7,0)
+(162,161,0)
+(206,156,0)
+(180,348,0)
+(243,263,0)
+(346,320,0)
+(43,53,0)
+(103,349,0)
+(84,368,0)
+(297,253,0)
+(272,272,0)
+(225,216,0)
+(215,360,0)
+(2,226,0)
+(116,216,0)
+(3,344,0)
+(344,232,0)
+(85,118,0)
+(113,78,0)
+(14,146,0)
+(251,140,0)
+(88,156,0)
+(114,78,0)
+(214,282,0)
+(363,114,0)
+(259,55,0)
+(275,108,0)
+(246,128,0)
+(221,78,0)
+(192,68,0)
+(228,54,0)
+(11,340,0)
+(113,272,0)
+(300,10,0)
+(253,297,0)
+(270,186,0)
+(130,235,0)
+(221,351,0)
+(93,257,0)
+(88,272,0)
+(226,156,0)
+(330,53,0)
+(349,332,0)
+(320,321,0)
+(320,233,0)
+(308,124,0)
+(175,263,0)
+(316,156,0)
+(112,81,0)
+(364,79,0)
+(372,156,0)
+(151,220,0)
+(123,186,0)
+(8,244,0)
+(269,49,0)
+(60,340,0)
+(212,54,0)
+(221,272,0)
+(78,272,0)
+(26,296,0)
+(316,272,0)
+(172,182,0)
+(254,165,0)
+(254,315,0)
+(216,225,0)
+(121,158,0)
+(226,272,0)
+(361,272,0)
+(287,342,0)
+(218,347,0)
+(152,113,0)
+(187,124,0)
+(38,347,0)
+(158,272,0)
+(309,181,0)
+(113,327,0)
+(329,332,0)
+(154,361,0)
+(257,344,0)
+(237,114,0)
+(365,129,0)
+(150,124,0)
+(356,84,0)
+(127,326,0)
+(120,135,0)
+(325,118,0)
+(77,322,0)
+(359,273,0)
+(162,78,0)
+(106,321,0)
+(301,272,0)
+(326,135,0)
+(183,367,0)
+(263,243,0)
+(291,83,0)
+(209,281,0)
+(22,296,0)
+(259,307,0)
+(366,192,0)
+(39,68,0)
+(15,250,0)
+(201,237,0)
+(13,129,0)
+(224,81,0)
+(233,78,0)
+(257,340,0)
+(28,139,0)
+(217,360,0)
+(302,116,0)
+(159,161,0)
+(155,301,0)
+(234,200,0)
+(99,124,0)
+(319,321,0)
+(201,342,0)
+(277,53,0)
+(227,360,0)
+(10,156,0)
+(283,125,0)
+(190,128,0)
+(81,112,0)
+(242,125,0)
+(333,25,0)
+(322,139,0)
+(21,0,1)
+(65,324,1)
+(119,142,1)
+(244,8,1)
+(71,322,1)
+(15,334,1)
+(198,223,1)
+(81,239,1)
+(353,327,1)
+(72,249,1)
+(361,78,1)
+(95,153,1)
+(180,43,1)
+(30,336,1)
+(73,29,1)
+(316,78,1)
+(70,246,1)
+(306,234,1)
+(38,218,1)
+(305,246,1)
+(309,160,1)
+(120,320,1)
+(65,94,1)
+(60,25,1)
+(101,287,1)
+(186,288,1)
+(19,81,1)
+(230,170,1)
+(90,326,1)
+(251,20,1)
+(361,272,1)
+(95,280,1)
+(263,156,1)
+(254,301,1)
+(146,214,1)
+(172,278,1)
+(363,134,1)
+(237,49,1)
+(277,44,1)
+(348,189,1)
+(320,233,1)
+(369,119,1)
+(83,122,1)
+(204,327,1)
+(95,193,1)
+(98,199,1)
+(101,245,1)
+(187,124,1)
+(76,270,1)
+(93,303,1)
+(172,182,1)
+(336,374,1)
+(288,123,1)
+(158,78,1)
+(193,327,1)
+(326,127,1)
+(54,124,1)
+(112,156,1)
+(304,229,1)
+(372,1,1)
+(112,272,1)
+(343,345,1)
+(302,116,1)
+(149,156,1)
+(352,55,1)
+(117,361,1)
+(44,52,1)
+(158,156,1)
+(173,322,1)
+(186,156,1)
+(305,156,1)
+(251,78,1)
+(47,131,1)
+(221,78,1)
+(240,253,1)
+(309,217,1)
+(296,174,1)
+(229,220,1)
+(22,296,1)
+(144,69,1)
+(196,260,1)
+(298,196,1)
+(341,224,1)
+(26,99,1)
+(54,212,1)
+(123,91,1)
+(59,314,1)
+(327,113,1)
+(181,17,1)
+(176,230,1)
+(95,338,1)
+(246,372,1)
+(186,272,1)
+(149,168,1)
+(108,206,1)
+(275,261,1)
+(374,181,1)
+(9,59,1)
+(147,77,1)
+(285,164,1)
+(78,78,1)
+(197,165,1)
+(250,15,1)
+(272,272,1)
+(101,318,1)
+(233,156,1)
+(69,220,1)
+(259,182,1)
+(40,53,1)
+(208,161,1)
+(140,64,1)
+(249,30,1)
+(372,78,1)
+(64,211,1)
+(307,209,1)
+(158,272,1)
+(209,281,1)
+(214,179,1)
+(172,201,1)
+(232,156,1)
+(61,247,1)
+(101,366,1)
+(245,157,1)
+(206,298,1)
+(328,364,1)
+(113,78,1)
+(269,88,1)
+(114,78,1)
+(47,57,1)
+(322,306,1)
+(43,320,1)
+(234,200,1)
+(334,353,1)
+(191,140,1)
+(336,142,1)
+(308,279,1)
+(127,40,1)
+(161,162,1)
+(158,248,1)
+(226,78,1)
+(228,101,1)
+(274,197,1)
+(27,224,1)
+(13,365,1)
+(203,354,1)
+(253,156,1)
+(346,308,1)
+(187,203,1)
+(217,198,1)
+(133,119,1)
+(131,308,1)
+(167,182,1)
+(374,9,1)
+(257,195,1)
+(221,48,1)
+(316,86,1)
+(173,138,1)
+(23,136,1)
+(278,284,1)
+(305,75,1)
+(235,78,1)
+(126,78,1)
+(263,78,1)
+(24,165,1)
+(57,150,1)
+(8,145,1)
+(107,22,1)
+(315,149,1)
+(1,194,1)
+(65,327,1)
+(153,357,1)
+(357,14,1)
+(239,112,1)
+(366,257,1)
+(49,88,1)
+(214,282,1)
+(297,253,1)
+(234,100,1)
+(290,275,1)
+(317,27,1)
+(81,112,1)
+(86,213,1)
+(357,182,1)
+(63,23,1)
+(364,78,1)
+(250,78,1)
+(266,158,1)
+(205,224,1)
+(357,302,1)
+(36,65,1)
+(277,53,1)
+(94,347,1)
+(101,190,1)
+(112,343,1)
+(41,14,1)
+(17,51,1)
+(201,237,1)
+(345,124,1)
+(305,70,1)
+(326,135,1)
+(195,93,1)
+(260,327,1)
+(173,85,1)
+(163,289,1)
+(31,129,1)
+(287,172,1)
+(272,156,1)
+(167,82,1)
+(361,156,1)
+(52,330,1)
+(338,327,1)
+(24,285,1)
+(47,224,1)
+(340,60,1)
+(199,3,1)
+(10,78,1)
+(141,155,1)
+(85,118,1)
+(25,10,1)
+(350,135,1)
+(251,272,1)
+(111,59,1)
+(16,152,1)
+(43,53,1)
+(250,272,1)
+(314,72,1)
+(101,6,1)
+(270,297,1)
+(271,163,1)
+(318,84,1)
+(34,114,1)
+(356,226,1)
+(10,156,1)
+(91,22,1)
+(224,19,1)
+(10,272,1)
+(295,120,1)
+(235,272,1)
+(114,219,1)
+(372,272,1)
+(9,115,1)
+(301,141,1)
+(247,346,1)
+(291,83,1)
+(157,182,1)
+(272,78,1)
+(78,156,1)
+(62,335,1)
+(275,108,1)
+(357,267,1)
+(316,272,1)
+(361,154,1)
+(88,156,1)
+(0,76,1)
+(226,2,1)
+(130,147,1)
+(142,21,1)
+(14,146,1)
+(88,272,1)
+(283,259,1)
+(138,358,1)
+(325,266,1)
+(280,173,1)
+(159,201,1)
+(347,165,1)
+(232,78,1)
+(168,304,1)
+(294,18,1)
+(22,99,1)
+(43,294,1)
+(237,114,1)
+(183,373,1)
+(99,62,1)
+(243,263,1)
+(235,156,1)
+(286,159,1)
+(149,78,1)
+(99,124,1)
+(220,151,1)
+(78,272,1)
+(151,126,1)
+(284,56,1)
+(73,156,1)
+(113,16,1)
+(132,300,1)
+(281,117,1)
+(56,150,1)
+(263,272,1)
+(226,156,1)
+(257,182,1)
+(40,135,1)
+(219,363,1)
+(55,290,1)
+(328,272,1)
+(116,216,1)
+(206,156,1)
+(111,142,1)
+(227,309,1)
+(189,180,1)
+(136,24,1)
+(216,31,1)
+(372,156,1)
+(314,76,1)
+(154,5,1)
+(129,272,1)
+(65,292,1)
+(149,272,1)
+(335,217,1)
+(148,226,1)
+(112,78,1)
+(212,228,1)
+(291,271,1)
+(354,344,1)
+(235,130,1)
+(114,156,1)
+(257,344,1)
+(157,348,1)
+(344,232,1)
+(80,34,1)
+(244,165,1)
+(74,140,1)
+(277,320,1)
+(129,78,1)
+(88,78,1)
+(226,272,1)
+(333,10,1)
+(211,251,1)
+(181,142,1)
+(164,307,1)
+(114,272,1)
+(100,235,1)
+(126,272,1)
+(3,340,1)
+(101,227,1)
+(281,312,1)
+(301,272,1)
+(207,263,1)
+(251,156,1)
+(51,9,1)
+(233,78,1)
+(303,187,1)
+(356,148,1)
+(197,33,1)
+(301,78,1)
+(115,133,1)
+(92,191,1)
+(325,313,1)
+(77,85,1)
+(165,254,1)
+(150,124,1)
+(309,181,1)
+(267,265,1)
+(113,272,1)
+(251,328,1)
+(155,315,1)
+(126,156,1)
+(33,71,1)
+(270,186,1)
+(297,240,1)
+(216,225,1)
+(162,78,1)
+(134,224,1)
+(259,63,1)
+(253,337,1)
+(150,109,1)
+(170,317,1)
+(126,92,1)
+(129,13,1)
+(315,42,1)
+(259,55,1)
+(327,256,1)
+(178,90,1)
+(218,302,1)
+(206,78,1)
+(263,175,1)
+(10,132,1)
+(246,156,1)
+(330,350,1)
+(220,126,1)
+(11,224,1)
+(291,7,1)
+(60,316,1)
+(337,370,1)
+(6,224,1)
+(250,156,1)
+(253,78,1)
+(152,165,1)
+(233,61,1)
+(254,315,1)
+(213,11,1)
+(232,272,1)
+(328,167,1)
+(289,74,1)
+(48,144,1)
+(104,187,1)
+(373,243,1)
+(232,98,1)
+(84,356,1)
+(169,286,1)
+(223,341,1)
+(124,351,1)
+(157,178,1)
+(135,295,1)
+(309,182,1)
+(259,307,1)
+(179,250,1)
+(243,207,1)
+(308,124,1)
+(233,272,1)
+(53,277,1)
+(365,41,1)
+(145,95,1)
+(248,121,1)
+(162,156,1)
+(296,124,1)
+(348,135,1)
+(358,274,1)
+(324,197,1)
+(95,183,1)
+(5,352,1)
+(7,305,1)
+(113,156,1)
+(160,369,1)
+(88,80,1)
+(175,36,1)
+(206,272,1)
+(174,26,1)
+(221,156,1)
+(119,331,1)
+(172,161,1)
+(47,104,1)
+(18,326,1)
+(299,347,1)
+(224,81,1)
+(301,156,1)
+(47,107,1)
+(351,221,1)
+(109,208,1)
+(257,340,1)
+(347,38,1)
+(140,251,1)
+(118,325,1)
+(129,156,1)
+(370,186,1)
+(194,205,1)
+(9,76,1)
+(64,105,1)
+(162,272,1)
+(351,58,1)
+(279,176,1)
+(67,47,1)
+(121,204,1)
+(162,169,1)
+(272,54,1)
+(58,221,1)
+(292,24,1)
+(122,73,1)
+(49,269,1)
+(173,182,1)
+(25,333,1)
+(95,283,1)
+(362,43,1)
+(2,67,1)
+(42,149,1)
+(186,78,1)
+(82,73,1)
+(256,113,1)
+(350,362,1)
+(300,316,1)
+(265,299,1)
+(157,230,1)
+(253,272,1)
+(78,244,1)
+(331,111,1)
+(64,222,1)
+(221,272,1)
+(314,59,1)
+(362,348,1)
+(316,156,1)
+(164,327,2)
+(6,224,2)
+(163,140,2)
+(113,156,2)
+(250,272,2)
+(175,24,2)
+(306,327,2)
+(9,76,2)
+(33,327,2)
+(193,327,2)
+(176,224,2)
+(296,99,2)
+(291,7,2)
+(207,347,2)
+(279,224,2)
+(109,224,2)
+(197,165,2)
+(309,217,2)
+(134,224,2)
+(127,308,2)
+(301,220,2)
+(351,221,2)
+(373,347,2)
+(2,22,2)
+(157,348,2)
+(118,325,2)
+(318,187,2)
+(186,22,2)
+(80,224,2)
+(129,156,2)
+(206,327,2)
+(60,224,2)
+(251,220,2)
+(318,150,2)
+(224,81,2)
+(370,22,2)
+(43,326,2)
+(309,22,2)
+(180,43,2)
+(351,220,2)
+(230,224,2)
+(51,9,2)
+(145,220,2)
+(112,156,2)
+(98,224,2)
+(2,224,2)
+(64,220,2)
+(289,140,2)
+(213,224,2)
+(314,76,2)
+(219,224,2)
+(70,224,2)
+(47,224,2)
+(341,224,2)
+(57,150,2)
+(328,220,2)
+(132,224,2)
+(148,22,2)
+(270,22,2)
+(100,235,2)
+(344,232,2)
+(14,327,2)
+(250,327,2)
+(340,224,2)
+(73,156,2)
+(353,327,2)
+(126,140,2)
+(129,327,2)
+(85,327,2)
+(119,119,2)
+(220,140,2)
+(24,165,2)
+(165,254,2)
+(55,327,2)
+(114,78,2)
+(328,73,2)
+(162,224,2)
+(234,100,2)
+(49,88,2)
+(43,320,2)
+(173,182,2)
+(114,224,2)
+(223,224,2)
+(100,327,2)
+(356,22,2)
+(350,135,2)
+(119,142,2)
+(0,22,2)
+(204,327,2)
+(304,220,2)
+(147,327,2)
+(84,308,2)
+(120,308,2)
+(2,187,2)
+(31,327,2)
+(104,187,2)
+(337,22,2)
+(207,24,2)
+(76,270,2)
+(169,224,2)
+(263,197,2)
+(315,149,2)
+(214,327,2)
+(234,200,2)
+(216,31,2)
+(84,224,2)
+(142,22,2)
+(224,220,2)
+(67,150,2)
+(65,347,2)
+(47,187,2)
+(198,224,2)
+(157,308,2)
+(126,156,2)
+(257,187,2)
+(256,220,2)
+(235,327,2)
+(114,156,2)
+(149,220,2)
+(322,327,2)
+(78,78,2)
+(91,22,2)
+(22,224,2)
+(99,224,2)
+(196,327,2)
+(77,327,2)
+(126,78,2)
+(209,281,2)
+(108,206,2)
+(206,156,2)
+(263,24,2)
+(158,327,2)
+(22,99,2)
+(138,197,2)
+(146,327,2)
+(251,20,2)
+(301,156,2)
+(62,224,2)
+(183,327,2)
+(357,14,2)
+(216,327,2)
+(7,224,2)
+(288,22,2)
+(148,150,2)
+(81,112,2)
+(18,326,2)
+(344,224,2)
+(281,117,2)
+(151,140,2)
+(86,224,2)
+(63,24,2)
+(3,224,2)
+(243,327,2)
+(40,326,2)
+(150,124,2)
+(308,224,2)
+(126,272,2)
+(356,226,2)
+(116,327,2)
+(140,224,2)
+(336,119,2)
+(78,156,2)
+(117,327,2)
+(2,150,2)
+(230,170,2)
+(361,78,2)
+(140,64,2)
+(25,10,2)
+(275,261,2)
+(9,59,2)
+(214,179,2)
+(168,220,2)
+(144,220,2)
+(361,327,2)
+(277,326,2)
+(277,53,2)
+(320,233,2)
+(170,224,2)
+(78,272,2)
+(212,224,2)
+(272,54,2)
+(290,275,2)
+(112,220,2)
+(327,113,2)
+(346,308,2)
+(158,156,2)
+(301,78,2)
+(179,250,2)
+(162,156,2)
+(136,24,2)
+(22,296,2)
+(257,344,2)
+(206,272,2)
+(189,43,2)
+(331,119,2)
+(221,220,2)
+(127,326,2)
+(159,224,2)
+(272,224,2)
+(21,22,2)
+(93,187,2)
+(272,156,2)
+(251,156,2)
+(116,216,2)
+(325,266,2)
+(23,24,2)
+(1,224,2)
+(84,187,2)
+(316,272,2)
+(161,224,2)
+(78,220,2)
+(305,156,2)
+(314,59,2)
+(357,302,2)
+(372,156,2)
+(48,220,2)
+(347,165,2)
+(84,22,2)
+(257,340,2)
+(72,119,2)
+(211,73,2)
+(95,220,2)
+(65,24,2)
+(350,326,2)
+(140,73,2)
+(88,78,2)
+(56,150,2)
+(113,78,2)
+(114,272,2)
+(363,224,2)
+(124,351,2)
+(117,361,2)
+(287,150,2)
+(328,224,2)
+(306,234,2)
+(201,237,2)
+(41,327,2)
+(226,78,2)
+(84,356,2)
+(232,224,2)
+(373,327,2)
+(305,224,2)
+(27,224,2)
+(178,308,2)
+(249,119,2)
+(88,272,2)
+(118,327,2)
+(197,327,2)
+(173,322,2)
+(5,327,2)
+(335,224,2)
+(227,22,2)
+(275,327,2)
+(226,272,2)
+(217,224,2)
+(88,224,2)
+(283,24,2)
+(47,150,2)
+(334,327,2)
+(316,156,2)
+(345,220,2)
+(17,9,2)
+(175,197,2)
+(285,327,2)
+(246,156,2)
+(221,78,2)
+(211,220,2)
+(362,326,2)
+(165,220,2)
+(112,78,2)
+(140,251,2)
+(9,119,2)
+(216,225,2)
+(154,327,2)
+(239,220,2)
+(71,327,2)
+(43,53,2)
+(141,220,2)
+(129,272,2)
+(266,327,2)
+(270,297,2)
+(135,308,2)
+(245,308,2)
+(243,24,2)
+(161,162,2)
+(108,327,2)
+(113,272,2)
+(78,244,2)
+(267,347,2)
+(247,308,2)
+(30,119,2)
+(36,347,2)
+(205,224,2)
+(19,220,2)
+(326,326,2)
+(297,253,2)
+(324,197,2)
+(243,347,2)
+(269,224,2)
+(326,135,2)
+(175,347,2)
+(286,224,2)
+(53,277,2)
+(15,327,2)
+(365,327,2)
+(251,224,2)
+(356,224,2)
+(232,272,2)
+(206,78,2)
+(374,119,2)
+(172,161,2)
+(253,156,2)
+(140,220,2)
+(119,22,2)
+(373,24,2)
+(65,197,2)
+(149,156,2)
+(226,224,2)
+(157,230,2)
+(325,327,2)
+(272,78,2)
+(314,119,2)
+(36,327,2)
+(207,197,2)
+(149,272,2)
+(265,347,2)
+(266,158,2)
+(173,85,2)
+(186,156,2)
+(160,22,2)
+(301,272,2)
+(307,209,2)
+(115,119,2)
+(237,224,2)
+(36,24,2)
+(232,156,2)
+(226,156,2)
+(233,156,2)
+(191,140,2)
+(297,22,2)
+(357,347,2)
+(64,224,2)
+(181,142,2)
+(294,326,2)
+(290,327,2)
+(251,272,2)
+(356,150,2)
+(220,126,2)
+(64,73,2)
+(59,314,2)
+(270,186,2)
+(8,220,2)
+(194,224,2)
+(295,308,2)
+(244,165,2)
+(248,327,2)
+(218,327,2)
+(85,118,2)
+(316,224,2)
+(149,78,2)
+(233,78,2)
+(157,182,2)
+(158,272,2)
+(69,220,2)
+(187,124,2)
+(253,22,2)
+(336,142,2)
+(243,197,2)
+(209,327,2)
+(275,108,2)
+(254,301,2)
+(183,24,2)
+(158,78,2)
+(291,271,2)
+(361,156,2)
+(246,224,2)
+(217,198,2)
+(58,220,2)
+(263,156,2)
+(214,282,2)
+(235,272,2)
+(183,197,2)
+(162,78,2)
+(67,308,2)
+(94,347,2)
+(263,78,2)
+(107,22,2)
+(201,224,2)
+(226,150,2)
+(55,290,2)
+(272,272,2)
+(31,129,2)
+(259,55,2)
+(302,327,2)
+(211,224,2)
+(207,327,2)
+(277,320,2)
+(44,326,2)
+(309,181,2)
+(121,327,2)
+(167,73,2)
+(348,135,2)
+(250,78,2)
+(54,124,2)
+(244,220,2)
+(300,224,2)
+(38,327,2)
+(172,182,2)
+(307,327,2)
+(53,326,2)
+(183,347,2)
+(112,272,2)
+(333,224,2)
+(357,182,2)
+(90,308,2)
+(40,308,2)
+(148,308,2)
+(10,224,2)
+(10,78,2)
+(148,187,2)
+(233,272,2)
+(331,22,2)
+(60,25,2)
+(124,220,2)
+(309,182,2)
+(221,156,2)
+(229,220,2)
+(348,43,2)
+(343,220,2)
+(318,224,2)
+(16,220,2)
+(133,119,2)
+(61,308,2)
+(296,124,2)
+(347,327,2)
+(123,22,2)
+(174,99,2)
+(308,124,2)
+(67,22,2)
+(172,201,2)
+(226,187,2)
+(263,272,2)
+(226,22,2)
+(34,224,2)
+(259,307,2)
+(284,150,2)
+(10,156,2)
+(49,224,2)
+(130,327,2)
+(320,308,2)
+(235,156,2)
+(251,78,2)
+(92,140,2)
+(152,220,2)
+(369,22,2)
+(59,119,2)
+(352,327,2)
+(366,187,2)
+(67,224,2)
+(179,327,2)
+(302,116,2)
+(64,222,2)
+(257,182,2)
+(281,327,2)
+(291,83,2)
+(208,224,2)
+(76,22,2)
+(254,315,2)
+(186,272,2)
+(318,22,2)
+(10,272,2)
+(199,224,2)
+(263,327,2)
+(280,197,2)
+(111,119,2)
+(234,327,2)
+(155,220,2)
+(186,78,2)
+(327,220,2)
+(298,327,2)
+(67,187,2)
+(101,224,2)
+(153,347,2)
+(237,49,2)
+(65,327,2)
+(259,182,2)
+(60,316,2)
+(54,224,2)
+(111,22,2)
+(246,372,2)
+(253,78,2)
+(274,197,2)
+(148,224,2)
+(228,224,2)
+(235,78,2)
+(315,220,2)
+(330,326,2)
+(263,347,2)
+(322,306,2)
+(162,272,2)
+(233,308,2)
+(36,197,2)
+(354,224,2)
+(372,78,2)
+(173,197,2)
+(82,73,2)
+(26,99,2)
+(240,22,2)
+(181,9,2)
+(372,224,2)
+(292,24,2)
+(305,75,2)
+(195,187,2)
+(167,182,2)
+(172,150,2)
+(83,73,2)
+(47,308,2)
+(299,347,2)
+(175,327,2)
+(338,327,2)
+(243,263,2)
+(251,73,2)
+(84,150,2)
+(11,224,2)
+(281,312,2)
+(42,220,2)
+(253,272,2)
+(99,124,2)
+(305,246,2)
+(356,308,2)
+(358,197,2)
+(278,150,2)
+(237,114,2)
+(325,313,2)
+(203,224,2)
+(259,24,2)
+(52,326,2)
+(254,220,2)
+(250,156,2)
+(303,187,2)
+(64,105,2)
+(271,140,2)
+(131,308,2)
+(2,308,2)
+(260,327,2)
+(372,272,2)
+(361,272,2)
+(47,22,2)
+(316,78,2)
+(221,272,2)
+(364,220,2)
+(113,220,2)
+(74,140,2)
+(232,78,2)
+(25,224,2)
+(373,197,2)
+(146,214,2)
+(326,308,2)
+(88,156,2)
+(122,73,2)
+(24,327,2)
+(81,220,2)
+(226,308,2)
+(129,78,2)
+(150,224,2)
+(187,224,2)
+(317,224,2)
+(373,243,2)
+(340,60,2)
+(14,146,2)
+(318,308,2)
+(13,327,2)
+(356,187,2)
+-----------------------------------
+(0,i)
+(1,2)
+(2,0)
+(3,size)
+(4,mask)
+(5,p)
+(6,break;)
+(7,return (unsigned char *)
+(8,3)
+(9,mask & 0x01)
+(10,p[2])
+(11,io)
+(12,if (len != 17)
+(13,16)
+(14,io = *(int *)
+(15,4)
+(16,0)
+(17,i)
+(18,mask)
+(19,0x0f)
+(20,char *)
+(21,0)
+(22,len < 2 || len > 3)
+(23,io)
+(24,len != 9)
+(25,p[2] * 256)
+(26,len)
+(27,dma)
+(28,size)
+(29,p)
+(30,mask)
+(31,&p[16])
+(32,irq)
+(33,9)
+(34,p)
+(35,)
+(36,p)
+(37,io)
+(38,17)
+(39,case SMALL_TAG_VENDOR:)
+(40,i)
+(41,size)
+(42,8)
+(43,mask & 0x01)
+(44,1)
+(45,)
+(46,case LARGE_TAG_VENDOR:)
+(47,"parser: Unknown small tag \'0x%x\'.")
+(48,0)
+(49,p[3] *256)
+(50,size)
+(51,irq)
+(52,mask)
+(53,mask = mask>>1)
+(54,len + 1)
+(55,io = *(short *)
+(56,res)
+(57,goto sm_err;)
+(58,0x07)
+(59,mask=mask>>1)
+(60,p[1] + p[2] * 256)
+(61,1)
+(62,2)
+(63,size)
+(64,(char *)
+(65,"parser: Unknown large tag \'0x%x\'.")
+(66,default:)
+(67,p)
+(68,)
+(69,len)
+(70,p)
+(71,len)
+(72,1)
+(73,!p)
+(74,"parser: Resource structure does not contain an end tag.")
+(75,unsigned char *)
+(76,mask= p[1] + p[2]*256)
+(77,size)
+(78,p += len + 3)
+(79,)
+(80,3)
+(81,p[0]>>3)
+(82,res)
+(83,return NULL;)
+(84,pnp_warn("parser: Unknown small tag \'0x%x\'.", p[0]>>3)
+(85,io = *(int *)
+(86,1)
+(87,if(p[0] & LARGE_TAG)
+(88,p[3])
+(89,io)
+(90,res)
+(91,mask)
+(92,0)
+(93,io)
+(94,goto lrg_err;)
+(95,p)
+(96,)
+(97,)
+(98,3)
+(99,len < 2)
+(100,&p[8])
+(101,p)
+(102,io)
+(103,size)
+(104,goto sm_err;)
+(105,char *)
+(106,i)
+(107,goto sm_err;)
+(108,&p[4])
+(109,7)
+(110,mask)
+(111,i)
+(112,p[0])
+(113,p[0])
+(114,p[2])
+(115,0x01)
+(116,*(int *)
+(117,&p[10])
+(118,*(int *)
+(119,i<16)
+(120,i)
+(121,p)
+(122,NULL)
+(123,p)
+(124,len = p[0] & 0x07)
+(125,)
+(126,p[0])
+(127,8)
+(128,)
+(129,p[16])
+(130,8)
+(131,goto sm_err;)
+(132,2)
+(133,mask)
+(134,io)
+(135,i=0)
+(136,res)
+(137,if (len != 9)
+(138,size)
+(139,)
+(140,(char *)
+(141,1)
+(142,i=0)
+(143,sm_err:)
+(144,p)
+(145,len)
+(146,*(int *)
+(147,p)
+(148,3)
+(149,p[2])
+(150,len != 7)
+(151,LARGE_TAG)
+(152,p)
+(153,break;)
+(154,10)
+(155,p)
+(156,unsigned char * p)
+(157,current_dmaresource(res, dma)
+(158,p[4])
+(159,size)
+(160,irq)
+(161,size = p[7])
+(162,p[7])
+(163,NULL)
+(164,len)
+(165,len = (p[2] << 8)
+(166,)
+(167,pnp_init_resource_table(res)
+(168,2)
+(169,7)
+(170,-1)
+(171,len)
+(172,current_ioresource(res, io, size)
+(173,current_memresource(res, io, size)
+(174,3)
+(175,0)
+(176,len)
+(177,lrg_err:)
+(178,dma)
+(179,&p[4])
+(180,dma)
+(181,irq=i)
+(182,struct pnp_resource_table * res)
+(183,break;)
+(184,size)
+(185,io)
+(186,p[1])
+(187,len != 3)
+(188,)
+(189,i)
+(190,break;)
+(191,p)
+(192,)
+(193,break;)
+(194,p)
+(195,size)
+(196,p)
+(197,len != 9)
+(198,-1)
+(199,p)
+(200,int *)
+(201,io= p[2] + p[3] *256)
+(202,if (len != 7)
+(203,3)
+(204,io)
+(205,p)
+(206,p[4])
+(207,0x7f)
+(208,len)
+(209,*(short *)
+(210,i)
+(211,end)
+(212,1)
+(213,p)
+(214,(int *)
+(215,if (len < 2 || len > 3)
+(216,(int *)
+(217,irq = -1)
+(218,len)
+(219,2)
+(220,p[0] & LARGE_TAG)
+(221,p[0])
+(222,unsigned char * end)
+(223,1)
+(224,(p[0]>>3)
+(225,int *)
+(226,p[0])
+(227,break;)
+(228,len)
+(229,len)
+(230,dma = -1)
+(231,for (i=0;i<16;i++, mask=mask>>1)
+(232,p[3])
+(233,p[1])
+(234,(int *)
+(235,p[8])
+(236,for (i=0;i<8;i++, mask = mask>>1)
+(237,p[2] + p[3] *256)
+(238,case SMALL_TAG_DMA:)
+(239,3)
+(240,256)
+(241,if (len != 3)
+(242,io)
+(243,p[0] & 0x7f)
+(244,len + 3)
+(245,break;)
+(246,p = p + 2)
+(247,p)
+(248,4)
+(249,mask)
+(250,p[4])
+(251,(char *)
+(252,case SMALL_TAG_END:)
+(253,p[2])
+(254,(p[2] << 8)
+(255,dma)
+(256,0x7f)
+(257,current_ioresource(res, io, size)
+(258,switch ((p[0]>>3)
+(259,current_memresource(res, io, size)
+(260,io)
+(261,short *)
+(262,case SMALL_TAG_IRQ:)
+(263,p[0])
+(264,while ((char *)
+(265,io)
+(266,&p[4])
+(267,size)
+(268,if (len != 9)
+(269,256)
+(270,p[1] + p[2]*256)
+(271,return NULL;)
+(272,p += len + 1)
+(273,)
+(274,res)
+(275,(short *)
+(276,case SMALL_TAG_PORT:)
+(277,mask>>1)
+(278,size)
+(279,2)
+(280,break;)
+(281,(short *)
+(282,int *)
+(283,break;)
+(284,io)
+(285,9)
+(286,p)
+(287,break;)
+(288,1)
+(289,pnp_err("parser: Resource structure does not contain an end tag.")
+(290,*(short *)
+(291,RET)
+(292,goto lrg_err;)
+(293,default:)
+(294,0x01)
+(295,0)
+(296,len > 3)
+(297,p[2]*256)
+(298,4)
+(299,res)
+(300,p)
+(301,p[1])
+(302,size = *(int *)
+(303,res)
+(304,p)
+(305,(unsigned char *)
+(306,*(int *)
+(307,size = *(short *)
+(308,len != 2)
+(309,current_irqresource(res, irq)
+(310,case LARGE_TAG_ANSISTR:)
+(311,case LARGE_TAG_FIXEDMEM32:)
+(312,short *)
+(313,int *)
+(314,mask>>1)
+(315,p[2] << 8)
+(316,p[1])
+(317,1)
+(318,break;)
+(319,if (len != 2)
+(320,mask = p[1])
+(321,)
+(322,size = *(int *)
+(323,case LARGE_TAG_MEM:)
+(324,goto lrg_err;)
+(325,(int *)
+(326,i<8)
+(327,p[0] & 0x7f)
+(328,p)
+(329,case LARGE_TAG_MEM32:)
+(330,mask)
+(331,16)
+(332,)
+(333,256)
+(334,p)
+(335,len)
+(336,i++)
+(337,2)
+(338,break;)
+(339,switch (p[0] & 0x7f)
+(340,io = p[1] + p[2] * 256)
+(341,irq)
+(342,)
+(343,0)
+(344,size = p[3])
+(345,p)
+(346,mask)
+(347,len != 17)
+(348,dma=i)
+(349,)
+(350,i++)
+(351,p[0] & 0x07)
+(352,size)
+(353,io)
+(354,len)
+(355,size)
+(356,p[0]>>3)
+(357,current_memresource(res, io, size)
+(358,io)
+(359,if (!p)
+(360,)
+(361,p[10])
+(362,i)
+(363,p)
+(364,continue;)
+(365,p)
+(366,break;)
+(367,)
+(368,)
+(369,res)
+(370,p)
+(371,case SMALL_TAG_FIXEDPORT:)
+(372,p + 2)
+(373,pnp_warn("parser: Unknown large tag \'0x%x\'.", p[0] & 0x7f)
+(374,i)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

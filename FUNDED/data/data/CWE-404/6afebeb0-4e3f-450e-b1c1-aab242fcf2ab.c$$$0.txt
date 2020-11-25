@@ -1,0 +1,1974 @@
+-----label-----
+1
+-----code-----
+void
+vinum_daemon(void)
+{
+    struct daemonq *request;
+
+    curproc->p_flag |= P_SYSTEM;		    /* we're a system process */
+    daemon_save_config();				    /* start by saving the configuration */
+    daemonpid = curproc->p_pid;				    /* mark our territory */
+    while (1) {
+	tsleep(&vinum_daemon, 0, "vinum", 0);	    /* wait for something to happen */
+
+	/*
+	 * It's conceivable that, as the result of an
+	 * I/O error, we'll be out of action long
+	 * enough that another daemon gets started.
+	 * That's OK, just give up gracefully.
+	 */
+	if (curproc->p_pid != daemonpid) {		    /* we've been ousted in our sleep */
+	    if (daemon_options & daemon_verbose)
+		log(LOG_INFO, "vinum: abdicating\n");
+	    return;
+	}
+	while (daemonq != NULL) {			    /* we have work to do, */
+	    crit_enter();
+	    request = daemonq;				    /* get the request */
+	    daemonq = daemonq->next;			    /* and detach it */
+	    if (daemonq == NULL)			    /* got to the end, */
+		dqend = NULL;				    /* no end any more */
+	    crit_exit();
+
+	    switch (request->type) {
+		/*
+		 * We had an I/O error on a request.  Go through the
+		 * request and try to salvage it
+		 */
+	    case daemonrq_ioerror:
+		if (daemon_options & daemon_verbose) {
+		    struct request *rq = request->info.rq;
+
+		    log(LOG_WARNING,
+			"vinum: recovering I/O request: %p\n%s dev %d.%d, offset 0x%x, length %ld\n",
+			rq,
+			rq->bp->b_flags & B_READ ? "Read" : "Write",
+			major(rq->bp->b_dev),
+			minor(rq->bp->b_dev),
+			rq->bp->b_blkno,
+			rq->bp->b_bcount);
+		}
+		recover_io(request->info.rq);		    /* the failed request */
+		break;
+
+		/*
+		 * Write the config to disk.  We could end up with
+		 * quite a few of these in a row.  Only honour the
+		 * last one
+		 */
+	    case daemonrq_saveconfig:
+		if ((daemonq == NULL)			    /* no more requests */
+		||(daemonq->type != daemonrq_saveconfig)) { /* or the next isn't the same */
+		    if (((daemon_options & daemon_noupdate) == 0) /* we're allowed to do it */
+		    &&((vinum_conf.flags & VF_READING_CONFIG) == 0)) { /* and we're not building the config now */
+			/*
+			   * We obviously don't want to save a
+			   * partial configuration.  Less obviously,
+			   * we don't need to do anything if we're
+			   * asked to write the config when we're
+			   * building it up, because we save it at
+			   * the end.
+			 */
+			if (daemon_options & daemon_verbose)
+			    log(LOG_INFO, "vinum: saving config\n");
+			daemon_save_config();		    /* save it */
+		    }
+		}
+		break;
+
+	    case daemonrq_return:			    /* been told to stop */
+		if (daemon_options & daemon_verbose)
+		    log(LOG_INFO, "vinum: stopping\n");
+		daemon_options |= daemon_stopped;	    /* note that we've stopped */
+		Free(request);
+		while (daemonq != NULL) {		    /* backed up requests, */
+		    request = daemonq;			    /* get the request */
+		    daemonq = daemonq->next;		    /* and detach it */
+		    Free(request);			    /* then free it */
+		}
+		wakeup(&vinumclose);			    /* and wake any waiting vinum(8)s */
+		return;
+
+	    case daemonrq_ping:				    /* tell the caller we're here */
+		if (daemon_options & daemon_verbose)
+		    log(LOG_INFO, "vinum: ping reply\n");
+		wakeup(&vinum_finddaemon);		    /* wake up the caller */
+		break;
+
+	    case daemonrq_closedrive:			    /* close a drive */
+		close_drive(request->info.drive);	    /* do it */
+		break;
+
+	    case daemonrq_init:				    /* initialize a plex */
+		/* XXX */
+	    case daemonrq_revive:			    /* revive a subdisk */
+		/* XXX */
+		/* FALLTHROUGH */
+	    default:
+		log(LOG_WARNING, "Invalid request\n");
+		break;
+	    }
+	    if (request->privateinuse)			    /* one of ours, */
+		request->privateinuse = 0;		    /* no longer in use */
+	    else
+		Free(request);				    /* return it */
+	}
+    }
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+5,6
+5,7
+7,8
+9,10
+9,11
+9,12
+9,13
+9,14
+10,11
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+18,19
+18,20
+19,20
+19,21
+20,21
+23,24
+25,26
+26,27
+27,28
+29,30
+30,31
+30,32
+31,32
+33,34
+33,35
+34,35
+37,38
+37,39
+39,40
+39,41
+39,42
+40,41
+41,42
+41,43
+41,44
+41,45
+41,46
+42,43
+44,45
+45,46
+50,51
+50,52
+51,52
+51,53
+52,53
+52,54
+53,54
+56,57
+58,59
+58,60
+59,60
+59,61
+60,61
+60,62
+61,62
+63,64
+63,65
+66,67
+67,68
+67,69
+67,70
+68,69
+70,71
+74,75
+74,76
+75,76
+75,77
+76,77
+78,79
+80,81
+80,82
+80,83
+80,84
+80,85
+80,86
+80,87
+81,82
+82,83
+83,84
+85,86
+86,87
+86,88
+87,88
+89,90
+91,92
+92,93
+92,94
+93,94
+95,96
+95,97
+96,97
+99,100
+99,101
+100,101
+100,102
+101,102
+103,104
+105,106
+106,107
+106,108
+107,108
+109,110
+111,112
+112,113
+113,114
+115,116
+115,117
+116,117
+116,118
+117,118
+120,121
+120,122
+120,123
+120,124
+120,125
+120,126
+120,127
+120,128
+120,129
+120,130
+120,131
+120,132
+120,133
+120,134
+120,135
+120,136
+120,137
+120,138
+120,139
+120,140
+120,141
+120,142
+120,143
+120,144
+120,145
+120,146
+121,122
+122,123
+124,125
+124,126
+125,126
+125,127
+126,127
+128,129
+128,130
+131,132
+131,133
+132,133
+133,134
+133,135
+134,135
+136,137
+136,138
+136,139
+139,140
+140,141
+140,142
+141,142
+141,143
+142,143
+146,147
+147,148
+147,149
+147,150
+147,151
+147,152
+147,153
+147,154
+147,155
+147,156
+148,149
+150,151
+153,154
+155,156
+155,157
+155,158
+156,157
+156,158
+157,158
+157,159
+158,159
+158,160
+159,160
+163,164
+167,168
+167,169
+168,169
+170,171
+170,172
+171,172
+171,173
+172,173
+176,177
+176,178
+177,178
+179,180
+179,181
+180,181
+180,182
+181,182
+185,186
+185,187
+186,187
+186,188
+187,188
+191,192
+191,193
+192,193
+192,194
+193,194
+197,198
+198,199
+198,200
+199,200
+201,202
+201,203
+202,203
+202,204
+203,204
+208,209
+209,210
+211,212
+211,213
+212,213
+212,214
+213,214
+214,215
+214,216
+215,216
+217,218
+219,220
+220,221
+220,222
+221,222
+221,223
+222,223
+225,226
+227,228
+228,229
+228,230
+229,230
+229,231
+230,231
+231,232
+231,233
+232,233
+233,234
+233,235
+234,235
+236,237
+239,240
+240,241
+240,242
+241,242
+242,243
+242,244
+243,244
+243,245
+244,245
+247,248
+250,251
+250,252
+251,252
+251,253
+252,253
+252,254
+253,254
+255,256
+255,257
+258,259
+259,260
+259,261
+259,262
+260,261
+262,263
+265,266
+266,267
+267,268
+270,271
+271,272
+273,274
+273,275
+274,275
+274,276
+275,276
+277,278
+277,279
+280,281
+281,282
+281,283
+281,284
+282,283
+284,285
+287,288
+288,289
+288,290
+289,290
+291,292
+293,294
+294,295
+294,296
+295,296
+297,298
+299,300
+299,301
+300,301
+300,302
+301,302
+303,304
+305,306
+305,307
+305,308
+306,307
+307,308
+307,309
+308,309
+310,311
+312,313
+313,314
+313,315
+314,315
+316,317
+316,318
+317,318
+320,321
+321,322
+321,323
+322,323
+324,325
+326,327
+327,328
+327,329
+328,329
+330,331
+331,332
+331,333
+335,336
+336,337
+338,339
+338,340
+339,340
+339,341
+340,341
+342,343
+342,344
+345,346
+346,347
+346,348
+346,349
+347,348
+349,350
+352,353
+353,354
+353,355
+354,355
+356,357
+357,358
+357,359
+361,362
+362,363
+364,365
+365,366
+365,367
+366,367
+368,369
+368,370
+369,370
+369,371
+370,371
+375,376
+376,377
+378,379
+379,380
+382,383
+383,384
+383,385
+383,386
+384,385
+386,387
+390,391
+390,392
+390,393
+391,392
+391,393
+392,393
+395,396
+396,397
+396,398
+397,398
+397,399
+398,399
+402,403
+403,404
+403,405
+404,405
+406,407
+-----nextToken-----
+2,4,6,8,13,15,16,21,22,24,28,32,35,36,38,43,46,47,48,49,54,55,57,62,64,65,69,71,72,73,77,79,84,88,90,94,97,98,102,104,108,110,114,118,119,123,127,129,130,135,137,138,143,144,145,149,151,152,154,160,161,162,164,165,166,169,173,174,175,178,182,183,184,188,189,190,194,195,196,200,204,205,206,207,210,216,218,223,224,226,235,237,238,245,246,248,249,254,256,257,261,263,264,268,269,272,276,278,279,283,285,286,290,292,296,298,302,304,309,311,315,318,319,323,325,329,332,333,334,337,341,343,344,348,350,351,355,358,359,360,363,367,371,372,373,374,377,380,381,385,387,388,389,393,394,399,400,401,405,407
+-----computeFrom-----
+18,19
+18,20
+30,31
+30,32
+51,52
+51,53
+75,76
+75,77
+86,87
+86,88
+92,93
+92,94
+100,101
+100,102
+106,107
+106,108
+156,157
+156,158
+212,213
+212,214
+214,215
+214,216
+220,221
+220,222
+229,230
+229,231
+231,232
+231,233
+233,234
+233,235
+240,241
+240,242
+242,243
+242,244
+288,289
+288,290
+300,301
+300,302
+307,308
+307,309
+313,314
+313,315
+396,397
+396,398
+-----guardedBy-----
+104,110
+235,254
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;WhileStatement;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;LiteralExpression;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;IfStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;ReferenceOperator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ReturnStatement;WhileStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;SwitchStatement;FieldReference;IdExpression;Name;Name;CompoundStatement;CaseStatement;IdExpression;Name;IfStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;ReferenceOperator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FieldReference;FieldReference;IdExpression;Name;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;ConditionalExpression;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;LiteralExpression;LiteralExpression;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;BreakStatement;CaseStatement;IdExpression;Name;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;UnaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;LiteralExpression;CompoundStatement;IfStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;ReferenceOperator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;IfStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;ReferenceOperator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;WhileStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;ReferenceOperator;Name;ReturnStatement;CaseStatement;IdExpression;Name;IfStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;ReferenceOperator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;ReferenceOperator;Name;BreakStatement;CaseStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;BreakStatement;CaseStatement;IdExpression;Name;CaseStatement;IdExpression;Name;DefaultStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;BreakStatement;IfStatement;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;
+-----ast_node-----
+voidvinum_daemon(void){    struct daemonq *request;    curproc->p_flag |= P_SYSTEM;		    /* we're a system process */    daemon_save_config();				    /* start by saving the configuration */    daemonpid = curproc->p_pid;				    /* mark our territory */    while (1) {	tsleep(&vinum_daemon, 0, "vinum", 0);	    /* wait for something to happen */	/*	 * It's conceivable that, as the result of an	 * I/O error, we'll be out of action long	 * enough that another daemon gets started.	 * That's OK, just give up gracefully.	 */	if (curproc->p_pid != daemonpid) {		    /* we've been ousted in our sleep */	    if (daemon_options & daemon_verbose)		log(LOG_INFO, "vinum: abdicating\n");	    return;	}	while (daemonq != NULL) {			    /* we have work to do, */	    crit_enter();	    request = daemonq;				    /* get the request */	    daemonq = daemonq->next;			    /* and detach it */	    if (daemonq == NULL)			    /* got to the end, */		dqend = NULL;				    /* no end any more */	    crit_exit();	    switch (request->type) {		/*		 * We had an I/O error on a request.  Go through the		 * request and try to salvage it		 */	    case daemonrq_ioerror:		if (daemon_options & daemon_verbose) {		    struct request *rq = request->info.rq;		    log(LOG_WARNING,			"vinum: recovering I/O request: %p\n%s dev %d.%d, offset 0x%x, length %ld\n",			rq,			rq->bp->b_flags & B_READ ? "Read" : "Write",			major(rq->bp->b_dev),			minor(rq->bp->b_dev),			rq->bp->b_blkno,			rq->bp->b_bcount);		}		recover_io(request->info.rq);		    /* the failed request */		break;		/*		 * Write the config to disk.  We could end up with		 * quite a few of these in a row.  Only honour the		 * last one		 */	    case daemonrq_saveconfig:		if ((daemonq == NULL)			    /* no more requests */		||(daemonq->type != daemonrq_saveconfig)) { /* or the next isn't the same */		    if (((daemon_options & daemon_noupdate) == 0) /* we're allowed to do it */		    &&((vinum_conf.flags & VF_READING_CONFIG) == 0)) { /* and we're not building the config now */			/*			   * We obviously don't want to save a			   * partial configuration.  Less obviously,			   * we don't need to do anything if we're			   * asked to write the config when we're			   * building it up, because we save it at			   * the end.			 */			if (daemon_options & daemon_verbose)			    log(LOG_INFO, "vinum: saving config\n");			daemon_save_config();		    /* save it */		    }		}		break;	    case daemonrq_return:			    /* been told to stop */		if (daemon_options & daemon_verbose)		    log(LOG_INFO, "vinum: stopping\n");		daemon_options |= daemon_stopped;	    /* note that we've stopped */		Free(request);		while (daemonq != NULL) {		    /* backed up requests, */		    request = daemonq;			    /* get the request */		    daemonq = daemonq->next;		    /* and detach it */		    Free(request);			    /* then free it */		}		wakeup(&vinumclose);			    /* and wake any waiting vinum(8)s */		return;	    case daemonrq_ping:				    /* tell the caller we're here */		if (daemon_options & daemon_verbose)		    log(LOG_INFO, "vinum: ping reply\n");		wakeup(&vinum_finddaemon);		    /* wake up the caller */		break;	    case daemonrq_closedrive:			    /* close a drive */		close_drive(request->info.drive);	    /* do it */		break;	    case daemonrq_init:				    /* initialize a plex */		/* XXX */	    case daemonrq_revive:			    /* revive a subdisk */		/* XXX */		/* FALLTHROUGH */	    default:		log(LOG_WARNING, "Invalid request\n");		break;	    }	    if (request->privateinuse)			    /* one of ours, */		request->privateinuse = 0;		    /* no longer in use */	    else		Free(request);				    /* return it */	}    }}
+void
+vinum_daemon(void)
+vinum_daemon
+void
+void
+
+
+{    struct daemonq *request;    curproc->p_flag |= P_SYSTEM;		    /* we're a system process */    daemon_save_config();				    /* start by saving the configuration */    daemonpid = curproc->p_pid;				    /* mark our territory */    while (1) {	tsleep(&vinum_daemon, 0, "vinum", 0);	    /* wait for something to happen */	/*	 * It's conceivable that, as the result of an	 * I/O error, we'll be out of action long	 * enough that another daemon gets started.	 * That's OK, just give up gracefully.	 */	if (curproc->p_pid != daemonpid) {		    /* we've been ousted in our sleep */	    if (daemon_options & daemon_verbose)		log(LOG_INFO, "vinum: abdicating\n");	    return;	}	while (daemonq != NULL) {			    /* we have work to do, */	    crit_enter();	    request = daemonq;				    /* get the request */	    daemonq = daemonq->next;			    /* and detach it */	    if (daemonq == NULL)			    /* got to the end, */		dqend = NULL;				    /* no end any more */	    crit_exit();	    switch (request->type) {		/*		 * We had an I/O error on a request.  Go through the		 * request and try to salvage it		 */	    case daemonrq_ioerror:		if (daemon_options & daemon_verbose) {		    struct request *rq = request->info.rq;		    log(LOG_WARNING,			"vinum: recovering I/O request: %p\n%s dev %d.%d, offset 0x%x, length %ld\n",			rq,			rq->bp->b_flags & B_READ ? "Read" : "Write",			major(rq->bp->b_dev),			minor(rq->bp->b_dev),			rq->bp->b_blkno,			rq->bp->b_bcount);		}		recover_io(request->info.rq);		    /* the failed request */		break;		/*		 * Write the config to disk.  We could end up with		 * quite a few of these in a row.  Only honour the		 * last one		 */	    case daemonrq_saveconfig:		if ((daemonq == NULL)			    /* no more requests */		||(daemonq->type != daemonrq_saveconfig)) { /* or the next isn't the same */		    if (((daemon_options & daemon_noupdate) == 0) /* we're allowed to do it */		    &&((vinum_conf.flags & VF_READING_CONFIG) == 0)) { /* and we're not building the config now */			/*			   * We obviously don't want to save a			   * partial configuration.  Less obviously,			   * we don't need to do anything if we're			   * asked to write the config when we're			   * building it up, because we save it at			   * the end.			 */			if (daemon_options & daemon_verbose)			    log(LOG_INFO, "vinum: saving config\n");			daemon_save_config();		    /* save it */		    }		}		break;	    case daemonrq_return:			    /* been told to stop */		if (daemon_options & daemon_verbose)		    log(LOG_INFO, "vinum: stopping\n");		daemon_options |= daemon_stopped;	    /* note that we've stopped */		Free(request);		while (daemonq != NULL) {		    /* backed up requests, */		    request = daemonq;			    /* get the request */		    daemonq = daemonq->next;		    /* and detach it */		    Free(request);			    /* then free it */		}		wakeup(&vinumclose);			    /* and wake any waiting vinum(8)s */		return;	    case daemonrq_ping:				    /* tell the caller we're here */		if (daemon_options & daemon_verbose)		    log(LOG_INFO, "vinum: ping reply\n");		wakeup(&vinum_finddaemon);		    /* wake up the caller */		break;	    case daemonrq_closedrive:			    /* close a drive */		close_drive(request->info.drive);	    /* do it */		break;	    case daemonrq_init:				    /* initialize a plex */		/* XXX */	    case daemonrq_revive:			    /* revive a subdisk */		/* XXX */		/* FALLTHROUGH */	    default:		log(LOG_WARNING, "Invalid request\n");		break;	    }	    if (request->privateinuse)			    /* one of ours, */		request->privateinuse = 0;		    /* no longer in use */	    else		Free(request);				    /* return it */	}    }}
+struct daemonq *request;
+struct daemonq *request;
+struct daemonq
+daemonq
+*request
+*
+request
+curproc->p_flag |= P_SYSTEM;
+curproc->p_flag |= P_SYSTEM
+curproc->p_flag
+curproc
+curproc
+p_flag
+P_SYSTEM
+P_SYSTEM
+daemon_save_config();
+daemon_save_config()
+daemon_save_config
+daemon_save_config
+daemonpid = curproc->p_pid;
+daemonpid = curproc->p_pid
+daemonpid
+daemonpid
+curproc->p_pid
+curproc
+curproc
+p_pid
+while (1) {	tsleep(&vinum_daemon, 0, "vinum", 0);	    /* wait for something to happen */	/*	 * It's conceivable that, as the result of an	 * I/O error, we'll be out of action long	 * enough that another daemon gets started.	 * That's OK, just give up gracefully.	 */	if (curproc->p_pid != daemonpid) {		    /* we've been ousted in our sleep */	    if (daemon_options & daemon_verbose)		log(LOG_INFO, "vinum: abdicating\n");	    return;	}	while (daemonq != NULL) {			    /* we have work to do, */	    crit_enter();	    request = daemonq;				    /* get the request */	    daemonq = daemonq->next;			    /* and detach it */	    if (daemonq == NULL)			    /* got to the end, */		dqend = NULL;				    /* no end any more */	    crit_exit();	    switch (request->type) {		/*		 * We had an I/O error on a request.  Go through the		 * request and try to salvage it		 */	    case daemonrq_ioerror:		if (daemon_options & daemon_verbose) {		    struct request *rq = request->info.rq;		    log(LOG_WARNING,			"vinum: recovering I/O request: %p\n%s dev %d.%d, offset 0x%x, length %ld\n",			rq,			rq->bp->b_flags & B_READ ? "Read" : "Write",			major(rq->bp->b_dev),			minor(rq->bp->b_dev),			rq->bp->b_blkno,			rq->bp->b_bcount);		}		recover_io(request->info.rq);		    /* the failed request */		break;		/*		 * Write the config to disk.  We could end up with		 * quite a few of these in a row.  Only honour the		 * last one		 */	    case daemonrq_saveconfig:		if ((daemonq == NULL)			    /* no more requests */		||(daemonq->type != daemonrq_saveconfig)) { /* or the next isn't the same */		    if (((daemon_options & daemon_noupdate) == 0) /* we're allowed to do it */		    &&((vinum_conf.flags & VF_READING_CONFIG) == 0)) { /* and we're not building the config now */			/*			   * We obviously don't want to save a			   * partial configuration.  Less obviously,			   * we don't need to do anything if we're			   * asked to write the config when we're			   * building it up, because we save it at			   * the end.			 */			if (daemon_options & daemon_verbose)			    log(LOG_INFO, "vinum: saving config\n");			daemon_save_config();		    /* save it */		    }		}		break;	    case daemonrq_return:			    /* been told to stop */		if (daemon_options & daemon_verbose)		    log(LOG_INFO, "vinum: stopping\n");		daemon_options |= daemon_stopped;	    /* note that we've stopped */		Free(request);		while (daemonq != NULL) {		    /* backed up requests, */		    request = daemonq;			    /* get the request */		    daemonq = daemonq->next;		    /* and detach it */		    Free(request);			    /* then free it */		}		wakeup(&vinumclose);			    /* and wake any waiting vinum(8)s */		return;	    case daemonrq_ping:				    /* tell the caller we're here */		if (daemon_options & daemon_verbose)		    log(LOG_INFO, "vinum: ping reply\n");		wakeup(&vinum_finddaemon);		    /* wake up the caller */		break;	    case daemonrq_closedrive:			    /* close a drive */		close_drive(request->info.drive);	    /* do it */		break;	    case daemonrq_init:				    /* initialize a plex */		/* XXX */	    case daemonrq_revive:			    /* revive a subdisk */		/* XXX */		/* FALLTHROUGH */	    default:		log(LOG_WARNING, "Invalid request\n");		break;	    }	    if (request->privateinuse)			    /* one of ours, */		request->privateinuse = 0;		    /* no longer in use */	    else		Free(request);				    /* return it */	}    }
+1
+{	tsleep(&vinum_daemon, 0, "vinum", 0);	    /* wait for something to happen */	/*	 * It's conceivable that, as the result of an	 * I/O error, we'll be out of action long	 * enough that another daemon gets started.	 * That's OK, just give up gracefully.	 */	if (curproc->p_pid != daemonpid) {		    /* we've been ousted in our sleep */	    if (daemon_options & daemon_verbose)		log(LOG_INFO, "vinum: abdicating\n");	    return;	}	while (daemonq != NULL) {			    /* we have work to do, */	    crit_enter();	    request = daemonq;				    /* get the request */	    daemonq = daemonq->next;			    /* and detach it */	    if (daemonq == NULL)			    /* got to the end, */		dqend = NULL;				    /* no end any more */	    crit_exit();	    switch (request->type) {		/*		 * We had an I/O error on a request.  Go through the		 * request and try to salvage it		 */	    case daemonrq_ioerror:		if (daemon_options & daemon_verbose) {		    struct request *rq = request->info.rq;		    log(LOG_WARNING,			"vinum: recovering I/O request: %p\n%s dev %d.%d, offset 0x%x, length %ld\n",			rq,			rq->bp->b_flags & B_READ ? "Read" : "Write",			major(rq->bp->b_dev),			minor(rq->bp->b_dev),			rq->bp->b_blkno,			rq->bp->b_bcount);		}		recover_io(request->info.rq);		    /* the failed request */		break;		/*		 * Write the config to disk.  We could end up with		 * quite a few of these in a row.  Only honour the		 * last one		 */	    case daemonrq_saveconfig:		if ((daemonq == NULL)			    /* no more requests */		||(daemonq->type != daemonrq_saveconfig)) { /* or the next isn't the same */		    if (((daemon_options & daemon_noupdate) == 0) /* we're allowed to do it */		    &&((vinum_conf.flags & VF_READING_CONFIG) == 0)) { /* and we're not building the config now */			/*			   * We obviously don't want to save a			   * partial configuration.  Less obviously,			   * we don't need to do anything if we're			   * asked to write the config when we're			   * building it up, because we save it at			   * the end.			 */			if (daemon_options & daemon_verbose)			    log(LOG_INFO, "vinum: saving config\n");			daemon_save_config();		    /* save it */		    }		}		break;	    case daemonrq_return:			    /* been told to stop */		if (daemon_options & daemon_verbose)		    log(LOG_INFO, "vinum: stopping\n");		daemon_options |= daemon_stopped;	    /* note that we've stopped */		Free(request);		while (daemonq != NULL) {		    /* backed up requests, */		    request = daemonq;			    /* get the request */		    daemonq = daemonq->next;		    /* and detach it */		    Free(request);			    /* then free it */		}		wakeup(&vinumclose);			    /* and wake any waiting vinum(8)s */		return;	    case daemonrq_ping:				    /* tell the caller we're here */		if (daemon_options & daemon_verbose)		    log(LOG_INFO, "vinum: ping reply\n");		wakeup(&vinum_finddaemon);		    /* wake up the caller */		break;	    case daemonrq_closedrive:			    /* close a drive */		close_drive(request->info.drive);	    /* do it */		break;	    case daemonrq_init:				    /* initialize a plex */		/* XXX */	    case daemonrq_revive:			    /* revive a subdisk */		/* XXX */		/* FALLTHROUGH */	    default:		log(LOG_WARNING, "Invalid request\n");		break;	    }	    if (request->privateinuse)			    /* one of ours, */		request->privateinuse = 0;		    /* no longer in use */	    else		Free(request);				    /* return it */	}    }
+tsleep(&vinum_daemon, 0, "vinum", 0);
+tsleep(&vinum_daemon, 0, "vinum", 0)
+tsleep
+tsleep
+&vinum_daemon
+vinum_daemon
+vinum_daemon
+0
+"vinum"
+0
+if (curproc->p_pid != daemonpid) {		    /* we've been ousted in our sleep */	    if (daemon_options & daemon_verbose)		log(LOG_INFO, "vinum: abdicating\n");	    return;	}
+curproc->p_pid != daemonpid
+curproc->p_pid
+curproc
+curproc
+p_pid
+daemonpid
+daemonpid
+{		    /* we've been ousted in our sleep */	    if (daemon_options & daemon_verbose)		log(LOG_INFO, "vinum: abdicating\n");	    return;	}
+if (daemon_options & daemon_verbose)		log(LOG_INFO, "vinum: abdicating\n");
+daemon_options & daemon_verbose
+daemon_options
+daemon_options
+& daemon_verbose
+&
+daemon_verbose
+log(LOG_INFO, "vinum: abdicating\n");
+log(LOG_INFO, "vinum: abdicating\n")
+log
+log
+LOG_INFO
+LOG_INFO
+"vinum: abdicating\n"
+return;
+while (daemonq != NULL) {			    /* we have work to do, */	    crit_enter();	    request = daemonq;				    /* get the request */	    daemonq = daemonq->next;			    /* and detach it */	    if (daemonq == NULL)			    /* got to the end, */		dqend = NULL;				    /* no end any more */	    crit_exit();	    switch (request->type) {		/*		 * We had an I/O error on a request.  Go through the		 * request and try to salvage it		 */	    case daemonrq_ioerror:		if (daemon_options & daemon_verbose) {		    struct request *rq = request->info.rq;		    log(LOG_WARNING,			"vinum: recovering I/O request: %p\n%s dev %d.%d, offset 0x%x, length %ld\n",			rq,			rq->bp->b_flags & B_READ ? "Read" : "Write",			major(rq->bp->b_dev),			minor(rq->bp->b_dev),			rq->bp->b_blkno,			rq->bp->b_bcount);		}		recover_io(request->info.rq);		    /* the failed request */		break;		/*		 * Write the config to disk.  We could end up with		 * quite a few of these in a row.  Only honour the		 * last one		 */	    case daemonrq_saveconfig:		if ((daemonq == NULL)			    /* no more requests */		||(daemonq->type != daemonrq_saveconfig)) { /* or the next isn't the same */		    if (((daemon_options & daemon_noupdate) == 0) /* we're allowed to do it */		    &&((vinum_conf.flags & VF_READING_CONFIG) == 0)) { /* and we're not building the config now */			/*			   * We obviously don't want to save a			   * partial configuration.  Less obviously,			   * we don't need to do anything if we're			   * asked to write the config when we're			   * building it up, because we save it at			   * the end.			 */			if (daemon_options & daemon_verbose)			    log(LOG_INFO, "vinum: saving config\n");			daemon_save_config();		    /* save it */		    }		}		break;	    case daemonrq_return:			    /* been told to stop */		if (daemon_options & daemon_verbose)		    log(LOG_INFO, "vinum: stopping\n");		daemon_options |= daemon_stopped;	    /* note that we've stopped */		Free(request);		while (daemonq != NULL) {		    /* backed up requests, */		    request = daemonq;			    /* get the request */		    daemonq = daemonq->next;		    /* and detach it */		    Free(request);			    /* then free it */		}		wakeup(&vinumclose);			    /* and wake any waiting vinum(8)s */		return;	    case daemonrq_ping:				    /* tell the caller we're here */		if (daemon_options & daemon_verbose)		    log(LOG_INFO, "vinum: ping reply\n");		wakeup(&vinum_finddaemon);		    /* wake up the caller */		break;	    case daemonrq_closedrive:			    /* close a drive */		close_drive(request->info.drive);	    /* do it */		break;	    case daemonrq_init:				    /* initialize a plex */		/* XXX */	    case daemonrq_revive:			    /* revive a subdisk */		/* XXX */		/* FALLTHROUGH */	    default:		log(LOG_WARNING, "Invalid request\n");		break;	    }	    if (request->privateinuse)			    /* one of ours, */		request->privateinuse = 0;		    /* no longer in use */	    else		Free(request);				    /* return it */	}
+daemonq != NULL
+daemonq
+daemonq
+NULL
+NULL
+{			    /* we have work to do, */	    crit_enter();	    request = daemonq;				    /* get the request */	    daemonq = daemonq->next;			    /* and detach it */	    if (daemonq == NULL)			    /* got to the end, */		dqend = NULL;				    /* no end any more */	    crit_exit();	    switch (request->type) {		/*		 * We had an I/O error on a request.  Go through the		 * request and try to salvage it		 */	    case daemonrq_ioerror:		if (daemon_options & daemon_verbose) {		    struct request *rq = request->info.rq;		    log(LOG_WARNING,			"vinum: recovering I/O request: %p\n%s dev %d.%d, offset 0x%x, length %ld\n",			rq,			rq->bp->b_flags & B_READ ? "Read" : "Write",			major(rq->bp->b_dev),			minor(rq->bp->b_dev),			rq->bp->b_blkno,			rq->bp->b_bcount);		}		recover_io(request->info.rq);		    /* the failed request */		break;		/*		 * Write the config to disk.  We could end up with		 * quite a few of these in a row.  Only honour the		 * last one		 */	    case daemonrq_saveconfig:		if ((daemonq == NULL)			    /* no more requests */		||(daemonq->type != daemonrq_saveconfig)) { /* or the next isn't the same */		    if (((daemon_options & daemon_noupdate) == 0) /* we're allowed to do it */		    &&((vinum_conf.flags & VF_READING_CONFIG) == 0)) { /* and we're not building the config now */			/*			   * We obviously don't want to save a			   * partial configuration.  Less obviously,			   * we don't need to do anything if we're			   * asked to write the config when we're			   * building it up, because we save it at			   * the end.			 */			if (daemon_options & daemon_verbose)			    log(LOG_INFO, "vinum: saving config\n");			daemon_save_config();		    /* save it */		    }		}		break;	    case daemonrq_return:			    /* been told to stop */		if (daemon_options & daemon_verbose)		    log(LOG_INFO, "vinum: stopping\n");		daemon_options |= daemon_stopped;	    /* note that we've stopped */		Free(request);		while (daemonq != NULL) {		    /* backed up requests, */		    request = daemonq;			    /* get the request */		    daemonq = daemonq->next;		    /* and detach it */		    Free(request);			    /* then free it */		}		wakeup(&vinumclose);			    /* and wake any waiting vinum(8)s */		return;	    case daemonrq_ping:				    /* tell the caller we're here */		if (daemon_options & daemon_verbose)		    log(LOG_INFO, "vinum: ping reply\n");		wakeup(&vinum_finddaemon);		    /* wake up the caller */		break;	    case daemonrq_closedrive:			    /* close a drive */		close_drive(request->info.drive);	    /* do it */		break;	    case daemonrq_init:				    /* initialize a plex */		/* XXX */	    case daemonrq_revive:			    /* revive a subdisk */		/* XXX */		/* FALLTHROUGH */	    default:		log(LOG_WARNING, "Invalid request\n");		break;	    }	    if (request->privateinuse)			    /* one of ours, */		request->privateinuse = 0;		    /* no longer in use */	    else		Free(request);				    /* return it */	}
+crit_enter();
+crit_enter()
+crit_enter
+crit_enter
+request = daemonq;
+request = daemonq
+request
+request
+daemonq
+daemonq
+daemonq = daemonq->next;
+daemonq = daemonq->next
+daemonq
+daemonq
+daemonq->next
+daemonq
+daemonq
+next
+if (daemonq == NULL)			    /* got to the end, */		dqend = NULL;
+daemonq == NULL
+daemonq
+daemonq
+NULL
+NULL
+dqend = NULL;
+dqend = NULL
+dqend
+dqend
+NULL
+NULL
+crit_exit();
+crit_exit()
+crit_exit
+crit_exit
+switch (request->type) {		/*		 * We had an I/O error on a request.  Go through the		 * request and try to salvage it		 */	    case daemonrq_ioerror:		if (daemon_options & daemon_verbose) {		    struct request *rq = request->info.rq;		    log(LOG_WARNING,			"vinum: recovering I/O request: %p\n%s dev %d.%d, offset 0x%x, length %ld\n",			rq,			rq->bp->b_flags & B_READ ? "Read" : "Write",			major(rq->bp->b_dev),			minor(rq->bp->b_dev),			rq->bp->b_blkno,			rq->bp->b_bcount);		}		recover_io(request->info.rq);		    /* the failed request */		break;		/*		 * Write the config to disk.  We could end up with		 * quite a few of these in a row.  Only honour the		 * last one		 */	    case daemonrq_saveconfig:		if ((daemonq == NULL)			    /* no more requests */		||(daemonq->type != daemonrq_saveconfig)) { /* or the next isn't the same */		    if (((daemon_options & daemon_noupdate) == 0) /* we're allowed to do it */		    &&((vinum_conf.flags & VF_READING_CONFIG) == 0)) { /* and we're not building the config now */			/*			   * We obviously don't want to save a			   * partial configuration.  Less obviously,			   * we don't need to do anything if we're			   * asked to write the config when we're			   * building it up, because we save it at			   * the end.			 */			if (daemon_options & daemon_verbose)			    log(LOG_INFO, "vinum: saving config\n");			daemon_save_config();		    /* save it */		    }		}		break;	    case daemonrq_return:			    /* been told to stop */		if (daemon_options & daemon_verbose)		    log(LOG_INFO, "vinum: stopping\n");		daemon_options |= daemon_stopped;	    /* note that we've stopped */		Free(request);		while (daemonq != NULL) {		    /* backed up requests, */		    request = daemonq;			    /* get the request */		    daemonq = daemonq->next;		    /* and detach it */		    Free(request);			    /* then free it */		}		wakeup(&vinumclose);			    /* and wake any waiting vinum(8)s */		return;	    case daemonrq_ping:				    /* tell the caller we're here */		if (daemon_options & daemon_verbose)		    log(LOG_INFO, "vinum: ping reply\n");		wakeup(&vinum_finddaemon);		    /* wake up the caller */		break;	    case daemonrq_closedrive:			    /* close a drive */		close_drive(request->info.drive);	    /* do it */		break;	    case daemonrq_init:				    /* initialize a plex */		/* XXX */	    case daemonrq_revive:			    /* revive a subdisk */		/* XXX */		/* FALLTHROUGH */	    default:		log(LOG_WARNING, "Invalid request\n");		break;	    }
+request->type
+request
+request
+type
+{		/*		 * We had an I/O error on a request.  Go through the		 * request and try to salvage it		 */	    case daemonrq_ioerror:		if (daemon_options & daemon_verbose) {		    struct request *rq = request->info.rq;		    log(LOG_WARNING,			"vinum: recovering I/O request: %p\n%s dev %d.%d, offset 0x%x, length %ld\n",			rq,			rq->bp->b_flags & B_READ ? "Read" : "Write",			major(rq->bp->b_dev),			minor(rq->bp->b_dev),			rq->bp->b_blkno,			rq->bp->b_bcount);		}		recover_io(request->info.rq);		    /* the failed request */		break;		/*		 * Write the config to disk.  We could end up with		 * quite a few of these in a row.  Only honour the		 * last one		 */	    case daemonrq_saveconfig:		if ((daemonq == NULL)			    /* no more requests */		||(daemonq->type != daemonrq_saveconfig)) { /* or the next isn't the same */		    if (((daemon_options & daemon_noupdate) == 0) /* we're allowed to do it */		    &&((vinum_conf.flags & VF_READING_CONFIG) == 0)) { /* and we're not building the config now */			/*			   * We obviously don't want to save a			   * partial configuration.  Less obviously,			   * we don't need to do anything if we're			   * asked to write the config when we're			   * building it up, because we save it at			   * the end.			 */			if (daemon_options & daemon_verbose)			    log(LOG_INFO, "vinum: saving config\n");			daemon_save_config();		    /* save it */		    }		}		break;	    case daemonrq_return:			    /* been told to stop */		if (daemon_options & daemon_verbose)		    log(LOG_INFO, "vinum: stopping\n");		daemon_options |= daemon_stopped;	    /* note that we've stopped */		Free(request);		while (daemonq != NULL) {		    /* backed up requests, */		    request = daemonq;			    /* get the request */		    daemonq = daemonq->next;		    /* and detach it */		    Free(request);			    /* then free it */		}		wakeup(&vinumclose);			    /* and wake any waiting vinum(8)s */		return;	    case daemonrq_ping:				    /* tell the caller we're here */		if (daemon_options & daemon_verbose)		    log(LOG_INFO, "vinum: ping reply\n");		wakeup(&vinum_finddaemon);		    /* wake up the caller */		break;	    case daemonrq_closedrive:			    /* close a drive */		close_drive(request->info.drive);	    /* do it */		break;	    case daemonrq_init:				    /* initialize a plex */		/* XXX */	    case daemonrq_revive:			    /* revive a subdisk */		/* XXX */		/* FALLTHROUGH */	    default:		log(LOG_WARNING, "Invalid request\n");		break;	    }
+case daemonrq_ioerror:
+daemonrq_ioerror
+daemonrq_ioerror
+if (daemon_options & daemon_verbose) {		    struct request *rq = request->info.rq;		    log(LOG_WARNING,			"vinum: recovering I/O request: %p\n%s dev %d.%d, offset 0x%x, length %ld\n",			rq,			rq->bp->b_flags & B_READ ? "Read" : "Write",			major(rq->bp->b_dev),			minor(rq->bp->b_dev),			rq->bp->b_blkno,			rq->bp->b_bcount);		}
+daemon_options & daemon_verbose
+daemon_options
+daemon_options
+& daemon_verbose
+&
+daemon_verbose
+{		    struct request *rq = request->info.rq;		    log(LOG_WARNING,			"vinum: recovering I/O request: %p\n%s dev %d.%d, offset 0x%x, length %ld\n",			rq,			rq->bp->b_flags & B_READ ? "Read" : "Write",			major(rq->bp->b_dev),			minor(rq->bp->b_dev),			rq->bp->b_blkno,			rq->bp->b_bcount);		}
+struct request *rq = request->info.rq;
+struct request *rq = request->info.rq;
+struct request
+request
+*rq = request->info.rq
+*
+rq
+= request->info.rq
+request->info.rq
+request->info
+request
+request
+info
+rq
+log(LOG_WARNING,			"vinum: recovering I/O request: %p\n%s dev %d.%d, offset 0x%x, length %ld\n",			rq,			rq->bp->b_flags & B_READ ? "Read" : "Write",			major(rq->bp->b_dev),			minor(rq->bp->b_dev),			rq->bp->b_blkno,			rq->bp->b_bcount);
+log(LOG_WARNING,			"vinum: recovering I/O request: %p\n%s dev %d.%d, offset 0x%x, length %ld\n",			rq,			rq->bp->b_flags & B_READ ? "Read" : "Write",			major(rq->bp->b_dev),			minor(rq->bp->b_dev),			rq->bp->b_blkno,			rq->bp->b_bcount)
+log
+log
+LOG_WARNING
+LOG_WARNING
+"vinum: recovering I/O request: %p\n%s dev %d.%d, offset 0x%x, length %ld\n"
+rq
+rq
+rq->bp->b_flags & B_READ ? "Read" : "Write"
+rq->bp->b_flags & B_READ
+rq->bp->b_flags
+rq->bp
+rq
+rq
+bp
+b_flags
+B_READ
+B_READ
+"Read"
+"Write"
+major(rq->bp->b_dev)
+major
+major
+rq->bp->b_dev
+rq->bp
+rq
+rq
+bp
+b_dev
+minor(rq->bp->b_dev)
+minor
+minor
+rq->bp->b_dev
+rq->bp
+rq
+rq
+bp
+b_dev
+rq->bp->b_blkno
+rq->bp
+rq
+rq
+bp
+b_blkno
+rq->bp->b_bcount
+rq->bp
+rq
+rq
+bp
+b_bcount
+recover_io(request->info.rq);
+recover_io(request->info.rq)
+recover_io
+recover_io
+request->info.rq
+request->info
+request
+request
+info
+rq
+break;
+case daemonrq_saveconfig:
+daemonrq_saveconfig
+daemonrq_saveconfig
+if ((daemonq == NULL)			    /* no more requests */		||(daemonq->type != daemonrq_saveconfig)) { /* or the next isn't the same */		    if (((daemon_options & daemon_noupdate) == 0) /* we're allowed to do it */		    &&((vinum_conf.flags & VF_READING_CONFIG) == 0)) { /* and we're not building the config now */			/*			   * We obviously don't want to save a			   * partial configuration.  Less obviously,			   * we don't need to do anything if we're			   * asked to write the config when we're			   * building it up, because we save it at			   * the end.			 */			if (daemon_options & daemon_verbose)			    log(LOG_INFO, "vinum: saving config\n");			daemon_save_config();		    /* save it */		    }		}
+(daemonq == NULL)			    /* no more requests */		||(daemonq->type != daemonrq_saveconfig)
+(daemonq == NULL)
+daemonq == NULL
+daemonq
+daemonq
+NULL
+NULL
+(daemonq->type != daemonrq_saveconfig)
+daemonq->type != daemonrq_saveconfig
+daemonq->type
+daemonq
+daemonq
+type
+daemonrq_saveconfig
+daemonrq_saveconfig
+{ /* or the next isn't the same */		    if (((daemon_options & daemon_noupdate) == 0) /* we're allowed to do it */		    &&((vinum_conf.flags & VF_READING_CONFIG) == 0)) { /* and we're not building the config now */			/*			   * We obviously don't want to save a			   * partial configuration.  Less obviously,			   * we don't need to do anything if we're			   * asked to write the config when we're			   * building it up, because we save it at			   * the end.			 */			if (daemon_options & daemon_verbose)			    log(LOG_INFO, "vinum: saving config\n");			daemon_save_config();		    /* save it */		    }		}
+if (((daemon_options & daemon_noupdate) == 0) /* we're allowed to do it */		    &&((vinum_conf.flags & VF_READING_CONFIG) == 0)) { /* and we're not building the config now */			/*			   * We obviously don't want to save a			   * partial configuration.  Less obviously,			   * we don't need to do anything if we're			   * asked to write the config when we're			   * building it up, because we save it at			   * the end.			 */			if (daemon_options & daemon_verbose)			    log(LOG_INFO, "vinum: saving config\n");			daemon_save_config();		    /* save it */		    }
+((daemon_options & daemon_noupdate) == 0) /* we're allowed to do it */		    &&((vinum_conf.flags & VF_READING_CONFIG) == 0)
+((daemon_options & daemon_noupdate) == 0)
+(daemon_options & daemon_noupdate) == 0
+(daemon_options & daemon_noupdate)
+daemon_options & daemon_noupdate
+daemon_options
+daemon_options
+daemon_noupdate
+daemon_noupdate
+0
+((vinum_conf.flags & VF_READING_CONFIG) == 0)
+(vinum_conf.flags & VF_READING_CONFIG) == 0
+(vinum_conf.flags & VF_READING_CONFIG)
+vinum_conf.flags & VF_READING_CONFIG
+vinum_conf.flags
+vinum_conf
+vinum_conf
+flags
+VF_READING_CONFIG
+VF_READING_CONFIG
+0
+{ /* and we're not building the config now */			/*			   * We obviously don't want to save a			   * partial configuration.  Less obviously,			   * we don't need to do anything if we're			   * asked to write the config when we're			   * building it up, because we save it at			   * the end.			 */			if (daemon_options & daemon_verbose)			    log(LOG_INFO, "vinum: saving config\n");			daemon_save_config();		    /* save it */		    }
+if (daemon_options & daemon_verbose)			    log(LOG_INFO, "vinum: saving config\n");
+daemon_options & daemon_verbose
+daemon_options
+daemon_options
+& daemon_verbose
+&
+daemon_verbose
+log(LOG_INFO, "vinum: saving config\n");
+log(LOG_INFO, "vinum: saving config\n")
+log
+log
+LOG_INFO
+LOG_INFO
+"vinum: saving config\n"
+daemon_save_config();
+daemon_save_config()
+daemon_save_config
+daemon_save_config
+break;
+case daemonrq_return:
+daemonrq_return
+daemonrq_return
+if (daemon_options & daemon_verbose)		    log(LOG_INFO, "vinum: stopping\n");
+daemon_options & daemon_verbose
+daemon_options
+daemon_options
+& daemon_verbose
+&
+daemon_verbose
+log(LOG_INFO, "vinum: stopping\n");
+log(LOG_INFO, "vinum: stopping\n")
+log
+log
+LOG_INFO
+LOG_INFO
+"vinum: stopping\n"
+daemon_options |= daemon_stopped;
+daemon_options |= daemon_stopped
+daemon_options
+daemon_options
+daemon_stopped
+daemon_stopped
+Free(request);
+Free(request)
+Free
+Free
+request
+request
+while (daemonq != NULL) {		    /* backed up requests, */		    request = daemonq;			    /* get the request */		    daemonq = daemonq->next;		    /* and detach it */		    Free(request);			    /* then free it */		}
+daemonq != NULL
+daemonq
+daemonq
+NULL
+NULL
+{		    /* backed up requests, */		    request = daemonq;			    /* get the request */		    daemonq = daemonq->next;		    /* and detach it */		    Free(request);			    /* then free it */		}
+request = daemonq;
+request = daemonq
+request
+request
+daemonq
+daemonq
+daemonq = daemonq->next;
+daemonq = daemonq->next
+daemonq
+daemonq
+daemonq->next
+daemonq
+daemonq
+next
+Free(request);
+Free(request)
+Free
+Free
+request
+request
+wakeup(&vinumclose);
+wakeup(&vinumclose);
+wakeup
+wakeup
+(&vinumclose)
+&vinumclose
+&
+vinumclose
+return;
+case daemonrq_ping:
+daemonrq_ping
+daemonrq_ping
+if (daemon_options & daemon_verbose)		    log(LOG_INFO, "vinum: ping reply\n");
+daemon_options & daemon_verbose
+daemon_options
+daemon_options
+& daemon_verbose
+&
+daemon_verbose
+log(LOG_INFO, "vinum: ping reply\n");
+log(LOG_INFO, "vinum: ping reply\n")
+log
+log
+LOG_INFO
+LOG_INFO
+"vinum: ping reply\n"
+wakeup(&vinum_finddaemon);
+wakeup(&vinum_finddaemon);
+wakeup
+wakeup
+(&vinum_finddaemon)
+&vinum_finddaemon
+&
+vinum_finddaemon
+break;
+case daemonrq_closedrive:
+daemonrq_closedrive
+daemonrq_closedrive
+close_drive(request->info.drive);
+close_drive(request->info.drive)
+close_drive
+close_drive
+request->info.drive
+request->info
+request
+request
+info
+drive
+break;
+case daemonrq_init:
+daemonrq_init
+daemonrq_init
+case daemonrq_revive:
+daemonrq_revive
+daemonrq_revive
+default:
+log(LOG_WARNING, "Invalid request\n");
+log(LOG_WARNING, "Invalid request\n")
+log
+log
+LOG_WARNING
+LOG_WARNING
+"Invalid request\n"
+break;
+if (request->privateinuse)			    /* one of ours, */		request->privateinuse = 0;		    /* no longer in use */	    else		Free(request);
+request->privateinuse
+request
+request
+privateinuse
+request->privateinuse = 0;
+request->privateinuse = 0
+request->privateinuse
+request
+request
+privateinuse
+0
+Free(request);
+Free(request)
+Free
+Free
+request
+request
+-----joern-----
+(215,37,0)
+(143,32,0)
+(184,168,0)
+(195,123,0)
+(108,33,0)
+(28,53,0)
+(183,188,0)
+(89,87,0)
+(142,148,0)
+(149,179,0)
+(23,169,0)
+(61,32,0)
+(171,152,0)
+(52,168,0)
+(189,104,0)
+(168,77,0)
+(31,21,0)
+(168,184,0)
+(91,33,0)
+(101,81,0)
+(123,195,0)
+(9,142,0)
+(108,102,0)
+(183,57,0)
+(155,38,0)
+(126,180,0)
+(76,219,0)
+(71,27,0)
+(180,220,0)
+(197,165,0)
+(212,142,0)
+(150,6,0)
+(202,198,0)
+(160,174,0)
+(182,81,0)
+(127,24,0)
+(25,145,0)
+(164,33,0)
+(207,2,0)
+(189,87,0)
+(88,8,0)
+(138,161,0)
+(120,188,0)
+(73,179,0)
+(188,183,0)
+(78,33,0)
+(14,215,0)
+(181,180,0)
+(83,8,0)
+(187,130,0)
+(187,4,0)
+(54,22,0)
+(224,33,0)
+(141,39,0)
+(26,33,0)
+(195,178,0)
+(29,195,0)
+(166,190,0)
+(59,45,0)
+(36,6,0)
+(189,33,0)
+(69,71,0)
+(191,39,0)
+(81,182,0)
+(71,53,0)
+(137,10,0)
+(32,61,0)
+(185,2,0)
+(11,53,0)
+(40,111,0)
+(167,21,0)
+(110,71,0)
+(60,71,0)
+(1,113,0)
+(42,215,0)
+(227,11,0)
+(129,177,0)
+(216,111,0)
+(5,45,0)
+(71,110,0)
+(92,53,0)
+(57,190,0)
+(223,79,0)
+(146,161,0)
+(113,1,0)
+(106,33,0)
+(222,204,0)
+(153,17,0)
+(114,177,0)
+(12,37,0)
+(132,152,0)
+(157,220,0)
+(22,44,0)
+(196,226,0)
+(165,11,0)
+(27,24,0)
+(53,172,0)
+(141,148,0)
+(122,4,0)
+(45,53,0)
+(68,33,0)
+(221,161,0)
+(90,17,0)
+(98,44,0)
+(147,198,0)
+(20,4,0)
+(4,130,0)
+(65,33,0)
+(217,125,0)
+(39,141,0)
+(194,113,0)
+(159,33,0)
+(15,44,0)
+(71,185,0)
+(162,204,0)
+(37,215,0)
+(110,61,0)
+(104,179,0)
+(220,180,0)
+(86,33,0)
+(95,33,0)
+(63,182,0)
+(60,45,0)
+(49,179,0)
+(209,201,0)
+(184,33,0)
+(119,188,0)
+(53,11,0)
+(206,102,0)
+(134,105,0)
+(213,145,0)
+(175,15,0)
+(102,108,0)
+(152,33,0)
+(185,71,0)
+(77,168,0)
+(107,161,0)
+(170,33,0)
+(128,183,0)
+(148,141,0)
+(15,79,0)
+(118,192,0)
+(24,53,0)
+(44,161,0)
+(116,178,0)
+(100,27,0)
+(0,16,0)
+(188,71,0)
+(124,33,0)
+(97,35,0)
+(71,60,0)
+(84,113,0)
+(139,163,0)
+(169,164,0)
+(201,44,0)
+(51,189,0)
+(80,33,0)
+(131,15,0)
+(77,44,0)
+(71,172,0)
+(215,42,0)
+(176,226,0)
+(2,185,0)
+(43,219,0)
+(61,110,0)
+(96,32,0)
+(24,27,0)
+(211,176,0)
+(72,163,0)
+(34,44,0)
+(71,188,0)
+(193,60,0)
+(7,57,0)
+(64,33,0)
+(42,157,0)
+(47,189,0)
+(140,44,0)
+(135,165,0)
+(11,165,0)
+(115,92,0)
+(199,71,0)
+(45,60,0)
+(165,44,0)
+(50,1,0)
+(66,220,0)
+(190,53,0)
+(94,140,0)
+(30,161,0)
+(58,161,0)
+(200,178,0)
+(138,219,0)
+(173,33,0)
+(41,201,0)
+(55,82,0)
+(56,39,0)
+(99,73,0)
+(93,35,0)
+(48,77,0)
+(27,71,0)
+(205,24,0)
+(57,183,0)
+(210,172,0)
+(225,195,0)
+(82,173,0)
+(74,71,0)
+(157,42,0)
+(156,192,0)
+(189,15,0)
+(169,201,0)
+(201,169,0)
+(109,105,0)
+(189,138,0)
+(67,33,0)
+(75,81,0)
+(6,44,0)
+(218,104,0)
+(173,82,0)
+(208,33,0)
+(46,33,0)
+(190,57,0)
+(144,38,0)
+(151,33,0)
+(70,10,0)
+(182,130,0)
+(203,125,0)
+(92,2,0)
+(158,123,0)
+(104,10,0)
+(219,138,0)
+(117,190,0)
+(85,195,0)
+(32,53,0)
+(133,77,0)
+(103,61,0)
+(2,92,0)
+(148,142,0)
+(87,73,0)
+(211,151,0)
+(220,157,0)
+(214,87,0)
+(154,33,0)
+(19,148,0)
+(136,16,0)
+(164,169,0)
+(140,33,0)
+(3,92,0)
+(10,104,0)
+(62,37,0)
+(186,179,0)
+(189,105,0)
+(125,44,0)
+(13,157,0)
+(18,138,0)
+(121,187,0)
+(188,119,1)
+(101,75,1)
+(220,66,1)
+(38,155,1)
+(27,24,1)
+(113,194,1)
+(41,71,1)
+(71,188,1)
+(0,163,1)
+(181,126,1)
+(201,209,1)
+(31,38,1)
+(127,110,1)
+(42,215,1)
+(190,53,1)
+(169,23,1)
+(148,19,1)
+(110,61,1)
+(138,219,1)
+(128,57,1)
+(73,99,1)
+(189,51,1)
+(65,108,1)
+(189,15,1)
+(199,69,1)
+(162,222,1)
+(114,6,1)
+(27,100,1)
+(142,9,1)
+(49,73,1)
+(220,180,1)
+(57,7,1)
+(19,142,1)
+(153,90,1)
+(1,113,1)
+(32,53,1)
+(133,48,1)
+(195,123,1)
+(219,43,1)
+(216,40,1)
+(43,76,1)
+(105,109,1)
+(125,44,1)
+(63,4,1)
+(165,44,1)
+(66,180,1)
+(157,13,1)
+(71,110,1)
+(23,201,1)
+(192,118,1)
+(221,198,1)
+(140,94,1)
+(87,214,1)
+(123,158,1)
+(35,93,1)
+(40,6,1)
+(159,152,1)
+(22,44,1)
+(25,38,1)
+(44,98,1)
+(28,177,1)
+(189,138,1)
+(77,133,1)
+(156,35,1)
+(117,166,1)
+(125,217,1)
+(16,136,1)
+(47,204,1)
+(194,84,1)
+(146,17,1)
+(180,181,1)
+(215,14,1)
+(81,101,1)
+(211,151,1)
+(158,112,1)
+(71,185,1)
+(90,22,1)
+(61,103,1)
+(99,87,1)
+(102,206,1)
+(175,131,1)
+(176,16,1)
+(183,128,1)
+(189,87,1)
+(60,193,1)
+(163,72,1)
+(183,57,1)
+(8,83,1)
+(131,125,1)
+(93,97,1)
+(21,167,1)
+(14,37,1)
+(112,17,1)
+(51,47,1)
+(119,183,1)
+(206,35,1)
+(84,195,1)
+(25,21,1)
+(45,59,1)
+(121,182,1)
+(135,28,1)
+(197,135,1)
+(96,185,1)
+(191,6,1)
+(152,171,1)
+(173,82,1)
+(64,25,1)
+(104,10,1)
+(204,162,1)
+(4,122,1)
+(24,205,1)
+(223,15,1)
+(203,65,1)
+(112,104,1)
+(176,163,1)
+(42,157,1)
+(100,24,1)
+(7,190,1)
+(184,168,1)
+(195,85,1)
+(82,55,1)
+(10,137,1)
+(15,44,1)
+(85,29,1)
+(188,183,1)
+(150,221,1)
+(74,53,1)
+(32,143,1)
+(2,207,1)
+(64,141,1)
+(129,114,1)
+(164,169,1)
+(203,64,1)
+(71,53,1)
+(13,220,1)
+(109,134,1)
+(211,176,1)
+(141,148,1)
+(34,146,1)
+(90,79,1)
+(218,49,1)
+(111,216,1)
+(141,39,1)
+(15,175,1)
+(36,150,1)
+(203,159,1)
+(202,147,1)
+(29,225,1)
+(185,2,1)
+(75,63,1)
+(143,96,1)
+(182,81,1)
+(209,41,1)
+(169,201,1)
+(187,4,1)
+(94,189,1)
+(57,190,1)
+(165,197,1)
+(217,203,1)
+(9,212,1)
+(212,39,1)
+(12,62,1)
+(11,227,1)
+(3,188,1)
+(225,123,1)
+(108,102,1)
+(97,6,1)
+(83,88,1)
+(177,129,1)
+(144,42,1)
+(151,173,1)
+(189,105,1)
+(59,5,1)
+(188,120,1)
+(168,77,1)
+(193,45,1)
+(5,27,1)
+(62,141,1)
+(79,223,1)
+(37,12,1)
+(92,53,1)
+(207,92,1)
+(70,218,1)
+(115,3,1)
+(77,44,1)
+(222,111,1)
+(227,165,1)
+(90,1,1)
+(1,50,1)
+(20,8,1)
+(134,198,1)
+(170,184,1)
+(147,138,1)
+(6,36,1)
+(48,6,1)
+(2,92,1)
+(71,27,1)
+(52,77,1)
+(215,37,1)
+(76,18,1)
+(72,139,1)
+(203,78,1)
+(24,53,1)
+(17,153,1)
+(155,144,1)
+(211,112,1)
+(22,54,1)
+(98,34,1)
+(171,132,1)
+(69,74,1)
+(88,140,1)
+(148,142,1)
+(166,199,1)
+(132,6,1)
+(88,187,1)
+(71,60,1)
+(45,53,1)
+(139,1,1)
+(54,125,1)
+(56,191,1)
+(189,104,1)
+(18,44,1)
+(103,32,1)
+(11,165,1)
+(47,111,1)
+(126,215,1)
+(41,177,1)
+(203,170,1)
+(92,115,1)
+(122,20,1)
+(167,31,1)
+(205,127,1)
+(50,113,1)
+(118,156,1)
+(136,0,1)
+(137,70,1)
+(60,45,1)
+(140,44,1)
+(198,202,1)
+(120,183,1)
+(55,8,1)
+(190,117,1)
+(214,89,1)
+(64,42,1)
+(221,105,1)
+(201,44,1)
+(187,121,1)
+(168,52,1)
+(78,164,1)
+(206,192,1)
+(61,32,1)
+(39,56,1)
+(53,11,1)
+(157,220,1)
+(6,44,1)
+(11,165,2)
+(50,112,2)
+(195,112,2)
+(166,177,2)
+(136,163,2)
+(220,215,2)
+(157,215,2)
+(8,6,2)
+(53,11,2)
+(27,177,2)
+(102,6,2)
+(14,141,2)
+(83,6,2)
+(24,53,2)
+(128,177,2)
+(215,141,2)
+(140,6,2)
+(164,6,2)
+(143,177,2)
+(132,6,2)
+(55,6,2)
+(34,17,2)
+(138,17,2)
+(141,6,2)
+(11,177,2)
+(185,2,2)
+(44,17,2)
+(189,138,2)
+(9,39,2)
+(88,8,2)
+(117,177,2)
+(1,112,2)
+(71,53,2)
+(189,105,2)
+(27,24,2)
+(141,39,2)
+(125,44,2)
+(189,6,2)
+(110,61,2)
+(64,6,2)
+(41,6,2)
+(31,38,2)
+(15,125,2)
+(187,4,2)
+(175,125,2)
+(28,177,2)
+(94,6,2)
+(126,215,2)
+(190,53,2)
+(176,1,2)
+(140,44,2)
+(199,177,2)
+(177,6,2)
+(123,112,2)
+(164,169,2)
+(42,215,2)
+(57,177,2)
+(129,6,2)
+(108,6,2)
+(101,8,2)
+(187,8,2)
+(19,39,2)
+(184,168,2)
+(127,177,2)
+(65,6,2)
+(223,125,2)
+(141,148,2)
+(216,6,2)
+(110,177,2)
+(225,112,2)
+(153,1,2)
+(112,17,2)
+(168,6,2)
+(197,177,2)
+(66,215,2)
+(204,111,2)
+(169,201,2)
+(79,125,2)
+(84,112,2)
+(97,6,2)
+(63,8,2)
+(54,125,2)
+(17,1,2)
+(189,104,2)
+(144,42,2)
+(20,8,2)
+(183,57,2)
+(8,8,2)
+(7,177,2)
+(201,44,2)
+(52,6,2)
+(158,112,2)
+(189,15,2)
+(192,35,2)
+(184,6,2)
+(2,177,2)
+(173,82,2)
+(37,141,2)
+(180,215,2)
+(71,188,2)
+(39,6,2)
+(155,42,2)
+(21,38,2)
+(35,6,2)
+(17,6,2)
+(157,220,2)
+(188,183,2)
+(90,6,2)
+(167,38,2)
+(148,39,2)
+(203,6,2)
+(169,6,2)
+(51,6,2)
+(194,112,2)
+(189,87,2)
+(57,190,2)
+(162,111,2)
+(182,8,2)
+(185,177,2)
+(3,177,2)
+(2,92,2)
+(133,6,2)
+(45,177,2)
+(171,6,2)
+(61,177,2)
+(71,185,2)
+(131,125,2)
+(72,1,2)
+(105,198,2)
+(82,6,2)
+(48,6,2)
+(139,1,2)
+(205,177,2)
+(15,44,2)
+(42,141,2)
+(61,32,2)
+(92,53,2)
+(211,151,2)
+(75,8,2)
+(47,6,2)
+(121,8,2)
+(53,177,2)
+(170,6,2)
+(217,6,2)
+(23,6,2)
+(71,27,2)
+(36,17,2)
+(119,183,2)
+(111,6,2)
+(29,112,2)
+(138,219,2)
+(183,177,2)
+(38,42,2)
+(100,177,2)
+(4,8,2)
+(77,6,2)
+(60,45,2)
+(13,215,2)
+(77,44,2)
+(81,8,2)
+(195,123,2)
+(88,6,2)
+(114,6,2)
+(118,35,2)
+(71,110,2)
+(227,177,2)
+(74,177,2)
+(6,44,2)
+(1,113,2)
+(42,157,2)
+(134,198,2)
+(125,6,2)
+(113,112,2)
+(201,6,2)
+(90,1,2)
+(76,17,2)
+(62,141,2)
+(40,6,2)
+(120,183,2)
+(181,215,2)
+(22,44,2)
+(209,6,2)
+(98,17,2)
+(221,17,2)
+(190,177,2)
+(122,8,2)
+(25,42,2)
+(188,177,2)
+(0,163,2)
+(115,177,2)
+(104,10,2)
+(60,177,2)
+(71,177,2)
+(215,37,2)
+(45,53,2)
+(220,180,2)
+(78,6,2)
+(32,53,2)
+(165,44,2)
+(151,6,2)
+(193,177,2)
+(103,177,2)
+(109,198,2)
+(146,17,2)
+(16,163,2)
+(96,177,2)
+(163,1,2)
+(43,17,2)
+(198,17,2)
+(18,17,2)
+(24,177,2)
+(182,81,2)
+(5,177,2)
+(147,17,2)
+(168,77,2)
+(222,111,2)
+(156,35,2)
+(83,8,2)
+(212,39,2)
+(153,6,2)
+(152,6,2)
+(142,39,2)
+(71,60,2)
+(165,177,2)
+(206,6,2)
+(92,177,2)
+(12,141,2)
+(211,176,2)
+(22,125,2)
+(191,6,2)
+(150,17,2)
+(93,6,2)
+(59,177,2)
+(32,177,2)
+(159,6,2)
+(135,177,2)
+(85,112,2)
+(202,17,2)
+(6,17,2)
+(56,6,2)
+(69,177,2)
+(148,142,2)
+(173,6,2)
+(207,177,2)
+(219,17,2)
+(108,102,2)
+-----------------------------------
+(0,LOG_INFO)
+(1,curproc->p_pid != daemonpid)
+(2,rq->bp->b_dev)
+(3,rq)
+(4,request = daemonq)
+(5,rq)
+(6,request->type)
+(7,b_flags)
+(8,daemonq != NULL)
+(9,type)
+(10,curproc->p_pid)
+(11,request->info.rq)
+(12,daemon_noupdate)
+(13,0)
+(14,0)
+(15,request->privateinuse)
+(16,log(LOG_INFO, "vinum: abdicating\\n")
+(17,daemonq != NULL)
+(18,daemonq)
+(19,daemonrq_saveconfig)
+(20,request)
+(21,log(LOG_INFO, "vinum: saving config\\n")
+(22,Free(request)
+(23,rq)
+(24,rq->bp)
+(25,daemon_save_config()
+(26,case daemonrq_return:)
+(27,rq->bp->b_blkno)
+(28,rq)
+(29,"vinum")
+(30,if (daemonq == NULL)
+(31,LOG_INFO)
+(32,rq->bp)
+(33,)
+(34,request)
+(35,daemon_options & daemon_verbose)
+(36,type)
+(37,daemon_options & daemon_noupdate)
+(38,daemon_options & daemon_verbose)
+(39,daemonq == NULL)
+(40,daemon_options)
+(41,request)
+(42,((daemon_options & daemon_noupdate)
+(43,next)
+(44,request = daemonq)
+(45,rq->bp)
+(46,case daemonrq_ping:)
+(47,daemon_options)
+(48,request)
+(49,daemon_save_config()
+(50,daemonpid)
+(51,daemon_stopped)
+(52,drive)
+(53,*rq = request->info.rq)
+(54,request)
+(55,vinumclose)
+(56,NULL)
+(57,rq->bp->b_flags)
+(58,if (request->privateinuse)
+(59,bp)
+(60,rq->bp->b_bcount)
+(61,rq->bp->b_dev)
+(62,daemon_options)
+(63,daemonq)
+(64,break;)
+(65,break;)
+(66,VF_READING_CONFIG)
+(67,case daemonrq_revive:)
+(68,case daemonrq_closedrive:)
+(69,"vinum: recovering I/O request: %p\\n%s dev %d.%d, offset 0x%x, length %ld\\n")
+(70,curproc)
+(71,log(LOG_WARNING,\n\\n\\t\\t\\t"vinum: recovering I/O request: %p\\n%s dev %d.%d, offset 0x%x, length %ld\\n",\n\\n\\t\\t\\trq,\n\\n\\t\\t\\trq->bp->b_flags & B_READ ? "Read" : "Write",\n\\n\\t\\t\\tmajor(rq->bp->b_dev)
+(72,daemon_verbose)
+(73,curproc->p_flag |= P_SYSTEM)
+(74,LOG_WARNING)
+(75,daemonq)
+(76,daemonq)
+(77,request->info)
+(78,break;)
+(79,request->privateinuse = 0)
+(80,while (daemonq != NULL)
+(81,daemonq->next)
+(82,&vinumclose)
+(83,NULL)
+(84,curproc)
+(85,0)
+(86,if (daemon_options & daemon_verbose)
+(87,curproc->p_flag)
+(88,daemonq)
+(89,curproc)
+(90,daemonq)
+(91,case daemonrq_ioerror:)
+(92,rq->bp)
+(93,daemon_verbose)
+(94,request)
+(95,if (daemon_options & daemon_verbose)
+(96,rq)
+(97,daemon_options)
+(98,daemonq)
+(99,P_SYSTEM)
+(100,b_blkno)
+(101,next)
+(102,&vinum_finddaemon)
+(103,b_dev)
+(104,daemonpid = curproc->p_pid)
+(105,dqend = NULL)
+(106,if (daemon_options & daemon_verbose)
+(107,switch (request->type)
+(108,wakeup(&vinum_finddaemon)
+(109,NULL)
+(110,minor(rq->bp->b_dev)
+(111,daemon_options & daemon_verbose)
+(112,1)
+(113,curproc->p_pid)
+(114,daemon_options)
+(115,bp)
+(116,while (daemonq != NULL)
+(117,bp)
+(118,"vinum: ping reply\\n")
+(119,"Read")
+(120,"Write")
+(121,request)
+(122,daemonq)
+(123,&vinum_daemon)
+(124,if ((daemonq == NULL)
+(125,request->privateinuse)
+(126,vinum_conf)
+(127,rq)
+(128,B_READ)
+(129,daemon_verbose)
+(130,)
+(131,request)
+(132,LOG_WARNING)
+(133,info)
+(134,dqend)
+(135,request)
+(136,"vinum: abdicating\\n")
+(137,p_pid)
+(138,daemonq = daemonq->next)
+(139,daemon_options)
+(140,Free(request)
+(141,(daemonq == NULL)
+(142,daemonq->type)
+(143,bp)
+(144,daemon_options)
+(145,)
+(146,crit_enter()
+(147,daemonq)
+(148,daemonq->type != daemonrq_saveconfig)
+(149,while (1)
+(150,request)
+(151,return;)
+(152,log(LOG_WARNING, "Invalid request\\n")
+(153,NULL)
+(154,default:)
+(155,daemon_verbose)
+(156,LOG_INFO)
+(157,(vinum_conf.flags & VF_READING_CONFIG)
+(158,vinum_daemon)
+(159,break;)
+(160,if (((daemon_options & daemon_noupdate)
+(161,)
+(162,"vinum: stopping\\n")
+(163,daemon_options & daemon_verbose)
+(164,recover_io(request->info.rq)
+(165,request->info)
+(166,rq)
+(167,"vinum: saving config\\n")
+(168,request->info.drive)
+(169,request->info.rq)
+(170,break;)
+(171,"Invalid request\\n")
+(172,)
+(173,wakeup(&vinumclose)
+(174,)
+(175,privateinuse)
+(176,return;)
+(177,daemon_options & daemon_verbose)
+(178,)
+(179,)
+(180,vinum_conf.flags)
+(181,flags)
+(182,daemonq = daemonq->next)
+(183,rq->bp->b_flags & B_READ)
+(184,close_drive(request->info.drive)
+(185,major(rq->bp->b_dev)
+(186,request)
+(187,Free(request)
+(188,rq->bp->b_flags & B_READ ? "Read" : "Write")
+(189,daemon_options |= daemon_stopped)
+(190,rq->bp)
+(191,daemonq)
+(192,log(LOG_INFO, "vinum: ping reply\\n")
+(193,b_bcount)
+(194,p_pid)
+(195,tsleep(&vinum_daemon, 0, "vinum", 0)
+(196,if (daemon_options & daemon_verbose)
+(197,info)
+(198,daemonq == NULL)
+(199,rq)
+(200,if (curproc->p_pid != daemonpid)
+(201,request->info)
+(202,NULL)
+(203,request)
+(204,log(LOG_INFO, "vinum: stopping\\n")
+(205,bp)
+(206,vinum_finddaemon)
+(207,b_dev)
+(208,case daemonrq_saveconfig:)
+(209,info)
+(210,rq)
+(211,RET)
+(212,daemonq)
+(213,if (daemon_options & daemon_verbose)
+(214,p_flag)
+(215,(daemon_options & daemon_noupdate)
+(216,daemon_verbose)
+(217,privateinuse)
+(218,daemonpid)
+(219,daemonq->next)
+(220,vinum_conf.flags & VF_READING_CONFIG)
+(221,crit_exit()
+(222,LOG_INFO)
+(223,0)
+(224,case daemonrq_init:)
+(225,0)
+(226,)
+(227,rq)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

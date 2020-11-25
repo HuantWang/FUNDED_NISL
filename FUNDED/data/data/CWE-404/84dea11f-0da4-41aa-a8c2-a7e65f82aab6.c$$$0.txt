@@ -1,0 +1,965 @@
+-----label-----
+0
+-----code-----
+static int srp_lookup_path(struct srp_rdma_ch *ch)
+{
+	struct srp_target_port *target = ch->target;
+	int ret = -ENODEV;
+
+	ch->path.numb_path = 1;
+
+	init_completion(&ch->done);
+
+	/*
+	 * Avoid that the SCSI host can be removed by srp_remove_target()
+	 * before srp_path_rec_completion() is called.
+	 */
+	if (!scsi_host_get(target->scsi_host))
+		goto out;
+
+	ch->path_query_id = ib_sa_path_rec_get(&srp_sa_client,
+					       target->srp_host->srp_dev->dev,
+					       target->srp_host->port,
+					       &ch->path,
+					       IB_SA_PATH_REC_SERVICE_ID |
+					       IB_SA_PATH_REC_DGID	 |
+					       IB_SA_PATH_REC_SGID	 |
+					       IB_SA_PATH_REC_NUMB_PATH	 |
+					       IB_SA_PATH_REC_PKEY,
+					       SRP_PATH_REC_TIMEOUT_MS,
+					       GFP_KERNEL,
+					       srp_path_rec_completion,
+					       ch, &ch->path_query);
+	ret = ch->path_query_id;
+	if (ret < 0)
+		goto put;
+
+	ret = wait_for_completion_interruptible(&ch->done);
+	if (ret < 0)
+		goto put;
+
+	ret = ch->status;
+	if (ret < 0)
+		shost_printk(KERN_WARNING, target->scsi_host,
+			     PFX "Path record query failed\n");
+
+put:
+	scsi_host_put(target->scsi_host);
+
+out:
+	return ret;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+11,14
+11,15
+11,16
+11,17
+11,18
+11,19
+11,20
+11,21
+11,22
+11,23
+11,24
+11,25
+12,13
+13,14
+13,15
+14,15
+16,17
+16,18
+16,19
+19,20
+20,21
+20,22
+21,22
+24,25
+25,26
+25,27
+27,28
+27,29
+29,30
+30,31
+31,32
+33,34
+34,35
+34,36
+35,36
+35,37
+36,37
+36,38
+37,38
+42,43
+43,44
+43,45
+44,45
+46,47
+47,48
+47,49
+48,49
+51,52
+51,53
+52,53
+53,54
+53,55
+54,55
+56,57
+56,58
+57,58
+60,61
+62,63
+63,64
+63,65
+64,65
+64,66
+65,66
+68,69
+68,70
+68,71
+68,72
+68,73
+68,74
+68,75
+68,76
+68,77
+68,78
+68,79
+69,70
+71,72
+72,73
+74,75
+74,76
+75,76
+75,77
+76,77
+76,78
+77,78
+82,83
+82,84
+83,84
+83,85
+84,85
+88,89
+89,90
+89,91
+90,91
+93,94
+93,95
+94,95
+94,96
+95,96
+95,97
+96,97
+96,98
+97,98
+99,100
+101,102
+103,104
+105,106
+107,108
+109,110
+111,112
+113,114
+115,116
+116,117
+116,118
+117,118
+120,121
+121,122
+121,123
+122,123
+124,125
+124,126
+125,126
+128,129
+128,130
+129,130
+129,131
+130,131
+133,134
+135,136
+136,137
+136,138
+137,138
+139,140
+139,141
+140,141
+142,143
+143,144
+143,145
+144,145
+147,148
+147,149
+148,149
+148,150
+149,150
+152,153
+154,155
+155,156
+155,157
+156,157
+158,159
+158,160
+159,160
+162,163
+163,164
+163,165
+165,166
+166,167
+166,168
+167,168
+169,170
+169,171
+170,171
+173,174
+173,175
+175,176
+176,177
+-----nextToken-----
+2,4,7,9,10,15,17,18,22,23,26,28,32,38,39,40,41,45,49,50,55,58,59,61,66,67,70,73,78,79,80,81,85,86,87,91,92,98,100,102,104,106,108,110,112,114,118,119,123,126,127,131,132,134,138,141,145,146,150,151,153,157,160,161,164,168,171,172,174,177
+-----computeFrom-----
+34,35
+34,36
+63,64
+63,65
+93,94
+93,95
+94,95
+94,96
+95,96
+95,97
+96,97
+96,98
+121,122
+121,123
+129,130
+129,131
+136,137
+136,138
+148,149
+148,150
+155,156
+155,157
+-----guardedBy-----
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;GotoStatement;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;FieldReference;FieldReference;FieldReference;IdExpression;Name;Name;Name;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;BinaryExpression;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;GotoStatement;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;GotoStatement;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ProblemStatement;LabelStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;LabelStatement;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+static int srp_lookup_path(struct srp_rdma_ch *ch){	struct srp_target_port *target = ch->target;	int ret = -ENODEV;	ch->path.numb_path = 1;	init_completion(&ch->done);	/*	 * Avoid that the SCSI host can be removed by srp_remove_target()	 * before srp_path_rec_completion() is called.	 */	if (!scsi_host_get(target->scsi_host))		goto out;	ch->path_query_id = ib_sa_path_rec_get(&srp_sa_client,					       target->srp_host->srp_dev->dev,					       target->srp_host->port,					       &ch->path,					       IB_SA_PATH_REC_SERVICE_ID |					       IB_SA_PATH_REC_DGID	 |					       IB_SA_PATH_REC_SGID	 |					       IB_SA_PATH_REC_NUMB_PATH	 |					       IB_SA_PATH_REC_PKEY,					       SRP_PATH_REC_TIMEOUT_MS,					       GFP_KERNEL,					       srp_path_rec_completion,					       ch, &ch->path_query);	ret = ch->path_query_id;	if (ret < 0)		goto put;	ret = wait_for_completion_interruptible(&ch->done);	if (ret < 0)		goto put;	ret = ch->status;	if (ret < 0)		shost_printk(KERN_WARNING, target->scsi_host,			     PFX "Path record query failed\n");put:	scsi_host_put(target->scsi_host);out:	return ret;}
+static int
+srp_lookup_path(struct srp_rdma_ch *ch)
+srp_lookup_path
+struct srp_rdma_ch *ch
+struct srp_rdma_ch
+srp_rdma_ch
+*ch
+*
+ch
+{	struct srp_target_port *target = ch->target;	int ret = -ENODEV;	ch->path.numb_path = 1;	init_completion(&ch->done);	/*	 * Avoid that the SCSI host can be removed by srp_remove_target()	 * before srp_path_rec_completion() is called.	 */	if (!scsi_host_get(target->scsi_host))		goto out;	ch->path_query_id = ib_sa_path_rec_get(&srp_sa_client,					       target->srp_host->srp_dev->dev,					       target->srp_host->port,					       &ch->path,					       IB_SA_PATH_REC_SERVICE_ID |					       IB_SA_PATH_REC_DGID	 |					       IB_SA_PATH_REC_SGID	 |					       IB_SA_PATH_REC_NUMB_PATH	 |					       IB_SA_PATH_REC_PKEY,					       SRP_PATH_REC_TIMEOUT_MS,					       GFP_KERNEL,					       srp_path_rec_completion,					       ch, &ch->path_query);	ret = ch->path_query_id;	if (ret < 0)		goto put;	ret = wait_for_completion_interruptible(&ch->done);	if (ret < 0)		goto put;	ret = ch->status;	if (ret < 0)		shost_printk(KERN_WARNING, target->scsi_host,			     PFX "Path record query failed\n");put:	scsi_host_put(target->scsi_host);out:	return ret;}
+struct srp_target_port *target = ch->target;
+struct srp_target_port *target = ch->target;
+struct srp_target_port
+srp_target_port
+*target = ch->target
+*
+target
+= ch->target
+ch->target
+ch
+ch
+target
+int ret = -ENODEV;
+int ret = -ENODEV;
+int
+ret = -ENODEV
+ret
+= -ENODEV
+-ENODEV
+ENODEV
+ENODEV
+ch->path.numb_path = 1;
+ch->path.numb_path = 1
+ch->path.numb_path
+ch->path
+ch
+ch
+path
+numb_path
+1
+init_completion(&ch->done);
+init_completion(&ch->done)
+init_completion
+init_completion
+&ch->done
+ch->done
+ch
+ch
+done
+if (!scsi_host_get(target->scsi_host))		goto out;
+!scsi_host_get(target->scsi_host)
+scsi_host_get(target->scsi_host)
+scsi_host_get
+scsi_host_get
+target->scsi_host
+target
+target
+scsi_host
+goto out;
+out
+ch->path_query_id = ib_sa_path_rec_get(&srp_sa_client,					       target->srp_host->srp_dev->dev,					       target->srp_host->port,					       &ch->path,					       IB_SA_PATH_REC_SERVICE_ID |					       IB_SA_PATH_REC_DGID	 |					       IB_SA_PATH_REC_SGID	 |					       IB_SA_PATH_REC_NUMB_PATH	 |					       IB_SA_PATH_REC_PKEY,					       SRP_PATH_REC_TIMEOUT_MS,					       GFP_KERNEL,					       srp_path_rec_completion,					       ch, &ch->path_query);
+ch->path_query_id = ib_sa_path_rec_get(&srp_sa_client,					       target->srp_host->srp_dev->dev,					       target->srp_host->port,					       &ch->path,					       IB_SA_PATH_REC_SERVICE_ID |					       IB_SA_PATH_REC_DGID	 |					       IB_SA_PATH_REC_SGID	 |					       IB_SA_PATH_REC_NUMB_PATH	 |					       IB_SA_PATH_REC_PKEY,					       SRP_PATH_REC_TIMEOUT_MS,					       GFP_KERNEL,					       srp_path_rec_completion,					       ch, &ch->path_query)
+ch->path_query_id
+ch
+ch
+path_query_id
+ib_sa_path_rec_get(&srp_sa_client,					       target->srp_host->srp_dev->dev,					       target->srp_host->port,					       &ch->path,					       IB_SA_PATH_REC_SERVICE_ID |					       IB_SA_PATH_REC_DGID	 |					       IB_SA_PATH_REC_SGID	 |					       IB_SA_PATH_REC_NUMB_PATH	 |					       IB_SA_PATH_REC_PKEY,					       SRP_PATH_REC_TIMEOUT_MS,					       GFP_KERNEL,					       srp_path_rec_completion,					       ch, &ch->path_query)
+ib_sa_path_rec_get
+ib_sa_path_rec_get
+&srp_sa_client
+srp_sa_client
+srp_sa_client
+target->srp_host->srp_dev->dev
+target->srp_host->srp_dev
+target->srp_host
+target
+target
+srp_host
+srp_dev
+dev
+target->srp_host->port
+target->srp_host
+target
+target
+srp_host
+port
+&ch->path
+ch->path
+ch
+ch
+path
+IB_SA_PATH_REC_SERVICE_ID |					       IB_SA_PATH_REC_DGID	 |					       IB_SA_PATH_REC_SGID	 |					       IB_SA_PATH_REC_NUMB_PATH	 |					       IB_SA_PATH_REC_PKEY
+IB_SA_PATH_REC_SERVICE_ID |					       IB_SA_PATH_REC_DGID	 |					       IB_SA_PATH_REC_SGID	 |					       IB_SA_PATH_REC_NUMB_PATH
+IB_SA_PATH_REC_SERVICE_ID |					       IB_SA_PATH_REC_DGID	 |					       IB_SA_PATH_REC_SGID
+IB_SA_PATH_REC_SERVICE_ID |					       IB_SA_PATH_REC_DGID
+IB_SA_PATH_REC_SERVICE_ID
+IB_SA_PATH_REC_SERVICE_ID
+IB_SA_PATH_REC_DGID
+IB_SA_PATH_REC_DGID
+IB_SA_PATH_REC_SGID
+IB_SA_PATH_REC_SGID
+IB_SA_PATH_REC_NUMB_PATH
+IB_SA_PATH_REC_NUMB_PATH
+IB_SA_PATH_REC_PKEY
+IB_SA_PATH_REC_PKEY
+SRP_PATH_REC_TIMEOUT_MS
+SRP_PATH_REC_TIMEOUT_MS
+GFP_KERNEL
+GFP_KERNEL
+srp_path_rec_completion
+srp_path_rec_completion
+ch
+ch
+&ch->path_query
+ch->path_query
+ch
+ch
+path_query
+ret = ch->path_query_id;
+ret = ch->path_query_id
+ret
+ret
+ch->path_query_id
+ch
+ch
+path_query_id
+if (ret < 0)		goto put;
+ret < 0
+ret
+ret
+0
+goto put;
+put
+ret = wait_for_completion_interruptible(&ch->done);
+ret = wait_for_completion_interruptible(&ch->done)
+ret
+ret
+wait_for_completion_interruptible(&ch->done)
+wait_for_completion_interruptible
+wait_for_completion_interruptible
+&ch->done
+ch->done
+ch
+ch
+done
+if (ret < 0)		goto put;
+ret < 0
+ret
+ret
+0
+goto put;
+put
+ret = ch->status;
+ret = ch->status
+ret
+ret
+ch->status
+ch
+ch
+status
+if (ret < 0)		shost_printk(KERN_WARNING, target->scsi_host,			     PFX "Path record query failed\n");
+put:	scsi_host_put(target->scsi_host);
+put
+scsi_host_put(target->scsi_host);
+scsi_host_put(target->scsi_host)
+scsi_host_put
+scsi_host_put
+target->scsi_host
+target
+target
+scsi_host
+out:	return ret;
+out
+return ret;
+ret
+ret
+-----joern-----
+(78,24,0)
+(43,100,0)
+(13,100,0)
+(102,73,0)
+(56,52,0)
+(62,73,0)
+(73,102,0)
+(109,81,0)
+(71,47,0)
+(70,100,0)
+(28,99,0)
+(90,22,0)
+(93,77,0)
+(1,25,0)
+(85,57,0)
+(32,55,0)
+(25,1,0)
+(47,71,0)
+(81,24,0)
+(51,48,0)
+(49,7,0)
+(69,54,0)
+(104,101,0)
+(91,55,0)
+(89,100,0)
+(31,8,0)
+(88,82,0)
+(83,48,0)
+(30,100,0)
+(76,23,0)
+(2,41,0)
+(105,82,0)
+(107,11,0)
+(59,13,0)
+(12,56,0)
+(65,109,0)
+(38,56,0)
+(82,52,0)
+(71,52,0)
+(74,81,0)
+(60,52,0)
+(66,51,0)
+(9,23,0)
+(103,11,0)
+(111,13,0)
+(84,57,0)
+(24,52,0)
+(60,19,0)
+(17,92,0)
+(0,99,0)
+(46,68,0)
+(57,84,0)
+(54,1,0)
+(22,90,0)
+(21,102,0)
+(27,24,0)
+(64,84,0)
+(8,48,0)
+(24,39,0)
+(101,104,0)
+(22,47,0)
+(41,5,0)
+(102,21,0)
+(61,8,0)
+(33,60,0)
+(24,78,0)
+(20,68,0)
+(98,100,0)
+(92,99,0)
+(87,100,0)
+(67,41,0)
+(23,101,0)
+(24,81,0)
+(108,100,0)
+(101,23,0)
+(48,51,0)
+(110,70,0)
+(57,85,0)
+(99,100,0)
+(24,85,0)
+(51,52,0)
+(58,78,0)
+(5,41,0)
+(11,103,0)
+(47,100,0)
+(63,71,0)
+(99,0,0)
+(54,5,0)
+(81,109,0)
+(44,110,0)
+(6,100,0)
+(1,100,0)
+(109,47,0)
+(110,52,0)
+(68,52,0)
+(54,99,0)
+(37,110,0)
+(106,103,0)
+(41,70,0)
+(96,24,0)
+(56,12,0)
+(42,92,0)
+(50,60,0)
+(97,22,0)
+(103,24,0)
+(7,47,0)
+(94,24,0)
+(11,7,0)
+(85,24,0)
+(45,25,0)
+(15,77,0)
+(39,24,0)
+(77,5,0)
+(29,100,0)
+(14,85,0)
+(86,7,0)
+(95,22,0)
+(35,47,0)
+(68,39,0)
+(26,54,0)
+(5,100,0)
+(23,52,0)
+(104,100,0)
+(19,60,0)
+(90,100,0)
+(7,11,0)
+(73,47,0)
+(84,55,0)
+(54,100,0)
+(34,57,0)
+(72,5,0)
+(24,12,0)
+(0,19,0)
+(4,73,0)
+(24,103,0)
+(39,68,0)
+(80,111,0)
+(48,100,0)
+(41,52,0)
+(70,24,0)
+(10,51,0)
+(16,71,0)
+(40,24,0)
+(54,48,0)
+(12,24,0)
+(75,56,0)
+(19,0,0)
+(36,109,0)
+(18,1,0)
+(55,84,0)
+(111,82,0)
+(24,70,0)
+(82,111,0)
+(24,85,1)
+(95,8,1)
+(14,39,1)
+(99,0,1)
+(92,42,1)
+(94,85,1)
+(109,47,1)
+(27,40,1)
+(31,61,1)
+(88,1,1)
+(34,14,1)
+(79,77,1)
+(55,91,1)
+(8,31,1)
+(92,99,1)
+(110,37,1)
+(102,73,1)
+(57,84,1)
+(50,28,1)
+(47,71,1)
+(49,78,1)
+(91,32,1)
+(24,52,1)
+(5,41,1)
+(22,47,1)
+(19,60,1)
+(90,22,1)
+(36,103,1)
+(54,99,1)
+(0,19,1)
+(40,96,1)
+(71,52,1)
+(60,33,1)
+(76,9,1)
+(97,95,1)
+(95,79,1)
+(32,64,1)
+(13,59,1)
+(109,65,1)
+(67,2,1)
+(69,54,1)
+(85,57,1)
+(75,38,1)
+(111,82,1)
+(107,7,1)
+(77,5,1)
+(24,39,1)
+(22,97,1)
+(21,102,1)
+(72,70,1)
+(71,63,1)
+(104,101,1)
+(44,21,1)
+(95,3,1)
+(68,20,1)
+(54,48,1)
+(63,16,1)
+(80,82,1)
+(82,52,1)
+(70,24,1)
+(73,47,1)
+(68,52,1)
+(25,45,1)
+(96,94,1)
+(74,109,1)
+(64,34,1)
+(78,58,1)
+(37,44,1)
+(26,90,1)
+(101,23,1)
+(61,48,1)
+(56,75,1)
+(54,26,1)
+(17,99,1)
+(53,21,1)
+(110,52,1)
+(65,36,1)
+(16,35,1)
+(73,4,1)
+(45,18,1)
+(9,13,1)
+(84,55,1)
+(103,106,1)
+(28,77,1)
+(81,109,1)
+(23,76,1)
+(7,47,1)
+(56,52,1)
+(60,52,1)
+(11,107,1)
+(24,78,1)
+(15,93,1)
+(24,12,1)
+(4,62,1)
+(105,88,1)
+(48,51,1)
+(54,1,1)
+(51,52,1)
+(111,80,1)
+(24,81,1)
+(41,52,1)
+(33,50,1)
+(66,83,1)
+(24,103,1)
+(18,47,1)
+(93,5,1)
+(10,66,1)
+(86,49,1)
+(7,86,1)
+(3,92,1)
+(8,48,1)
+(51,10,1)
+(62,104,1)
+(2,72,1)
+(11,7,1)
+(38,27,1)
+(1,25,1)
+(58,110,1)
+(82,105,1)
+(20,46,1)
+(41,67,1)
+(103,11,1)
+(42,17,1)
+(26,53,1)
+(12,56,1)
+(23,52,1)
+(106,11,1)
+(46,81,1)
+(59,111,1)
+(39,68,1)
+(83,92,1)
+(41,70,1)
+(77,15,1)
+(81,74,1)
+(54,5,1)
+(103,21,2)
+(24,21,2)
+(107,21,2)
+(61,92,2)
+(11,21,2)
+(34,21,2)
+(68,52,2)
+(54,99,2)
+(53,21,2)
+(51,92,2)
+(54,48,2)
+(60,77,2)
+(46,21,2)
+(39,21,2)
+(77,21,2)
+(96,21,2)
+(71,52,2)
+(58,21,2)
+(56,52,2)
+(51,52,2)
+(27,21,2)
+(65,21,2)
+(94,21,2)
+(28,77,2)
+(103,11,2)
+(99,77,2)
+(0,19,2)
+(92,99,2)
+(97,21,2)
+(12,56,2)
+(19,60,2)
+(2,21,2)
+(70,21,2)
+(95,21,2)
+(7,21,2)
+(24,39,2)
+(22,47,2)
+(40,21,2)
+(79,77,2)
+(48,51,2)
+(7,47,2)
+(92,77,2)
+(41,21,2)
+(54,5,2)
+(74,21,2)
+(48,92,2)
+(50,77,2)
+(56,21,2)
+(15,21,2)
+(104,101,2)
+(57,21,2)
+(84,55,2)
+(42,77,2)
+(109,47,2)
+(5,21,2)
+(86,21,2)
+(24,85,2)
+(72,21,2)
+(111,82,2)
+(64,21,2)
+(10,92,2)
+(21,102,2)
+(109,21,2)
+(110,52,2)
+(3,92,2)
+(36,21,2)
+(55,21,2)
+(49,21,2)
+(73,47,2)
+(41,70,2)
+(14,21,2)
+(66,92,2)
+(60,52,2)
+(69,54,2)
+(78,21,2)
+(91,21,2)
+(90,22,2)
+(20,21,2)
+(24,81,2)
+(37,21,2)
+(17,77,2)
+(85,21,2)
+(1,25,2)
+(38,21,2)
+(33,77,2)
+(106,21,2)
+(32,21,2)
+(57,84,2)
+(0,77,2)
+(24,52,2)
+(24,78,2)
+(5,41,2)
+(90,21,2)
+(47,71,2)
+(8,48,2)
+(82,52,2)
+(23,52,2)
+(11,7,2)
+(101,23,2)
+(41,52,2)
+(67,21,2)
+(12,21,2)
+(70,24,2)
+(77,5,2)
+(102,73,2)
+(81,109,2)
+(44,21,2)
+(8,92,2)
+(83,92,2)
+(24,103,2)
+(84,21,2)
+(81,21,2)
+(19,77,2)
+(75,21,2)
+(93,21,2)
+(22,21,2)
+(54,1,2)
+(31,92,2)
+(39,68,2)
+(85,57,2)
+(110,21,2)
+(99,0,2)
+(24,12,2)
+(68,21,2)
+-----------------------------------
+(0,wait_for_completion_interruptible(&ch->done)
+(1,ret = -ENODEV)
+(2,ch)
+(3,goto put;)
+(4,scsi_host)
+(5,ret = ch->path_query_id)
+(6,if (ret < 0)
+(7,target->srp_host)
+(8,ret < 0)
+(9,ch)
+(10,status)
+(11,target->srp_host->srp_dev)
+(12,&ch->path_query)
+(13,ch->path.numb_path = 1)
+(14,IB_SA_PATH_REC_SERVICE_ID)
+(15,0)
+(16,ch)
+(17,ret)
+(18,ret)
+(19,&ch->done)
+(20,path)
+(21,!scsi_host_get(target->scsi_host)
+(22,target->scsi_host)
+(23,ch->done)
+(24,ib_sa_path_rec_get(&srp_sa_client,\n\\n\\t\\t\\t\\t\\t       target->srp_host->srp_dev->dev,\n\\n\\t\\t\\t\\t\\t       target->srp_host->port,\n\\n\\t\\t\\t\\t\\t       &ch->path,\n\\n\\t\\t\\t\\t\\t       IB_SA_PATH_REC_SERVICE_ID |\n\\n\\t\\t\\t\\t\\t       IB_SA_PATH_REC_DGID\\t |\n\\n\\t\\t\\t\\t\\t       IB_SA_PATH_REC_SGID\\t |\n\\n\\t\\t\\t\\t\\t       IB_SA_PATH_REC_NUMB_PATH\\t |\n\\n\\t\\t\\t\\t\\t       IB_SA_PATH_REC_PKEY,\n\\n\\t\\t\\t\\t\\t       SRP_PATH_REC_TIMEOUT_MS,\n\\n\\t\\t\\t\\t\\t       GFP_KERNEL,\n\\n\\t\\t\\t\\t\\t       srp_path_rec_completion,\n\\n\\t\\t\\t\\t\\t       ch, &ch->path_query)
+(25,-ENODEV)
+(26,ret)
+(27,ch)
+(28,ret)
+(29,if (ret < 0)
+(30,put:)
+(31,0)
+(32,IB_SA_PATH_REC_NUMB_PATH)
+(33,done)
+(34,IB_SA_PATH_REC_DGID)
+(35,target)
+(36,target)
+(37,path_query_id)
+(38,ch)
+(39,&ch->path)
+(40,srp_path_rec_completion)
+(41,ch->path_query_id)
+(42,0)
+(43,out:)
+(44,ch)
+(45,ENODEV)
+(46,ch)
+(47,*target = ch->target)
+(48,ret = ch->status)
+(49,target)
+(50,ch)
+(51,ch->status)
+(52,struct srp_rdma_ch *ch)
+(53,goto out;)
+(54,return ret;)
+(55,IB_SA_PATH_REC_NUMB_PATH\\t |\n\\n\\t\\t\\t\\t\\t       IB_SA_PATH_REC_PKEY)
+(56,ch->path_query)
+(57,IB_SA_PATH_REC_DGID\\t |\n\\n\\t\\t\\t\\t\\t       IB_SA_PATH_REC_SGID\\t |\n\\n\\t\\t\\t\\t\\t       IB_SA_PATH_REC_NUMB_PATH\\t |\n\\n\\t\\t\\t\\t\\t       IB_SA_PATH_REC_PKEY)
+(58,srp_sa_client)
+(59,1)
+(60,ch->done)
+(61,ret)
+(62,target)
+(63,target)
+(64,IB_SA_PATH_REC_SGID)
+(65,srp_host)
+(66,ch)
+(67,path_query_id)
+(68,ch->path)
+(69,RET)
+(70,ch->path_query_id = ib_sa_path_rec_get(&srp_sa_client,\n\\n\\t\\t\\t\\t\\t       target->srp_host->srp_dev->dev,\n\\n\\t\\t\\t\\t\\t       target->srp_host->port,\n\\n\\t\\t\\t\\t\\t       &ch->path,\n\\n\\t\\t\\t\\t\\t       IB_SA_PATH_REC_SERVICE_ID |\n\\n\\t\\t\\t\\t\\t       IB_SA_PATH_REC_DGID\\t |\n\\n\\t\\t\\t\\t\\t       IB_SA_PATH_REC_SGID\\t |\n\\n\\t\\t\\t\\t\\t       IB_SA_PATH_REC_NUMB_PATH\\t |\n\\n\\t\\t\\t\\t\\t       IB_SA_PATH_REC_PKEY,\n\\n\\t\\t\\t\\t\\t       SRP_PATH_REC_TIMEOUT_MS,\n\\n\\t\\t\\t\\t\\t       GFP_KERNEL,\n\\n\\t\\t\\t\\t\\t       srp_path_rec_completion,\n\\n\\t\\t\\t\\t\\t       ch, &ch->path_query)
+(71,ch->target)
+(72,ret)
+(73,target->scsi_host)
+(74,port)
+(75,path_query)
+(76,done)
+(77,ret < 0)
+(78,&srp_sa_client)
+(79,goto put;)
+(80,numb_path)
+(81,target->srp_host->port)
+(82,ch->path)
+(83,ret)
+(84,IB_SA_PATH_REC_SGID\\t |\n\\n\\t\\t\\t\\t\\t       IB_SA_PATH_REC_NUMB_PATH\\t |\n\\n\\t\\t\\t\\t\\t       IB_SA_PATH_REC_PKEY)
+(85,IB_SA_PATH_REC_SERVICE_ID |\n\\n\\t\\t\\t\\t\\t       IB_SA_PATH_REC_DGID\\t |\n\\n\\t\\t\\t\\t\\t       IB_SA_PATH_REC_SGID\\t |\n\\n\\t\\t\\t\\t\\t       IB_SA_PATH_REC_NUMB_PATH\\t |\n\\n\\t\\t\\t\\t\\t       IB_SA_PATH_REC_PKEY)
+(86,srp_host)
+(87,if (ret < 0)
+(88,ch)
+(89,if (!scsi_host_get(target->scsi_host)
+(90,scsi_host_put(target->scsi_host)
+(91,IB_SA_PATH_REC_PKEY)
+(92,ret < 0)
+(93,ret)
+(94,SRP_PATH_REC_TIMEOUT_MS)
+(95,target)
+(96,GFP_KERNEL)
+(97,scsi_host)
+(98,ret)
+(99,ret = wait_for_completion_interruptible(&ch->done)
+(100,)
+(101,&ch->done)
+(102,scsi_host_get(target->scsi_host)
+(103,target->srp_host->srp_dev->dev)
+(104,init_completion(&ch->done)
+(105,path)
+(106,dev)
+(107,srp_dev)
+(108,target)
+(109,target->srp_host)
+(110,ch->path_query_id)
+(111,ch->path.numb_path)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

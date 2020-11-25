@@ -1,0 +1,1728 @@
+-----label-----
+1
+-----code-----
+int rdma_resolve_ip(struct rdma_addr_client *client,
+		    struct sockaddr *src_addr, struct sockaddr *dst_addr,
+		    struct rdma_dev_addr *addr, int timeout_ms,
+		    void (*callback)(int status, struct sockaddr *src_addr,
+				     struct rdma_dev_addr *addr, void *context),
+		    void *context)
+{
+	struct sockaddr *src_in, *dst_in;
+	struct addr_req *req;
+	int ret = 0;
+
+	req = kzalloc(sizeof *req, GFP_KERNEL);
+	if (!req)
+		return -ENOMEM;
+
+	src_in = (struct sockaddr *) &req->src_addr;
+	dst_in = (struct sockaddr *) &req->dst_addr;
+
+	if (src_addr) {
+		if (src_addr->sa_family != dst_addr->sa_family) {
+			ret = -EINVAL;
+			goto err;
+		}
+
+		memcpy(src_in, src_addr, rdma_addr_size(src_addr));
+	} else {
+		src_in->sa_family = dst_addr->sa_family;
+	}
+
+	memcpy(dst_in, dst_addr, rdma_addr_size(dst_addr));
+	req->addr = addr;
+	req->callback = callback;
+	req->context = context;
+	req->client = client;
+	atomic_inc(&client->refcount);
+	INIT_DELAYED_WORK(&req->work, process_one_req);
+	req->seq = (u32)atomic_inc_return(&ib_nl_addr_request_seq);
+
+	req->status = addr_resolve(src_in, dst_in, addr, true, req->seq);
+	switch (req->status) {
+	case 0:
+		req->timeout = jiffies;
+		queue_req(req);
+		break;
+	case -ENODATA:
+		req->timeout = msecs_to_jiffies(timeout_ms) + jiffies;
+		queue_req(req);
+		break;
+	default:
+		ret = req->status;
+		atomic_dec(&client->refcount);
+		goto err;
+	}
+	return ret;
+err:
+	kfree(req);
+	return ret;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+3,8
+3,9
+3,10
+3,11
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+17,19
+18,19
+20,21
+20,22
+23,24
+23,25
+24,25
+26,27
+26,28
+29,30
+29,31
+31,32
+33,34
+33,35
+35,36
+35,37
+35,38
+35,39
+35,40
+36,37
+36,38
+39,40
+39,41
+41,42
+43,44
+43,45
+44,45
+46,47
+46,48
+49,50
+49,51
+50,51
+52,53
+52,54
+55,56
+55,57
+57,58
+57,59
+60,61
+60,62
+62,63
+62,64
+65,66
+65,67
+65,68
+65,69
+65,70
+65,71
+65,72
+65,73
+65,74
+65,75
+65,76
+65,77
+65,78
+65,79
+65,80
+65,81
+65,82
+65,83
+65,84
+65,85
+65,86
+66,67
+67,68
+67,69
+67,70
+68,69
+70,71
+70,72
+73,74
+73,75
+76,77
+77,78
+77,79
+78,79
+80,81
+80,82
+83,84
+84,85
+84,86
+86,87
+86,88
+88,89
+90,91
+91,92
+91,93
+92,93
+94,95
+94,96
+94,97
+95,96
+97,98
+98,99
+99,100
+101,102
+103,104
+103,105
+104,105
+105,106
+107,108
+108,109
+109,110
+111,112
+112,113
+112,114
+113,114
+115,116
+115,117
+116,117
+116,118
+117,118
+119,120
+121,122
+122,123
+122,124
+123,124
+126,127
+127,128
+127,129
+128,129
+130,131
+130,132
+131,132
+131,133
+132,133
+134,135
+136,137
+137,138
+137,139
+138,139
+141,142
+141,143
+141,144
+142,143
+144,145
+144,146
+145,146
+145,147
+146,147
+146,148
+147,148
+147,149
+148,149
+151,152
+151,153
+152,153
+155,156
+155,157
+156,157
+157,158
+157,159
+158,159
+160,161
+161,162
+163,164
+165,166
+166,167
+166,168
+166,169
+166,170
+167,168
+169,170
+171,172
+173,174
+173,175
+174,175
+176,177
+178,179
+179,180
+180,181
+180,182
+181,182
+181,183
+182,183
+185,186
+185,187
+186,187
+189,190
+190,191
+190,192
+190,193
+190,194
+191,192
+193,194
+195,196
+197,198
+197,199
+198,199
+200,201
+202,203
+203,204
+203,205
+204,205
+204,206
+205,206
+208,209
+210,211
+211,212
+211,213
+212,213
+212,214
+213,214
+216,217
+218,219
+219,220
+219,221
+220,221
+220,222
+221,222
+224,225
+226,227
+227,228
+227,229
+228,229
+228,230
+229,230
+232,233
+234,235
+235,236
+235,237
+236,237
+238,239
+239,240
+239,241
+240,241
+243,244
+244,245
+244,246
+244,247
+245,246
+247,248
+248,249
+248,250
+249,250
+252,253
+254,255
+255,256
+255,257
+256,257
+256,258
+257,258
+260,261
+260,262
+261,262
+261,263
+262,263
+265,266
+265,267
+266,267
+268,269
+269,270
+271,272
+272,273
+272,274
+273,274
+273,275
+274,275
+277,278
+277,279
+277,280
+277,281
+277,282
+277,283
+278,279
+280,281
+282,283
+284,285
+287,288
+287,289
+288,289
+291,292
+291,293
+292,293
+292,294
+293,294
+296,297
+296,298
+296,299
+296,300
+296,301
+296,302
+296,303
+296,304
+296,305
+296,306
+296,307
+296,308
+297,298
+299,300
+300,301
+300,302
+301,302
+301,303
+302,303
+305,306
+307,308
+308,309
+308,310
+309,310
+311,312
+314,315
+315,316
+316,317
+318,319
+319,320
+319,321
+320,321
+320,322
+321,322
+324,325
+324,326
+325,326
+325,327
+326,327
+328,329
+330,331
+332,333
+333,334
+333,335
+334,335
+336,337
+340,341
+341,342
+341,343
+342,343
+344,345
+344,346
+345,346
+348,349
+349,350
+349,351
+350,351
+352,353
+353,354
+353,355
+354,355
+357,358
+359,360
+360,361
+362,363
+362,364
+364,365
+365,366
+365,367
+366,367
+368,369
+370,371
+371,372
+-----nextToken-----
+2,4,7,9,10,13,15,16,19,21,22,25,27,28,30,32,34,37,38,40,42,45,47,48,51,53,54,56,58,59,61,63,64,69,71,72,74,75,79,81,82,85,87,89,93,96,100,102,106,110,114,118,120,124,125,129,133,135,139,140,143,149,150,153,154,159,162,164,168,170,172,175,177,183,184,187,188,192,194,196,199,201,206,207,209,214,215,217,222,223,225,230,231,233,237,241,242,246,250,251,253,258,259,263,264,267,270,275,276,279,281,283,285,286,289,290,294,295,298,303,304,306,310,312,313,317,322,323,327,329,331,335,337,338,339,343,346,347,351,355,356,358,361,363,367,369,372
+-----computeFrom-----
+91,92
+91,93
+112,113
+112,114
+127,128
+127,129
+146,147
+146,148
+157,158
+157,159
+180,181
+180,182
+203,204
+203,205
+211,212
+211,213
+219,220
+219,221
+227,228
+227,229
+255,256
+255,257
+272,273
+272,274
+300,301
+300,302
+319,320
+319,321
+324,325
+324,326
+341,342
+341,343
+-----guardedBy-----
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;FunctionDeclarator;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;IdExpression;Name;ReturnStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;Pointer;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;Pointer;UnaryExpression;FieldReference;IdExpression;Name;Name;IfStatement;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;GotoStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;SwitchStatement;FieldReference;IdExpression;Name;Name;CompoundStatement;CaseStatement;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BreakStatement;CaseStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BreakStatement;DefaultStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;GotoStatement;Name;ReturnStatement;IdExpression;Name;LabelStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+int rdma_resolve_ip(struct rdma_addr_client *client,		    struct sockaddr *src_addr, struct sockaddr *dst_addr,		    struct rdma_dev_addr *addr, int timeout_ms,		    void (*callback)(int status, struct sockaddr *src_addr,				     struct rdma_dev_addr *addr, void *context),		    void *context){	struct sockaddr *src_in, *dst_in;	struct addr_req *req;	int ret = 0;	req = kzalloc(sizeof *req, GFP_KERNEL);	if (!req)		return -ENOMEM;	src_in = (struct sockaddr *) &req->src_addr;	dst_in = (struct sockaddr *) &req->dst_addr;	if (src_addr) {		if (src_addr->sa_family != dst_addr->sa_family) {			ret = -EINVAL;			goto err;		}		memcpy(src_in, src_addr, rdma_addr_size(src_addr));	} else {		src_in->sa_family = dst_addr->sa_family;	}	memcpy(dst_in, dst_addr, rdma_addr_size(dst_addr));	req->addr = addr;	req->callback = callback;	req->context = context;	req->client = client;	atomic_inc(&client->refcount);	INIT_DELAYED_WORK(&req->work, process_one_req);	req->seq = (u32)atomic_inc_return(&ib_nl_addr_request_seq);	req->status = addr_resolve(src_in, dst_in, addr, true, req->seq);	switch (req->status) {	case 0:		req->timeout = jiffies;		queue_req(req);		break;	case -ENODATA:		req->timeout = msecs_to_jiffies(timeout_ms) + jiffies;		queue_req(req);		break;	default:		ret = req->status;		atomic_dec(&client->refcount);		goto err;	}	return ret;err:	kfree(req);	return ret;}
+int
+rdma_resolve_ip(struct rdma_addr_client *client,		    struct sockaddr *src_addr, struct sockaddr *dst_addr,		    struct rdma_dev_addr *addr, int timeout_ms,		    void (*callback)(int status, struct sockaddr *src_addr,				     struct rdma_dev_addr *addr, void *context),		    void *context)
+rdma_resolve_ip
+struct rdma_addr_client *client
+struct rdma_addr_client
+rdma_addr_client
+*client
+*
+client
+struct sockaddr *src_addr
+struct sockaddr
+sockaddr
+*src_addr
+*
+src_addr
+struct sockaddr *dst_addr
+struct sockaddr
+sockaddr
+*dst_addr
+*
+dst_addr
+struct rdma_dev_addr *addr
+struct rdma_dev_addr
+rdma_dev_addr
+*addr
+*
+addr
+int timeout_ms
+int
+timeout_ms
+timeout_ms
+void (*callback)(int status, struct sockaddr *src_addr,				     struct rdma_dev_addr *addr, void *context)
+void
+(*callback)(int status, struct sockaddr *src_addr,				     struct rdma_dev_addr *addr, void *context)
+*callback
+*
+callback
+int status
+int
+status
+status
+struct sockaddr *src_addr
+struct sockaddr
+sockaddr
+*src_addr
+*
+src_addr
+struct rdma_dev_addr *addr
+struct rdma_dev_addr
+rdma_dev_addr
+*addr
+*
+addr
+void *context
+void
+*context
+*
+context
+void *context
+void
+*context
+*
+context
+{	struct sockaddr *src_in, *dst_in;	struct addr_req *req;	int ret = 0;	req = kzalloc(sizeof *req, GFP_KERNEL);	if (!req)		return -ENOMEM;	src_in = (struct sockaddr *) &req->src_addr;	dst_in = (struct sockaddr *) &req->dst_addr;	if (src_addr) {		if (src_addr->sa_family != dst_addr->sa_family) {			ret = -EINVAL;			goto err;		}		memcpy(src_in, src_addr, rdma_addr_size(src_addr));	} else {		src_in->sa_family = dst_addr->sa_family;	}	memcpy(dst_in, dst_addr, rdma_addr_size(dst_addr));	req->addr = addr;	req->callback = callback;	req->context = context;	req->client = client;	atomic_inc(&client->refcount);	INIT_DELAYED_WORK(&req->work, process_one_req);	req->seq = (u32)atomic_inc_return(&ib_nl_addr_request_seq);	req->status = addr_resolve(src_in, dst_in, addr, true, req->seq);	switch (req->status) {	case 0:		req->timeout = jiffies;		queue_req(req);		break;	case -ENODATA:		req->timeout = msecs_to_jiffies(timeout_ms) + jiffies;		queue_req(req);		break;	default:		ret = req->status;		atomic_dec(&client->refcount);		goto err;	}	return ret;err:	kfree(req);	return ret;}
+struct sockaddr *src_in, *dst_in;
+struct sockaddr *src_in, *dst_in;
+struct sockaddr
+sockaddr
+*src_in
+*
+src_in
+*dst_in
+*
+dst_in
+struct addr_req *req;
+struct addr_req *req;
+struct addr_req
+addr_req
+*req
+*
+req
+int ret = 0;
+int ret = 0;
+int
+ret = 0
+ret
+= 0
+0
+req = kzalloc(sizeof *req, GFP_KERNEL);
+req = kzalloc(sizeof *req, GFP_KERNEL)
+req
+req
+kzalloc(sizeof *req, GFP_KERNEL)
+kzalloc
+kzalloc
+sizeof *req
+*req
+req
+req
+GFP_KERNEL
+GFP_KERNEL
+if (!req)		return -ENOMEM;
+!req
+req
+req
+return -ENOMEM;
+-ENOMEM
+ENOMEM
+ENOMEM
+src_in = (struct sockaddr *) &req->src_addr;
+src_in = (struct sockaddr *) &req->src_addr
+src_in
+src_in
+(struct sockaddr *) &req->src_addr
+struct sockaddr *
+struct sockaddr
+sockaddr
+*
+*
+&req->src_addr
+req->src_addr
+req
+req
+src_addr
+dst_in = (struct sockaddr *) &req->dst_addr;
+dst_in = (struct sockaddr *) &req->dst_addr
+dst_in
+dst_in
+(struct sockaddr *) &req->dst_addr
+struct sockaddr *
+struct sockaddr
+sockaddr
+*
+*
+&req->dst_addr
+req->dst_addr
+req
+req
+dst_addr
+if (src_addr) {		if (src_addr->sa_family != dst_addr->sa_family) {			ret = -EINVAL;			goto err;		}		memcpy(src_in, src_addr, rdma_addr_size(src_addr));	} else {		src_in->sa_family = dst_addr->sa_family;	}
+src_addr
+src_addr
+{		if (src_addr->sa_family != dst_addr->sa_family) {			ret = -EINVAL;			goto err;		}		memcpy(src_in, src_addr, rdma_addr_size(src_addr));	}
+if (src_addr->sa_family != dst_addr->sa_family) {			ret = -EINVAL;			goto err;		}
+src_addr->sa_family != dst_addr->sa_family
+src_addr->sa_family
+src_addr
+src_addr
+sa_family
+dst_addr->sa_family
+dst_addr
+dst_addr
+sa_family
+{			ret = -EINVAL;			goto err;		}
+ret = -EINVAL;
+ret = -EINVAL
+ret
+ret
+-EINVAL
+EINVAL
+EINVAL
+goto err;
+err
+memcpy(src_in, src_addr, rdma_addr_size(src_addr));
+memcpy(src_in, src_addr, rdma_addr_size(src_addr))
+memcpy
+memcpy
+src_in
+src_in
+src_addr
+src_addr
+rdma_addr_size(src_addr)
+rdma_addr_size
+rdma_addr_size
+src_addr
+src_addr
+{		src_in->sa_family = dst_addr->sa_family;	}
+src_in->sa_family = dst_addr->sa_family;
+src_in->sa_family = dst_addr->sa_family
+src_in->sa_family
+src_in
+src_in
+sa_family
+dst_addr->sa_family
+dst_addr
+dst_addr
+sa_family
+memcpy(dst_in, dst_addr, rdma_addr_size(dst_addr));
+memcpy(dst_in, dst_addr, rdma_addr_size(dst_addr))
+memcpy
+memcpy
+dst_in
+dst_in
+dst_addr
+dst_addr
+rdma_addr_size(dst_addr)
+rdma_addr_size
+rdma_addr_size
+dst_addr
+dst_addr
+req->addr = addr;
+req->addr = addr
+req->addr
+req
+req
+addr
+addr
+addr
+req->callback = callback;
+req->callback = callback
+req->callback
+req
+req
+callback
+callback
+callback
+req->context = context;
+req->context = context
+req->context
+req
+req
+context
+context
+context
+req->client = client;
+req->client = client
+req->client
+req
+req
+client
+client
+client
+atomic_inc(&client->refcount);
+atomic_inc(&client->refcount)
+atomic_inc
+atomic_inc
+&client->refcount
+client->refcount
+client
+client
+refcount
+INIT_DELAYED_WORK(&req->work, process_one_req);
+INIT_DELAYED_WORK(&req->work, process_one_req)
+INIT_DELAYED_WORK
+INIT_DELAYED_WORK
+&req->work
+req->work
+req
+req
+work
+process_one_req
+process_one_req
+req->seq = (u32)atomic_inc_return(&ib_nl_addr_request_seq);
+req->seq = (u32)atomic_inc_return(&ib_nl_addr_request_seq)
+req->seq
+req
+req
+seq
+(u32)atomic_inc_return(&ib_nl_addr_request_seq)
+u32
+u32
+u32
+
+atomic_inc_return(&ib_nl_addr_request_seq)
+atomic_inc_return
+atomic_inc_return
+&ib_nl_addr_request_seq
+ib_nl_addr_request_seq
+ib_nl_addr_request_seq
+req->status = addr_resolve(src_in, dst_in, addr, true, req->seq);
+req->status = addr_resolve(src_in, dst_in, addr, true, req->seq)
+req->status
+req
+req
+status
+addr_resolve(src_in, dst_in, addr, true, req->seq)
+addr_resolve
+addr_resolve
+src_in
+src_in
+dst_in
+dst_in
+addr
+addr
+true
+req->seq
+req
+req
+seq
+switch (req->status) {	case 0:		req->timeout = jiffies;		queue_req(req);		break;	case -ENODATA:		req->timeout = msecs_to_jiffies(timeout_ms) + jiffies;		queue_req(req);		break;	default:		ret = req->status;		atomic_dec(&client->refcount);		goto err;	}
+req->status
+req
+req
+status
+{	case 0:		req->timeout = jiffies;		queue_req(req);		break;	case -ENODATA:		req->timeout = msecs_to_jiffies(timeout_ms) + jiffies;		queue_req(req);		break;	default:		ret = req->status;		atomic_dec(&client->refcount);		goto err;	}
+case 0:
+0
+req->timeout = jiffies;
+req->timeout = jiffies
+req->timeout
+req
+req
+timeout
+jiffies
+jiffies
+queue_req(req);
+queue_req(req)
+queue_req
+queue_req
+req
+req
+break;
+case -ENODATA:
+-ENODATA
+ENODATA
+ENODATA
+req->timeout = msecs_to_jiffies(timeout_ms) + jiffies;
+req->timeout = msecs_to_jiffies(timeout_ms) + jiffies
+req->timeout
+req
+req
+timeout
+msecs_to_jiffies(timeout_ms) + jiffies
+msecs_to_jiffies(timeout_ms)
+msecs_to_jiffies
+msecs_to_jiffies
+timeout_ms
+timeout_ms
+jiffies
+jiffies
+queue_req(req);
+queue_req(req)
+queue_req
+queue_req
+req
+req
+break;
+default:
+ret = req->status;
+ret = req->status
+ret
+ret
+req->status
+req
+req
+status
+atomic_dec(&client->refcount);
+atomic_dec(&client->refcount)
+atomic_dec
+atomic_dec
+&client->refcount
+client->refcount
+client
+client
+refcount
+goto err;
+err
+return ret;
+ret
+ret
+err:	kfree(req);
+err
+kfree(req);
+kfree(req)
+kfree
+kfree
+req
+req
+return ret;
+ret
+ret
+-----joern-----
+(133,47,0)
+(176,58,0)
+(10,128,0)
+(150,31,0)
+(170,51,0)
+(129,43,0)
+(134,173,0)
+(131,14,0)
+(156,170,0)
+(29,67,0)
+(91,54,0)
+(6,74,0)
+(157,26,0)
+(115,13,0)
+(173,134,0)
+(62,32,0)
+(98,31,0)
+(110,68,0)
+(173,29,0)
+(162,104,0)
+(92,69,0)
+(78,62,0)
+(50,58,0)
+(104,162,0)
+(80,170,0)
+(93,31,0)
+(42,105,0)
+(26,118,0)
+(138,143,0)
+(24,13,0)
+(13,143,0)
+(96,43,0)
+(30,14,0)
+(132,30,0)
+(128,10,0)
+(80,67,0)
+(159,80,0)
+(142,136,0)
+(25,31,0)
+(170,80,0)
+(176,31,0)
+(83,96,0)
+(29,73,0)
+(17,44,0)
+(126,64,0)
+(117,158,0)
+(58,170,0)
+(117,84,0)
+(54,43,0)
+(26,89,0)
+(9,35,0)
+(68,110,0)
+(122,42,0)
+(60,134,0)
+(161,121,0)
+(4,152,0)
+(72,89,0)
+(72,143,0)
+(158,96,0)
+(109,143,0)
+(153,43,0)
+(152,94,0)
+(27,143,0)
+(129,118,0)
+(113,43,0)
+(105,150,0)
+(67,143,0)
+(163,101,0)
+(74,121,0)
+(158,117,0)
+(8,132,0)
+(29,173,0)
+(96,158,0)
+(104,59,0)
+(74,38,0)
+(101,143,0)
+(161,125,0)
+(42,94,0)
+(99,137,0)
+(128,51,0)
+(5,31,0)
+(14,148,0)
+(114,52,0)
+(34,101,0)
+(47,31,0)
+(170,94,0)
+(51,128,0)
+(103,14,0)
+(118,26,0)
+(55,170,0)
+(63,175,0)
+(7,26,0)
+(112,98,0)
+(37,143,0)
+(20,170,0)
+(107,161,0)
+(86,83,0)
+(167,71,0)
+(46,5,0)
+(40,31,0)
+(147,132,0)
+(70,71,0)
+(39,93,0)
+(110,71,0)
+(78,143,0)
+(49,150,0)
+(152,125,0)
+(32,31,0)
+(146,104,0)
+(71,89,0)
+(57,169,0)
+(154,38,0)
+(52,168,0)
+(105,42,0)
+(137,53,0)
+(33,53,0)
+(15,52,0)
+(123,78,0)
+(171,117,0)
+(93,92,0)
+(38,74,0)
+(64,143,0)
+(111,152,0)
+(22,92,0)
+(90,124,0)
+(44,143,0)
+(166,170,0)
+(155,47,0)
+(31,25,0)
+(145,51,0)
+(2,9,0)
+(74,51,0)
+(140,151,0)
+(82,80,0)
+(45,94,0)
+(68,143,0)
+(125,164,0)
+(174,124,0)
+(64,172,0)
+(9,137,0)
+(9,143,0)
+(170,172,0)
+(80,31,0)
+(74,143,0)
+(44,31,0)
+(66,43,0)
+(115,143,0)
+(56,50,0)
+(94,42,0)
+(97,19,0)
+(94,143,0)
+(14,30,0)
+(136,31,0)
+(170,58,0)
+(125,161,0)
+(51,143,0)
+(119,169,0)
+(62,78,0)
+(85,13,0)
+(169,57,0)
+(41,104,0)
+(130,168,0)
+(104,148,0)
+(120,158,0)
+(132,121,0)
+(79,100,0)
+(175,31,0)
+(92,143,0)
+(144,35,0)
+(1,93,0)
+(124,90,0)
+(88,43,0)
+(141,175,0)
+(0,163,0)
+(102,59,0)
+(73,29,0)
+(50,35,0)
+(71,110,0)
+(160,74,0)
+(100,67,0)
+(16,25,0)
+(124,31,0)
+(23,9,0)
+(128,90,0)
+(11,143,0)
+(137,19,0)
+(31,143,0)
+(162,148,0)
+(48,5,0)
+(5,72,0)
+(104,94,0)
+(52,31,0)
+(36,43,0)
+(57,25,0)
+(35,43,0)
+(127,72,0)
+(65,32,0)
+(135,143,0)
+(18,32,0)
+(106,115,0)
+(12,83,0)
+(21,163,0)
+(136,43,0)
+(50,31,0)
+(28,140,0)
+(42,122,0)
+(168,43,0)
+(81,162,0)
+(163,31,0)
+(35,50,0)
+(3,50,0)
+(100,31,0)
+(139,43,0)
+(87,143,0)
+(53,137,0)
+(23,115,0)
+(118,129,0)
+(61,176,0)
+(101,95,0)
+(90,128,0)
+(67,29,0)
+(25,57,0)
+(175,64,0)
+(116,100,0)
+(76,161,0)
+(165,124,0)
+(38,121,0)
+(30,132,0)
+(150,105,0)
+(32,62,0)
+(58,143,0)
+(23,151,0)
+(75,176,0)
+(149,143,0)
+(108,150,0)
+(155,58,1)
+(47,31,1)
+(162,81,1)
+(161,121,1)
+(29,73,1)
+(147,8,1)
+(26,7,1)
+(105,150,1)
+(6,125,1)
+(167,72,1)
+(23,9,1)
+(100,116,1)
+(171,83,1)
+(106,139,1)
+(126,175,1)
+(78,62,1)
+(70,167,1)
+(166,20,1)
+(49,108,1)
+(65,68,1)
+(127,5,1)
+(18,65,1)
+(131,103,1)
+(9,137,1)
+(66,129,1)
+(106,36,1)
+(32,31,1)
+(96,158,1)
+(117,84,1)
+(8,14,1)
+(92,69,1)
+(74,121,1)
+(156,176,1)
+(107,76,1)
+(52,31,1)
+(56,144,1)
+(116,79,1)
+(101,95,1)
+(110,71,1)
+(124,174,1)
+(85,24,1)
+(154,160,1)
+(93,39,1)
+(114,47,1)
+(50,3,1)
+(142,168,1)
+(64,126,1)
+(29,173,1)
+(175,141,1)
+(14,131,1)
+(170,172,1)
+(79,78,1)
+(9,35,1)
+(1,101,1)
+(5,31,1)
+(76,152,1)
+(170,94,1)
+(157,35,1)
+(20,156,1)
+(152,94,1)
+(74,51,1)
+(168,130,1)
+(140,28,1)
+(163,31,1)
+(25,16,1)
+(170,80,1)
+(35,50,1)
+(99,30,1)
+(136,31,1)
+(71,89,1)
+(137,53,1)
+(119,40,1)
+(104,162,1)
+(98,112,1)
+(123,62,1)
+(21,64,1)
+(30,132,1)
+(132,121,1)
+(80,67,1)
+(128,10,1)
+(40,13,1)
+(22,93,1)
+(115,13,1)
+(72,127,1)
+(169,119,1)
+(115,106,1)
+(80,31,1)
+(36,136,1)
+(100,31,1)
+(104,148,1)
+(34,163,1)
+(92,22,1)
+(64,172,1)
+(15,114,1)
+(44,31,1)
+(13,85,1)
+(58,170,1)
+(117,171,1)
+(158,120,1)
+(132,147,1)
+(94,42,1)
+(71,70,1)
+(170,51,1)
+(2,44,1)
+(146,41,1)
+(139,54,1)
+(150,49,1)
+(50,58,1)
+(55,166,1)
+(39,1,1)
+(61,75,1)
+(54,91,1)
+(152,4,1)
+(125,161,1)
+(103,77,1)
+(75,67,1)
+(133,155,1)
+(41,30,1)
+(74,38,1)
+(78,123,1)
+(159,82,1)
+(14,148,1)
+(90,124,1)
+(112,31,1)
+(173,134,1)
+(145,94,1)
+(28,98,1)
+(31,25,1)
+(32,18,1)
+(62,32,1)
+(151,140,1)
+(60,100,1)
+(97,137,1)
+(163,0,1)
+(17,66,1)
+(83,86,1)
+(124,31,1)
+(0,21,1)
+(108,45,1)
+(120,117,1)
+(25,57,1)
+(101,34,1)
+(51,128,1)
+(53,33,1)
+(81,146,1)
+(50,31,1)
+(23,151,1)
+(144,47,1)
+(160,6,1)
+(86,12,1)
+(6,104,1)
+(162,148,1)
+(30,14,1)
+(141,63,1)
+(174,165,1)
+(67,29,1)
+(23,115,1)
+(134,60,1)
+(136,142,1)
+(3,56,1)
+(47,133,1)
+(176,61,1)
+(46,48,1)
+(161,107,1)
+(44,17,1)
+(42,122,1)
+(33,99,1)
+(9,2,1)
+(16,57,1)
+(98,31,1)
+(68,110,1)
+(17,97,1)
+(175,31,1)
+(150,31,1)
+(7,157,1)
+(111,77,1)
+(104,94,1)
+(45,98,1)
+(72,89,1)
+(129,118,1)
+(4,111,1)
+(93,31,1)
+(5,46,1)
+(80,159,1)
+(26,89,1)
+(91,96,1)
+(63,74,1)
+(42,105,1)
+(38,154,1)
+(176,31,1)
+(48,92,1)
+(165,145,1)
+(118,26,1)
+(130,52,1)
+(158,117,1)
+(52,15,1)
+(128,90,1)
+(57,169,1)
+(77,51,1)
+(38,121,1)
+(82,55,1)
+(51,128,2)
+(79,30,2)
+(74,77,2)
+(175,77,2)
+(57,169,2)
+(126,77,2)
+(115,47,2)
+(58,30,2)
+(6,30,2)
+(161,77,2)
+(150,98,2)
+(61,77,2)
+(62,30,2)
+(123,77,2)
+(136,47,2)
+(28,98,2)
+(176,77,2)
+(7,47,2)
+(134,77,2)
+(137,30,2)
+(111,77,2)
+(74,38,2)
+(25,57,2)
+(26,89,2)
+(72,89,2)
+(156,30,2)
+(152,77,2)
+(126,30,2)
+(97,30,2)
+(47,31,2)
+(110,71,2)
+(80,31,2)
+(105,150,2)
+(21,30,2)
+(2,30,2)
+(133,30,2)
+(71,30,2)
+(154,30,2)
+(42,122,2)
+(141,77,2)
+(50,47,2)
+(166,77,2)
+(64,77,2)
+(100,77,2)
+(146,30,2)
+(128,10,2)
+(34,30,2)
+(18,77,2)
+(128,98,2)
+(42,105,2)
+(155,77,2)
+(29,77,2)
+(75,77,2)
+(170,51,2)
+(159,77,2)
+(163,31,2)
+(61,30,2)
+(74,121,2)
+(127,77,2)
+(15,47,2)
+(117,84,2)
+(80,30,2)
+(78,62,2)
+(96,158,2)
+(20,77,2)
+(144,47,2)
+(44,47,2)
+(66,47,2)
+(81,30,2)
+(118,47,2)
+(70,30,2)
+(20,30,2)
+(130,47,2)
+(93,77,2)
+(55,30,2)
+(33,30,2)
+(137,53,2)
+(2,47,2)
+(9,47,2)
+(170,172,2)
+(142,47,2)
+(75,30,2)
+(155,30,2)
+(46,30,2)
+(140,98,2)
+(34,77,2)
+(9,30,2)
+(1,77,2)
+(6,77,2)
+(35,47,2)
+(21,77,2)
+(170,30,2)
+(29,173,2)
+(41,30,2)
+(101,77,2)
+(90,124,2)
+(104,94,2)
+(114,47,2)
+(22,77,2)
+(131,77,2)
+(167,77,2)
+(132,77,2)
+(38,30,2)
+(17,47,2)
+(45,98,2)
+(79,77,2)
+(94,98,2)
+(163,30,2)
+(26,47,2)
+(64,172,2)
+(115,13,2)
+(80,67,2)
+(65,30,2)
+(93,31,2)
+(92,30,2)
+(23,151,2)
+(92,77,2)
+(53,30,2)
+(71,77,2)
+(116,77,2)
+(93,30,2)
+(23,115,2)
+(78,77,2)
+(166,30,2)
+(141,30,2)
+(127,30,2)
+(9,137,2)
+(124,98,2)
+(30,132,2)
+(74,30,2)
+(98,31,2)
+(100,30,2)
+(78,30,2)
+(36,47,2)
+(170,80,2)
+(165,98,2)
+(72,77,2)
+(32,77,2)
+(132,121,2)
+(22,30,2)
+(32,31,2)
+(8,77,2)
+(56,47,2)
+(62,77,2)
+(99,30,2)
+(160,77,2)
+(101,30,2)
+(161,121,2)
+(31,25,2)
+(145,98,2)
+(63,30,2)
+(90,98,2)
+(152,94,2)
+(175,30,2)
+(38,121,2)
+(173,77,2)
+(35,50,2)
+(136,31,2)
+(48,30,2)
+(108,98,2)
+(175,31,2)
+(110,30,2)
+(49,98,2)
+(47,77,2)
+(74,51,2)
+(58,77,2)
+(0,30,2)
+(68,110,2)
+(158,117,2)
+(170,94,2)
+(67,29,2)
+(62,32,2)
+(23,9,2)
+(60,30,2)
+(150,31,2)
+(170,77,2)
+(68,30,2)
+(100,31,2)
+(18,30,2)
+(5,31,2)
+(94,42,2)
+(133,77,2)
+(82,30,2)
+(29,30,2)
+(159,30,2)
+(147,77,2)
+(1,30,2)
+(80,77,2)
+(162,30,2)
+(173,134,2)
+(65,77,2)
+(68,77,2)
+(58,170,2)
+(44,31,2)
+(0,77,2)
+(157,47,2)
+(76,77,2)
+(82,77,2)
+(105,98,2)
+(156,77,2)
+(163,77,2)
+(30,77,2)
+(116,30,2)
+(129,47,2)
+(67,30,2)
+(14,77,2)
+(47,30,2)
+(51,98,2)
+(52,31,2)
+(151,98,2)
+(123,30,2)
+(104,30,2)
+(39,30,2)
+(106,47,2)
+(63,77,2)
+(42,98,2)
+(176,31,2)
+(107,77,2)
+(77,98,2)
+(104,148,2)
+(176,30,2)
+(4,77,2)
+(110,77,2)
+(67,77,2)
+(129,118,2)
+(124,31,2)
+(32,30,2)
+(14,148,2)
+(39,77,2)
+(103,77,2)
+(162,148,2)
+(5,77,2)
+(72,30,2)
+(29,73,2)
+(44,30,2)
+(50,58,2)
+(30,14,2)
+(71,89,2)
+(118,26,2)
+(101,95,2)
+(46,77,2)
+(9,35,2)
+(17,30,2)
+(92,69,2)
+(104,162,2)
+(173,30,2)
+(125,77,2)
+(154,77,2)
+(64,30,2)
+(134,30,2)
+(55,77,2)
+(48,77,2)
+(167,30,2)
+(160,30,2)
+(125,161,2)
+(60,77,2)
+(52,47,2)
+(168,47,2)
+(5,30,2)
+(128,90,2)
+(50,31,2)
+(174,98,2)
+(70,77,2)
+(38,77,2)
+(3,47,2)
+-----------------------------------
+(0,callback)
+(1,req)
+(2,ret)
+(3,status)
+(4,sa_family)
+(5,req->client)
+(6,dst_in)
+(7,refcount)
+(8,dst_addr)
+(9,return ret;)
+(10,struct sockaddr *)
+(11,ret)
+(12,req)
+(13,ret = 0)
+(14,src_addr->sa_family)
+(15,timeout)
+(16,GFP_KERNEL)
+(17,req)
+(18,work)
+(19,)
+(20,dst_in)
+(21,req)
+(22,context)
+(23,RET)
+(24,ret)
+(25,kzalloc(sizeof *req, GFP_KERNEL)
+(26,client->refcount)
+(27,if (!req)
+(28,ENOMEM)
+(29,(u32)
+(30,src_addr->sa_family != dst_addr->sa_family)
+(31,req = kzalloc(sizeof *req, GFP_KERNEL)
+(32,req->work)
+(33,EINVAL)
+(34,callback)
+(35,ret = req->status)
+(36,break;)
+(37,switch (req->status)
+(38,rdma_addr_size(dst_addr)
+(39,context)
+(40,req)
+(41,src_in)
+(42,(struct sockaddr *)
+(43,)
+(44,kfree(req)
+(45,src_in)
+(46,client)
+(47,req->status)
+(48,req)
+(49,src_addr)
+(50,req->status)
+(51,dst_in = (struct sockaddr *)
+(52,req->timeout)
+(53,-EINVAL)
+(54,queue_req(req)
+(55,true)
+(56,req)
+(57,sizeof *req)
+(58,req->status = addr_resolve(src_in, dst_in, addr, true, req->seq)
+(59,)
+(60,ib_nl_addr_request_seq)
+(61,status)
+(62,&req->work)
+(63,req)
+(64,req->addr = addr)
+(65,req)
+(66,goto err;)
+(67,req->seq = (u32)
+(68,atomic_inc(&client->refcount)
+(69,void *context)
+(70,refcount)
+(71,client->refcount)
+(72,req->client = client)
+(73,u32)
+(74,memcpy(dst_in, dst_addr, rdma_addr_size(dst_addr)
+(75,req)
+(76,dst_addr)
+(77,src_addr)
+(78,INIT_DELAYED_WORK(&req->work, process_one_req)
+(79,req)
+(80,req->seq)
+(81,src_addr)
+(82,req)
+(83,req->timeout)
+(84,int timeout_ms)
+(85,0)
+(86,timeout)
+(87,if (src_addr)
+(88,default:)
+(89,struct rdma_addr_client *client)
+(90,&req->dst_addr)
+(91,req)
+(92,req->context = context)
+(93,req->context)
+(94,src_in = (struct sockaddr *)
+(95,void (*callback)
+(96,req->timeout = msecs_to_jiffies(timeout_ms)
+(97,goto err;)
+(98,!req)
+(99,ret)
+(100,req->seq)
+(101,req->callback = callback)
+(102,if (src_addr->sa_family != dst_addr->sa_family)
+(103,src_addr)
+(104,memcpy(src_in, src_addr, rdma_addr_size(src_addr)
+(105,&req->src_addr)
+(106,ret)
+(107,sa_family)
+(108,req)
+(109,err:)
+(110,&client->refcount)
+(111,src_in)
+(112,req)
+(113,case 0:)
+(114,req)
+(115,return ret;)
+(116,seq)
+(117,msecs_to_jiffies(timeout_ms)
+(118,&client->refcount)
+(119,req)
+(120,jiffies)
+(121,struct sockaddr *dst_addr)
+(122,struct sockaddr *)
+(123,process_one_req)
+(124,req->dst_addr)
+(125,src_in->sa_family = dst_addr->sa_family)
+(126,addr)
+(127,client)
+(128,(struct sockaddr *)
+(129,atomic_dec(&client->refcount)
+(130,jiffies)
+(131,sa_family)
+(132,dst_addr->sa_family)
+(133,status)
+(134,&ib_nl_addr_request_seq)
+(135,req)
+(136,queue_req(req)
+(137,ret = -EINVAL)
+(138,dst_in)
+(139,break;)
+(140,-ENOMEM)
+(141,addr)
+(142,req)
+(143,)
+(144,ret)
+(145,dst_in)
+(146,src_addr)
+(147,sa_family)
+(148,struct sockaddr *src_addr)
+(149,src_in)
+(150,req->src_addr)
+(151,return -ENOMEM;)
+(152,src_in->sa_family)
+(153,ENODATA:)
+(154,dst_addr)
+(155,req)
+(156,src_in)
+(157,client)
+(158,msecs_to_jiffies(timeout_ms)
+(159,seq)
+(160,dst_addr)
+(161,dst_addr->sa_family)
+(162,rdma_addr_size(src_addr)
+(163,req->callback)
+(164,)
+(165,req)
+(166,addr)
+(167,client)
+(168,req->timeout = jiffies)
+(169,*req)
+(170,addr_resolve(src_in, dst_in, addr, true, req->seq)
+(171,timeout_ms)
+(172,struct rdma_dev_addr *addr)
+(173,atomic_inc_return(&ib_nl_addr_request_seq)
+(174,dst_addr)
+(175,req->addr)
+(176,req->status)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

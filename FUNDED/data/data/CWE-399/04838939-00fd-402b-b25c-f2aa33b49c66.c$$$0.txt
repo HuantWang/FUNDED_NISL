@@ -1,0 +1,1291 @@
+-----label-----
+1
+-----code-----
+static irqreturn_t omap4_keypad_interrupt(int irq, void *dev_id)
+{
+	struct omap4_keypad *keypad_data = dev_id;
+	struct input_dev *input_dev = keypad_data->input;
+	unsigned char key_state[ARRAY_SIZE(keypad_data->key_state)];
+	unsigned int col, row, code, changed;
+	u32 *new_state = (u32 *) key_state;
+
+	/* Disable interrupts */
+	kbd_write_irqreg(keypad_data, OMAP4_KBD_IRQENABLE,
+			 OMAP4_VAL_IRQDISABLE);
+
+	*new_state = kbd_readl(keypad_data, OMAP4_KBD_FULLCODE31_0);
+	*(new_state + 1) = kbd_readl(keypad_data, OMAP4_KBD_FULLCODE63_32);
+
+	for (row = 0; row < keypad_data->rows; row++) {
+		changed = key_state[row] ^ keypad_data->key_state[row];
+		if (!changed)
+			continue;
+
+		for (col = 0; col < keypad_data->cols; col++) {
+			if (changed & (1 << col)) {
+				code = MATRIX_SCAN_CODE(row, col,
+						keypad_data->row_shift);
+				input_event(input_dev, EV_MSC, MSC_SCAN, code);
+				input_report_key(input_dev,
+						 keypad_data->keymap[code],
+						 key_state[row] & (1 << col));
+			}
+		}
+	}
+
+	input_sync(input_dev);
+
+	memcpy(keypad_data->key_state, key_state,
+		sizeof(keypad_data->key_state));
+
+	/* clear pending interrupts */
+	kbd_write_irqreg(keypad_data, OMAP4_KBD_IRQSTATUS,
+			 kbd_read_irqreg(keypad_data, OMAP4_KBD_IRQSTATUS));
+
+	/* enable interrupts */
+	kbd_write_irqreg(keypad_data, OMAP4_KBD_IRQENABLE,
+		OMAP4_DEF_IRQENABLE_EVENTEN |
+				OMAP4_DEF_IRQENABLE_LONGKEY);
+
+	return IRQ_HANDLED;
+}
+-----children-----
+1,2
+1,3
+1,4
+2,3
+4,5
+4,6
+4,7
+6,7
+6,8
+8,9
+10,11
+10,12
+12,13
+12,14
+15,16
+15,17
+15,18
+15,19
+15,20
+15,21
+15,22
+15,23
+15,24
+15,25
+15,26
+15,27
+15,28
+15,29
+16,17
+17,18
+17,19
+18,19
+20,21
+20,22
+20,23
+23,24
+24,25
+26,27
+27,28
+27,29
+28,29
+30,31
+30,32
+30,33
+33,34
+34,35
+34,36
+35,36
+38,39
+39,40
+39,41
+41,42
+41,43
+43,44
+44,45
+44,46
+45,46
+47,48
+47,49
+48,49
+51,52
+52,53
+52,54
+52,55
+52,56
+52,57
+54,55
+56,57
+58,59
+60,61
+62,63
+63,64
+63,65
+64,65
+66,67
+66,68
+66,69
+69,70
+70,71
+70,72
+71,72
+71,73
+72,73
+74,75
+76,77
+78,79
+79,80
+79,81
+79,82
+79,83
+80,81
+82,83
+84,85
+86,87
+88,89
+89,90
+89,91
+90,91
+91,92
+93,94
+93,95
+93,96
+94,95
+96,97
+98,99
+100,101
+101,102
+101,103
+102,103
+103,104
+104,105
+104,106
+105,106
+108,109
+108,110
+108,111
+109,110
+111,112
+113,114
+115,116
+115,117
+115,118
+115,119
+116,117
+117,118
+117,119
+118,119
+121,122
+121,123
+122,123
+124,125
+124,126
+125,126
+128,129
+129,130
+131,132
+131,133
+131,134
+132,133
+133,134
+133,135
+134,135
+136,137
+136,138
+137,138
+137,139
+138,139
+140,141
+142,143
+142,144
+143,144
+143,145
+144,145
+147,148
+149,150
+149,151
+150,151
+151,152
+154,155
+154,156
+154,157
+154,158
+155,156
+156,157
+156,158
+157,158
+160,161
+160,162
+161,162
+163,164
+163,165
+164,165
+167,168
+168,169
+170,171
+171,172
+171,173
+172,173
+172,174
+173,174
+175,176
+176,177
+176,178
+178,179
+180,181
+180,182
+180,183
+181,182
+182,183
+182,184
+183,184
+185,186
+185,187
+185,188
+185,189
+186,187
+188,189
+190,191
+192,193
+192,194
+193,194
+196,197
+197,198
+197,199
+197,200
+197,201
+197,202
+198,199
+200,201
+202,203
+204,205
+206,207
+208,209
+209,210
+209,211
+209,212
+209,213
+210,211
+212,213
+214,215
+214,216
+215,216
+215,217
+216,217
+219,220
+221,222
+221,223
+222,223
+222,224
+223,224
+225,226
+227,228
+228,229
+228,230
+230,231
+232,233
+233,234
+233,235
+234,235
+236,237
+238,239
+239,240
+239,241
+239,242
+239,243
+240,241
+242,243
+242,244
+243,244
+246,247
+248,249
+249,250
+250,251
+250,252
+251,252
+254,255
+255,256
+255,257
+255,258
+255,259
+256,257
+258,259
+260,261
+262,263
+262,264
+262,265
+263,264
+265,266
+267,268
+269,270
+270,271
+270,272
+270,273
+270,274
+271,272
+273,274
+275,276
+277,278
+277,279
+278,279
+280,281
+282,283
+283,284
+-----nextToken-----
+3,5,7,9,11,13,14,19,21,22,25,29,31,32,36,37,40,42,46,49,50,53,55,57,59,61,65,67,68,73,75,77,81,83,85,87,92,95,97,99,106,107,110,112,114,119,120,123,126,127,130,135,139,141,145,146,148,152,153,158,159,162,165,166,169,174,177,179,184,187,189,191,194,195,199,201,203,205,207,211,213,217,218,220,224,226,229,231,235,237,241,244,245,247,252,253,257,259,261,264,266,268,272,274,276,279,281,284
+-----computeFrom-----
+89,90
+89,91
+101,102
+101,103
+104,105
+104,106
+117,118
+117,119
+121,122
+121,123
+133,134
+133,135
+136,137
+136,138
+156,157
+156,158
+160,161
+160,162
+172,173
+172,174
+176,177
+176,178
+182,183
+182,184
+221,222
+221,223
+228,229
+228,230
+277,278
+277,279
+-----guardedBy-----
+179,231
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;NamedTypeSpecifier;Name;FunctionDeclarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;ArrayDeclarator;Name;ArrayModifier;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;Declarator;Name;Declarator;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;Pointer;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;UnaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;UnaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;UnaryExpression;IdExpression;Name;ContinueStatement;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;LiteralExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;BinaryExpression;LiteralExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;UnaryExpression;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+static irqreturn_t omap4_keypad_interrupt(int irq, void *dev_id){	struct omap4_keypad *keypad_data = dev_id;	struct input_dev *input_dev = keypad_data->input;	unsigned char key_state[ARRAY_SIZE(keypad_data->key_state)];	unsigned int col, row, code, changed;	u32 *new_state = (u32 *) key_state;	/* Disable interrupts */	kbd_write_irqreg(keypad_data, OMAP4_KBD_IRQENABLE,			 OMAP4_VAL_IRQDISABLE);	*new_state = kbd_readl(keypad_data, OMAP4_KBD_FULLCODE31_0);	*(new_state + 1) = kbd_readl(keypad_data, OMAP4_KBD_FULLCODE63_32);	for (row = 0; row < keypad_data->rows; row++) {		changed = key_state[row] ^ keypad_data->key_state[row];		if (!changed)			continue;		for (col = 0; col < keypad_data->cols; col++) {			if (changed & (1 << col)) {				code = MATRIX_SCAN_CODE(row, col,						keypad_data->row_shift);				input_event(input_dev, EV_MSC, MSC_SCAN, code);				input_report_key(input_dev,						 keypad_data->keymap[code],						 key_state[row] & (1 << col));			}		}	}	input_sync(input_dev);	memcpy(keypad_data->key_state, key_state,		sizeof(keypad_data->key_state));	/* clear pending interrupts */	kbd_write_irqreg(keypad_data, OMAP4_KBD_IRQSTATUS,			 kbd_read_irqreg(keypad_data, OMAP4_KBD_IRQSTATUS));	/* enable interrupts */	kbd_write_irqreg(keypad_data, OMAP4_KBD_IRQENABLE,		OMAP4_DEF_IRQENABLE_EVENTEN |				OMAP4_DEF_IRQENABLE_LONGKEY);	return IRQ_HANDLED;}
+static irqreturn_t
+irqreturn_t
+omap4_keypad_interrupt(int irq, void *dev_id)
+omap4_keypad_interrupt
+int irq
+int
+irq
+irq
+void *dev_id
+void
+*dev_id
+*
+dev_id
+{	struct omap4_keypad *keypad_data = dev_id;	struct input_dev *input_dev = keypad_data->input;	unsigned char key_state[ARRAY_SIZE(keypad_data->key_state)];	unsigned int col, row, code, changed;	u32 *new_state = (u32 *) key_state;	/* Disable interrupts */	kbd_write_irqreg(keypad_data, OMAP4_KBD_IRQENABLE,			 OMAP4_VAL_IRQDISABLE);	*new_state = kbd_readl(keypad_data, OMAP4_KBD_FULLCODE31_0);	*(new_state + 1) = kbd_readl(keypad_data, OMAP4_KBD_FULLCODE63_32);	for (row = 0; row < keypad_data->rows; row++) {		changed = key_state[row] ^ keypad_data->key_state[row];		if (!changed)			continue;		for (col = 0; col < keypad_data->cols; col++) {			if (changed & (1 << col)) {				code = MATRIX_SCAN_CODE(row, col,						keypad_data->row_shift);				input_event(input_dev, EV_MSC, MSC_SCAN, code);				input_report_key(input_dev,						 keypad_data->keymap[code],						 key_state[row] & (1 << col));			}		}	}	input_sync(input_dev);	memcpy(keypad_data->key_state, key_state,		sizeof(keypad_data->key_state));	/* clear pending interrupts */	kbd_write_irqreg(keypad_data, OMAP4_KBD_IRQSTATUS,			 kbd_read_irqreg(keypad_data, OMAP4_KBD_IRQSTATUS));	/* enable interrupts */	kbd_write_irqreg(keypad_data, OMAP4_KBD_IRQENABLE,		OMAP4_DEF_IRQENABLE_EVENTEN |				OMAP4_DEF_IRQENABLE_LONGKEY);	return IRQ_HANDLED;}
+struct omap4_keypad *keypad_data = dev_id;
+struct omap4_keypad *keypad_data = dev_id;
+struct omap4_keypad
+omap4_keypad
+*keypad_data = dev_id
+*
+keypad_data
+= dev_id
+dev_id
+dev_id
+struct input_dev *input_dev = keypad_data->input;
+struct input_dev *input_dev = keypad_data->input;
+struct input_dev
+input_dev
+*input_dev = keypad_data->input
+*
+input_dev
+= keypad_data->input
+keypad_data->input
+keypad_data
+keypad_data
+input
+unsigned char key_state[ARRAY_SIZE(keypad_data->key_state)];
+unsigned char key_state[ARRAY_SIZE(keypad_data->key_state)];
+unsigned char
+key_state[ARRAY_SIZE(keypad_data->key_state)]
+key_state
+[ARRAY_SIZE(keypad_data->key_state)]
+ARRAY_SIZE(keypad_data->key_state)
+ARRAY_SIZE
+ARRAY_SIZE
+keypad_data->key_state
+keypad_data
+keypad_data
+key_state
+unsigned int col, row, code, changed;
+unsigned int col, row, code, changed;
+unsigned int
+col
+col
+row
+row
+code
+code
+changed
+changed
+u32 *new_state = (u32 *) key_state;
+u32 *new_state = (u32 *) key_state;
+u32
+u32
+*new_state = (u32 *) key_state
+*
+new_state
+= (u32 *) key_state
+(u32 *) key_state
+u32 *
+u32
+u32
+*
+*
+key_state
+key_state
+kbd_write_irqreg(keypad_data, OMAP4_KBD_IRQENABLE,			 OMAP4_VAL_IRQDISABLE);
+kbd_write_irqreg(keypad_data, OMAP4_KBD_IRQENABLE,			 OMAP4_VAL_IRQDISABLE)
+kbd_write_irqreg
+kbd_write_irqreg
+keypad_data
+keypad_data
+OMAP4_KBD_IRQENABLE
+OMAP4_KBD_IRQENABLE
+OMAP4_VAL_IRQDISABLE
+OMAP4_VAL_IRQDISABLE
+*new_state = kbd_readl(keypad_data, OMAP4_KBD_FULLCODE31_0);
+*new_state = kbd_readl(keypad_data, OMAP4_KBD_FULLCODE31_0)
+*new_state
+new_state
+new_state
+kbd_readl(keypad_data, OMAP4_KBD_FULLCODE31_0)
+kbd_readl
+kbd_readl
+keypad_data
+keypad_data
+OMAP4_KBD_FULLCODE31_0
+OMAP4_KBD_FULLCODE31_0
+*(new_state + 1) = kbd_readl(keypad_data, OMAP4_KBD_FULLCODE63_32);
+*(new_state + 1) = kbd_readl(keypad_data, OMAP4_KBD_FULLCODE63_32)
+*(new_state + 1)
+(new_state + 1)
+new_state + 1
+new_state
+new_state
+1
+kbd_readl(keypad_data, OMAP4_KBD_FULLCODE63_32)
+kbd_readl
+kbd_readl
+keypad_data
+keypad_data
+OMAP4_KBD_FULLCODE63_32
+OMAP4_KBD_FULLCODE63_32
+for (row = 0; row < keypad_data->rows; row++) {		changed = key_state[row] ^ keypad_data->key_state[row];		if (!changed)			continue;		for (col = 0; col < keypad_data->cols; col++) {			if (changed & (1 << col)) {				code = MATRIX_SCAN_CODE(row, col,						keypad_data->row_shift);				input_event(input_dev, EV_MSC, MSC_SCAN, code);				input_report_key(input_dev,						 keypad_data->keymap[code],						 key_state[row] & (1 << col));			}		}	}
+row = 0;
+row = 0
+row
+row
+0
+row < keypad_data->rows
+row
+row
+keypad_data->rows
+keypad_data
+keypad_data
+rows
+row++
+row
+row
+{		changed = key_state[row] ^ keypad_data->key_state[row];		if (!changed)			continue;		for (col = 0; col < keypad_data->cols; col++) {			if (changed & (1 << col)) {				code = MATRIX_SCAN_CODE(row, col,						keypad_data->row_shift);				input_event(input_dev, EV_MSC, MSC_SCAN, code);				input_report_key(input_dev,						 keypad_data->keymap[code],						 key_state[row] & (1 << col));			}		}	}
+changed = key_state[row] ^ keypad_data->key_state[row];
+changed = key_state[row] ^ keypad_data->key_state[row]
+changed
+changed
+key_state[row] ^ keypad_data->key_state[row]
+key_state[row]
+key_state
+key_state
+row
+row
+keypad_data->key_state[row]
+keypad_data->key_state
+keypad_data
+keypad_data
+key_state
+row
+row
+if (!changed)			continue;
+!changed
+changed
+changed
+continue;
+for (col = 0; col < keypad_data->cols; col++) {			if (changed & (1 << col)) {				code = MATRIX_SCAN_CODE(row, col,						keypad_data->row_shift);				input_event(input_dev, EV_MSC, MSC_SCAN, code);				input_report_key(input_dev,						 keypad_data->keymap[code],						 key_state[row] & (1 << col));			}		}
+col = 0;
+col = 0
+col
+col
+0
+col < keypad_data->cols
+col
+col
+keypad_data->cols
+keypad_data
+keypad_data
+cols
+col++
+col
+col
+{			if (changed & (1 << col)) {				code = MATRIX_SCAN_CODE(row, col,						keypad_data->row_shift);				input_event(input_dev, EV_MSC, MSC_SCAN, code);				input_report_key(input_dev,						 keypad_data->keymap[code],						 key_state[row] & (1 << col));			}		}
+if (changed & (1 << col)) {				code = MATRIX_SCAN_CODE(row, col,						keypad_data->row_shift);				input_event(input_dev, EV_MSC, MSC_SCAN, code);				input_report_key(input_dev,						 keypad_data->keymap[code],						 key_state[row] & (1 << col));			}
+changed & (1 << col)
+changed
+changed
+(1 << col)
+1 << col
+1
+col
+col
+{				code = MATRIX_SCAN_CODE(row, col,						keypad_data->row_shift);				input_event(input_dev, EV_MSC, MSC_SCAN, code);				input_report_key(input_dev,						 keypad_data->keymap[code],						 key_state[row] & (1 << col));			}
+code = MATRIX_SCAN_CODE(row, col,						keypad_data->row_shift);
+code = MATRIX_SCAN_CODE(row, col,						keypad_data->row_shift)
+code
+code
+MATRIX_SCAN_CODE(row, col,						keypad_data->row_shift)
+MATRIX_SCAN_CODE
+MATRIX_SCAN_CODE
+row
+row
+col
+col
+keypad_data->row_shift
+keypad_data
+keypad_data
+row_shift
+input_event(input_dev, EV_MSC, MSC_SCAN, code);
+input_event(input_dev, EV_MSC, MSC_SCAN, code)
+input_event
+input_event
+input_dev
+input_dev
+EV_MSC
+EV_MSC
+MSC_SCAN
+MSC_SCAN
+code
+code
+input_report_key(input_dev,						 keypad_data->keymap[code],						 key_state[row] & (1 << col));
+input_report_key(input_dev,						 keypad_data->keymap[code],						 key_state[row] & (1 << col))
+input_report_key
+input_report_key
+input_dev
+input_dev
+keypad_data->keymap[code]
+keypad_data->keymap
+keypad_data
+keypad_data
+keymap
+code
+code
+key_state[row] & (1 << col)
+key_state[row]
+key_state
+key_state
+row
+row
+(1 << col)
+1 << col
+1
+col
+col
+input_sync(input_dev);
+input_sync(input_dev)
+input_sync
+input_sync
+input_dev
+input_dev
+memcpy(keypad_data->key_state, key_state,		sizeof(keypad_data->key_state));
+memcpy(keypad_data->key_state, key_state,		sizeof(keypad_data->key_state))
+memcpy
+memcpy
+keypad_data->key_state
+keypad_data
+keypad_data
+key_state
+key_state
+key_state
+sizeof(keypad_data->key_state)
+(keypad_data->key_state)
+keypad_data->key_state
+keypad_data
+keypad_data
+key_state
+kbd_write_irqreg(keypad_data, OMAP4_KBD_IRQSTATUS,			 kbd_read_irqreg(keypad_data, OMAP4_KBD_IRQSTATUS));
+kbd_write_irqreg(keypad_data, OMAP4_KBD_IRQSTATUS,			 kbd_read_irqreg(keypad_data, OMAP4_KBD_IRQSTATUS))
+kbd_write_irqreg
+kbd_write_irqreg
+keypad_data
+keypad_data
+OMAP4_KBD_IRQSTATUS
+OMAP4_KBD_IRQSTATUS
+kbd_read_irqreg(keypad_data, OMAP4_KBD_IRQSTATUS)
+kbd_read_irqreg
+kbd_read_irqreg
+keypad_data
+keypad_data
+OMAP4_KBD_IRQSTATUS
+OMAP4_KBD_IRQSTATUS
+kbd_write_irqreg(keypad_data, OMAP4_KBD_IRQENABLE,		OMAP4_DEF_IRQENABLE_EVENTEN |				OMAP4_DEF_IRQENABLE_LONGKEY);
+kbd_write_irqreg(keypad_data, OMAP4_KBD_IRQENABLE,		OMAP4_DEF_IRQENABLE_EVENTEN |				OMAP4_DEF_IRQENABLE_LONGKEY)
+kbd_write_irqreg
+kbd_write_irqreg
+keypad_data
+keypad_data
+OMAP4_KBD_IRQENABLE
+OMAP4_KBD_IRQENABLE
+OMAP4_DEF_IRQENABLE_EVENTEN |				OMAP4_DEF_IRQENABLE_LONGKEY
+OMAP4_DEF_IRQENABLE_EVENTEN
+OMAP4_DEF_IRQENABLE_EVENTEN
+OMAP4_DEF_IRQENABLE_LONGKEY
+OMAP4_DEF_IRQENABLE_LONGKEY
+return IRQ_HANDLED;
+IRQ_HANDLED
+IRQ_HANDLED
+-----joern-----
+(3,19,0)
+(33,122,0)
+(12,26,0)
+(103,46,0)
+(43,46,0)
+(42,24,0)
+(23,9,0)
+(14,48,0)
+(126,88,0)
+(96,30,0)
+(105,33,0)
+(66,88,0)
+(41,83,0)
+(99,106,0)
+(108,65,0)
+(57,127,0)
+(43,26,0)
+(104,106,0)
+(127,14,0)
+(29,106,0)
+(18,87,0)
+(114,94,0)
+(132,30,0)
+(110,52,0)
+(83,26,0)
+(97,51,0)
+(129,27,0)
+(8,98,0)
+(25,60,0)
+(58,18,0)
+(31,24,0)
+(95,33,0)
+(82,105,0)
+(115,33,0)
+(136,33,0)
+(136,94,0)
+(70,103,0)
+(9,38,0)
+(68,86,0)
+(28,137,0)
+(94,106,0)
+(58,33,0)
+(88,66,0)
+(117,52,0)
+(43,27,0)
+(18,58,0)
+(97,83,0)
+(85,51,0)
+(93,106,0)
+(19,33,0)
+(3,46,0)
+(5,98,0)
+(27,48,0)
+(1,19,0)
+(40,97,0)
+(114,106,0)
+(76,87,0)
+(28,72,0)
+(17,46,0)
+(14,94,0)
+(96,103,0)
+(123,3,0)
+(15,106,0)
+(60,127,0)
+(74,88,0)
+(62,76,0)
+(53,60,0)
+(18,106,0)
+(47,72,0)
+(75,136,0)
+(139,33,0)
+(10,89,0)
+(101,106,0)
+(2,106,0)
+(89,139,0)
+(131,68,0)
+(19,3,0)
+(81,47,0)
+(83,97,0)
+(52,46,0)
+(91,14,0)
+(55,46,0)
+(4,77,0)
+(69,28,0)
+(86,68,0)
+(16,99,0)
+(89,106,0)
+(102,21,0)
+(130,33,0)
+(116,37,0)
+(77,137,0)
+(9,33,0)
+(78,30,0)
+(137,106,0)
+(103,96,0)
+(44,43,0)
+(35,43,0)
+(65,106,0)
+(86,38,0)
+(37,26,0)
+(20,0,0)
+(128,136,0)
+(7,51,0)
+(107,137,0)
+(134,21,0)
+(87,76,0)
+(72,106,0)
+(91,24,0)
+(77,121,0)
+(88,33,0)
+(138,65,0)
+(13,54,0)
+(49,139,0)
+(94,136,0)
+(71,95,0)
+(121,77,0)
+(90,106,0)
+(109,113,0)
+(72,47,0)
+(56,106,0)
+(43,35,0)
+(32,139,0)
+(99,28,0)
+(14,91,0)
+(59,9,0)
+(30,46,0)
+(139,89,0)
+(30,96,0)
+(61,94,0)
+(38,106,0)
+(22,105,0)
+(127,27,0)
+(21,65,0)
+(60,33,0)
+(125,35,0)
+(113,48,0)
+(112,89,0)
+(111,43,0)
+(87,18,0)
+(14,127,0)
+(24,26,0)
+(66,26,0)
+(50,14,0)
+(120,58,0)
+(68,137,0)
+(51,98,0)
+(96,51,0)
+(119,7,0)
+(133,19,0)
+(113,94,0)
+(89,33,0)
+(24,91,0)
+(52,91,0)
+(33,106,0)
+(91,52,0)
+(135,35,0)
+(103,105,0)
+(118,18,0)
+(64,83,0)
+(6,113,0)
+(76,33,0)
+(92,113,0)
+(36,95,0)
+(35,33,0)
+(67,26,0)
+(65,21,0)
+(27,43,0)
+(124,106,0)
+(34,47,0)
+(95,106,0)
+(105,103,0)
+(65,33,0)
+(63,58,0)
+(113,27,0)
+(79,114,0)
+(127,60,0)
+(80,76,0)
+(47,33,0)
+(100,99,0)
+(99,86,0)
+(0,46,0)
+(39,95,0)
+(73,66,0)
+(51,96,0)
+(11,113,0)
+(137,77,0)
+(38,9,0)
+(84,68,0)
+(85,3,1)
+(113,27,1)
+(127,57,1)
+(62,118,1)
+(51,96,1)
+(43,35,1)
+(116,97,1)
+(11,6,1)
+(3,46,1)
+(52,110,1)
+(126,73,1)
+(18,87,1)
+(41,64,1)
+(58,33,1)
+(47,33,1)
+(33,115,1)
+(123,0,1)
+(28,69,1)
+(96,103,1)
+(68,84,1)
+(55,17,1)
+(136,128,1)
+(113,92,1)
+(50,113,1)
+(22,30,1)
+(49,32,1)
+(103,46,1)
+(132,85,1)
+(60,33,1)
+(72,47,1)
+(79,3,1)
+(20,66,1)
+(116,14,1)
+(74,126,1)
+(109,11,1)
+(33,122,1)
+(30,78,1)
+(87,76,1)
+(43,26,1)
+(58,63,1)
+(36,71,1)
+(34,28,1)
+(134,102,1)
+(133,1,1)
+(91,24,1)
+(0,20,1)
+(31,42,1)
+(52,46,1)
+(115,130,1)
+(71,39,1)
+(14,94,1)
+(4,107,1)
+(19,33,1)
+(76,33,1)
+(112,10,1)
+(81,34,1)
+(53,50,1)
+(69,95,1)
+(38,9,1)
+(7,51,1)
+(43,46,1)
+(137,77,1)
+(40,66,1)
+(73,26,1)
+(35,125,1)
+(113,94,1)
+(83,41,1)
+(7,119,1)
+(65,21,1)
+(12,67,1)
+(19,133,1)
+(25,53,1)
+(44,111,1)
+(17,38,1)
+(119,51,1)
+(138,89,1)
+(114,79,1)
+(23,86,1)
+(97,83,1)
+(108,138,1)
+(127,60,1)
+(97,51,1)
+(105,82,1)
+(139,33,1)
+(70,105,1)
+(0,46,1)
+(89,33,1)
+(30,46,1)
+(118,58,1)
+(114,94,1)
+(66,26,1)
+(63,120,1)
+(27,43,1)
+(111,129,1)
+(26,12,1)
+(127,27,1)
+(9,33,1)
+(21,134,1)
+(95,33,1)
+(99,28,1)
+(96,30,1)
+(24,26,1)
+(10,18,1)
+(73,37,1)
+(39,137,1)
+(67,7,1)
+(103,70,1)
+(37,26,1)
+(91,52,1)
+(14,91,1)
+(102,108,1)
+(86,68,1)
+(76,80,1)
+(120,114,1)
+(123,46,1)
+(125,135,1)
+(139,49,1)
+(35,33,1)
+(107,94,1)
+(82,22,1)
+(57,60,1)
+(64,40,1)
+(92,109,1)
+(18,58,1)
+(46,55,1)
+(61,33,1)
+(75,61,1)
+(80,62,1)
+(99,86,1)
+(110,117,1)
+(60,25,1)
+(65,33,1)
+(9,59,1)
+(128,75,1)
+(1,123,1)
+(84,131,1)
+(129,97,1)
+(88,74,1)
+(32,112,1)
+(20,45,1)
+(68,137,1)
+(45,7,1)
+(42,52,1)
+(94,136,1)
+(3,19,1)
+(24,31,1)
+(47,81,1)
+(28,137,1)
+(77,4,1)
+(99,16,1)
+(59,23,1)
+(37,116,1)
+(135,44,1)
+(89,139,1)
+(16,65,1)
+(136,33,1)
+(66,88,1)
+(6,27,1)
+(78,132,1)
+(95,36,1)
+(88,33,1)
+(117,127,1)
+(77,121,1)
+(14,127,1)
+(100,99,1)
+(83,26,1)
+(105,33,1)
+(131,72,1)
+(103,105,1)
+(86,68,2)
+(100,99,2)
+(126,7,2)
+(132,3,2)
+(127,60,2)
+(66,88,2)
+(137,77,2)
+(99,28,2)
+(11,97,2)
+(19,33,2)
+(117,97,2)
+(74,7,2)
+(95,33,2)
+(88,7,2)
+(97,51,2)
+(19,3,2)
+(99,86,2)
+(91,97,2)
+(114,94,2)
+(0,3,2)
+(38,9,2)
+(92,97,2)
+(83,66,2)
+(65,21,2)
+(7,3,2)
+(51,3,2)
+(43,26,2)
+(35,97,2)
+(109,97,2)
+(89,139,2)
+(43,46,2)
+(91,24,2)
+(133,3,2)
+(66,66,2)
+(135,97,2)
+(22,3,2)
+(123,3,2)
+(45,7,2)
+(111,97,2)
+(89,33,2)
+(3,3,2)
+(58,33,2)
+(18,87,2)
+(9,33,2)
+(116,66,2)
+(1,3,2)
+(68,137,2)
+(139,33,2)
+(28,137,2)
+(24,26,2)
+(14,94,2)
+(35,33,2)
+(51,96,2)
+(77,121,2)
+(129,97,2)
+(83,26,2)
+(24,97,2)
+(78,3,2)
+(113,97,2)
+(53,97,2)
+(73,66,2)
+(119,3,2)
+(44,97,2)
+(113,94,2)
+(103,3,2)
+(30,3,2)
+(52,97,2)
+(42,97,2)
+(47,33,2)
+(66,7,2)
+(91,52,2)
+(0,46,2)
+(113,27,2)
+(27,97,2)
+(25,97,2)
+(105,33,2)
+(103,105,2)
+(76,33,2)
+(60,33,2)
+(43,97,2)
+(72,47,2)
+(20,3,2)
+(52,46,2)
+(64,66,2)
+(97,83,2)
+(96,30,2)
+(6,97,2)
+(26,7,2)
+(88,66,2)
+(30,46,2)
+(50,97,2)
+(105,3,2)
+(127,97,2)
+(60,97,2)
+(40,66,2)
+(125,97,2)
+(33,122,2)
+(126,66,2)
+(65,33,2)
+(37,66,2)
+(14,91,2)
+(7,51,2)
+(3,46,2)
+(31,97,2)
+(136,33,2)
+(110,97,2)
+(96,103,2)
+(97,66,2)
+(66,26,2)
+(18,58,2)
+(103,46,2)
+(14,127,2)
+(87,76,2)
+(96,3,2)
+(27,43,2)
+(37,26,2)
+(94,136,2)
+(127,27,2)
+(43,35,2)
+(14,97,2)
+(82,3,2)
+(41,66,2)
+(88,33,2)
+(12,7,2)
+(70,3,2)
+(73,7,2)
+(57,97,2)
+(67,7,2)
+(85,3,2)
+(3,19,2)
+(74,66,2)
+-----------------------------------
+(0,row++)
+(1,keypad_data)
+(2,key_state)
+(3,row < keypad_data->rows)
+(4,key_state)
+(5,for (col = 0; col < keypad_data->cols; col++)
+(6,input_dev)
+(7,!changed)
+(8,if (!changed)
+(9,kbd_readl(keypad_data, OMAP4_KBD_FULLCODE63_32)
+(10,keypad_data)
+(11,EV_MSC)
+(12,0)
+(13,if (changed & (1 << col)
+(14,input_report_key(input_dev,\n\\n\\t\\t\\t\\t\\t\\t keypad_data->keymap[code],\n\\n\\t\\t\\t\\t\\t\\t key_state[row] & (1 << col)
+(15,code)
+(16,IRQ_HANDLED)
+(17,row)
+(18,memcpy(keypad_data->key_state, key_state,\n\\n\\t\\tsizeof(keypad_data->key_state)
+(19,keypad_data->rows)
+(20,row)
+(21,OMAP4_DEF_IRQENABLE_EVENTEN |\n\\n\\t\\t\\t\\tOMAP4_DEF_IRQENABLE_LONGKEY)
+(22,keypad_data)
+(23,keypad_data)
+(24,1 << col)
+(25,keymap)
+(26,col = 0)
+(27,code = MATRIX_SCAN_CODE(row, col,\n\\n\\t\\t\\t\\t\\t\\tkeypad_data->row_shift)
+(28,*new_state)
+(29,for (row = 0; row < keypad_data->rows; row++)
+(30,key_state[row])
+(31,col)
+(32,keypad_data)
+(33,*keypad_data = dev_id)
+(34,keypad_data)
+(35,keypad_data->row_shift)
+(36,OMAP4_VAL_IRQDISABLE)
+(37,col++)
+(38,*(new_state + 1)
+(39,keypad_data)
+(40,changed)
+(41,col)
+(42,1)
+(43,MATRIX_SCAN_CODE(row, col,\n\\n\\t\\t\\t\\t\\t\\tkeypad_data->row_shift)
+(44,col)
+(45,continue;)
+(46,row = 0)
+(47,kbd_readl(keypad_data, OMAP4_KBD_FULLCODE31_0)
+(48,)
+(49,OMAP4_KBD_IRQSTATUS)
+(50,input_dev)
+(51,changed = key_state[row] ^ keypad_data->key_state[row])
+(52,key_state[row])
+(53,keypad_data)
+(54,)
+(55,0)
+(56,row)
+(57,code)
+(58,keypad_data->key_state)
+(59,OMAP4_KBD_FULLCODE63_32)
+(60,keypad_data->keymap)
+(61,input_dev)
+(62,keypad_data)
+(63,key_state)
+(64,1)
+(65,kbd_write_irqreg(keypad_data, OMAP4_KBD_IRQENABLE,\n\\n\\t\\tOMAP4_DEF_IRQENABLE_EVENTEN |\n\\n\\t\\t\\t\\tOMAP4_DEF_IRQENABLE_LONGKEY)
+(66,col < keypad_data->cols)
+(67,col)
+(68,new_state + 1)
+(69,new_state)
+(70,row)
+(71,OMAP4_KBD_IRQENABLE)
+(72,*new_state = kbd_readl(keypad_data, OMAP4_KBD_FULLCODE31_0)
+(73,col)
+(74,cols)
+(75,keypad_data)
+(76,keypad_data->key_state)
+(77,(u32 *)
+(78,row)
+(79,input_dev)
+(80,key_state)
+(81,OMAP4_KBD_FULLCODE31_0)
+(82,key_state)
+(83,1 << col)
+(84,1)
+(85,changed)
+(86,*(new_state + 1)
+(87,sizeof(keypad_data->key_state)
+(88,keypad_data->cols)
+(89,kbd_write_irqreg(keypad_data, OMAP4_KBD_IRQSTATUS,\n\\n\\t\\t\\t kbd_read_irqreg(keypad_data, OMAP4_KBD_IRQSTATUS)
+(90,changed)
+(91,key_state[row] & (1 << col)
+(92,code)
+(93,col)
+(94,*input_dev = keypad_data->input)
+(95,kbd_write_irqreg(keypad_data, OMAP4_KBD_IRQENABLE,\n\\n\\t\\t\\t OMAP4_VAL_IRQDISABLE)
+(96,key_state[row] ^ keypad_data->key_state[row])
+(97,changed & (1 << col)
+(98,)
+(99,return IRQ_HANDLED;)
+(100,RET)
+(101,keypad_data)
+(102,OMAP4_DEF_IRQENABLE_EVENTEN)
+(103,keypad_data->key_state[row])
+(104,input_dev)
+(105,keypad_data->key_state)
+(106,)
+(107,new_state)
+(108,OMAP4_KBD_IRQENABLE)
+(109,MSC_SCAN)
+(110,row)
+(111,row)
+(112,OMAP4_KBD_IRQSTATUS)
+(113,input_event(input_dev, EV_MSC, MSC_SCAN, code)
+(114,input_sync(input_dev)
+(115,dev_id)
+(116,col)
+(117,key_state)
+(118,key_state)
+(119,changed)
+(120,keypad_data)
+(121,u32 *)
+(122,void *dev_id)
+(123,row)
+(124,new_state)
+(125,row_shift)
+(126,keypad_data)
+(127,keypad_data->keymap[code])
+(128,input)
+(129,code)
+(130,keypad_data)
+(131,new_state)
+(132,key_state)
+(133,rows)
+(134,OMAP4_DEF_IRQENABLE_LONGKEY)
+(135,keypad_data)
+(136,keypad_data->input)
+(137,*new_state = (u32 *)
+(138,keypad_data)
+(139,kbd_read_irqreg(keypad_data, OMAP4_KBD_IRQSTATUS)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

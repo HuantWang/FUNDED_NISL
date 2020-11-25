@@ -1,0 +1,801 @@
+-----label-----
+1
+-----code-----
+static int ap_poll_thread(void *data)
+{
+	DECLARE_WAITQUEUE(wait, current);
+	unsigned long flags;
+	int requests;
+	struct ap_device *ap_dev;
+
+	set_user_nice(current, 19);
+	while (1) {
+		if (ap_suspend_flag)
+			return 0;
+		if (need_resched()) {
+			schedule();
+			continue;
+		}
+		add_wait_queue(&ap_poll_wait, &wait);
+		set_current_state(TASK_INTERRUPTIBLE);
+		if (kthread_should_stop())
+			break;
+		requests = atomic_read(&ap_poll_requests);
+		if (requests <= 0)
+			schedule();
+		set_current_state(TASK_RUNNING);
+		remove_wait_queue(&ap_poll_wait, &wait);
+
+		flags = 0;
+		spin_lock_bh(&ap_device_list_lock);
+		list_for_each_entry(ap_dev, &ap_device_list, list) {
+			spin_lock(&ap_dev->lock);
+			__ap_poll_device(ap_dev, &flags);
+			spin_unlock(&ap_dev->lock);
+		}
+		spin_unlock_bh(&ap_device_list_lock);
+	}
+	set_current_state(TASK_RUNNING);
+	remove_wait_queue(&ap_poll_wait, &wait);
+	return 0;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+5,6
+5,7
+7,8
+7,9
+10,11
+10,12
+10,13
+10,14
+10,15
+10,16
+10,17
+10,18
+10,19
+11,12
+12,13
+12,14
+12,15
+13,14
+15,16
+17,18
+19,20
+20,21
+20,22
+22,23
+24,25
+25,26
+25,27
+27,28
+29,30
+30,31
+30,32
+31,32
+33,34
+33,35
+36,37
+37,38
+37,39
+37,40
+38,39
+40,41
+43,44
+43,45
+45,46
+45,47
+45,48
+45,49
+45,50
+45,51
+45,52
+45,53
+45,54
+45,55
+45,56
+45,57
+45,58
+45,59
+45,60
+46,47
+46,48
+47,48
+49,50
+51,52
+51,53
+52,53
+53,54
+55,56
+55,57
+56,57
+57,58
+58,59
+61,62
+62,63
+62,64
+62,65
+63,64
+65,66
+66,67
+68,69
+69,70
+71,72
+72,73
+72,74
+73,74
+75,76
+76,77
+78,79
+78,80
+79,80
+80,81
+83,84
+84,85
+84,86
+85,86
+87,88
+87,89
+88,89
+90,91
+91,92
+93,94
+93,95
+94,95
+94,96
+95,96
+98,99
+99,100
+100,101
+102,103
+103,104
+103,105
+104,105
+106,107
+107,108
+109,110
+110,111
+110,112
+110,113
+111,112
+113,114
+114,115
+116,117
+117,118
+119,120
+120,121
+120,122
+121,122
+124,125
+125,126
+125,127
+126,127
+128,129
+129,130
+129,131
+132,133
+133,134
+133,135
+133,136
+133,137
+134,135
+136,137
+138,139
+139,140
+141,142
+143,144
+144,145
+144,146
+144,147
+145,146
+146,147
+146,148
+147,148
+149,150
+150,151
+150,152
+151,152
+154,155
+155,156
+155,157
+155,158
+156,157
+158,159
+160,161
+161,162
+163,164
+164,165
+164,166
+165,166
+167,168
+168,169
+168,170
+169,170
+172,173
+173,174
+173,175
+174,175
+176,177
+177,178
+179,180
+180,181
+180,182
+181,182
+183,184
+184,185
+186,187
+187,188
+187,189
+187,190
+188,189
+190,191
+191,192
+193,194
+194,195
+196,197
+-----nextToken-----
+2,4,6,8,9,14,16,18,21,23,26,28,32,34,35,39,41,42,44,48,50,54,59,60,64,67,70,74,77,81,82,86,89,92,96,97,101,105,108,112,115,118,122,123,127,130,131,135,137,140,142,148,152,153,157,159,162,166,170,171,175,178,182,185,189,192,195,197
+-----computeFrom-----
+84,85
+84,86
+94,95
+94,96
+120,121
+120,122
+-----guardedBy-----
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;WhileStatement;LiteralExpression;CompoundStatement;IfStatement;IdExpression;Name;ReturnStatement;LiteralExpression;IfStatement;FunctionCallExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ContinueStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;IfStatement;FunctionCallExpression;IdExpression;Name;BreakStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;ReferenceOperator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;ProblemStatement;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ReturnStatement;LiteralExpression;
+-----ast_node-----
+static int ap_poll_thread(void *data){	DECLARE_WAITQUEUE(wait, current);	unsigned long flags;	int requests;	struct ap_device *ap_dev;	set_user_nice(current, 19);	while (1) {		if (ap_suspend_flag)			return 0;		if (need_resched()) {			schedule();			continue;		}		add_wait_queue(&ap_poll_wait, &wait);		set_current_state(TASK_INTERRUPTIBLE);		if (kthread_should_stop())			break;		requests = atomic_read(&ap_poll_requests);		if (requests <= 0)			schedule();		set_current_state(TASK_RUNNING);		remove_wait_queue(&ap_poll_wait, &wait);		flags = 0;		spin_lock_bh(&ap_device_list_lock);		list_for_each_entry(ap_dev, &ap_device_list, list) {			spin_lock(&ap_dev->lock);			__ap_poll_device(ap_dev, &flags);			spin_unlock(&ap_dev->lock);		}		spin_unlock_bh(&ap_device_list_lock);	}	set_current_state(TASK_RUNNING);	remove_wait_queue(&ap_poll_wait, &wait);	return 0;}
+static int
+ap_poll_thread(void *data)
+ap_poll_thread
+void *data
+void
+*data
+*
+data
+{	DECLARE_WAITQUEUE(wait, current);	unsigned long flags;	int requests;	struct ap_device *ap_dev;	set_user_nice(current, 19);	while (1) {		if (ap_suspend_flag)			return 0;		if (need_resched()) {			schedule();			continue;		}		add_wait_queue(&ap_poll_wait, &wait);		set_current_state(TASK_INTERRUPTIBLE);		if (kthread_should_stop())			break;		requests = atomic_read(&ap_poll_requests);		if (requests <= 0)			schedule();		set_current_state(TASK_RUNNING);		remove_wait_queue(&ap_poll_wait, &wait);		flags = 0;		spin_lock_bh(&ap_device_list_lock);		list_for_each_entry(ap_dev, &ap_device_list, list) {			spin_lock(&ap_dev->lock);			__ap_poll_device(ap_dev, &flags);			spin_unlock(&ap_dev->lock);		}		spin_unlock_bh(&ap_device_list_lock);	}	set_current_state(TASK_RUNNING);	remove_wait_queue(&ap_poll_wait, &wait);	return 0;}
+DECLARE_WAITQUEUE(wait, current);
+DECLARE_WAITQUEUE(wait, current)
+DECLARE_WAITQUEUE
+DECLARE_WAITQUEUE
+wait
+wait
+current
+current
+unsigned long flags;
+unsigned long flags;
+unsigned long
+flags
+flags
+int requests;
+int requests;
+int
+requests
+requests
+struct ap_device *ap_dev;
+struct ap_device *ap_dev;
+struct ap_device
+ap_device
+*ap_dev
+*
+ap_dev
+set_user_nice(current, 19);
+set_user_nice(current, 19)
+set_user_nice
+set_user_nice
+current
+current
+19
+while (1) {		if (ap_suspend_flag)			return 0;		if (need_resched()) {			schedule();			continue;		}		add_wait_queue(&ap_poll_wait, &wait);		set_current_state(TASK_INTERRUPTIBLE);		if (kthread_should_stop())			break;		requests = atomic_read(&ap_poll_requests);		if (requests <= 0)			schedule();		set_current_state(TASK_RUNNING);		remove_wait_queue(&ap_poll_wait, &wait);		flags = 0;		spin_lock_bh(&ap_device_list_lock);		list_for_each_entry(ap_dev, &ap_device_list, list) {			spin_lock(&ap_dev->lock);			__ap_poll_device(ap_dev, &flags);			spin_unlock(&ap_dev->lock);		}		spin_unlock_bh(&ap_device_list_lock);	}
+1
+{		if (ap_suspend_flag)			return 0;		if (need_resched()) {			schedule();			continue;		}		add_wait_queue(&ap_poll_wait, &wait);		set_current_state(TASK_INTERRUPTIBLE);		if (kthread_should_stop())			break;		requests = atomic_read(&ap_poll_requests);		if (requests <= 0)			schedule();		set_current_state(TASK_RUNNING);		remove_wait_queue(&ap_poll_wait, &wait);		flags = 0;		spin_lock_bh(&ap_device_list_lock);		list_for_each_entry(ap_dev, &ap_device_list, list) {			spin_lock(&ap_dev->lock);			__ap_poll_device(ap_dev, &flags);			spin_unlock(&ap_dev->lock);		}		spin_unlock_bh(&ap_device_list_lock);	}
+if (ap_suspend_flag)			return 0;
+ap_suspend_flag
+ap_suspend_flag
+return 0;
+0
+if (need_resched()) {			schedule();			continue;		}
+need_resched()
+need_resched
+need_resched
+{			schedule();			continue;		}
+schedule();
+schedule()
+schedule
+schedule
+continue;
+add_wait_queue(&ap_poll_wait, &wait);
+add_wait_queue(&ap_poll_wait, &wait)
+add_wait_queue
+add_wait_queue
+&ap_poll_wait
+ap_poll_wait
+ap_poll_wait
+&wait
+wait
+wait
+set_current_state(TASK_INTERRUPTIBLE);
+set_current_state(TASK_INTERRUPTIBLE);
+set_current_state
+set_current_state
+(TASK_INTERRUPTIBLE)
+TASK_INTERRUPTIBLE
+TASK_INTERRUPTIBLE
+if (kthread_should_stop())			break;
+kthread_should_stop()
+kthread_should_stop
+kthread_should_stop
+break;
+requests = atomic_read(&ap_poll_requests);
+requests = atomic_read(&ap_poll_requests)
+requests
+requests
+atomic_read(&ap_poll_requests)
+atomic_read
+atomic_read
+&ap_poll_requests
+ap_poll_requests
+ap_poll_requests
+if (requests <= 0)			schedule();
+requests <= 0
+requests
+requests
+0
+schedule();
+schedule()
+schedule
+schedule
+set_current_state(TASK_RUNNING);
+set_current_state(TASK_RUNNING);
+set_current_state
+set_current_state
+(TASK_RUNNING)
+TASK_RUNNING
+TASK_RUNNING
+remove_wait_queue(&ap_poll_wait, &wait);
+remove_wait_queue(&ap_poll_wait, &wait)
+remove_wait_queue
+remove_wait_queue
+&ap_poll_wait
+ap_poll_wait
+ap_poll_wait
+&wait
+wait
+wait
+flags = 0;
+flags = 0
+flags
+flags
+0
+spin_lock_bh(&ap_device_list_lock);
+spin_lock_bh(&ap_device_list_lock);
+spin_lock_bh
+spin_lock_bh
+(&ap_device_list_lock)
+&ap_device_list_lock
+&
+ap_device_list_lock
+list_for_each_entry(ap_dev, &ap_device_list, list)
+list_for_each_entry(ap_dev, &ap_device_list, list)
+list_for_each_entry
+list_for_each_entry
+ap_dev
+ap_dev
+&ap_device_list
+ap_device_list
+ap_device_list
+list
+list
+)
+{			spin_lock(&ap_dev->lock);			__ap_poll_device(ap_dev, &flags);			spin_unlock(&ap_dev->lock);		}
+spin_lock(&ap_dev->lock);
+spin_lock(&ap_dev->lock)
+spin_lock
+spin_lock
+&ap_dev->lock
+ap_dev->lock
+ap_dev
+ap_dev
+lock
+__ap_poll_device(ap_dev, &flags);
+__ap_poll_device(ap_dev, &flags)
+__ap_poll_device
+__ap_poll_device
+ap_dev
+ap_dev
+&flags
+flags
+flags
+spin_unlock(&ap_dev->lock);
+spin_unlock(&ap_dev->lock)
+spin_unlock
+spin_unlock
+&ap_dev->lock
+ap_dev->lock
+ap_dev
+ap_dev
+lock
+spin_unlock_bh(&ap_device_list_lock);
+spin_unlock_bh(&ap_device_list_lock)
+spin_unlock_bh
+spin_unlock_bh
+&ap_device_list_lock
+ap_device_list_lock
+ap_device_list_lock
+set_current_state(TASK_RUNNING);
+set_current_state(TASK_RUNNING);
+set_current_state
+set_current_state
+(TASK_RUNNING)
+TASK_RUNNING
+TASK_RUNNING
+remove_wait_queue(&ap_poll_wait, &wait);
+remove_wait_queue(&ap_poll_wait, &wait)
+remove_wait_queue
+remove_wait_queue
+&ap_poll_wait
+ap_poll_wait
+ap_poll_wait
+&wait
+wait
+wait
+return 0;
+0
+-----joern-----
+(21,57,0)
+(39,31,0)
+(57,45,0)
+(75,32,0)
+(77,71,0)
+(5,8,0)
+(41,38,0)
+(35,8,0)
+(74,55,0)
+(43,17,0)
+(69,26,0)
+(12,7,0)
+(59,7,0)
+(64,51,0)
+(40,65,0)
+(45,57,0)
+(9,1,0)
+(41,65,0)
+(68,69,0)
+(2,26,0)
+(70,7,0)
+(18,28,0)
+(47,72,0)
+(65,40,0)
+(54,26,0)
+(79,46,0)
+(23,26,0)
+(16,31,0)
+(52,30,0)
+(44,31,0)
+(31,44,0)
+(1,51,0)
+(49,7,0)
+(36,71,0)
+(18,30,0)
+(65,41,0)
+(20,66,0)
+(11,7,0)
+(27,7,0)
+(34,10,0)
+(62,28,0)
+(59,13,0)
+(10,32,0)
+(13,56,0)
+(73,26,0)
+(0,28,0)
+(32,10,0)
+(60,44,0)
+(27,66,0)
+(17,7,0)
+(6,9,0)
+(63,26,0)
+(33,7,0)
+(66,27,0)
+(44,60,0)
+(15,18,0)
+(57,7,0)
+(51,1,0)
+(29,72,0)
+(67,69,0)
+(13,59,0)
+(82,21,0)
+(76,12,0)
+(4,40,0)
+(38,7,0)
+(46,59,0)
+(56,13,0)
+(30,38,0)
+(29,55,0)
+(57,21,0)
+(19,7,0)
+(42,43,0)
+(25,49,0)
+(1,9,0)
+(72,26,0)
+(32,75,0)
+(78,56,0)
+(53,75,0)
+(48,45,0)
+(37,46,0)
+(60,38,0)
+(17,43,0)
+(1,7,0)
+(22,59,0)
+(32,26,0)
+(28,7,0)
+(30,18,0)
+(8,26,0)
+(58,63,0)
+(61,40,0)
+(50,3,1)
+(42,28,1)
+(14,24,1)
+(63,58,1)
+(77,36,1)
+(45,48,1)
+(55,74,1)
+(39,16,1)
+(65,40,1)
+(31,39,1)
+(64,9,1)
+(74,24,1)
+(29,55,1)
+(24,81,1)
+(72,47,1)
+(18,15,1)
+(52,60,1)
+(76,46,1)
+(48,21,1)
+(25,57,1)
+(3,49,1)
+(69,67,1)
+(37,59,1)
+(80,46,1)
+(0,62,1)
+(17,43,1)
+(58,81,1)
+(6,12,1)
+(10,34,1)
+(79,37,1)
+(76,80,1)
+(81,8,1)
+(21,82,1)
+(66,20,1)
+(62,1,1)
+(49,25,1)
+(34,75,1)
+(59,13,1)
+(13,56,1)
+(15,52,1)
+(27,66,1)
+(30,18,1)
+(46,59,1)
+(5,69,1)
+(60,44,1)
+(32,10,1)
+(57,45,1)
+(9,6,1)
+(1,51,1)
+(75,53,1)
+(40,61,1)
+(43,42,1)
+(18,28,1)
+(41,65,1)
+(61,4,1)
+(58,50,1)
+(20,41,1)
+(35,5,1)
+(67,68,1)
+(82,14,1)
+(57,21,1)
+(81,27,1)
+(8,35,1)
+(47,32,1)
+(44,31,1)
+(46,79,1)
+(36,14,1)
+(78,22,1)
+(4,30,1)
+(51,64,1)
+(32,75,1)
+(16,17,1)
+(28,0,1)
+(56,78,1)
+(81,77,1)
+(12,76,1)
+(1,9,1)
+(29,72,1)
+(53,63,1)
+(22,3,1)
+(65,40,2)
+(17,43,2)
+(25,14,2)
+(82,14,2)
+(22,3,2)
+(60,3,2)
+(13,3,2)
+(32,3,2)
+(44,3,2)
+(30,18,2)
+(34,3,2)
+(81,3,2)
+(9,3,2)
+(31,3,2)
+(14,24,2)
+(66,3,2)
+(58,3,2)
+(32,75,2)
+(37,3,2)
+(79,3,2)
+(57,21,2)
+(1,3,2)
+(13,56,2)
+(36,14,2)
+(81,14,2)
+(50,3,2)
+(46,59,2)
+(59,3,2)
+(32,10,2)
+(51,3,2)
+(58,81,2)
+(39,3,2)
+(3,14,2)
+(52,3,2)
+(60,44,2)
+(41,3,2)
+(24,81,2)
+(75,81,2)
+(10,81,2)
+(48,14,2)
+(29,55,2)
+(21,14,2)
+(47,81,2)
+(72,3,2)
+(65,3,2)
+(76,3,2)
+(27,66,2)
+(30,3,2)
+(62,3,2)
+(18,3,2)
+(53,3,2)
+(75,3,2)
+(15,3,2)
+(59,13,2)
+(63,81,2)
+(55,24,2)
+(42,3,2)
+(77,14,2)
+(32,81,2)
+(29,72,2)
+(34,81,2)
+(6,3,2)
+(17,3,2)
+(53,81,2)
+(44,31,2)
+(57,14,2)
+(49,14,2)
+(1,51,2)
+(78,3,2)
+(64,3,2)
+(0,3,2)
+(56,3,2)
+(43,3,2)
+(16,3,2)
+(80,46,2)
+(1,9,2)
+(18,28,2)
+(74,24,2)
+(27,3,2)
+(41,65,2)
+(10,3,2)
+(45,14,2)
+(4,3,2)
+(57,45,2)
+(20,3,2)
+(40,3,2)
+(63,3,2)
+(28,3,2)
+(61,3,2)
+(12,3,2)
+(46,3,2)
+(72,81,2)
+(47,3,2)
+-----------------------------------
+(0,0)
+(1,remove_wait_queue(&ap_poll_wait, &wait)
+(2,flags)
+(3,kthread_should_stop()
+(4,ap_dev)
+(5,current)
+(6,ap_poll_wait)
+(7,)
+(8,set_user_nice(current, 19)
+(9,&ap_poll_wait)
+(10,&wait)
+(11,if (requests <= 0)
+(12,set_current_state(TASK_RUNNING)
+(13,atomic_read(&ap_poll_requests)
+(14,need_resched()
+(15,flags)
+(16,ap_dev)
+(17,spin_lock_bh(&ap_device_list_lock)
+(18,&flags)
+(19,if (kthread_should_stop()
+(20,ap_device_list_lock)
+(21,&ap_poll_wait)
+(22,requests)
+(23,ap_dev)
+(24,ap_suspend_flag)
+(25,TASK_INTERRUPTIBLE)
+(26,)
+(27,spin_unlock_bh(&ap_device_list_lock)
+(28,flags = 0)
+(29,RET)
+(30,__ap_poll_device(ap_dev, &flags)
+(31,ap_dev->lock)
+(32,remove_wait_queue(&ap_poll_wait, &wait)
+(33,if (ap_suspend_flag)
+(34,wait)
+(35,19)
+(36,schedule()
+(37,requests)
+(38,)
+(39,lock)
+(40,ap_dev->lock)
+(41,spin_unlock(&ap_dev->lock)
+(42,ap_device_list_lock)
+(43,&ap_device_list_lock)
+(44,&ap_dev->lock)
+(45,&wait)
+(46,requests <= 0)
+(47,0)
+(48,wait)
+(49,set_current_state(TASK_INTERRUPTIBLE)
+(50,break;)
+(51,&wait)
+(52,ap_dev)
+(53,ap_poll_wait)
+(54,requests)
+(55,return 0;)
+(56,&ap_poll_requests)
+(57,add_wait_queue(&ap_poll_wait, &wait)
+(58,TASK_RUNNING)
+(59,requests = atomic_read(&ap_poll_requests)
+(60,spin_lock(&ap_dev->lock)
+(61,lock)
+(62,flags)
+(63,set_current_state(TASK_RUNNING)
+(64,wait)
+(65,&ap_dev->lock)
+(66,&ap_device_list_lock)
+(67,current)
+(68,wait)
+(69,DECLARE_WAITQUEUE(wait, current)
+(70,if (need_resched()
+(71,)
+(72,return 0;)
+(73,while (1)
+(74,0)
+(75,&ap_poll_wait)
+(76,TASK_RUNNING)
+(77,continue;)
+(78,ap_poll_requests)
+(79,0)
+(80,schedule()
+(81,1)
+(82,ap_poll_wait)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

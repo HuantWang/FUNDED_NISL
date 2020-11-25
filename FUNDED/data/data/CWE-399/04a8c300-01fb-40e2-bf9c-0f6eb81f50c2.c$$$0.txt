@@ -1,0 +1,601 @@
+-----label-----
+1
+-----code-----
+static bool manage_workers(struct worker *worker)
+{
+	struct worker_pool *pool = worker->pool;
+
+	/*
+	 * Managership is governed by two mutexes - manager_arb and
+	 * manager_mutex.  manager_arb handles arbitration of manager role.
+	 * Anyone who successfully grabs manager_arb wins the arbitration
+	 * and becomes the manager.  mutex_trylock() on pool->manager_arb
+	 * failure while holding pool->lock reliably indicates that someone
+	 * else is managing the pool and the worker which failed trylock
+	 * can proceed to executing work items.  This means that anyone
+	 * grabbing manager_arb is responsible for actually performing
+	 * manager duties.  If manager_arb is grabbed and released without
+	 * actual management, the pool may stall indefinitely.
+	 *
+	 * manager_mutex is used for exclusion of actual management
+	 * operations.  The holder of manager_mutex can be sure that none
+	 * of management operations, including creation and destruction of
+	 * workers, won't take place until the mutex is released.  Because
+	 * manager_mutex doesn't interfere with manager role arbitration,
+	 * it is guaranteed that the pool's management, while may be
+	 * delayed, won't be disturbed by someone else grabbing
+	 * manager_mutex.
+	 */
+	if (!mutex_trylock(&pool->manager_arb))
+		return false;
+
+	/*
+	 * With manager arbitration won, manager_mutex would be free in
+	 * most cases.  trylock first without dropping @pool->lock.
+	 */
+	if (unlikely(!mutex_trylock(&pool->manager_mutex))) {
+		spin_unlock_irq(&pool->lock);
+		mutex_lock(&pool->manager_mutex);
+		spin_lock_irq(&pool->lock);
+	}
+
+	pool->flags &= ~POOL_MANAGE_WORKERS;
+
+	/*
+	 * Destroy and then create so that may_start_working() is true
+	 * on return.
+	 */
+	maybe_destroy_workers(pool);
+	maybe_create_worker(pool);
+
+	mutex_unlock(&pool->manager_mutex);
+	mutex_unlock(&pool->manager_arb);
+	return true;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+11,14
+11,15
+11,16
+11,17
+11,18
+11,19
+11,20
+12,13
+13,14
+13,15
+14,15
+16,17
+16,18
+16,19
+19,20
+20,21
+20,22
+21,22
+24,25
+24,26
+25,26
+26,27
+26,28
+27,28
+29,30
+30,31
+30,32
+31,32
+34,35
+36,37
+36,38
+37,38
+37,39
+38,39
+40,41
+41,42
+41,43
+42,43
+44,45
+45,46
+45,47
+46,47
+49,50
+49,51
+49,52
+50,51
+51,52
+51,53
+52,53
+54,55
+55,56
+55,57
+56,57
+59,60
+60,61
+60,62
+61,62
+63,64
+64,65
+64,66
+65,66
+68,69
+69,70
+69,71
+70,71
+72,73
+73,74
+73,75
+74,75
+77,78
+78,79
+78,80
+79,80
+79,81
+80,81
+83,84
+84,85
+86,87
+87,88
+87,89
+88,89
+90,91
+92,93
+93,94
+93,95
+94,95
+96,97
+98,99
+99,100
+99,101
+100,101
+102,103
+103,104
+103,105
+104,105
+107,108
+108,109
+108,110
+109,110
+111,112
+112,113
+112,114
+113,114
+116,117
+-----nextToken-----
+2,4,7,9,10,15,17,18,22,23,28,32,33,35,39,43,47,48,53,57,58,62,66,67,71,75,76,81,82,85,89,91,95,97,101,105,106,110,114,115,117
+-----computeFrom-----
+78,79
+78,80
+-----guardedBy-----
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FieldReference;IdExpression;Name;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ReturnStatement;LiteralExpression;IfStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ReturnStatement;LiteralExpression;
+-----ast_node-----
+static bool manage_workers(struct worker *worker){	struct worker_pool *pool = worker->pool;	/*	 * Managership is governed by two mutexes - manager_arb and	 * manager_mutex.  manager_arb handles arbitration of manager role.	 * Anyone who successfully grabs manager_arb wins the arbitration	 * and becomes the manager.  mutex_trylock() on pool->manager_arb	 * failure while holding pool->lock reliably indicates that someone	 * else is managing the pool and the worker which failed trylock	 * can proceed to executing work items.  This means that anyone	 * grabbing manager_arb is responsible for actually performing	 * manager duties.  If manager_arb is grabbed and released without	 * actual management, the pool may stall indefinitely.	 *	 * manager_mutex is used for exclusion of actual management	 * operations.  The holder of manager_mutex can be sure that none	 * of management operations, including creation and destruction of	 * workers, won't take place until the mutex is released.  Because	 * manager_mutex doesn't interfere with manager role arbitration,	 * it is guaranteed that the pool's management, while may be	 * delayed, won't be disturbed by someone else grabbing	 * manager_mutex.	 */	if (!mutex_trylock(&pool->manager_arb))		return false;	/*	 * With manager arbitration won, manager_mutex would be free in	 * most cases.  trylock first without dropping @pool->lock.	 */	if (unlikely(!mutex_trylock(&pool->manager_mutex))) {		spin_unlock_irq(&pool->lock);		mutex_lock(&pool->manager_mutex);		spin_lock_irq(&pool->lock);	}	pool->flags &= ~POOL_MANAGE_WORKERS;	/*	 * Destroy and then create so that may_start_working() is true	 * on return.	 */	maybe_destroy_workers(pool);	maybe_create_worker(pool);	mutex_unlock(&pool->manager_mutex);	mutex_unlock(&pool->manager_arb);	return true;}
+static bool
+manage_workers(struct worker *worker)
+manage_workers
+struct worker *worker
+struct worker
+worker
+*worker
+*
+worker
+{	struct worker_pool *pool = worker->pool;	/*	 * Managership is governed by two mutexes - manager_arb and	 * manager_mutex.  manager_arb handles arbitration of manager role.	 * Anyone who successfully grabs manager_arb wins the arbitration	 * and becomes the manager.  mutex_trylock() on pool->manager_arb	 * failure while holding pool->lock reliably indicates that someone	 * else is managing the pool and the worker which failed trylock	 * can proceed to executing work items.  This means that anyone	 * grabbing manager_arb is responsible for actually performing	 * manager duties.  If manager_arb is grabbed and released without	 * actual management, the pool may stall indefinitely.	 *	 * manager_mutex is used for exclusion of actual management	 * operations.  The holder of manager_mutex can be sure that none	 * of management operations, including creation and destruction of	 * workers, won't take place until the mutex is released.  Because	 * manager_mutex doesn't interfere with manager role arbitration,	 * it is guaranteed that the pool's management, while may be	 * delayed, won't be disturbed by someone else grabbing	 * manager_mutex.	 */	if (!mutex_trylock(&pool->manager_arb))		return false;	/*	 * With manager arbitration won, manager_mutex would be free in	 * most cases.  trylock first without dropping @pool->lock.	 */	if (unlikely(!mutex_trylock(&pool->manager_mutex))) {		spin_unlock_irq(&pool->lock);		mutex_lock(&pool->manager_mutex);		spin_lock_irq(&pool->lock);	}	pool->flags &= ~POOL_MANAGE_WORKERS;	/*	 * Destroy and then create so that may_start_working() is true	 * on return.	 */	maybe_destroy_workers(pool);	maybe_create_worker(pool);	mutex_unlock(&pool->manager_mutex);	mutex_unlock(&pool->manager_arb);	return true;}
+struct worker_pool *pool = worker->pool;
+struct worker_pool *pool = worker->pool;
+struct worker_pool
+worker_pool
+*pool = worker->pool
+*
+pool
+= worker->pool
+worker->pool
+worker
+worker
+pool
+if (!mutex_trylock(&pool->manager_arb))		return false;
+!mutex_trylock(&pool->manager_arb)
+mutex_trylock(&pool->manager_arb)
+mutex_trylock
+mutex_trylock
+&pool->manager_arb
+pool->manager_arb
+pool
+pool
+manager_arb
+return false;
+false
+if (unlikely(!mutex_trylock(&pool->manager_mutex))) {		spin_unlock_irq(&pool->lock);		mutex_lock(&pool->manager_mutex);		spin_lock_irq(&pool->lock);	}
+unlikely(!mutex_trylock(&pool->manager_mutex))
+unlikely
+unlikely
+!mutex_trylock(&pool->manager_mutex)
+mutex_trylock(&pool->manager_mutex)
+mutex_trylock
+mutex_trylock
+&pool->manager_mutex
+pool->manager_mutex
+pool
+pool
+manager_mutex
+{		spin_unlock_irq(&pool->lock);		mutex_lock(&pool->manager_mutex);		spin_lock_irq(&pool->lock);	}
+spin_unlock_irq(&pool->lock);
+spin_unlock_irq(&pool->lock)
+spin_unlock_irq
+spin_unlock_irq
+&pool->lock
+pool->lock
+pool
+pool
+lock
+mutex_lock(&pool->manager_mutex);
+mutex_lock(&pool->manager_mutex)
+mutex_lock
+mutex_lock
+&pool->manager_mutex
+pool->manager_mutex
+pool
+pool
+manager_mutex
+spin_lock_irq(&pool->lock);
+spin_lock_irq(&pool->lock)
+spin_lock_irq
+spin_lock_irq
+&pool->lock
+pool->lock
+pool
+pool
+lock
+pool->flags &= ~POOL_MANAGE_WORKERS;
+pool->flags &= ~POOL_MANAGE_WORKERS
+pool->flags
+pool
+pool
+flags
+~POOL_MANAGE_WORKERS
+POOL_MANAGE_WORKERS
+POOL_MANAGE_WORKERS
+maybe_destroy_workers(pool);
+maybe_destroy_workers(pool)
+maybe_destroy_workers
+maybe_destroy_workers
+pool
+pool
+maybe_create_worker(pool);
+maybe_create_worker(pool)
+maybe_create_worker
+maybe_create_worker
+pool
+pool
+mutex_unlock(&pool->manager_mutex);
+mutex_unlock(&pool->manager_mutex)
+mutex_unlock
+mutex_unlock
+&pool->manager_mutex
+pool->manager_mutex
+pool
+pool
+manager_mutex
+mutex_unlock(&pool->manager_arb);
+mutex_unlock(&pool->manager_arb)
+mutex_unlock
+mutex_unlock
+&pool->manager_arb
+pool->manager_arb
+pool
+pool
+manager_arb
+return true;
+true
+-----joern-----
+(61,8,0)
+(31,42,0)
+(32,24,0)
+(19,3,0)
+(7,5,0)
+(60,41,0)
+(15,57,0)
+(27,57,0)
+(3,6,0)
+(33,41,0)
+(59,6,0)
+(11,59,0)
+(12,48,0)
+(47,6,0)
+(26,50,0)
+(52,19,0)
+(30,20,0)
+(48,12,0)
+(39,47,0)
+(45,6,0)
+(6,42,0)
+(20,6,0)
+(29,32,0)
+(3,19,0)
+(10,50,0)
+(2,5,0)
+(16,46,0)
+(5,1,0)
+(56,45,0)
+(48,20,0)
+(40,6,0)
+(55,57,0)
+(50,36,0)
+(42,28,0)
+(18,47,0)
+(58,33,0)
+(12,35,0)
+(19,57,0)
+(17,40,0)
+(23,18,0)
+(37,54,0)
+(13,3,0)
+(53,57,0)
+(58,54,0)
+(1,5,0)
+(32,6,0)
+(44,49,0)
+(36,50,0)
+(44,25,0)
+(4,16,0)
+(42,6,0)
+(46,24,0)
+(8,61,0)
+(61,41,0)
+(14,59,0)
+(35,12,0)
+(9,20,0)
+(34,42,0)
+(50,6,0)
+(43,54,0)
+(49,57,0)
+(24,32,0)
+(40,57,0)
+(36,27,0)
+(51,32,0)
+(8,59,0)
+(54,58,0)
+(23,57,0)
+(18,23,0)
+(0,3,0)
+(62,49,0)
+(54,6,0)
+(38,25,0)
+(1,60,0)
+(27,36,0)
+(33,58,0)
+(59,8,0)
+(5,6,0)
+(24,46,0)
+(60,1,0)
+(16,4,0)
+(47,18,0)
+(46,16,0)
+(22,6,0)
+(20,48,0)
+(45,57,0)
+(21,47,0)
+(6,57,0)
+(4,16,1)
+(44,25,1)
+(19,3,1)
+(14,4,1)
+(9,6,1)
+(18,47,1)
+(50,26,1)
+(36,50,1)
+(16,46,1)
+(5,6,1)
+(20,6,1)
+(34,31,1)
+(32,6,1)
+(8,59,1)
+(24,32,1)
+(11,14,1)
+(17,19,1)
+(47,6,1)
+(54,6,1)
+(0,60,1)
+(42,28,1)
+(12,48,1)
+(60,1,1)
+(35,12,1)
+(29,35,1)
+(49,62,1)
+(47,21,1)
+(58,54,1)
+(0,4,1)
+(42,34,1)
+(7,2,1)
+(48,20,1)
+(6,42,1)
+(5,7,1)
+(21,39,1)
+(38,35,1)
+(3,13,1)
+(25,38,1)
+(51,29,1)
+(33,58,1)
+(13,0,1)
+(39,45,1)
+(40,17,1)
+(43,61,1)
+(56,40,1)
+(20,30,1)
+(45,56,1)
+(10,23,1)
+(61,8,1)
+(59,11,1)
+(30,9,1)
+(52,3,1)
+(59,6,1)
+(46,24,1)
+(27,36,1)
+(19,52,1)
+(2,33,1)
+(62,27,1)
+(45,6,1)
+(23,18,1)
+(40,6,1)
+(37,43,1)
+(54,37,1)
+(3,6,1)
+(1,5,1)
+(32,51,1)
+(44,49,1)
+(31,22,1)
+(50,6,1)
+(26,10,1)
+(23,18,2)
+(21,35,2)
+(0,35,2)
+(4,35,2)
+(6,42,2)
+(11,4,2)
+(47,6,2)
+(36,35,2)
+(49,35,2)
+(39,35,2)
+(27,35,2)
+(60,4,2)
+(24,32,2)
+(16,35,2)
+(12,48,2)
+(19,35,2)
+(58,4,2)
+(27,36,2)
+(25,35,2)
+(38,35,2)
+(51,35,2)
+(13,35,2)
+(50,6,2)
+(45,35,2)
+(43,4,2)
+(1,4,2)
+(54,6,2)
+(7,4,2)
+(47,35,2)
+(40,35,2)
+(45,6,2)
+(50,35,2)
+(58,54,2)
+(23,35,2)
+(56,35,2)
+(52,35,2)
+(36,50,2)
+(20,6,2)
+(59,4,2)
+(5,6,2)
+(17,35,2)
+(3,6,2)
+(14,4,2)
+(3,35,2)
+(48,20,2)
+(5,4,2)
+(18,35,2)
+(18,47,2)
+(8,59,2)
+(40,6,2)
+(33,4,2)
+(37,4,2)
+(61,4,2)
+(32,6,2)
+(8,4,2)
+(54,4,2)
+(44,49,2)
+(33,58,2)
+(26,35,2)
+(4,16,2)
+(44,25,2)
+(29,35,2)
+(61,8,2)
+(35,12,2)
+(60,1,2)
+(19,3,2)
+(46,24,2)
+(24,35,2)
+(16,46,2)
+(2,4,2)
+(32,35,2)
+(46,35,2)
+(42,28,2)
+(62,35,2)
+(10,35,2)
+(1,5,2)
+(59,6,2)
+-----------------------------------
+(0,pool)
+(1,&pool->lock)
+(2,pool)
+(3,pool->flags)
+(4,unlikely(!mutex_trylock(&pool->manager_mutex)
+(5,pool->lock)
+(6,*pool = worker->pool)
+(7,lock)
+(8,&pool->lock)
+(9,pool)
+(10,pool)
+(11,lock)
+(12,mutex_trylock(&pool->manager_arb)
+(13,flags)
+(14,pool)
+(15,pool)
+(16,!mutex_trylock(&pool->manager_mutex)
+(17,pool)
+(18,&pool->manager_mutex)
+(19,pool->flags &= ~POOL_MANAGE_WORKERS)
+(20,pool->manager_arb)
+(21,manager_mutex)
+(22,pool)
+(23,mutex_unlock(&pool->manager_mutex)
+(24,&pool->manager_mutex)
+(25,return false;)
+(26,manager_arb)
+(27,mutex_unlock(&pool->manager_arb)
+(28,struct worker *worker)
+(29,pool)
+(30,manager_arb)
+(31,worker)
+(32,pool->manager_mutex)
+(33,mutex_lock(&pool->manager_mutex)
+(34,pool)
+(35,!mutex_trylock(&pool->manager_arb)
+(36,&pool->manager_arb)
+(37,manager_mutex)
+(38,false)
+(39,pool)
+(40,maybe_destroy_workers(pool)
+(41,)
+(42,worker->pool)
+(43,pool)
+(44,RET)
+(45,maybe_create_worker(pool)
+(46,mutex_trylock(&pool->manager_mutex)
+(47,pool->manager_mutex)
+(48,&pool->manager_arb)
+(49,return true;)
+(50,pool->manager_arb)
+(51,manager_mutex)
+(52,~POOL_MANAGE_WORKERS)
+(53,if (!mutex_trylock(&pool->manager_arb)
+(54,pool->manager_mutex)
+(55,if (unlikely(!mutex_trylock(&pool->manager_mutex)
+(56,pool)
+(57,)
+(58,&pool->manager_mutex)
+(59,pool->lock)
+(60,spin_lock_irq(&pool->lock)
+(61,spin_unlock_irq(&pool->lock)
+(62,true)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

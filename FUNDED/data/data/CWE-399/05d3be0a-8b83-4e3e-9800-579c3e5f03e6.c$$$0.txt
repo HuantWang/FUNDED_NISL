@@ -1,0 +1,1329 @@
+-----label-----
+1
+-----code-----
+static int exynos_irq_request_resources(struct irq_data *irqd)
+{
+	struct irq_chip *chip = irq_data_get_irq_chip(irqd);
+	struct exynos_irq_chip *our_chip = to_exynos_irq_chip(chip);
+	struct samsung_pin_bank *bank = irq_data_get_irq_chip_data(irqd);
+	const struct samsung_pin_bank_type *bank_type = bank->type;
+	unsigned int shift = EXYNOS_EINT_CON_LEN * irqd->hwirq;
+	unsigned long reg_con = our_chip->eint_con + bank->eint_offset;
+	unsigned long flags;
+	unsigned int mask;
+	unsigned int con;
+	int ret;
+
+	ret = gpiochip_lock_as_irq(&bank->gpio_chip, irqd->hwirq);
+	if (ret) {
+		dev_err(bank->gpio_chip.parent,
+			"unable to lock pin %s-%lu IRQ\n",
+			bank->name, irqd->hwirq);
+		return ret;
+	}
+
+	reg_con = bank->pctl_offset + bank_type->reg_offset[PINCFG_TYPE_FUNC];
+	shift = irqd->hwirq * bank_type->fld_width[PINCFG_TYPE_FUNC];
+	mask = (1 << bank_type->fld_width[PINCFG_TYPE_FUNC]) - 1;
+
+	spin_lock_irqsave(&bank->slock, flags);
+
+	con = readl(bank->eint_base + reg_con);
+	con &= ~(mask << shift);
+	con |= EXYNOS_EINT_FUNC << shift;
+	writel(con, bank->eint_base + reg_con);
+
+	spin_unlock_irqrestore(&bank->slock, flags);
+
+	return 0;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+11,14
+11,15
+11,16
+11,17
+11,18
+11,19
+11,20
+11,21
+11,22
+11,23
+11,24
+11,25
+11,26
+11,27
+11,28
+11,29
+11,30
+11,31
+11,32
+11,33
+12,13
+13,14
+13,15
+14,15
+16,17
+16,18
+16,19
+19,20
+20,21
+20,22
+21,22
+23,24
+25,26
+26,27
+26,28
+27,28
+29,30
+29,31
+29,32
+32,33
+33,34
+33,35
+34,35
+36,37
+38,39
+39,40
+39,41
+40,41
+42,43
+42,44
+42,45
+45,46
+46,47
+46,48
+47,48
+49,50
+51,52
+52,53
+52,54
+53,54
+55,56
+55,57
+55,58
+58,59
+59,60
+59,61
+60,61
+63,64
+64,65
+64,66
+66,67
+66,68
+68,69
+69,70
+69,71
+70,71
+72,73
+72,74
+73,74
+76,77
+77,78
+77,79
+79,80
+79,81
+81,82
+82,83
+82,84
+83,84
+83,85
+84,85
+87,88
+87,89
+88,89
+91,92
+92,93
+92,94
+94,95
+96,97
+97,98
+97,99
+99,100
+101,102
+102,103
+102,104
+104,105
+106,107
+107,108
+107,109
+109,110
+111,112
+112,113
+112,114
+113,114
+115,116
+115,117
+115,118
+116,117
+118,119
+119,120
+119,121
+120,121
+123,124
+123,125
+124,125
+127,128
+127,129
+128,129
+130,131
+130,132
+131,132
+132,133
+132,134
+132,135
+132,136
+132,137
+133,134
+135,136
+135,137
+136,137
+136,138
+137,138
+142,143
+142,144
+143,144
+146,147
+146,148
+147,148
+150,151
+151,152
+153,154
+154,155
+154,156
+155,156
+157,158
+157,159
+158,159
+158,160
+159,160
+162,163
+162,164
+163,164
+163,165
+164,165
+167,168
+169,170
+170,171
+170,172
+171,172
+173,174
+173,175
+174,175
+174,176
+175,176
+178,179
+178,180
+179,180
+179,181
+180,181
+183,184
+185,186
+186,187
+186,188
+187,188
+189,190
+189,191
+190,191
+191,192
+191,193
+193,194
+193,195
+194,195
+194,196
+195,196
+198,199
+201,202
+202,203
+202,204
+202,205
+203,204
+205,206
+206,207
+206,208
+207,208
+210,211
+212,213
+213,214
+213,215
+214,215
+216,217
+216,218
+217,218
+219,220
+219,221
+220,221
+220,222
+221,222
+224,225
+226,227
+227,228
+227,229
+228,229
+230,231
+231,232
+232,233
+232,234
+233,234
+235,236
+237,238
+238,239
+238,240
+239,240
+241,242
+241,243
+242,243
+244,245
+246,247
+247,248
+247,249
+247,250
+248,249
+250,251
+252,253
+252,254
+253,254
+253,255
+254,255
+257,258
+259,260
+260,261
+260,262
+260,263
+261,262
+263,264
+264,265
+264,266
+265,266
+268,269
+270,271
+-----nextToken-----
+2,4,7,9,10,15,17,18,22,24,28,30,31,35,37,41,43,44,48,50,54,56,57,61,62,65,67,71,74,75,78,80,85,86,89,90,93,95,98,100,103,105,108,110,114,117,121,122,125,126,129,134,138,139,140,141,144,145,148,149,152,156,160,161,165,166,168,172,176,177,181,182,184,188,192,196,197,199,200,204,208,209,211,215,218,222,223,225,229,234,236,240,243,245,249,251,255,256,258,262,266,267,269,271
+-----computeFrom-----
+69,70
+69,71
+82,83
+82,84
+112,113
+112,114
+154,155
+154,156
+157,158
+157,159
+170,171
+170,172
+173,174
+173,175
+186,187
+186,188
+189,190
+189,191
+191,192
+191,193
+213,214
+213,215
+219,220
+219,221
+227,228
+227,229
+232,233
+232,234
+238,239
+238,240
+241,242
+241,243
+252,253
+252,254
+-----guardedBy-----
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ReturnStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;UnaryExpression;BinaryExpression;LiteralExpression;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ReturnStatement;LiteralExpression;
+-----ast_node-----
+static int exynos_irq_request_resources(struct irq_data *irqd){	struct irq_chip *chip = irq_data_get_irq_chip(irqd);	struct exynos_irq_chip *our_chip = to_exynos_irq_chip(chip);	struct samsung_pin_bank *bank = irq_data_get_irq_chip_data(irqd);	const struct samsung_pin_bank_type *bank_type = bank->type;	unsigned int shift = EXYNOS_EINT_CON_LEN * irqd->hwirq;	unsigned long reg_con = our_chip->eint_con + bank->eint_offset;	unsigned long flags;	unsigned int mask;	unsigned int con;	int ret;	ret = gpiochip_lock_as_irq(&bank->gpio_chip, irqd->hwirq);	if (ret) {		dev_err(bank->gpio_chip.parent,			"unable to lock pin %s-%lu IRQ\n",			bank->name, irqd->hwirq);		return ret;	}	reg_con = bank->pctl_offset + bank_type->reg_offset[PINCFG_TYPE_FUNC];	shift = irqd->hwirq * bank_type->fld_width[PINCFG_TYPE_FUNC];	mask = (1 << bank_type->fld_width[PINCFG_TYPE_FUNC]) - 1;	spin_lock_irqsave(&bank->slock, flags);	con = readl(bank->eint_base + reg_con);	con &= ~(mask << shift);	con |= EXYNOS_EINT_FUNC << shift;	writel(con, bank->eint_base + reg_con);	spin_unlock_irqrestore(&bank->slock, flags);	return 0;}
+static int
+exynos_irq_request_resources(struct irq_data *irqd)
+exynos_irq_request_resources
+struct irq_data *irqd
+struct irq_data
+irq_data
+*irqd
+*
+irqd
+{	struct irq_chip *chip = irq_data_get_irq_chip(irqd);	struct exynos_irq_chip *our_chip = to_exynos_irq_chip(chip);	struct samsung_pin_bank *bank = irq_data_get_irq_chip_data(irqd);	const struct samsung_pin_bank_type *bank_type = bank->type;	unsigned int shift = EXYNOS_EINT_CON_LEN * irqd->hwirq;	unsigned long reg_con = our_chip->eint_con + bank->eint_offset;	unsigned long flags;	unsigned int mask;	unsigned int con;	int ret;	ret = gpiochip_lock_as_irq(&bank->gpio_chip, irqd->hwirq);	if (ret) {		dev_err(bank->gpio_chip.parent,			"unable to lock pin %s-%lu IRQ\n",			bank->name, irqd->hwirq);		return ret;	}	reg_con = bank->pctl_offset + bank_type->reg_offset[PINCFG_TYPE_FUNC];	shift = irqd->hwirq * bank_type->fld_width[PINCFG_TYPE_FUNC];	mask = (1 << bank_type->fld_width[PINCFG_TYPE_FUNC]) - 1;	spin_lock_irqsave(&bank->slock, flags);	con = readl(bank->eint_base + reg_con);	con &= ~(mask << shift);	con |= EXYNOS_EINT_FUNC << shift;	writel(con, bank->eint_base + reg_con);	spin_unlock_irqrestore(&bank->slock, flags);	return 0;}
+struct irq_chip *chip = irq_data_get_irq_chip(irqd);
+struct irq_chip *chip = irq_data_get_irq_chip(irqd);
+struct irq_chip
+irq_chip
+*chip = irq_data_get_irq_chip(irqd)
+*
+chip
+= irq_data_get_irq_chip(irqd)
+irq_data_get_irq_chip(irqd)
+irq_data_get_irq_chip
+irq_data_get_irq_chip
+irqd
+irqd
+struct exynos_irq_chip *our_chip = to_exynos_irq_chip(chip);
+struct exynos_irq_chip *our_chip = to_exynos_irq_chip(chip);
+struct exynos_irq_chip
+exynos_irq_chip
+*our_chip = to_exynos_irq_chip(chip)
+*
+our_chip
+= to_exynos_irq_chip(chip)
+to_exynos_irq_chip(chip)
+to_exynos_irq_chip
+to_exynos_irq_chip
+chip
+chip
+struct samsung_pin_bank *bank = irq_data_get_irq_chip_data(irqd);
+struct samsung_pin_bank *bank = irq_data_get_irq_chip_data(irqd);
+struct samsung_pin_bank
+samsung_pin_bank
+*bank = irq_data_get_irq_chip_data(irqd)
+*
+bank
+= irq_data_get_irq_chip_data(irqd)
+irq_data_get_irq_chip_data(irqd)
+irq_data_get_irq_chip_data
+irq_data_get_irq_chip_data
+irqd
+irqd
+const struct samsung_pin_bank_type *bank_type = bank->type;
+const struct samsung_pin_bank_type *bank_type = bank->type;
+const struct samsung_pin_bank_type
+samsung_pin_bank_type
+*bank_type = bank->type
+*
+bank_type
+= bank->type
+bank->type
+bank
+bank
+type
+unsigned int shift = EXYNOS_EINT_CON_LEN * irqd->hwirq;
+unsigned int shift = EXYNOS_EINT_CON_LEN * irqd->hwirq;
+unsigned int
+shift = EXYNOS_EINT_CON_LEN * irqd->hwirq
+shift
+= EXYNOS_EINT_CON_LEN * irqd->hwirq
+EXYNOS_EINT_CON_LEN * irqd->hwirq
+EXYNOS_EINT_CON_LEN
+EXYNOS_EINT_CON_LEN
+irqd->hwirq
+irqd
+irqd
+hwirq
+unsigned long reg_con = our_chip->eint_con + bank->eint_offset;
+unsigned long reg_con = our_chip->eint_con + bank->eint_offset;
+unsigned long
+reg_con = our_chip->eint_con + bank->eint_offset
+reg_con
+= our_chip->eint_con + bank->eint_offset
+our_chip->eint_con + bank->eint_offset
+our_chip->eint_con
+our_chip
+our_chip
+eint_con
+bank->eint_offset
+bank
+bank
+eint_offset
+unsigned long flags;
+unsigned long flags;
+unsigned long
+flags
+flags
+unsigned int mask;
+unsigned int mask;
+unsigned int
+mask
+mask
+unsigned int con;
+unsigned int con;
+unsigned int
+con
+con
+int ret;
+int ret;
+int
+ret
+ret
+ret = gpiochip_lock_as_irq(&bank->gpio_chip, irqd->hwirq);
+ret = gpiochip_lock_as_irq(&bank->gpio_chip, irqd->hwirq)
+ret
+ret
+gpiochip_lock_as_irq(&bank->gpio_chip, irqd->hwirq)
+gpiochip_lock_as_irq
+gpiochip_lock_as_irq
+&bank->gpio_chip
+bank->gpio_chip
+bank
+bank
+gpio_chip
+irqd->hwirq
+irqd
+irqd
+hwirq
+if (ret) {		dev_err(bank->gpio_chip.parent,			"unable to lock pin %s-%lu IRQ\n",			bank->name, irqd->hwirq);		return ret;	}
+ret
+ret
+{		dev_err(bank->gpio_chip.parent,			"unable to lock pin %s-%lu IRQ\n",			bank->name, irqd->hwirq);		return ret;	}
+dev_err(bank->gpio_chip.parent,			"unable to lock pin %s-%lu IRQ\n",			bank->name, irqd->hwirq);
+dev_err(bank->gpio_chip.parent,			"unable to lock pin %s-%lu IRQ\n",			bank->name, irqd->hwirq)
+dev_err
+dev_err
+bank->gpio_chip.parent
+bank->gpio_chip
+bank
+bank
+gpio_chip
+parent
+"unable to lock pin %s-%lu IRQ\n"
+bank->name
+bank
+bank
+name
+irqd->hwirq
+irqd
+irqd
+hwirq
+return ret;
+ret
+ret
+reg_con = bank->pctl_offset + bank_type->reg_offset[PINCFG_TYPE_FUNC];
+reg_con = bank->pctl_offset + bank_type->reg_offset[PINCFG_TYPE_FUNC]
+reg_con
+reg_con
+bank->pctl_offset + bank_type->reg_offset[PINCFG_TYPE_FUNC]
+bank->pctl_offset
+bank
+bank
+pctl_offset
+bank_type->reg_offset[PINCFG_TYPE_FUNC]
+bank_type->reg_offset
+bank_type
+bank_type
+reg_offset
+PINCFG_TYPE_FUNC
+PINCFG_TYPE_FUNC
+shift = irqd->hwirq * bank_type->fld_width[PINCFG_TYPE_FUNC];
+shift = irqd->hwirq * bank_type->fld_width[PINCFG_TYPE_FUNC]
+shift
+shift
+irqd->hwirq * bank_type->fld_width[PINCFG_TYPE_FUNC]
+irqd->hwirq
+irqd
+irqd
+hwirq
+bank_type->fld_width[PINCFG_TYPE_FUNC]
+bank_type->fld_width
+bank_type
+bank_type
+fld_width
+PINCFG_TYPE_FUNC
+PINCFG_TYPE_FUNC
+mask = (1 << bank_type->fld_width[PINCFG_TYPE_FUNC]) - 1;
+mask = (1 << bank_type->fld_width[PINCFG_TYPE_FUNC]) - 1
+mask
+mask
+(1 << bank_type->fld_width[PINCFG_TYPE_FUNC]) - 1
+(1 << bank_type->fld_width[PINCFG_TYPE_FUNC])
+1 << bank_type->fld_width[PINCFG_TYPE_FUNC]
+1
+bank_type->fld_width[PINCFG_TYPE_FUNC]
+bank_type->fld_width
+bank_type
+bank_type
+fld_width
+PINCFG_TYPE_FUNC
+PINCFG_TYPE_FUNC
+1
+spin_lock_irqsave(&bank->slock, flags);
+spin_lock_irqsave(&bank->slock, flags)
+spin_lock_irqsave
+spin_lock_irqsave
+&bank->slock
+bank->slock
+bank
+bank
+slock
+flags
+flags
+con = readl(bank->eint_base + reg_con);
+con = readl(bank->eint_base + reg_con)
+con
+con
+readl(bank->eint_base + reg_con)
+readl
+readl
+bank->eint_base + reg_con
+bank->eint_base
+bank
+bank
+eint_base
+reg_con
+reg_con
+con &= ~(mask << shift);
+con &= ~(mask << shift)
+con
+con
+~(mask << shift)
+(mask << shift)
+mask << shift
+mask
+mask
+shift
+shift
+con |= EXYNOS_EINT_FUNC << shift;
+con |= EXYNOS_EINT_FUNC << shift
+con
+con
+EXYNOS_EINT_FUNC << shift
+EXYNOS_EINT_FUNC
+EXYNOS_EINT_FUNC
+shift
+shift
+writel(con, bank->eint_base + reg_con);
+writel(con, bank->eint_base + reg_con)
+writel
+writel
+con
+con
+bank->eint_base + reg_con
+bank->eint_base
+bank
+bank
+eint_base
+reg_con
+reg_con
+spin_unlock_irqrestore(&bank->slock, flags);
+spin_unlock_irqrestore(&bank->slock, flags)
+spin_unlock_irqrestore
+spin_unlock_irqrestore
+&bank->slock
+bank->slock
+bank
+bank
+slock
+flags
+flags
+return 0;
+0
+-----joern-----
+(92,123,0)
+(82,50,0)
+(51,70,0)
+(15,4,0)
+(135,133,0)
+(119,32,0)
+(32,40,0)
+(35,65,0)
+(137,56,0)
+(54,84,0)
+(68,142,0)
+(68,5,0)
+(102,63,0)
+(4,15,0)
+(116,84,0)
+(101,122,0)
+(58,49,0)
+(17,36,0)
+(31,144,0)
+(85,84,0)
+(83,27,0)
+(1,6,0)
+(104,122,0)
+(28,84,0)
+(71,101,0)
+(35,141,0)
+(11,92,0)
+(2,32,0)
+(118,123,0)
+(74,72,0)
+(87,122,0)
+(25,77,0)
+(87,141,0)
+(7,40,0)
+(130,12,0)
+(45,70,0)
+(30,69,0)
+(59,116,0)
+(144,132,0)
+(67,63,0)
+(9,104,0)
+(140,116,0)
+(41,18,0)
+(33,23,0)
+(121,115,0)
+(27,36,0)
+(40,7,0)
+(36,27,0)
+(44,38,0)
+(99,142,0)
+(72,7,0)
+(21,84,0)
+(109,117,0)
+(103,84,0)
+(85,123,0)
+(136,84,0)
+(63,76,0)
+(79,56,0)
+(22,0,0)
+(5,84,0)
+(22,115,0)
+(68,85,0)
+(117,82,0)
+(109,40,0)
+(76,63,0)
+(17,146,0)
+(60,104,0)
+(70,118,0)
+(115,22,0)
+(88,5,0)
+(18,122,0)
+(91,61,0)
+(96,101,0)
+(126,72,0)
+(98,99,0)
+(122,84,0)
+(117,109,0)
+(122,75,0)
+(118,70,0)
+(89,84,0)
+(90,57,0)
+(113,35,0)
+(7,84,0)
+(74,12,0)
+(95,100,0)
+(22,10,0)
+(120,75,0)
+(86,92,0)
+(97,84,0)
+(116,140,0)
+(101,35,0)
+(12,84,0)
+(52,55,0)
+(131,137,0)
+(24,23,0)
+(0,22,0)
+(105,84,0)
+(53,77,0)
+(77,84,0)
+(18,72,0)
+(141,87,0)
+(76,137,0)
+(19,76,0)
+(124,146,0)
+(112,87,0)
+(58,61,0)
+(50,82,0)
+(138,57,0)
+(25,38,0)
+(6,132,0)
+(13,122,0)
+(61,10,0)
+(107,7,0)
+(57,35,0)
+(56,69,0)
+(32,122,0)
+(125,117,0)
+(143,122,0)
+(82,84,0)
+(6,84,0)
+(49,84,0)
+(128,36,0)
+(80,50,0)
+(14,144,0)
+(106,117,0)
+(26,84,0)
+(77,25,0)
+(94,68,0)
+(104,15,0)
+(123,92,0)
+(10,84,0)
+(20,140,0)
+(62,38,0)
+(123,85,0)
+(100,93,0)
+(72,74,0)
+(133,12,0)
+(43,137,0)
+(35,101,0)
+(139,19,0)
+(146,17,0)
+(57,78,0)
+(35,57,0)
+(142,68,0)
+(77,133,0)
+(25,7,0)
+(63,122,0)
+(72,18,0)
+(99,84,0)
+(133,23,0)
+(75,122,0)
+(38,25,0)
+(129,84,0)
+(61,65,0)
+(140,78,0)
+(0,55,0)
+(70,82,0)
+(133,84,0)
+(50,122,0)
+(115,78,0)
+(145,118,0)
+(73,18,0)
+(4,84,0)
+(12,74,0)
+(48,87,0)
+(29,25,0)
+(66,4,0)
+(92,78,0)
+(144,78,0)
+(146,82,0)
+(23,85,0)
+(36,17,0)
+(69,116,0)
+(46,109,0)
+(55,122,0)
+(69,56,0)
+(75,78,0)
+(8,13,0)
+(93,100,0)
+(76,19,0)
+(42,141,0)
+(37,132,0)
+(16,68,0)
+(134,85,0)
+(108,146,0)
+(123,118,0)
+(64,17,0)
+(141,35,0)
+(127,82,0)
+(19,84,0)
+(23,133,0)
+(3,55,0)
+(56,84,0)
+(55,0,0)
+(34,50,0)
+(13,93,0)
+(40,109,0)
+(100,84,0)
+(40,32,0)
+(47,115,0)
+(132,6,0)
+(38,122,0)
+(39,49,0)
+(137,76,0)
+(114,13,0)
+(132,144,0)
+(10,22,0)
+(5,27,0)
+(27,5,0)
+(15,104,0)
+(93,13,0)
+(110,84,0)
+(142,99,0)
+(99,12,0)
+(81,10,0)
+(101,122,1)
+(35,141,1)
+(4,66,1)
+(40,32,1)
+(0,55,1)
+(12,74,1)
+(52,3,1)
+(113,141,1)
+(83,36,1)
+(62,53,1)
+(139,6,1)
+(100,93,1)
+(99,142,1)
+(141,87,1)
+(15,104,1)
+(95,93,1)
+(75,120,1)
+(8,114,1)
+(30,79,1)
+(115,47,1)
+(18,41,1)
+(66,15,1)
+(11,134,1)
+(13,8,1)
+(36,17,1)
+(44,62,1)
+(137,56,1)
+(71,113,1)
+(33,24,1)
+(38,44,1)
+(68,16,1)
+(109,117,1)
+(123,118,1)
+(91,35,1)
+(29,38,1)
+(69,116,1)
+(50,122,1)
+(53,133,1)
+(79,116,1)
+(67,102,1)
+(76,137,1)
+(131,139,1)
+(68,5,1)
+(130,4,1)
+(3,81,1)
+(5,27,1)
+(14,37,1)
+(17,146,1)
+(42,87,1)
+(87,122,1)
+(19,76,1)
+(56,69,1)
+(128,88,1)
+(69,30,1)
+(27,83,1)
+(144,78,1)
+(92,86,1)
+(119,107,1)
+(115,78,1)
+(9,60,1)
+(4,15,1)
+(124,128,1)
+(16,94,1)
+(137,43,1)
+(75,78,1)
+(45,92,1)
+(64,146,1)
+(126,18,1)
+(100,95,1)
+(102,137,1)
+(55,122,1)
+(48,111,1)
+(41,73,1)
+(104,9,1)
+(135,99,1)
+(47,121,1)
+(35,57,1)
+(74,72,1)
+(72,7,1)
+(127,122,1)
+(98,12,1)
+(143,56,1)
+(117,82,1)
+(37,1,1)
+(85,123,1)
+(86,11,1)
+(96,71,1)
+(80,127,1)
+(38,122,1)
+(145,70,1)
+(18,122,1)
+(6,132,1)
+(81,19,1)
+(146,82,1)
+(106,32,1)
+(101,96,1)
+(55,52,1)
+(39,100,1)
+(70,82,1)
+(22,115,1)
+(51,45,1)
+(20,59,1)
+(122,75,1)
+(142,68,1)
+(118,70,1)
+(61,10,1)
+(73,130,1)
+(58,61,1)
+(104,122,1)
+(118,145,1)
+(60,5,1)
+(17,64,1)
+(77,133,1)
+(93,13,1)
+(10,22,1)
+(25,38,1)
+(50,34,1)
+(27,36,1)
+(125,106,1)
+(1,82,1)
+(146,108,1)
+(77,25,1)
+(7,40,1)
+(116,140,1)
+(72,126,1)
+(57,78,1)
+(87,112,1)
+(144,31,1)
+(88,85,1)
+(32,2,1)
+(90,138,1)
+(134,7,1)
+(109,46,1)
+(140,20,1)
+(94,98,1)
+(99,12,1)
+(108,124,1)
+(82,50,1)
+(43,131,1)
+(68,85,1)
+(107,111,1)
+(25,7,1)
+(57,90,1)
+(23,85,1)
+(133,23,1)
+(141,42,1)
+(123,92,1)
+(114,77,1)
+(35,101,1)
+(34,80,1)
+(63,122,1)
+(46,117,1)
+(138,101,1)
+(111,10,1)
+(133,12,1)
+(40,109,1)
+(24,135,1)
+(140,78,1)
+(31,14,1)
+(25,29,1)
+(72,18,1)
+(13,122,1)
+(92,78,1)
+(132,144,1)
+(70,51,1)
+(23,33,1)
+(49,39,1)
+(61,91,1)
+(120,143,1)
+(63,67,1)
+(112,48,1)
+(117,125,1)
+(2,119,1)
+(32,122,1)
+(58,49,1)
+(22,0,1)
+(121,0,1)
+(76,63,1)
+(116,140,2)
+(118,70,2)
+(145,111,2)
+(94,111,2)
+(70,111,2)
+(8,111,2)
+(123,118,2)
+(138,111,2)
+(35,141,2)
+(117,82,2)
+(11,111,2)
+(86,111,2)
+(72,18,2)
+(45,111,2)
+(125,111,2)
+(41,111,2)
+(32,122,2)
+(12,111,2)
+(56,69,2)
+(93,111,2)
+(130,111,2)
+(70,82,2)
+(118,111,2)
+(68,85,2)
+(66,111,2)
+(133,12,2)
+(108,111,2)
+(117,111,2)
+(141,87,2)
+(23,111,2)
+(104,122,2)
+(18,111,2)
+(146,82,2)
+(7,40,2)
+(63,122,2)
+(16,111,2)
+(53,111,2)
+(88,111,2)
+(133,23,2)
+(25,111,2)
+(142,68,2)
+(40,32,2)
+(99,12,2)
+(124,111,2)
+(15,111,2)
+(101,111,2)
+(85,111,2)
+(87,111,2)
+(19,76,2)
+(9,111,2)
+(50,122,2)
+(74,72,2)
+(85,123,2)
+(72,111,2)
+(104,111,2)
+(40,109,2)
+(38,111,2)
+(146,111,2)
+(96,111,2)
+(115,78,2)
+(75,78,2)
+(93,13,2)
+(4,111,2)
+(58,61,2)
+(5,27,2)
+(22,0,2)
+(95,111,2)
+(99,111,2)
+(23,85,2)
+(42,111,2)
+(126,111,2)
+(32,111,2)
+(38,122,2)
+(61,10,2)
+(55,122,2)
+(101,122,2)
+(119,111,2)
+(135,111,2)
+(58,49,2)
+(35,101,2)
+(2,111,2)
+(35,111,2)
+(17,111,2)
+(17,146,2)
+(29,111,2)
+(91,111,2)
+(137,56,2)
+(51,111,2)
+(76,63,2)
+(106,111,2)
+(60,111,2)
+(57,78,2)
+(7,111,2)
+(76,137,2)
+(36,111,2)
+(92,78,2)
+(82,50,2)
+(69,116,2)
+(49,111,2)
+(62,111,2)
+(72,7,2)
+(64,111,2)
+(10,22,2)
+(92,111,2)
+(68,5,2)
+(4,15,2)
+(33,111,2)
+(113,111,2)
+(128,111,2)
+(90,111,2)
+(141,111,2)
+(123,111,2)
+(123,92,2)
+(144,78,2)
+(27,36,2)
+(114,111,2)
+(140,78,2)
+(13,122,2)
+(109,111,2)
+(73,111,2)
+(71,111,2)
+(61,111,2)
+(107,111,2)
+(44,111,2)
+(0,55,2)
+(132,144,2)
+(35,57,2)
+(122,75,2)
+(5,111,2)
+(48,111,2)
+(100,111,2)
+(15,104,2)
+(46,111,2)
+(100,93,2)
+(77,111,2)
+(77,25,2)
+(6,132,2)
+(133,111,2)
+(18,122,2)
+(99,142,2)
+(12,74,2)
+(25,38,2)
+(25,7,2)
+(77,133,2)
+(87,122,2)
+(74,111,2)
+(39,111,2)
+(24,111,2)
+(83,111,2)
+(36,17,2)
+(134,111,2)
+(68,111,2)
+(57,111,2)
+(98,111,2)
+(40,111,2)
+(142,111,2)
+(22,115,2)
+(27,111,2)
+(13,111,2)
+(112,111,2)
+(109,117,2)
+-----------------------------------
+(0,&bank->gpio_chip)
+(1,shift)
+(2,pctl_offset)
+(3,bank)
+(4,spin_lock_irqsave(&bank->slock, flags)
+(5,mask = (1 << bank_type->fld_width[PINCFG_TYPE_FUNC])
+(6,shift = EXYNOS_EINT_CON_LEN * irqd->hwirq)
+(7,reg_con = bank->pctl_offset + bank_type->reg_offset[PINCFG_TYPE_FUNC])
+(8,slock)
+(9,slock)
+(10,ret = gpiochip_lock_as_irq(&bank->gpio_chip, irqd->hwirq)
+(11,irqd)
+(12,con = readl(bank->eint_base + reg_con)
+(13,bank->slock)
+(14,irqd)
+(15,&bank->slock)
+(16,shift)
+(17,bank_type->fld_width[PINCFG_TYPE_FUNC])
+(18,bank->eint_base)
+(19,reg_con = our_chip->eint_con + bank->eint_offset)
+(20,irqd)
+(21,bank)
+(22,gpiochip_lock_as_irq(&bank->gpio_chip, irqd->hwirq)
+(23,EXYNOS_EINT_FUNC << shift)
+(24,EXYNOS_EINT_FUNC)
+(25,bank->eint_base + reg_con)
+(26,mask)
+(27,(1 << bank_type->fld_width[PINCFG_TYPE_FUNC])
+(28,ret)
+(29,reg_con)
+(30,chip)
+(31,hwirq)
+(32,bank->pctl_offset)
+(33,shift)
+(34,type)
+(35,dev_err(bank->gpio_chip.parent,\n\\n\\t\\t\\t"unable to lock pin %s-%lu IRQ\\n",\n\\n\\t\\t\\tbank->name, irqd->hwirq)
+(36,1 << bank_type->fld_width[PINCFG_TYPE_FUNC])
+(37,EXYNOS_EINT_CON_LEN)
+(38,bank->eint_base)
+(39,0)
+(40,bank->pctl_offset + bank_type->reg_offset[PINCFG_TYPE_FUNC])
+(41,eint_base)
+(42,parent)
+(43,eint_con)
+(44,eint_base)
+(45,bank_type)
+(46,PINCFG_TYPE_FUNC)
+(47,hwirq)
+(48,bank)
+(49,return 0;)
+(50,bank->type)
+(51,fld_width)
+(52,gpio_chip)
+(53,con)
+(54,con)
+(55,bank->gpio_chip)
+(56,*our_chip = to_exynos_irq_chip(chip)
+(57,irqd->hwirq)
+(58,RET)
+(59,chip)
+(60,bank)
+(61,return ret;)
+(62,bank)
+(63,bank->eint_offset)
+(64,PINCFG_TYPE_FUNC)
+(65,)
+(66,flags)
+(67,eint_offset)
+(68,mask << shift)
+(69,to_exynos_irq_chip(chip)
+(70,bank_type->fld_width)
+(71,bank)
+(72,bank->eint_base + reg_con)
+(73,bank)
+(74,readl(bank->eint_base + reg_con)
+(75,irq_data_get_irq_chip_data(irqd)
+(76,our_chip->eint_con + bank->eint_offset)
+(77,writel(con, bank->eint_base + reg_con)
+(78,struct irq_data *irqd)
+(79,our_chip)
+(80,bank)
+(81,ret)
+(82,*bank_type = bank->type)
+(83,1)
+(84,)
+(85,shift = irqd->hwirq * bank_type->fld_width[PINCFG_TYPE_FUNC])
+(86,hwirq)
+(87,bank->gpio_chip)
+(88,mask)
+(89,if (ret)
+(90,hwirq)
+(91,ret)
+(92,irqd->hwirq)
+(93,&bank->slock)
+(94,mask)
+(95,flags)
+(96,name)
+(97,bank_type)
+(98,con)
+(99,con &= ~(mask << shift)
+(100,spin_unlock_irqrestore(&bank->slock, flags)
+(101,bank->name)
+(102,bank)
+(103,flags)
+(104,bank->slock)
+(105,reg_con)
+(106,bank_type)
+(107,reg_con)
+(108,fld_width)
+(109,bank_type->reg_offset[PINCFG_TYPE_FUNC])
+(110,our_chip)
+(111,ret)
+(112,gpio_chip)
+(113,"unable to lock pin %s-%lu IRQ\\n")
+(114,bank)
+(115,irqd->hwirq)
+(116,*chip = irq_data_get_irq_chip(irqd)
+(117,bank_type->reg_offset)
+(118,bank_type->fld_width[PINCFG_TYPE_FUNC])
+(119,bank)
+(120,irqd)
+(121,irqd)
+(122,*bank = irq_data_get_irq_chip_data(irqd)
+(123,irqd->hwirq * bank_type->fld_width[PINCFG_TYPE_FUNC])
+(124,bank_type)
+(125,reg_offset)
+(126,reg_con)
+(127,bank_type)
+(128,1)
+(129,chip)
+(130,con)
+(131,our_chip)
+(132,EXYNOS_EINT_CON_LEN * irqd->hwirq)
+(133,con |= EXYNOS_EINT_FUNC << shift)
+(134,shift)
+(135,con)
+(136,shift)
+(137,our_chip->eint_con)
+(138,irqd)
+(139,reg_con)
+(140,irq_data_get_irq_chip(irqd)
+(141,bank->gpio_chip.parent)
+(142,~(mask << shift)
+(143,bank)
+(144,irqd->hwirq)
+(145,PINCFG_TYPE_FUNC)
+(146,bank_type->fld_width)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

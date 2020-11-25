@@ -1,0 +1,1227 @@
+-----label-----
+1
+-----code-----
+VOS_STATUS
+WLANBAP_TxCompCB
+(
+  v_PVOID_t      pvosGCtx,
+  vos_pkt_t*     vosDataBuff,
+  VOS_STATUS     wTxSTAtus
+)
+{
+    VOS_STATUS    vosStatus;
+    ptBtampHandle bapHdl;  /* holds ptBtampHandle value returned  */
+    ptBtampContext bapContext; /* Holds the btampContext value returned */
+    v_PVOID_t     pHddHdl; /* Handle to return BSL context in */
+    v_PVOID_t      pvlogLinkHandle = NULL;
+    v_U32_t       value;
+
+    WLANBAP_HCIACLHeaderType hciACLHeader;
+
+    /* retrieve the BSL and BAP contexts */
+
+    /* I don't really know how to do this - in the general case. */
+    /* So, for now, I will just use something that works. */
+    /* (In general, I will have to keep a list of the outstanding transmit */
+    /* buffers, in order to determine which assoc they are with.) */
+    //vosStatus = WLANBAP_GetCtxFromStaId (
+    //        ucSTAId,  /* The StaId (used by TL, PE, and HAL) */
+    //        &bapHdl,  /* "handle" to return ptBtampHandle value in  */
+    //        &bapContext,  /* "handle" to return ptBtampContext value in  */
+    //        &pHddHdl); /* "handle" to return BSL context in */
+    /* Temporarily we do the following*/
+    //bapHdl = &btampCtx;
+    bapHdl = (v_PVOID_t)gpBtampCtx;
+    /* Typecast the handle into a context. Works as we have only one link*/
+    bapContext = ((ptBtampContext) bapHdl);
+
+    /*------------------------------------------------------------------------
+      Sanity check params
+    ------------------------------------------------------------------------*/
+    if ( NULL == vosDataBuff)
+    {
+        VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_ERROR,
+                "Invalid vosDataBuff value in %s", __func__);
+        return VOS_STATUS_E_FAULT;
+    }
+
+    if ( NULL == bapContext)
+    {
+        VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_ERROR,
+                "Invalid bapContext value in %s", __func__);
+        vos_pkt_return_packet( vosDataBuff );
+        return VOS_STATUS_E_FAULT;
+    }
+
+    pHddHdl = bapContext->pHddHdl;
+    vosStatus = VOS_STATUS_SUCCESS;
+    if ( VOS_STATUS_SUCCESS != vosStatus )
+    {
+      VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_INFO,
+                   "Unable to retrieve BSL or BAP context from STA Id in WLANBAP_TxCompCB");
+      vos_pkt_return_packet( vosDataBuff );
+      return VOS_STATUS_E_FAULT;
+    }
+
+    /*Get the logical link handle from the vos user data*/
+    vos_pkt_get_user_data_ptr( vosDataBuff, VOS_PKT_USER_DATA_ID_BAP,
+                               &pvlogLinkHandle);
+
+    value = (v_U32_t)pvlogLinkHandle;
+    hciACLHeader.logLinkHandle = value;
+
+#ifdef BAP_DEBUG
+    /* Trace the bapContext referenced. */
+    VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_INFO_HIGH,
+              "WLAN BAP Context Monitor: bapContext value = %p in %s:%d. vosDataBuff=%p", bapContext, __func__, __LINE__, vosDataBuff );
+#endif //BAP_DEBUG
+
+    // Sanity check the log_link_handle value
+// JEZ100722: Temporary changes.
+    if (BTAMP_VALID_LOG_LINK( hciACLHeader.logLinkHandle))
+    {
+       vos_atomic_increment_U32(
+           &bapContext->btampLogLinkCtx[hciACLHeader.logLinkHandle].uTxPktCompleted);
+//           &bapContext->btampLogLinkCtx[0].uTxPktCompleted);
+//       vos_atomic_increment_U32(
+//           &bapContext->btampLogLinkCtx[1].uTxPktCompleted);
+    } else
+    {
+       VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_ERROR,
+                   "In %s:%d: Invalid logical link handle: %d", __func__, __LINE__, hciACLHeader.logLinkHandle);
+    }
+
+    /* Invoke the callback that BSL registered with me */
+    vosStatus = (*bapContext->pfnBtampTxCompCB)(
+            pHddHdl,
+            vosDataBuff,
+            wTxSTAtus);
+
+    return vosStatus;
+}
+-----children-----
+1,2
+1,3
+1,4
+2,3
+4,5
+4,6
+4,7
+4,8
+6,7
+6,8
+7,8
+9,10
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+17,19
+18,19
+20,21
+22,23
+22,24
+22,25
+22,26
+22,27
+22,28
+22,29
+22,30
+22,31
+22,32
+22,33
+22,34
+22,35
+22,36
+22,37
+22,38
+22,39
+22,40
+22,41
+22,42
+23,24
+24,25
+24,26
+25,26
+27,28
+29,30
+30,31
+30,32
+31,32
+33,34
+35,36
+36,37
+36,38
+37,38
+39,40
+41,42
+42,43
+42,44
+43,44
+45,46
+47,48
+48,49
+48,50
+49,50
+51,52
+51,53
+53,54
+54,55
+56,57
+57,58
+57,59
+58,59
+60,61
+62,63
+63,64
+63,65
+64,65
+66,67
+68,69
+69,70
+69,71
+70,71
+72,73
+72,74
+73,74
+73,75
+74,75
+77,78
+79,80
+80,81
+80,82
+81,82
+83,84
+84,85
+84,86
+85,86
+85,87
+86,87
+89,90
+91,92
+91,93
+92,93
+92,94
+93,94
+95,96
+97,98
+97,99
+98,99
+99,100
+99,101
+99,102
+99,103
+99,104
+100,101
+102,103
+104,105
+107,108
+109,110
+110,111
+112,113
+112,114
+113,114
+113,115
+114,115
+116,117
+118,119
+118,120
+118,121
+119,120
+120,121
+120,122
+120,123
+120,124
+120,125
+121,122
+123,124
+125,126
+128,129
+130,131
+131,132
+131,133
+132,133
+134,135
+136,137
+137,138
+139,140
+140,141
+140,142
+141,142
+143,144
+143,145
+144,145
+147,148
+148,149
+148,150
+149,150
+151,152
+153,154
+153,155
+154,155
+154,156
+155,156
+157,158
+159,160
+159,161
+159,162
+160,161
+161,162
+161,163
+161,164
+161,165
+162,163
+164,165
+166,167
+169,170
+170,171
+170,172
+171,172
+173,174
+175,176
+176,177
+178,179
+179,180
+179,181
+179,182
+179,183
+180,181
+182,183
+184,185
+186,187
+187,188
+189,190
+190,191
+190,192
+191,192
+193,194
+193,195
+194,195
+194,196
+195,196
+198,199
+200,201
+201,202
+201,203
+202,203
+202,204
+203,204
+206,207
+208,209
+208,210
+208,211
+209,210
+209,211
+210,211
+212,213
+212,214
+213,214
+216,217
+217,218
+218,219
+218,220
+219,220
+221,222
+222,223
+222,224
+223,224
+223,225
+224,225
+224,226
+225,226
+228,229
+228,230
+229,230
+233,234
+234,235
+235,236
+235,237
+235,238
+235,239
+235,240
+235,241
+235,242
+236,237
+238,239
+240,241
+243,244
+246,247
+246,248
+247,248
+250,251
+251,252
+251,253
+252,253
+254,255
+254,256
+254,257
+254,258
+255,256
+256,257
+257,258
+257,259
+258,259
+261,262
+263,264
+265,266
+267,268
+268,269
+-----nextToken-----
+3,5,8,10,13,15,16,19,21,26,28,32,34,38,40,44,46,50,52,55,59,61,65,67,71,75,76,78,82,87,88,90,94,96,101,103,105,106,108,111,115,117,122,124,126,127,129,133,135,138,142,145,146,150,152,156,158,163,165,167,168,172,174,177,181,183,185,188,192,196,197,199,204,205,207,211,214,215,220,226,227,230,231,232,237,239,241,242,244,245,248,249,253,259,260,262,264,266,269
+-----computeFrom-----
+69,70
+69,71
+80,81
+80,82
+92,93
+92,94
+113,114
+113,115
+140,141
+140,142
+148,149
+148,150
+154,155
+154,156
+190,191
+190,192
+201,202
+201,203
+251,252
+251,253
+-----guardedBy-----
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;NamedTypeSpecifier;Name;FunctionDeclarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;ReturnStatement;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;UnaryExpression;UnaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+VOS_STATUSWLANBAP_TxCompCB(  v_PVOID_t      pvosGCtx,  vos_pkt_t*     vosDataBuff,  VOS_STATUS     wTxSTAtus){    VOS_STATUS    vosStatus;    ptBtampHandle bapHdl;  /* holds ptBtampHandle value returned  */    ptBtampContext bapContext; /* Holds the btampContext value returned */    v_PVOID_t     pHddHdl; /* Handle to return BSL context in */    v_PVOID_t      pvlogLinkHandle = NULL;    v_U32_t       value;    WLANBAP_HCIACLHeaderType hciACLHeader;    /* retrieve the BSL and BAP contexts */    /* I don't really know how to do this - in the general case. */    /* So, for now, I will just use something that works. */    /* (In general, I will have to keep a list of the outstanding transmit */    /* buffers, in order to determine which assoc they are with.) */    //vosStatus = WLANBAP_GetCtxFromStaId (    //        ucSTAId,  /* The StaId (used by TL, PE, and HAL) */    //        &bapHdl,  /* "handle" to return ptBtampHandle value in  */    //        &bapContext,  /* "handle" to return ptBtampContext value in  */    //        &pHddHdl); /* "handle" to return BSL context in */    /* Temporarily we do the following*/    //bapHdl = &btampCtx;    bapHdl = (v_PVOID_t)gpBtampCtx;    /* Typecast the handle into a context. Works as we have only one link*/    bapContext = ((ptBtampContext) bapHdl);    /*------------------------------------------------------------------------      Sanity check params    ------------------------------------------------------------------------*/    if ( NULL == vosDataBuff)    {        VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_ERROR,                "Invalid vosDataBuff value in %s", __func__);        return VOS_STATUS_E_FAULT;    }    if ( NULL == bapContext)    {        VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_ERROR,                "Invalid bapContext value in %s", __func__);        vos_pkt_return_packet( vosDataBuff );        return VOS_STATUS_E_FAULT;    }    pHddHdl = bapContext->pHddHdl;    vosStatus = VOS_STATUS_SUCCESS;    if ( VOS_STATUS_SUCCESS != vosStatus )    {      VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_INFO,                   "Unable to retrieve BSL or BAP context from STA Id in WLANBAP_TxCompCB");      vos_pkt_return_packet( vosDataBuff );      return VOS_STATUS_E_FAULT;    }    /*Get the logical link handle from the vos user data*/    vos_pkt_get_user_data_ptr( vosDataBuff, VOS_PKT_USER_DATA_ID_BAP,                               &pvlogLinkHandle);    value = (v_U32_t)pvlogLinkHandle;    hciACLHeader.logLinkHandle = value;#ifdef BAP_DEBUG    /* Trace the bapContext referenced. */    VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_INFO_HIGH,              "WLAN BAP Context Monitor: bapContext value = %p in %s:%d. vosDataBuff=%p", bapContext, __func__, __LINE__, vosDataBuff );#endif //BAP_DEBUG    // Sanity check the log_link_handle value// JEZ100722: Temporary changes.    if (BTAMP_VALID_LOG_LINK( hciACLHeader.logLinkHandle))    {       vos_atomic_increment_U32(           &bapContext->btampLogLinkCtx[hciACLHeader.logLinkHandle].uTxPktCompleted);//           &bapContext->btampLogLinkCtx[0].uTxPktCompleted);//       vos_atomic_increment_U32(//           &bapContext->btampLogLinkCtx[1].uTxPktCompleted);    } else    {       VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_ERROR,                   "In %s:%d: Invalid logical link handle: %d", __func__, __LINE__, hciACLHeader.logLinkHandle);    }    /* Invoke the callback that BSL registered with me */    vosStatus = (*bapContext->pfnBtampTxCompCB)(            pHddHdl,            vosDataBuff,            wTxSTAtus);    return vosStatus;}
+VOS_STATUS
+VOS_STATUS
+WLANBAP_TxCompCB(  v_PVOID_t      pvosGCtx,  vos_pkt_t*     vosDataBuff,  VOS_STATUS     wTxSTAtus)
+WLANBAP_TxCompCB
+v_PVOID_t      pvosGCtx
+v_PVOID_t
+v_PVOID_t
+pvosGCtx
+pvosGCtx
+vos_pkt_t*     vosDataBuff
+vos_pkt_t
+vos_pkt_t
+*     vosDataBuff
+*
+vosDataBuff
+VOS_STATUS     wTxSTAtus
+VOS_STATUS
+VOS_STATUS
+wTxSTAtus
+wTxSTAtus
+{    VOS_STATUS    vosStatus;    ptBtampHandle bapHdl;  /* holds ptBtampHandle value returned  */    ptBtampContext bapContext; /* Holds the btampContext value returned */    v_PVOID_t     pHddHdl; /* Handle to return BSL context in */    v_PVOID_t      pvlogLinkHandle = NULL;    v_U32_t       value;    WLANBAP_HCIACLHeaderType hciACLHeader;    /* retrieve the BSL and BAP contexts */    /* I don't really know how to do this - in the general case. */    /* So, for now, I will just use something that works. */    /* (In general, I will have to keep a list of the outstanding transmit */    /* buffers, in order to determine which assoc they are with.) */    //vosStatus = WLANBAP_GetCtxFromStaId (    //        ucSTAId,  /* The StaId (used by TL, PE, and HAL) */    //        &bapHdl,  /* "handle" to return ptBtampHandle value in  */    //        &bapContext,  /* "handle" to return ptBtampContext value in  */    //        &pHddHdl); /* "handle" to return BSL context in */    /* Temporarily we do the following*/    //bapHdl = &btampCtx;    bapHdl = (v_PVOID_t)gpBtampCtx;    /* Typecast the handle into a context. Works as we have only one link*/    bapContext = ((ptBtampContext) bapHdl);    /*------------------------------------------------------------------------      Sanity check params    ------------------------------------------------------------------------*/    if ( NULL == vosDataBuff)    {        VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_ERROR,                "Invalid vosDataBuff value in %s", __func__);        return VOS_STATUS_E_FAULT;    }    if ( NULL == bapContext)    {        VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_ERROR,                "Invalid bapContext value in %s", __func__);        vos_pkt_return_packet( vosDataBuff );        return VOS_STATUS_E_FAULT;    }    pHddHdl = bapContext->pHddHdl;    vosStatus = VOS_STATUS_SUCCESS;    if ( VOS_STATUS_SUCCESS != vosStatus )    {      VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_INFO,                   "Unable to retrieve BSL or BAP context from STA Id in WLANBAP_TxCompCB");      vos_pkt_return_packet( vosDataBuff );      return VOS_STATUS_E_FAULT;    }    /*Get the logical link handle from the vos user data*/    vos_pkt_get_user_data_ptr( vosDataBuff, VOS_PKT_USER_DATA_ID_BAP,                               &pvlogLinkHandle);    value = (v_U32_t)pvlogLinkHandle;    hciACLHeader.logLinkHandle = value;#ifdef BAP_DEBUG    /* Trace the bapContext referenced. */    VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_INFO_HIGH,              "WLAN BAP Context Monitor: bapContext value = %p in %s:%d. vosDataBuff=%p", bapContext, __func__, __LINE__, vosDataBuff );#endif //BAP_DEBUG    // Sanity check the log_link_handle value// JEZ100722: Temporary changes.    if (BTAMP_VALID_LOG_LINK( hciACLHeader.logLinkHandle))    {       vos_atomic_increment_U32(           &bapContext->btampLogLinkCtx[hciACLHeader.logLinkHandle].uTxPktCompleted);//           &bapContext->btampLogLinkCtx[0].uTxPktCompleted);//       vos_atomic_increment_U32(//           &bapContext->btampLogLinkCtx[1].uTxPktCompleted);    } else    {       VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_ERROR,                   "In %s:%d: Invalid logical link handle: %d", __func__, __LINE__, hciACLHeader.logLinkHandle);    }    /* Invoke the callback that BSL registered with me */    vosStatus = (*bapContext->pfnBtampTxCompCB)(            pHddHdl,            vosDataBuff,            wTxSTAtus);    return vosStatus;}
+VOS_STATUS    vosStatus;
+VOS_STATUS    vosStatus;
+VOS_STATUS
+VOS_STATUS
+vosStatus
+vosStatus
+ptBtampHandle bapHdl;
+ptBtampHandle bapHdl;
+ptBtampHandle
+ptBtampHandle
+bapHdl
+bapHdl
+ptBtampContext bapContext;
+ptBtampContext bapContext;
+ptBtampContext
+ptBtampContext
+bapContext
+bapContext
+v_PVOID_t     pHddHdl;
+v_PVOID_t     pHddHdl;
+v_PVOID_t
+v_PVOID_t
+pHddHdl
+pHddHdl
+v_PVOID_t      pvlogLinkHandle = NULL;
+v_PVOID_t      pvlogLinkHandle = NULL;
+v_PVOID_t
+v_PVOID_t
+pvlogLinkHandle = NULL
+pvlogLinkHandle
+= NULL
+NULL
+NULL
+v_U32_t       value;
+v_U32_t       value;
+v_U32_t
+v_U32_t
+value
+value
+WLANBAP_HCIACLHeaderType hciACLHeader;
+WLANBAP_HCIACLHeaderType hciACLHeader;
+WLANBAP_HCIACLHeaderType
+WLANBAP_HCIACLHeaderType
+hciACLHeader
+hciACLHeader
+bapHdl = (v_PVOID_t)gpBtampCtx;
+bapHdl = (v_PVOID_t)gpBtampCtx
+bapHdl
+bapHdl
+(v_PVOID_t)gpBtampCtx
+v_PVOID_t
+v_PVOID_t
+v_PVOID_t
+
+gpBtampCtx
+gpBtampCtx
+bapContext = ((ptBtampContext) bapHdl);
+bapContext = ((ptBtampContext) bapHdl)
+bapContext
+bapContext
+((ptBtampContext) bapHdl)
+(ptBtampContext) bapHdl
+ptBtampContext
+ptBtampContext
+ptBtampContext
+
+bapHdl
+bapHdl
+if ( NULL == vosDataBuff)    {        VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_ERROR,                "Invalid vosDataBuff value in %s", __func__);        return VOS_STATUS_E_FAULT;    }
+NULL == vosDataBuff
+NULL
+NULL
+vosDataBuff
+vosDataBuff
+{        VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_ERROR,                "Invalid vosDataBuff value in %s", __func__);        return VOS_STATUS_E_FAULT;    }
+VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_ERROR,                "Invalid vosDataBuff value in %s", __func__);
+VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_ERROR,                "Invalid vosDataBuff value in %s", __func__)
+VOS_TRACE
+VOS_TRACE
+VOS_MODULE_ID_BAP
+VOS_MODULE_ID_BAP
+VOS_TRACE_LEVEL_ERROR
+VOS_TRACE_LEVEL_ERROR
+"Invalid vosDataBuff value in %s"
+__func__
+__func__
+return VOS_STATUS_E_FAULT;
+VOS_STATUS_E_FAULT
+VOS_STATUS_E_FAULT
+if ( NULL == bapContext)    {        VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_ERROR,                "Invalid bapContext value in %s", __func__);        vos_pkt_return_packet( vosDataBuff );        return VOS_STATUS_E_FAULT;    }
+NULL == bapContext
+NULL
+NULL
+bapContext
+bapContext
+{        VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_ERROR,                "Invalid bapContext value in %s", __func__);        vos_pkt_return_packet( vosDataBuff );        return VOS_STATUS_E_FAULT;    }
+VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_ERROR,                "Invalid bapContext value in %s", __func__);
+VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_ERROR,                "Invalid bapContext value in %s", __func__)
+VOS_TRACE
+VOS_TRACE
+VOS_MODULE_ID_BAP
+VOS_MODULE_ID_BAP
+VOS_TRACE_LEVEL_ERROR
+VOS_TRACE_LEVEL_ERROR
+"Invalid bapContext value in %s"
+__func__
+__func__
+vos_pkt_return_packet( vosDataBuff );
+vos_pkt_return_packet( vosDataBuff )
+vos_pkt_return_packet
+vos_pkt_return_packet
+vosDataBuff
+vosDataBuff
+return VOS_STATUS_E_FAULT;
+VOS_STATUS_E_FAULT
+VOS_STATUS_E_FAULT
+pHddHdl = bapContext->pHddHdl;
+pHddHdl = bapContext->pHddHdl
+pHddHdl
+pHddHdl
+bapContext->pHddHdl
+bapContext
+bapContext
+pHddHdl
+vosStatus = VOS_STATUS_SUCCESS;
+vosStatus = VOS_STATUS_SUCCESS
+vosStatus
+vosStatus
+VOS_STATUS_SUCCESS
+VOS_STATUS_SUCCESS
+if ( VOS_STATUS_SUCCESS != vosStatus )    {      VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_INFO,                   "Unable to retrieve BSL or BAP context from STA Id in WLANBAP_TxCompCB");      vos_pkt_return_packet( vosDataBuff );      return VOS_STATUS_E_FAULT;    }
+VOS_STATUS_SUCCESS != vosStatus
+VOS_STATUS_SUCCESS
+VOS_STATUS_SUCCESS
+vosStatus
+vosStatus
+{      VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_INFO,                   "Unable to retrieve BSL or BAP context from STA Id in WLANBAP_TxCompCB");      vos_pkt_return_packet( vosDataBuff );      return VOS_STATUS_E_FAULT;    }
+VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_INFO,                   "Unable to retrieve BSL or BAP context from STA Id in WLANBAP_TxCompCB");
+VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_INFO,                   "Unable to retrieve BSL or BAP context from STA Id in WLANBAP_TxCompCB")
+VOS_TRACE
+VOS_TRACE
+VOS_MODULE_ID_BAP
+VOS_MODULE_ID_BAP
+VOS_TRACE_LEVEL_INFO
+VOS_TRACE_LEVEL_INFO
+"Unable to retrieve BSL or BAP context from STA Id in WLANBAP_TxCompCB"
+vos_pkt_return_packet( vosDataBuff );
+vos_pkt_return_packet( vosDataBuff )
+vos_pkt_return_packet
+vos_pkt_return_packet
+vosDataBuff
+vosDataBuff
+return VOS_STATUS_E_FAULT;
+VOS_STATUS_E_FAULT
+VOS_STATUS_E_FAULT
+vos_pkt_get_user_data_ptr( vosDataBuff, VOS_PKT_USER_DATA_ID_BAP,                               &pvlogLinkHandle);
+vos_pkt_get_user_data_ptr( vosDataBuff, VOS_PKT_USER_DATA_ID_BAP,                               &pvlogLinkHandle)
+vos_pkt_get_user_data_ptr
+vos_pkt_get_user_data_ptr
+vosDataBuff
+vosDataBuff
+VOS_PKT_USER_DATA_ID_BAP
+VOS_PKT_USER_DATA_ID_BAP
+&pvlogLinkHandle
+pvlogLinkHandle
+pvlogLinkHandle
+value = (v_U32_t)pvlogLinkHandle;
+value = (v_U32_t)pvlogLinkHandle
+value
+value
+(v_U32_t)pvlogLinkHandle
+v_U32_t
+v_U32_t
+v_U32_t
+
+pvlogLinkHandle
+pvlogLinkHandle
+hciACLHeader.logLinkHandle = value;
+hciACLHeader.logLinkHandle = value
+hciACLHeader.logLinkHandle
+hciACLHeader
+hciACLHeader
+logLinkHandle
+value
+value
+if (BTAMP_VALID_LOG_LINK( hciACLHeader.logLinkHandle))    {       vos_atomic_increment_U32(           &bapContext->btampLogLinkCtx[hciACLHeader.logLinkHandle].uTxPktCompleted);//           &bapContext->btampLogLinkCtx[0].uTxPktCompleted);//       vos_atomic_increment_U32(//           &bapContext->btampLogLinkCtx[1].uTxPktCompleted);    } else    {       VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_ERROR,                   "In %s:%d: Invalid logical link handle: %d", __func__, __LINE__, hciACLHeader.logLinkHandle);    }
+BTAMP_VALID_LOG_LINK( hciACLHeader.logLinkHandle)
+BTAMP_VALID_LOG_LINK
+BTAMP_VALID_LOG_LINK
+hciACLHeader.logLinkHandle
+hciACLHeader
+hciACLHeader
+logLinkHandle
+{       vos_atomic_increment_U32(           &bapContext->btampLogLinkCtx[hciACLHeader.logLinkHandle].uTxPktCompleted);//           &bapContext->btampLogLinkCtx[0].uTxPktCompleted);//       vos_atomic_increment_U32(//           &bapContext->btampLogLinkCtx[1].uTxPktCompleted);    }
+vos_atomic_increment_U32(           &bapContext->btampLogLinkCtx[hciACLHeader.logLinkHandle].uTxPktCompleted);
+vos_atomic_increment_U32(           &bapContext->btampLogLinkCtx[hciACLHeader.logLinkHandle].uTxPktCompleted)
+vos_atomic_increment_U32
+vos_atomic_increment_U32
+&bapContext->btampLogLinkCtx[hciACLHeader.logLinkHandle].uTxPktCompleted
+bapContext->btampLogLinkCtx[hciACLHeader.logLinkHandle].uTxPktCompleted
+bapContext->btampLogLinkCtx[hciACLHeader.logLinkHandle]
+bapContext->btampLogLinkCtx
+bapContext
+bapContext
+btampLogLinkCtx
+hciACLHeader.logLinkHandle
+hciACLHeader
+hciACLHeader
+logLinkHandle
+uTxPktCompleted
+{       VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_ERROR,                   "In %s:%d: Invalid logical link handle: %d", __func__, __LINE__, hciACLHeader.logLinkHandle);    }
+VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_ERROR,                   "In %s:%d: Invalid logical link handle: %d", __func__, __LINE__, hciACLHeader.logLinkHandle);
+VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_ERROR,                   "In %s:%d: Invalid logical link handle: %d", __func__, __LINE__, hciACLHeader.logLinkHandle)
+VOS_TRACE
+VOS_TRACE
+VOS_MODULE_ID_BAP
+VOS_MODULE_ID_BAP
+VOS_TRACE_LEVEL_ERROR
+VOS_TRACE_LEVEL_ERROR
+"In %s:%d: Invalid logical link handle: %d"
+__func__
+__func__
+__LINE__
+hciACLHeader.logLinkHandle
+hciACLHeader
+hciACLHeader
+logLinkHandle
+vosStatus = (*bapContext->pfnBtampTxCompCB)(            pHddHdl,            vosDataBuff,            wTxSTAtus);
+vosStatus = (*bapContext->pfnBtampTxCompCB)(            pHddHdl,            vosDataBuff,            wTxSTAtus)
+vosStatus
+vosStatus
+(*bapContext->pfnBtampTxCompCB)(            pHddHdl,            vosDataBuff,            wTxSTAtus)
+(*bapContext->pfnBtampTxCompCB)
+*bapContext->pfnBtampTxCompCB
+bapContext->pfnBtampTxCompCB
+bapContext
+bapContext
+pfnBtampTxCompCB
+pHddHdl
+pHddHdl
+vosDataBuff
+vosDataBuff
+wTxSTAtus
+wTxSTAtus
+return vosStatus;
+vosStatus
+vosStatus
+-----joern-----
+(72,2,0)
+(95,125,0)
+(58,92,0)
+(22,2,0)
+(24,72,0)
+(24,103,0)
+(30,36,0)
+(7,9,0)
+(37,74,0)
+(10,11,0)
+(21,16,0)
+(55,36,0)
+(110,92,0)
+(4,28,0)
+(106,53,0)
+(66,36,0)
+(75,68,0)
+(2,36,0)
+(31,128,0)
+(98,29,0)
+(46,39,0)
+(8,104,0)
+(102,36,0)
+(93,5,0)
+(95,112,0)
+(28,42,0)
+(70,104,0)
+(20,68,0)
+(5,72,0)
+(104,36,0)
+(58,83,0)
+(74,72,0)
+(112,71,0)
+(86,5,0)
+(32,123,0)
+(3,53,0)
+(95,43,0)
+(27,127,0)
+(127,87,0)
+(120,18,0)
+(53,97,0)
+(9,7,0)
+(11,91,0)
+(49,77,0)
+(105,16,0)
+(60,10,0)
+(119,9,0)
+(48,36,0)
+(1,77,0)
+(82,125,0)
+(99,15,0)
+(19,99,0)
+(13,92,0)
+(79,7,0)
+(85,57,0)
+(61,104,0)
+(45,104,0)
+(25,97,0)
+(96,58,0)
+(43,9,0)
+(32,80,0)
+(58,2,0)
+(89,88,0)
+(7,59,0)
+(56,59,0)
+(11,10,0)
+(74,128,0)
+(12,33,0)
+(84,68,0)
+(18,71,0)
+(7,62,0)
+(69,36,0)
+(78,42,0)
+(17,7,0)
+(7,42,0)
+(114,112,0)
+(80,32,0)
+(94,53,0)
+(10,36,0)
+(29,10,0)
+(78,13,0)
+(41,18,0)
+(28,71,0)
+(57,72,0)
+(67,11,0)
+(73,33,0)
+(2,58,0)
+(126,104,0)
+(33,36,0)
+(99,111,0)
+(15,99,0)
+(16,128,0)
+(91,11,0)
+(34,29,0)
+(52,24,0)
+(90,111,0)
+(39,10,0)
+(77,42,0)
+(51,127,0)
+(115,31,0)
+(101,7,0)
+(88,42,0)
+(121,36,0)
+(44,72,0)
+(116,127,0)
+(57,127,0)
+(0,36,0)
+(29,59,0)
+(92,36,0)
+(6,78,0)
+(76,36,0)
+(11,111,0)
+(38,53,0)
+(81,74,0)
+(35,39,0)
+(68,63,0)
+(88,97,0)
+(124,43,0)
+(59,29,0)
+(111,36,0)
+(50,104,0)
+(83,58,0)
+(43,36,0)
+(104,10,0)
+(103,24,0)
+(14,100,0)
+(107,127,0)
+(128,31,0)
+(54,127,0)
+(117,68,0)
+(111,99,0)
+(9,36,0)
+(122,100,0)
+(64,57,0)
+(128,74,0)
+(40,78,0)
+(109,25,0)
+(113,13,0)
+(118,18,0)
+(125,63,0)
+(128,16,0)
+(100,33,0)
+(108,24,0)
+(104,42,0)
+(26,104,0)
+(78,36,0)
+(95,25,0)
+(47,92,0)
+(65,36,0)
+(59,36,0)
+(80,31,0)
+(127,57,0)
+(23,36,0)
+(16,10,0)
+(72,36,0)
+(31,80,0)
+(13,78,0)
+(128,16,1)
+(16,10,1)
+(85,64,1)
+(45,70,1)
+(90,92,1)
+(67,60,1)
+(17,119,1)
+(118,100,1)
+(104,50,1)
+(28,42,1)
+(89,53,1)
+(126,26,1)
+(25,109,1)
+(38,106,1)
+(13,92,1)
+(127,57,1)
+(122,33,1)
+(58,96,1)
+(51,27,1)
+(80,31,1)
+(50,61,1)
+(18,41,1)
+(32,80,1)
+(34,98,1)
+(39,35,1)
+(95,43,1)
+(28,4,1)
+(29,10,1)
+(109,88,1)
+(33,73,1)
+(49,1,1)
+(47,110,1)
+(7,101,1)
+(75,117,1)
+(117,77,1)
+(73,12,1)
+(61,45,1)
+(116,54,1)
+(111,99,1)
+(21,103,1)
+(119,127,1)
+(37,16,1)
+(84,20,1)
+(11,111,1)
+(56,39,1)
+(104,42,1)
+(31,115,1)
+(78,13,1)
+(35,46,1)
+(31,128,1)
+(125,82,1)
+(1,10,1)
+(24,72,1)
+(96,22,1)
+(7,42,1)
+(11,91,1)
+(100,33,1)
+(72,2,1)
+(53,38,1)
+(12,59,1)
+(124,9,1)
+(41,120,1)
+(92,47,1)
+(58,83,1)
+(19,90,1)
+(99,19,1)
+(82,68,1)
+(74,72,1)
+(106,3,1)
+(108,104,1)
+(20,75,1)
+(81,37,1)
+(54,51,1)
+(26,8,1)
+(88,42,1)
+(7,59,1)
+(88,89,1)
+(43,124,1)
+(40,6,1)
+(99,15,1)
+(11,67,1)
+(78,42,1)
+(112,114,1)
+(100,14,1)
+(113,40,1)
+(107,116,1)
+(8,72,1)
+(60,111,1)
+(13,113,1)
+(22,78,1)
+(95,112,1)
+(16,105,1)
+(104,10,1)
+(57,85,1)
+(29,34,1)
+(7,62,1)
+(9,7,1)
+(57,72,1)
+(46,77,1)
+(77,49,1)
+(52,108,1)
+(6,100,1)
+(120,118,1)
+(79,17,1)
+(95,125,1)
+(27,103,1)
+(70,126,1)
+(58,92,1)
+(2,58,1)
+(4,18,1)
+(24,52,1)
+(43,9,1)
+(115,128,1)
+(59,29,1)
+(3,94,1)
+(94,39,1)
+(93,86,1)
+(103,24,1)
+(98,56,1)
+(39,10,1)
+(68,84,1)
+(95,25,1)
+(77,42,1)
+(5,93,1)
+(119,32,1)
+(44,5,1)
+(101,79,1)
+(86,2,1)
+(105,21,1)
+(10,11,1)
+(114,28,1)
+(72,44,1)
+(14,122,1)
+(74,81,1)
+(128,74,1)
+(64,107,1)
+(59,29,2)
+(95,125,2)
+(119,100,2)
+(33,39,2)
+(9,100,2)
+(72,100,2)
+(8,100,2)
+(104,100,2)
+(2,58,2)
+(56,39,2)
+(79,100,2)
+(24,100,2)
+(125,77,2)
+(68,77,2)
+(113,100,2)
+(126,100,2)
+(78,13,2)
+(70,100,2)
+(43,100,2)
+(58,100,2)
+(53,39,2)
+(117,77,2)
+(107,103,2)
+(16,103,2)
+(98,39,2)
+(58,92,2)
+(127,57,2)
+(7,42,2)
+(95,25,2)
+(99,15,2)
+(16,10,2)
+(13,92,2)
+(50,100,2)
+(28,42,2)
+(28,100,2)
+(54,103,2)
+(34,39,2)
+(2,100,2)
+(112,100,2)
+(73,39,2)
+(31,128,2)
+(88,42,2)
+(39,10,2)
+(128,103,2)
+(116,103,2)
+(85,103,2)
+(75,77,2)
+(78,100,2)
+(93,100,2)
+(21,103,2)
+(14,39,2)
+(100,39,2)
+(101,100,2)
+(106,39,2)
+(128,74,2)
+(7,100,2)
+(29,39,2)
+(95,112,2)
+(111,99,2)
+(61,100,2)
+(94,39,2)
+(13,100,2)
+(103,100,2)
+(24,72,2)
+(59,39,2)
+(105,103,2)
+(52,100,2)
+(41,100,2)
+(96,100,2)
+(114,100,2)
+(7,62,2)
+(115,103,2)
+(35,77,2)
+(57,103,2)
+(11,91,2)
+(51,103,2)
+(43,9,2)
+(104,42,2)
+(100,33,2)
+(74,103,2)
+(118,100,2)
+(77,42,2)
+(11,111,2)
+(80,31,2)
+(25,39,2)
+(81,103,2)
+(20,77,2)
+(104,10,2)
+(74,72,2)
+(109,39,2)
+(45,100,2)
+(95,43,2)
+(44,100,2)
+(108,100,2)
+(22,100,2)
+(38,39,2)
+(12,39,2)
+(27,103,2)
+(127,103,2)
+(78,42,2)
+(7,59,2)
+(3,39,2)
+(82,77,2)
+(72,2,2)
+(31,103,2)
+(26,100,2)
+(29,10,2)
+(122,39,2)
+(124,100,2)
+(89,39,2)
+(37,103,2)
+(18,100,2)
+(40,100,2)
+(6,100,2)
+(10,11,2)
+(57,72,2)
+(32,80,2)
+(32,103,2)
+(128,16,2)
+(84,77,2)
+(58,83,2)
+(5,100,2)
+(64,103,2)
+(120,100,2)
+(80,103,2)
+(46,77,2)
+(86,100,2)
+(4,100,2)
+(88,39,2)
+(17,100,2)
+(103,24,2)
+(39,77,2)
+(9,7,2)
+-----------------------------------
+(0,if ( NULL == vosDataBuff)
+(1,NULL)
+(2,value = (v_U32_t)
+(3,VOS_TRACE_LEVEL_ERROR)
+(4,vosDataBuff)
+(5,hciACLHeader.logLinkHandle)
+(6,vosDataBuff)
+(7,(*bapContext->pfnBtampTxCompCB)
+(8,VOS_MODULE_ID_BAP)
+(9,vosStatus = (*bapContext->pfnBtampTxCompCB)
+(10,bapContext = ((ptBtampContext)
+(11,(ptBtampContext)
+(12,vosStatus)
+(13,&pvlogLinkHandle)
+(14,vosStatus)
+(15,v_PVOID_t)
+(16,bapContext->btampLogLinkCtx)
+(17,pHddHdl)
+(18,VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_INFO,\n\\n                   "Unable to retrieve BSL or BAP context from STA Id in WLANBAP_TxCompCB")
+(19,gpBtampCtx)
+(20,"Invalid vosDataBuff value in %s")
+(21,bapContext)
+(22,value)
+(23,bapHdl)
+(24,hciACLHeader.logLinkHandle)
+(25,return VOS_STATUS_E_FAULT;)
+(26,VOS_TRACE_LEVEL_INFO_HIGH)
+(27,VOS_MODULE_ID_BAP)
+(28,vos_pkt_return_packet( vosDataBuff )
+(29,bapContext->pHddHdl)
+(30,pHddHdl)
+(31,bapContext->btampLogLinkCtx[hciACLHeader.logLinkHandle].uTxPktCompleted)
+(32,vos_atomic_increment_U32(\n\\n           &bapContext->btampLogLinkCtx[hciACLHeader.logLinkHandle].uTxPktCompleted)
+(33,vosStatus = VOS_STATUS_SUCCESS)
+(34,pHddHdl)
+(35,bapContext)
+(36,)
+(37,hciACLHeader)
+(38,__func__)
+(39,NULL == bapContext)
+(40,VOS_PKT_USER_DATA_ID_BAP)
+(41,"Unable to retrieve BSL or BAP context from STA Id in WLANBAP_TxCompCB")
+(42,vos_pkt_t*     vosDataBuff)
+(43,return vosStatus;)
+(44,value)
+(45,__func__)
+(46,NULL)
+(47,NULL)
+(48,pvlogLinkHandle)
+(49,vosDataBuff)
+(50,vosDataBuff)
+(51,VOS_TRACE_LEVEL_ERROR)
+(52,logLinkHandle)
+(53,VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_ERROR,\n\\n                "Invalid bapContext value in %s", __func__)
+(54,"In %s:%d: Invalid logical link handle: %d")
+(55,if ( VOS_STATUS_SUCCESS != vosStatus )
+(56,pHddHdl)
+(57,hciACLHeader.logLinkHandle)
+(58,(v_U32_t)
+(59,pHddHdl = bapContext->pHddHdl)
+(60,bapContext)
+(61,__LINE__)
+(62,VOS_STATUS     wTxSTAtus)
+(63,)
+(64,hciACLHeader)
+(65,value)
+(66,if ( NULL == bapContext)
+(67,bapHdl)
+(68,VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_ERROR,\n\\n                "Invalid vosDataBuff value in %s", __func__)
+(69,if (BTAMP_VALID_LOG_LINK( hciACLHeader.logLinkHandle)
+(70,bapContext)
+(71,)
+(72,hciACLHeader.logLinkHandle = value)
+(73,VOS_STATUS_SUCCESS)
+(74,hciACLHeader.logLinkHandle)
+(75,VOS_TRACE_LEVEL_ERROR)
+(76,vosStatus)
+(77,NULL == vosDataBuff)
+(78,vos_pkt_get_user_data_ptr( vosDataBuff, VOS_PKT_USER_DATA_ID_BAP,\n\\n                               &pvlogLinkHandle)
+(79,vosDataBuff)
+(80,&bapContext->btampLogLinkCtx[hciACLHeader.logLinkHandle].uTxPktCompleted)
+(81,logLinkHandle)
+(82,VOS_STATUS_E_FAULT)
+(83,v_U32_t)
+(84,__func__)
+(85,logLinkHandle)
+(86,hciACLHeader)
+(87,)
+(88,vos_pkt_return_packet( vosDataBuff )
+(89,vosDataBuff)
+(90,bapHdl)
+(91,ptBtampContext)
+(92,pvlogLinkHandle = NULL)
+(93,logLinkHandle)
+(94,VOS_MODULE_ID_BAP)
+(95,RET)
+(96,pvlogLinkHandle)
+(97,)
+(98,bapContext)
+(99,(v_PVOID_t)
+(100,VOS_STATUS_SUCCESS != vosStatus)
+(101,wTxSTAtus)
+(102,bapContext)
+(103,BTAMP_VALID_LOG_LINK( hciACLHeader.logLinkHandle)
+(104,VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_INFO_HIGH,\n\\n              "WLAN BAP Context Monitor: bapContext value = %p in %s:%d. vosDataBuff=%p", bapContext, __func__, __LINE__, vosDataBuff )
+(105,btampLogLinkCtx)
+(106,"Invalid bapContext value in %s")
+(107,__LINE__)
+(108,hciACLHeader)
+(109,VOS_STATUS_E_FAULT)
+(110,pvlogLinkHandle)
+(111,bapHdl = (v_PVOID_t)
+(112,return VOS_STATUS_E_FAULT;)
+(113,pvlogLinkHandle)
+(114,VOS_STATUS_E_FAULT)
+(115,uTxPktCompleted)
+(116,__func__)
+(117,VOS_MODULE_ID_BAP)
+(118,VOS_MODULE_ID_BAP)
+(119,vosStatus)
+(120,VOS_TRACE_LEVEL_INFO)
+(121,hciACLHeader)
+(122,VOS_STATUS_SUCCESS)
+(123,)
+(124,vosStatus)
+(125,return VOS_STATUS_E_FAULT;)
+(126,"WLAN BAP Context Monitor: bapContext value = %p in %s:%d. vosDataBuff=%p")
+(127,VOS_TRACE( VOS_MODULE_ID_BAP, VOS_TRACE_LEVEL_ERROR,\n\\n                   "In %s:%d: Invalid logical link handle: %d", __func__, __LINE__, hciACLHeader.logLinkHandle)
+(128,bapContext->btampLogLinkCtx[hciACLHeader.logLinkHandle])
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

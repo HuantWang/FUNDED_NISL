@@ -1,0 +1,2329 @@
+-----label-----
+1
+-----code-----
+static u32 dce_v8_0_latency_watermark(struct dce8_wm_params *wm)
+{
+	/* First calculate the latency in ns */
+	u32 mc_latency = 2000; /* 2000 ns. */
+	u32 available_bandwidth = dce_v8_0_available_bandwidth(wm);
+	u32 worst_chunk_return_time = (512 * 8 * 1000) / available_bandwidth;
+	u32 cursor_line_pair_return_time = (128 * 4 * 1000) / available_bandwidth;
+	u32 dc_latency = 40000000 / wm->disp_clk; /* dc pipe latency */
+	u32 other_heads_data_return_time = ((wm->num_heads + 1) * worst_chunk_return_time) +
+		(wm->num_heads * cursor_line_pair_return_time);
+	u32 latency = mc_latency + other_heads_data_return_time + dc_latency;
+	u32 max_src_lines_per_dst_line, lb_fill_bw, line_fill_time;
+	u32 tmp, dmif_size = 12288;
+	fixed20_12 a, b, c;
+
+	if (wm->num_heads == 0)
+		return 0;
+
+	a.full = dfixed_const(2);
+	b.full = dfixed_const(1);
+	if ((wm->vsc.full > a.full) ||
+	    ((wm->vsc.full > b.full) && (wm->vtaps >= 3)) ||
+	    (wm->vtaps >= 5) ||
+	    ((wm->vsc.full >= a.full) && wm->interlaced))
+		max_src_lines_per_dst_line = 4;
+	else
+		max_src_lines_per_dst_line = 2;
+
+	a.full = dfixed_const(available_bandwidth);
+	b.full = dfixed_const(wm->num_heads);
+	a.full = dfixed_div(a, b);
+	tmp = div_u64((u64) dmif_size * (u64) wm->disp_clk, mc_latency + 512);
+	tmp = min(dfixed_trunc(a), tmp);
+
+	lb_fill_bw = min(tmp, wm->disp_clk * wm->bytes_per_pixel / 1000);
+
+	a.full = dfixed_const(max_src_lines_per_dst_line * wm->src_width * wm->bytes_per_pixel);
+	b.full = dfixed_const(1000);
+	c.full = dfixed_const(lb_fill_bw);
+	b.full = dfixed_div(c, b);
+	a.full = dfixed_div(a, b);
+	line_fill_time = dfixed_trunc(a);
+
+	if (line_fill_time < wm->active_time)
+		return latency;
+	else
+		return latency + (line_fill_time - wm->active_time);
+
+}
+-----children-----
+1,2
+1,3
+1,4
+2,3
+4,5
+4,6
+6,7
+6,8
+7,8
+9,10
+9,11
+12,13
+12,14
+12,15
+12,16
+12,17
+12,18
+12,19
+12,20
+12,21
+12,22
+12,23
+12,24
+12,25
+12,26
+12,27
+12,28
+12,29
+12,30
+12,31
+12,32
+12,33
+12,34
+12,35
+12,36
+12,37
+12,38
+12,39
+13,14
+14,15
+14,16
+15,16
+17,18
+17,19
+19,20
+21,22
+22,23
+22,24
+23,24
+25,26
+25,27
+27,28
+28,29
+28,30
+29,30
+31,32
+33,34
+34,35
+34,36
+35,36
+37,38
+37,39
+39,40
+40,41
+40,42
+41,42
+42,43
+42,44
+43,44
+43,45
+47,48
+49,50
+50,51
+50,52
+51,52
+53,54
+53,55
+55,56
+56,57
+56,58
+57,58
+58,59
+58,60
+59,60
+59,61
+63,64
+65,66
+66,67
+66,68
+67,68
+69,70
+69,71
+71,72
+72,73
+72,74
+74,75
+74,76
+75,76
+78,79
+79,80
+79,81
+80,81
+82,83
+82,84
+84,85
+85,86
+85,87
+86,87
+87,88
+87,89
+88,89
+89,90
+89,91
+90,91
+90,92
+91,92
+95,96
+97,98
+98,99
+98,100
+99,100
+99,101
+100,101
+103,104
+105,106
+106,107
+106,108
+107,108
+109,110
+109,111
+111,112
+112,113
+112,114
+113,114
+113,115
+114,115
+116,117
+118,119
+120,121
+121,122
+121,123
+121,124
+121,125
+122,123
+124,125
+126,127
+128,129
+130,131
+131,132
+131,133
+131,134
+132,133
+134,135
+136,137
+136,138
+138,139
+140,141
+141,142
+141,143
+141,144
+141,145
+142,143
+144,145
+146,147
+148,149
+150,151
+150,152
+151,152
+151,153
+152,153
+152,154
+153,154
+157,158
+159,160
+160,161
+160,162
+161,162
+161,163
+162,163
+165,166
+165,167
+166,167
+169,170
+170,171
+170,172
+171,172
+171,173
+172,173
+175,176
+175,177
+176,177
+179,180
+179,181
+179,182
+180,181
+180,182
+181,182
+181,183
+182,183
+182,184
+183,184
+184,185
+184,186
+185,186
+185,187
+186,187
+186,188
+187,188
+191,192
+191,193
+192,193
+195,196
+196,197
+196,198
+197,198
+198,199
+198,200
+199,200
+199,201
+200,201
+200,202
+201,202
+205,206
+205,207
+206,207
+209,210
+210,211
+210,212
+211,212
+211,213
+212,213
+216,217
+217,218
+217,219
+218,219
+218,220
+219,220
+223,224
+224,225
+224,226
+225,226
+226,227
+226,228
+227,228
+227,229
+228,229
+228,230
+229,230
+233,234
+233,235
+234,235
+237,238
+237,239
+238,239
+241,242
+242,243
+242,244
+243,244
+246,247
+247,248
+247,249
+248,249
+251,252
+252,253
+252,254
+253,254
+253,255
+254,255
+257,258
+257,259
+258,259
+260,261
+262,263
+263,264
+263,265
+264,265
+264,266
+265,266
+268,269
+268,270
+269,270
+271,272
+271,273
+272,273
+275,276
+276,277
+276,278
+277,278
+277,279
+278,279
+281,282
+281,283
+281,284
+282,283
+284,285
+286,287
+288,289
+289,290
+289,291
+290,291
+292,293
+292,294
+292,295
+293,294
+295,296
+295,297
+296,297
+296,298
+297,298
+297,299
+298,299
+301,302
+303,304
+303,305
+304,305
+304,306
+305,306
+308,309
+308,310
+309,310
+312,313
+312,314
+313,314
+316,317
+317,318
+317,319
+318,319
+320,321
+320,322
+320,323
+321,322
+323,324
+323,325
+324,325
+326,327
+328,329
+330,331
+331,332
+331,333
+332,333
+334,335
+334,336
+334,337
+335,336
+337,338
+339,340
+339,341
+340,341
+340,342
+341,342
+341,343
+342,343
+345,346
+345,347
+346,347
+350,351
+351,352
+351,353
+352,353
+352,354
+353,354
+356,357
+356,358
+357,358
+359,360
+359,361
+360,361
+360,362
+361,362
+363,364
+363,365
+364,365
+367,368
+367,369
+368,369
+371,372
+372,373
+372,374
+373,374
+373,375
+374,375
+377,378
+377,379
+378,379
+381,382
+382,383
+382,384
+383,384
+383,385
+384,385
+387,388
+387,389
+388,389
+390,391
+392,393
+393,394
+393,395
+394,395
+394,396
+395,396
+398,399
+398,400
+398,401
+399,400
+401,402
+403,404
+405,406
+406,407
+406,408
+407,408
+407,409
+408,409
+411,412
+411,413
+411,414
+412,413
+414,415
+416,417
+418,419
+419,420
+419,421
+420,421
+422,423
+422,424
+423,424
+425,426
+427,428
+427,429
+427,430
+428,429
+428,430
+429,430
+431,432
+431,433
+432,433
+435,436
+436,437
+438,439
+439,440
+439,441
+440,441
+442,443
+443,444
+443,445
+444,445
+446,447
+446,448
+447,448
+-----nextToken-----
+3,5,8,10,11,16,18,20,24,26,30,32,36,38,44,45,46,48,52,54,60,61,62,64,68,70,73,76,77,81,83,92,93,94,96,101,102,104,108,110,115,117,119,123,125,127,129,133,135,137,139,143,145,147,149,154,155,156,158,163,164,167,168,173,174,177,178,188,189,190,193,194,202,203,204,207,208,213,214,215,220,221,222,230,231,232,235,236,239,240,244,245,249,250,255,256,259,261,266,267,270,273,274,279,280,283,285,287,291,294,299,300,302,306,307,310,311,314,315,319,322,325,327,329,333,336,338,343,344,347,348,349,354,355,358,362,365,366,369,370,375,376,379,380,385,386,389,391,396,397,400,402,404,409,410,413,415,417,421,424,426,430,433,434,437,441,445,448,449
+-----computeFrom-----
+40,41
+40,42
+42,43
+42,44
+43,44
+43,45
+56,57
+56,58
+58,59
+58,60
+59,60
+59,61
+72,73
+72,74
+85,86
+85,87
+87,88
+87,89
+89,90
+89,91
+98,99
+98,100
+112,113
+112,114
+113,114
+113,115
+151,152
+151,153
+160,161
+160,162
+170,171
+170,172
+180,181
+180,182
+181,182
+181,183
+182,183
+182,184
+184,185
+184,186
+196,197
+196,198
+198,199
+198,200
+210,211
+210,212
+217,218
+217,219
+224,225
+224,226
+226,227
+226,228
+242,243
+242,244
+247,248
+247,249
+252,253
+252,254
+263,264
+263,265
+276,277
+276,278
+289,290
+289,291
+295,296
+295,297
+312,313
+312,314
+317,318
+317,319
+331,332
+331,333
+339,340
+339,341
+340,341
+340,342
+351,352
+351,353
+359,360
+359,361
+360,361
+360,362
+372,373
+372,374
+382,383
+382,384
+393,394
+393,395
+406,407
+406,408
+419,420
+419,421
+428,429
+428,430
+439,440
+439,441
+443,444
+443,445
+-----guardedBy-----
+-----guardedByNegation-----
+434,449
+430,445
+433,448
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;NamedTypeSpecifier;Name;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;BinaryExpression;UnaryExpression;BinaryExpression;BinaryExpression;LiteralExpression;LiteralExpression;LiteralExpression;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;BinaryExpression;UnaryExpression;BinaryExpression;BinaryExpression;LiteralExpression;LiteralExpression;LiteralExpression;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;BinaryExpression;LiteralExpression;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;BinaryExpression;UnaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;IdExpression;Name;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;Declarator;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;Declarator;Name;Declarator;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ReturnStatement;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;BinaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;UnaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;BinaryExpression;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;BinaryExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ReturnStatement;IdExpression;Name;ReturnStatement;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;
+-----ast_node-----
+static u32 dce_v8_0_latency_watermark(struct dce8_wm_params *wm){	/* First calculate the latency in ns */	u32 mc_latency = 2000; /* 2000 ns. */	u32 available_bandwidth = dce_v8_0_available_bandwidth(wm);	u32 worst_chunk_return_time = (512 * 8 * 1000) / available_bandwidth;	u32 cursor_line_pair_return_time = (128 * 4 * 1000) / available_bandwidth;	u32 dc_latency = 40000000 / wm->disp_clk; /* dc pipe latency */	u32 other_heads_data_return_time = ((wm->num_heads + 1) * worst_chunk_return_time) +		(wm->num_heads * cursor_line_pair_return_time);	u32 latency = mc_latency + other_heads_data_return_time + dc_latency;	u32 max_src_lines_per_dst_line, lb_fill_bw, line_fill_time;	u32 tmp, dmif_size = 12288;	fixed20_12 a, b, c;	if (wm->num_heads == 0)		return 0;	a.full = dfixed_const(2);	b.full = dfixed_const(1);	if ((wm->vsc.full > a.full) ||	    ((wm->vsc.full > b.full) && (wm->vtaps >= 3)) ||	    (wm->vtaps >= 5) ||	    ((wm->vsc.full >= a.full) && wm->interlaced))		max_src_lines_per_dst_line = 4;	else		max_src_lines_per_dst_line = 2;	a.full = dfixed_const(available_bandwidth);	b.full = dfixed_const(wm->num_heads);	a.full = dfixed_div(a, b);	tmp = div_u64((u64) dmif_size * (u64) wm->disp_clk, mc_latency + 512);	tmp = min(dfixed_trunc(a), tmp);	lb_fill_bw = min(tmp, wm->disp_clk * wm->bytes_per_pixel / 1000);	a.full = dfixed_const(max_src_lines_per_dst_line * wm->src_width * wm->bytes_per_pixel);	b.full = dfixed_const(1000);	c.full = dfixed_const(lb_fill_bw);	b.full = dfixed_div(c, b);	a.full = dfixed_div(a, b);	line_fill_time = dfixed_trunc(a);	if (line_fill_time < wm->active_time)		return latency;	else		return latency + (line_fill_time - wm->active_time);}
+static u32
+u32
+dce_v8_0_latency_watermark(struct dce8_wm_params *wm)
+dce_v8_0_latency_watermark
+struct dce8_wm_params *wm
+struct dce8_wm_params
+dce8_wm_params
+*wm
+*
+wm
+{	/* First calculate the latency in ns */	u32 mc_latency = 2000; /* 2000 ns. */	u32 available_bandwidth = dce_v8_0_available_bandwidth(wm);	u32 worst_chunk_return_time = (512 * 8 * 1000) / available_bandwidth;	u32 cursor_line_pair_return_time = (128 * 4 * 1000) / available_bandwidth;	u32 dc_latency = 40000000 / wm->disp_clk; /* dc pipe latency */	u32 other_heads_data_return_time = ((wm->num_heads + 1) * worst_chunk_return_time) +		(wm->num_heads * cursor_line_pair_return_time);	u32 latency = mc_latency + other_heads_data_return_time + dc_latency;	u32 max_src_lines_per_dst_line, lb_fill_bw, line_fill_time;	u32 tmp, dmif_size = 12288;	fixed20_12 a, b, c;	if (wm->num_heads == 0)		return 0;	a.full = dfixed_const(2);	b.full = dfixed_const(1);	if ((wm->vsc.full > a.full) ||	    ((wm->vsc.full > b.full) && (wm->vtaps >= 3)) ||	    (wm->vtaps >= 5) ||	    ((wm->vsc.full >= a.full) && wm->interlaced))		max_src_lines_per_dst_line = 4;	else		max_src_lines_per_dst_line = 2;	a.full = dfixed_const(available_bandwidth);	b.full = dfixed_const(wm->num_heads);	a.full = dfixed_div(a, b);	tmp = div_u64((u64) dmif_size * (u64) wm->disp_clk, mc_latency + 512);	tmp = min(dfixed_trunc(a), tmp);	lb_fill_bw = min(tmp, wm->disp_clk * wm->bytes_per_pixel / 1000);	a.full = dfixed_const(max_src_lines_per_dst_line * wm->src_width * wm->bytes_per_pixel);	b.full = dfixed_const(1000);	c.full = dfixed_const(lb_fill_bw);	b.full = dfixed_div(c, b);	a.full = dfixed_div(a, b);	line_fill_time = dfixed_trunc(a);	if (line_fill_time < wm->active_time)		return latency;	else		return latency + (line_fill_time - wm->active_time);}
+u32 mc_latency = 2000;
+u32 mc_latency = 2000;
+u32
+u32
+mc_latency = 2000
+mc_latency
+= 2000
+2000
+u32 available_bandwidth = dce_v8_0_available_bandwidth(wm);
+u32 available_bandwidth = dce_v8_0_available_bandwidth(wm);
+u32
+u32
+available_bandwidth = dce_v8_0_available_bandwidth(wm)
+available_bandwidth
+= dce_v8_0_available_bandwidth(wm)
+dce_v8_0_available_bandwidth(wm)
+dce_v8_0_available_bandwidth
+dce_v8_0_available_bandwidth
+wm
+wm
+u32 worst_chunk_return_time = (512 * 8 * 1000) / available_bandwidth;
+u32 worst_chunk_return_time = (512 * 8 * 1000) / available_bandwidth;
+u32
+u32
+worst_chunk_return_time = (512 * 8 * 1000) / available_bandwidth
+worst_chunk_return_time
+= (512 * 8 * 1000) / available_bandwidth
+(512 * 8 * 1000) / available_bandwidth
+(512 * 8 * 1000)
+512 * 8 * 1000
+512 * 8
+512
+8
+1000
+available_bandwidth
+available_bandwidth
+u32 cursor_line_pair_return_time = (128 * 4 * 1000) / available_bandwidth;
+u32 cursor_line_pair_return_time = (128 * 4 * 1000) / available_bandwidth;
+u32
+u32
+cursor_line_pair_return_time = (128 * 4 * 1000) / available_bandwidth
+cursor_line_pair_return_time
+= (128 * 4 * 1000) / available_bandwidth
+(128 * 4 * 1000) / available_bandwidth
+(128 * 4 * 1000)
+128 * 4 * 1000
+128 * 4
+128
+4
+1000
+available_bandwidth
+available_bandwidth
+u32 dc_latency = 40000000 / wm->disp_clk;
+u32 dc_latency = 40000000 / wm->disp_clk;
+u32
+u32
+dc_latency = 40000000 / wm->disp_clk
+dc_latency
+= 40000000 / wm->disp_clk
+40000000 / wm->disp_clk
+40000000
+wm->disp_clk
+wm
+wm
+disp_clk
+u32 other_heads_data_return_time = ((wm->num_heads + 1) * worst_chunk_return_time) +		(wm->num_heads * cursor_line_pair_return_time);
+u32 other_heads_data_return_time = ((wm->num_heads + 1) * worst_chunk_return_time) +		(wm->num_heads * cursor_line_pair_return_time);
+u32
+u32
+other_heads_data_return_time = ((wm->num_heads + 1) * worst_chunk_return_time) +		(wm->num_heads * cursor_line_pair_return_time)
+other_heads_data_return_time
+= ((wm->num_heads + 1) * worst_chunk_return_time) +		(wm->num_heads * cursor_line_pair_return_time)
+((wm->num_heads + 1) * worst_chunk_return_time) +		(wm->num_heads * cursor_line_pair_return_time)
+((wm->num_heads + 1) * worst_chunk_return_time)
+(wm->num_heads + 1) * worst_chunk_return_time
+(wm->num_heads + 1)
+wm->num_heads + 1
+wm->num_heads
+wm
+wm
+num_heads
+1
+worst_chunk_return_time
+worst_chunk_return_time
+(wm->num_heads * cursor_line_pair_return_time)
+wm->num_heads * cursor_line_pair_return_time
+wm->num_heads
+wm
+wm
+num_heads
+cursor_line_pair_return_time
+cursor_line_pair_return_time
+u32 latency = mc_latency + other_heads_data_return_time + dc_latency;
+u32 latency = mc_latency + other_heads_data_return_time + dc_latency;
+u32
+u32
+latency = mc_latency + other_heads_data_return_time + dc_latency
+latency
+= mc_latency + other_heads_data_return_time + dc_latency
+mc_latency + other_heads_data_return_time + dc_latency
+mc_latency + other_heads_data_return_time
+mc_latency
+mc_latency
+other_heads_data_return_time
+other_heads_data_return_time
+dc_latency
+dc_latency
+u32 max_src_lines_per_dst_line, lb_fill_bw, line_fill_time;
+u32 max_src_lines_per_dst_line, lb_fill_bw, line_fill_time;
+u32
+u32
+max_src_lines_per_dst_line
+max_src_lines_per_dst_line
+lb_fill_bw
+lb_fill_bw
+line_fill_time
+line_fill_time
+u32 tmp, dmif_size = 12288;
+u32 tmp, dmif_size = 12288;
+u32
+u32
+tmp
+tmp
+dmif_size = 12288
+dmif_size
+= 12288
+12288
+fixed20_12 a, b, c;
+fixed20_12 a, b, c;
+fixed20_12
+fixed20_12
+a
+a
+b
+b
+c
+c
+if (wm->num_heads == 0)		return 0;
+wm->num_heads == 0
+wm->num_heads
+wm
+wm
+num_heads
+0
+return 0;
+0
+a.full = dfixed_const(2);
+a.full = dfixed_const(2)
+a.full
+a
+a
+full
+dfixed_const(2)
+dfixed_const
+dfixed_const
+2
+b.full = dfixed_const(1);
+b.full = dfixed_const(1)
+b.full
+b
+b
+full
+dfixed_const(1)
+dfixed_const
+dfixed_const
+1
+if ((wm->vsc.full > a.full) ||	    ((wm->vsc.full > b.full) && (wm->vtaps >= 3)) ||	    (wm->vtaps >= 5) ||	    ((wm->vsc.full >= a.full) && wm->interlaced))		max_src_lines_per_dst_line = 4;	else		max_src_lines_per_dst_line = 2;
+(wm->vsc.full > a.full) ||	    ((wm->vsc.full > b.full) && (wm->vtaps >= 3)) ||	    (wm->vtaps >= 5) ||	    ((wm->vsc.full >= a.full) && wm->interlaced)
+(wm->vsc.full > a.full) ||	    ((wm->vsc.full > b.full) && (wm->vtaps >= 3)) ||	    (wm->vtaps >= 5)
+(wm->vsc.full > a.full) ||	    ((wm->vsc.full > b.full) && (wm->vtaps >= 3))
+(wm->vsc.full > a.full)
+wm->vsc.full > a.full
+wm->vsc.full
+wm->vsc
+wm
+wm
+vsc
+full
+a.full
+a
+a
+full
+((wm->vsc.full > b.full) && (wm->vtaps >= 3))
+(wm->vsc.full > b.full) && (wm->vtaps >= 3)
+(wm->vsc.full > b.full)
+wm->vsc.full > b.full
+wm->vsc.full
+wm->vsc
+wm
+wm
+vsc
+full
+b.full
+b
+b
+full
+(wm->vtaps >= 3)
+wm->vtaps >= 3
+wm->vtaps
+wm
+wm
+vtaps
+3
+(wm->vtaps >= 5)
+wm->vtaps >= 5
+wm->vtaps
+wm
+wm
+vtaps
+5
+((wm->vsc.full >= a.full) && wm->interlaced)
+(wm->vsc.full >= a.full) && wm->interlaced
+(wm->vsc.full >= a.full)
+wm->vsc.full >= a.full
+wm->vsc.full
+wm->vsc
+wm
+wm
+vsc
+full
+a.full
+a
+a
+full
+wm->interlaced
+wm
+wm
+interlaced
+max_src_lines_per_dst_line = 4;
+max_src_lines_per_dst_line = 4
+max_src_lines_per_dst_line
+max_src_lines_per_dst_line
+4
+max_src_lines_per_dst_line = 2;
+max_src_lines_per_dst_line = 2
+max_src_lines_per_dst_line
+max_src_lines_per_dst_line
+2
+a.full = dfixed_const(available_bandwidth);
+a.full = dfixed_const(available_bandwidth)
+a.full
+a
+a
+full
+dfixed_const(available_bandwidth)
+dfixed_const
+dfixed_const
+available_bandwidth
+available_bandwidth
+b.full = dfixed_const(wm->num_heads);
+b.full = dfixed_const(wm->num_heads)
+b.full
+b
+b
+full
+dfixed_const(wm->num_heads)
+dfixed_const
+dfixed_const
+wm->num_heads
+wm
+wm
+num_heads
+a.full = dfixed_div(a, b);
+a.full = dfixed_div(a, b)
+a.full
+a
+a
+full
+dfixed_div(a, b)
+dfixed_div
+dfixed_div
+a
+a
+b
+b
+tmp = div_u64((u64) dmif_size * (u64) wm->disp_clk, mc_latency + 512);
+tmp = div_u64((u64) dmif_size * (u64) wm->disp_clk, mc_latency + 512)
+tmp
+tmp
+div_u64((u64) dmif_size * (u64) wm->disp_clk, mc_latency + 512)
+div_u64
+div_u64
+(u64) dmif_size * (u64) wm->disp_clk
+(u64) dmif_size
+u64
+u64
+u64
+
+dmif_size
+dmif_size
+(u64) wm->disp_clk
+u64
+u64
+u64
+
+wm->disp_clk
+wm
+wm
+disp_clk
+mc_latency + 512
+mc_latency
+mc_latency
+512
+tmp = min(dfixed_trunc(a), tmp);
+tmp = min(dfixed_trunc(a), tmp)
+tmp
+tmp
+min(dfixed_trunc(a), tmp)
+min
+min
+dfixed_trunc(a)
+dfixed_trunc
+dfixed_trunc
+a
+a
+tmp
+tmp
+lb_fill_bw = min(tmp, wm->disp_clk * wm->bytes_per_pixel / 1000);
+lb_fill_bw = min(tmp, wm->disp_clk * wm->bytes_per_pixel / 1000)
+lb_fill_bw
+lb_fill_bw
+min(tmp, wm->disp_clk * wm->bytes_per_pixel / 1000)
+min
+min
+tmp
+tmp
+wm->disp_clk * wm->bytes_per_pixel / 1000
+wm->disp_clk * wm->bytes_per_pixel
+wm->disp_clk
+wm
+wm
+disp_clk
+wm->bytes_per_pixel
+wm
+wm
+bytes_per_pixel
+1000
+a.full = dfixed_const(max_src_lines_per_dst_line * wm->src_width * wm->bytes_per_pixel);
+a.full = dfixed_const(max_src_lines_per_dst_line * wm->src_width * wm->bytes_per_pixel)
+a.full
+a
+a
+full
+dfixed_const(max_src_lines_per_dst_line * wm->src_width * wm->bytes_per_pixel)
+dfixed_const
+dfixed_const
+max_src_lines_per_dst_line * wm->src_width * wm->bytes_per_pixel
+max_src_lines_per_dst_line * wm->src_width
+max_src_lines_per_dst_line
+max_src_lines_per_dst_line
+wm->src_width
+wm
+wm
+src_width
+wm->bytes_per_pixel
+wm
+wm
+bytes_per_pixel
+b.full = dfixed_const(1000);
+b.full = dfixed_const(1000)
+b.full
+b
+b
+full
+dfixed_const(1000)
+dfixed_const
+dfixed_const
+1000
+c.full = dfixed_const(lb_fill_bw);
+c.full = dfixed_const(lb_fill_bw)
+c.full
+c
+c
+full
+dfixed_const(lb_fill_bw)
+dfixed_const
+dfixed_const
+lb_fill_bw
+lb_fill_bw
+b.full = dfixed_div(c, b);
+b.full = dfixed_div(c, b)
+b.full
+b
+b
+full
+dfixed_div(c, b)
+dfixed_div
+dfixed_div
+c
+c
+b
+b
+a.full = dfixed_div(a, b);
+a.full = dfixed_div(a, b)
+a.full
+a
+a
+full
+dfixed_div(a, b)
+dfixed_div
+dfixed_div
+a
+a
+b
+b
+line_fill_time = dfixed_trunc(a);
+line_fill_time = dfixed_trunc(a)
+line_fill_time
+line_fill_time
+dfixed_trunc(a)
+dfixed_trunc
+dfixed_trunc
+a
+a
+if (line_fill_time < wm->active_time)		return latency;	else		return latency + (line_fill_time - wm->active_time);
+line_fill_time < wm->active_time
+line_fill_time
+line_fill_time
+wm->active_time
+wm
+wm
+active_time
+return latency;
+latency
+latency
+return latency + (line_fill_time - wm->active_time);
+latency + (line_fill_time - wm->active_time)
+latency
+latency
+(line_fill_time - wm->active_time)
+line_fill_time - wm->active_time
+line_fill_time
+line_fill_time
+wm->active_time
+wm
+wm
+active_time
+-----joern-----
+(164,99,0)
+(229,219,0)
+(24,5,0)
+(93,196,0)
+(43,132,0)
+(206,141,0)
+(251,243,0)
+(196,240,0)
+(227,243,0)
+(54,245,0)
+(252,243,0)
+(139,31,0)
+(143,255,0)
+(193,133,0)
+(249,188,0)
+(155,178,0)
+(142,240,0)
+(157,123,0)
+(254,24,0)
+(62,214,0)
+(84,3,0)
+(127,5,0)
+(86,258,0)
+(47,140,0)
+(169,222,0)
+(49,233,0)
+(151,65,0)
+(96,5,0)
+(172,18,0)
+(99,164,0)
+(244,153,0)
+(180,22,0)
+(213,230,0)
+(194,8,0)
+(162,223,0)
+(177,128,0)
+(28,243,0)
+(107,239,0)
+(255,143,0)
+(72,5,0)
+(177,145,0)
+(220,62,0)
+(85,61,0)
+(6,5,0)
+(36,176,0)
+(241,243,0)
+(141,237,0)
+(163,5,0)
+(258,166,0)
+(38,134,0)
+(186,44,0)
+(199,142,0)
+(0,209,0)
+(65,188,0)
+(68,201,0)
+(193,87,0)
+(209,189,0)
+(89,145,0)
+(258,86,0)
+(101,146,0)
+(179,230,0)
+(48,192,0)
+(60,53,0)
+(171,189,0)
+(58,138,0)
+(185,233,0)
+(215,243,0)
+(39,45,0)
+(30,163,0)
+(143,18,0)
+(123,244,0)
+(87,193,0)
+(186,131,0)
+(76,99,0)
+(245,161,0)
+(156,96,0)
+(116,87,0)
+(253,133,0)
+(59,5,0)
+(154,210,0)
+(102,45,0)
+(202,61,0)
+(150,243,0)
+(3,243,0)
+(260,47,0)
+(8,194,0)
+(132,106,0)
+(140,47,0)
+(182,39,0)
+(143,177,0)
+(98,71,0)
+(42,183,0)
+(34,243,0)
+(202,174,0)
+(36,223,0)
+(40,212,0)
+(140,44,0)
+(191,234,0)
+(36,161,0)
+(247,22,0)
+(62,119,0)
+(164,5,0)
+(202,107,0)
+(202,200,0)
+(53,60,0)
+(91,61,0)
+(22,180,0)
+(37,47,0)
+(137,243,0)
+(226,59,0)
+(213,243,0)
+(198,243,0)
+(223,121,0)
+(168,241,0)
+(47,5,0)
+(232,241,0)
+(214,62,0)
+(158,187,0)
+(145,177,0)
+(172,243,0)
+(52,123,0)
+(126,145,0)
+(18,172,0)
+(237,141,0)
+(73,59,0)
+(52,218,0)
+(238,107,0)
+(160,140,0)
+(44,203,0)
+(81,153,0)
+(2,200,0)
+(202,146,0)
+(203,44,0)
+(123,52,0)
+(146,60,0)
+(166,65,0)
+(52,9,0)
+(108,243,0)
+(223,243,0)
+(209,5,0)
+(152,24,0)
+(258,180,0)
+(224,65,0)
+(147,196,0)
+(29,31,0)
+(90,27,0)
+(45,218,0)
+(242,244,0)
+(202,212,0)
+(159,24,0)
+(12,203,0)
+(44,140,0)
+(259,149,0)
+(133,241,0)
+(187,8,0)
+(255,66,0)
+(234,175,0)
+(153,72,0)
+(92,163,0)
+(131,180,0)
+(94,53,0)
+(250,149,0)
+(104,121,0)
+(21,181,0)
+(125,27,0)
+(1,175,0)
+(114,249,0)
+(83,6,0)
+(239,219,0)
+(23,64,0)
+(32,150,0)
+(59,186,0)
+(135,183,0)
+(255,3,0)
+(207,172,0)
+(75,208,0)
+(44,186,0)
+(80,181,0)
+(62,237,0)
+(88,222,0)
+(61,46,0)
+(250,247,0)
+(97,243,0)
+(130,243,0)
+(239,243,0)
+(55,210,0)
+(22,247,0)
+(71,21,0)
+(257,243,0)
+(158,97,0)
+(218,52,0)
+(187,158,0)
+(197,212,0)
+(122,168,0)
+(168,158,0)
+(246,200,0)
+(31,39,0)
+(240,142,0)
+(244,243,0)
+(10,194,0)
+(155,243,0)
+(208,247,0)
+(247,208,0)
+(187,175,0)
+(121,172,0)
+(129,32,0)
+(66,255,0)
+(77,52,0)
+(169,134,0)
+(231,86,0)
+(100,243,0)
+(15,243,0)
+(105,123,0)
+(214,15,0)
+(74,193,0)
+(183,237,0)
+(120,194,0)
+(41,155,0)
+(113,149,0)
+(21,243,0)
+(202,71,0)
+(136,176,0)
+(60,243,0)
+(118,41,0)
+(167,174,0)
+(142,195,0)
+(240,243,0)
+(222,218,0)
+(13,132,0)
+(133,195,0)
+(217,9,0)
+(261,141,0)
+(45,202,0)
+(180,258,0)
+(216,127,0)
+(195,243,0)
+(176,36,0)
+(16,6,0)
+(145,5,0)
+(161,210,0)
+(170,209,0)
+(237,62,0)
+(11,195,0)
+(225,71,0)
+(99,166,0)
+(166,258,0)
+(69,255,0)
+(141,5,0)
+(106,132,0)
+(9,243,0)
+(110,243,0)
+(51,10,0)
+(194,10,0)
+(168,6,0)
+(128,177,0)
+(177,143,0)
+(24,254,0)
+(195,96,0)
+(178,176,0)
+(256,119,0)
+(176,243,0)
+(4,217,0)
+(8,243,0)
+(166,99,0)
+(202,201,0)
+(217,18,0)
+(6,168,0)
+(202,41,0)
+(7,107,0)
+(121,223,0)
+(39,31,0)
+(133,193,0)
+(208,239,0)
+(86,163,0)
+(150,32,0)
+(203,239,0)
+(228,146,0)
+(82,178,0)
+(149,250,0)
+(188,243,0)
+(123,97,0)
+(96,195,0)
+(175,234,0)
+(210,5,0)
+(50,164,0)
+(20,32,0)
+(169,202,0)
+(70,119,0)
+(184,217,0)
+(247,250,0)
+(153,244,0)
+(245,233,0)
+(186,59,0)
+(173,203,0)
+(15,214,0)
+(221,3,0)
+(127,138,0)
+(178,155,0)
+(251,165,0)
+(95,243,0)
+(165,251,0)
+(189,251,0)
+(46,254,0)
+(18,217,0)
+(241,133,0)
+(180,131,0)
+(103,36,0)
+(194,195,0)
+(132,5,0)
+(106,131,0)
+(174,188,0)
+(27,10,0)
+(144,243,0)
+(149,5,0)
+(33,181,0)
+(131,106,0)
+(26,174,0)
+(25,243,0)
+(148,251,0)
+(218,243,0)
+(201,150,0)
+(19,250,0)
+(163,86,0)
+(111,97,0)
+(31,5,0)
+(57,187,0)
+(211,127,0)
+(235,106,0)
+(62,64,0)
+(67,64,0)
+(188,249,0)
+(189,209,0)
+(63,208,0)
+(190,8,0)
+(78,234,0)
+(56,72,0)
+(46,243,0)
+(10,27,0)
+(112,243,0)
+(161,245,0)
+(233,5,0)
+(35,243,0)
+(115,230,0)
+(210,161,0)
+(254,46,0)
+(219,239,0)
+(212,15,0)
+(39,251,0)
+(124,218,0)
+(17,9,0)
+(175,187,0)
+(131,186,0)
+(205,9,0)
+(138,127,0)
+(79,72,0)
+(109,165,0)
+(204,201,0)
+(183,5,0)
+(236,164,0)
+(202,196,0)
+(97,158,0)
+(200,213,0)
+(161,36,0)
+(45,39,0)
+(18,143,0)
+(234,5,0)
+(181,21,0)
+(121,192,0)
+(72,153,0)
+(158,168,0)
+(230,213,0)
+(14,243,0)
+(233,245,0)
+(237,183,0)
+(117,41,0)
+(248,87,0)
+(65,166,0)
+(192,121,0)
+(118,60,1)
+(7,238,1)
+(54,233,1)
+(229,107,1)
+(230,179,1)
+(123,244,1)
+(40,197,1)
+(145,5,1)
+(19,149,1)
+(202,212,1)
+(258,166,1)
+(67,23,1)
+(38,138,1)
+(202,41,1)
+(246,46,1)
+(125,51,1)
+(123,97,1)
+(18,143,1)
+(139,29,1)
+(169,134,1)
+(221,218,1)
+(17,205,1)
+(65,224,1)
+(84,221,1)
+(168,6,1)
+(119,70,1)
+(244,153,1)
+(245,233,1)
+(184,4,1)
+(187,57,1)
+(122,6,1)
+(50,236,1)
+(37,260,1)
+(51,190,1)
+(93,147,1)
+(157,77,1)
+(46,254,1)
+(39,251,1)
+(75,250,1)
+(133,253,1)
+(27,90,1)
+(69,207,1)
+(132,43,1)
+(189,209,1)
+(80,71,1)
+(1,234,1)
+(233,5,1)
+(143,177,1)
+(60,53,1)
+(83,16,1)
+(103,136,1)
+(135,42,1)
+(202,200,1)
+(255,3,1)
+(64,67,1)
+(195,96,1)
+(210,55,1)
+(47,37,1)
+(36,223,1)
+(199,196,1)
+(48,162,1)
+(42,220,1)
+(206,183,1)
+(11,9,1)
+(238,138,1)
+(149,259,1)
+(255,66,1)
+(197,176,1)
+(140,47,1)
+(114,174,1)
+(225,150,1)
+(181,33,1)
+(102,189,1)
+(158,168,1)
+(99,76,1)
+(59,226,1)
+(202,71,1)
+(203,239,1)
+(171,251,1)
+(143,255,1)
+(31,139,1)
+(4,143,1)
+(174,167,1)
+(96,156,1)
+(160,47,1)
+(163,5,1)
+(131,186,1)
+(87,116,1)
+(148,21,1)
+(169,222,1)
+(127,5,1)
+(202,107,1)
+(239,219,1)
+(124,97,1)
+(145,89,1)
+(146,228,1)
+(61,91,1)
+(170,0,1)
+(253,193,1)
+(49,210,1)
+(47,5,1)
+(131,106,1)
+(99,164,1)
+(141,261,1)
+(234,5,1)
+(77,124,1)
+(45,39,1)
+(9,17,1)
+(30,166,1)
+(222,218,1)
+(53,94,1)
+(194,120,1)
+(2,246,1)
+(178,82,1)
+(72,79,1)
+(22,247,1)
+(248,74,1)
+(101,15,1)
+(192,48,1)
+(188,249,1)
+(81,242,1)
+(213,230,1)
+(242,241,1)
+(180,258,1)
+(164,5,1)
+(86,231,1)
+(147,64,1)
+(29,182,1)
+(59,5,1)
+(250,149,1)
+(109,148,1)
+(219,229,1)
+(68,155,1)
+(126,255,1)
+(217,184,1)
+(182,102,1)
+(24,5,1)
+(196,93,1)
+(138,127,1)
+(152,61,1)
+(237,183,1)
+(10,27,1)
+(62,64,1)
+(58,127,1)
+(223,121,1)
+(235,132,1)
+(179,115,1)
+(201,204,1)
+(183,5,1)
+(136,223,1)
+(261,206,1)
+(115,200,1)
+(186,59,1)
+(57,175,1)
+(217,9,1)
+(26,239,1)
+(105,157,1)
+(96,5,1)
+(78,111,1)
+(240,142,1)
+(62,237,1)
+(231,163,1)
+(209,170,1)
+(209,5,1)
+(173,12,1)
+(233,185,1)
+(245,54,1)
+(121,104,1)
+(113,188,1)
+(168,241,1)
+(133,195,1)
+(191,78,1)
+(142,195,1)
+(85,240,1)
+(97,158,1)
+(259,113,1)
+(166,65,1)
+(202,196,1)
+(216,211,1)
+(92,30,1)
+(234,191,1)
+(251,165,1)
+(158,187,1)
+(194,195,1)
+(161,210,1)
+(138,58,1)
+(91,85,1)
+(175,1,1)
+(218,52,1)
+(190,195,1)
+(247,250,1)
+(169,202,1)
+(52,123,1)
+(166,99,1)
+(111,244,1)
+(186,44,1)
+(129,201,1)
+(43,13,1)
+(155,178,1)
+(187,175,1)
+(90,125,1)
+(55,154,1)
+(12,140,1)
+(175,234,1)
+(107,7,1)
+(185,49,1)
+(180,131,1)
+(161,245,1)
+(8,194,1)
+(212,40,1)
+(187,8,1)
+(176,36,1)
+(31,5,1)
+(202,45,1)
+(79,56,1)
+(15,214,1)
+(133,193,1)
+(21,181,1)
+(106,235,1)
+(41,117,1)
+(203,173,1)
+(22,180,1)
+(121,172,1)
+(151,99,1)
+(127,216,1)
+(202,201,1)
+(255,69,1)
+(202,61,1)
+(172,18,1)
+(140,160,1)
+(220,212,1)
+(33,80,1)
+(71,98,1)
+(72,5,1)
+(249,114,1)
+(247,208,1)
+(44,203,1)
+(36,161,1)
+(149,5,1)
+(202,174,1)
+(56,81,1)
+(167,26,1)
+(70,256,1)
+(6,5,1)
+(45,218,1)
+(189,251,1)
+(24,159,1)
+(241,133,1)
+(162,172,1)
+(207,213,1)
+(202,146,1)
+(208,63,1)
+(88,189,1)
+(154,103,1)
+(6,83,1)
+(236,247,1)
+(204,68,1)
+(39,31,1)
+(164,50,1)
+(142,199,1)
+(117,118,1)
+(250,19,1)
+(159,152,1)
+(147,119,1)
+(74,232,1)
+(134,38,1)
+(106,132,1)
+(163,92,1)
+(165,109,1)
+(153,72,1)
+(89,126,1)
+(121,192,1)
+(73,44,1)
+(120,10,1)
+(258,86,1)
+(104,192,1)
+(200,2,1)
+(62,119,1)
+(3,84,1)
+(32,20,1)
+(116,248,1)
+(183,135,1)
+(193,87,1)
+(178,176,1)
+(18,217,1)
+(237,141,1)
+(63,75,1)
+(214,62,1)
+(98,225,1)
+(156,11,1)
+(150,32,1)
+(168,122,1)
+(232,8,1)
+(52,9,1)
+(260,106,1)
+(141,5,1)
+(228,101,1)
+(20,129,1)
+(210,5,1)
+(226,73,1)
+(16,187,1)
+(65,188,1)
+(82,41,1)
+(222,88,1)
+(194,10,1)
+(177,145,1)
+(132,5,1)
+(224,151,1)
+(94,146,1)
+(256,22,1)
+(86,163,1)
+(44,140,1)
+(177,128,1)
+(211,3,1)
+(254,24,1)
+(0,171,1)
+(76,164,1)
+(13,258,1)
+(23,22,1)
+(208,239,1)
+(123,105,1)
+(188,138,2)
+(8,194,2)
+(146,138,2)
+(36,223,2)
+(171,138,2)
+(228,138,2)
+(203,106,2)
+(19,138,2)
+(2,138,2)
+(39,189,2)
+(140,106,2)
+(106,258,2)
+(59,5,2)
+(202,212,2)
+(158,168,2)
+(207,138,2)
+(136,138,2)
+(72,5,2)
+(235,258,2)
+(187,8,2)
+(193,87,2)
+(230,138,2)
+(163,5,2)
+(71,138,2)
+(194,195,2)
+(49,138,2)
+(166,99,2)
+(143,138,2)
+(178,176,2)
+(4,138,2)
+(219,138,2)
+(47,106,2)
+(10,27,2)
+(217,9,2)
+(233,138,2)
+(41,138,2)
+(214,62,2)
+(210,5,2)
+(245,138,2)
+(254,24,2)
+(36,161,2)
+(86,163,2)
+(132,5,2)
+(115,138,2)
+(169,222,2)
+(94,138,2)
+(163,166,2)
+(52,123,2)
+(247,138,2)
+(170,138,2)
+(192,138,2)
+(222,189,2)
+(22,247,2)
+(155,178,2)
+(61,138,2)
+(213,138,2)
+(93,138,2)
+(147,138,2)
+(180,247,2)
+(174,138,2)
+(69,138,2)
+(62,138,2)
+(223,138,2)
+(202,107,2)
+(113,138,2)
+(186,59,2)
+(210,138,2)
+(73,44,2)
+(86,166,2)
+(33,138,2)
+(142,138,2)
+(186,44,2)
+(229,138,2)
+(131,258,2)
+(187,175,2)
+(102,189,2)
+(237,141,2)
+(135,138,2)
+(15,214,2)
+(260,106,2)
+(60,53,2)
+(176,36,2)
+(208,239,2)
+(161,138,2)
+(202,196,2)
+(209,5,2)
+(159,138,2)
+(131,186,2)
+(202,61,2)
+(148,138,2)
+(151,247,2)
+(127,5,2)
+(220,138,2)
+(258,166,2)
+(183,5,2)
+(12,106,2)
+(129,138,2)
+(145,5,2)
+(255,138,2)
+(212,138,2)
+(117,138,2)
+(59,44,2)
+(38,138,2)
+(118,138,2)
+(96,5,2)
+(202,200,2)
+(244,153,2)
+(158,187,2)
+(200,138,2)
+(45,218,2)
+(255,3,2)
+(166,65,2)
+(53,138,2)
+(259,138,2)
+(92,166,2)
+(258,247,2)
+(165,138,2)
+(142,195,2)
+(40,138,2)
+(149,5,2)
+(224,247,2)
+(143,177,2)
+(109,138,2)
+(82,138,2)
+(167,138,2)
+(54,138,2)
+(141,138,2)
+(106,132,2)
+(258,86,2)
+(65,247,2)
+(164,5,2)
+(29,189,2)
+(121,172,2)
+(261,138,2)
+(223,121,2)
+(196,138,2)
+(160,106,2)
+(37,106,2)
+(64,22,2)
+(80,138,2)
+(237,138,2)
+(85,138,2)
+(202,174,2)
+(162,138,2)
+(173,106,2)
+(18,143,2)
+(126,138,2)
+(250,138,2)
+(169,202,2)
+(202,41,2)
+(150,32,2)
+(119,22,2)
+(161,210,2)
+(60,138,2)
+(231,166,2)
+(255,66,2)
+(68,138,2)
+(75,138,2)
+(39,31,2)
+(241,133,2)
+(62,64,2)
+(177,128,2)
+(172,138,2)
+(121,192,2)
+(104,138,2)
+(6,5,2)
+(177,138,2)
+(52,9,2)
+(24,5,2)
+(89,138,2)
+(141,5,2)
+(256,22,2)
+(114,138,2)
+(98,138,2)
+(184,138,2)
+(247,250,2)
+(31,189,2)
+(182,189,2)
+(23,22,2)
+(152,138,2)
+(175,234,2)
+(76,247,2)
+(44,140,2)
+(103,138,2)
+(204,138,2)
+(133,195,2)
+(88,189,2)
+(186,106,2)
+(97,158,2)
+(99,164,2)
+(240,138,2)
+(254,138,2)
+(18,217,2)
+(169,134,2)
+(134,138,2)
+(218,52,2)
+(44,203,2)
+(197,138,2)
+(21,138,2)
+(201,138,2)
+(107,138,2)
+(168,241,2)
+(199,138,2)
+(42,138,2)
+(179,138,2)
+(209,138,2)
+(234,5,2)
+(67,22,2)
+(65,188,2)
+(214,138,2)
+(55,138,2)
+(202,201,2)
+(178,138,2)
+(99,247,2)
+(239,138,2)
+(47,5,2)
+(177,145,2)
+(166,247,2)
+(138,127,2)
+(188,249,2)
+(70,22,2)
+(36,138,2)
+(121,138,2)
+(46,138,2)
+(249,138,2)
+(246,138,2)
+(206,138,2)
+(143,255,2)
+(50,247,2)
+(176,138,2)
+(202,71,2)
+(195,96,2)
+(189,138,2)
+(222,218,2)
+(226,44,2)
+(62,237,2)
+(24,138,2)
+(213,230,2)
+(13,258,2)
+(123,244,2)
+(132,258,2)
+(189,251,2)
+(7,138,2)
+(150,138,2)
+(48,138,2)
+(239,219,2)
+(251,138,2)
+(180,131,2)
+(194,10,2)
+(208,138,2)
+(21,181,2)
+(161,245,2)
+(237,183,2)
+(250,149,2)
+(233,5,2)
+(154,138,2)
+(131,106,2)
+(46,254,2)
+(247,208,2)
+(101,138,2)
+(26,138,2)
+(189,209,2)
+(43,258,2)
+(180,258,2)
+(225,138,2)
+(183,138,2)
+(168,6,2)
+(62,119,2)
+(91,138,2)
+(22,180,2)
+(240,142,2)
+(155,138,2)
+(123,97,2)
+(139,189,2)
+(251,165,2)
+(181,138,2)
+(0,138,2)
+(45,39,2)
+(217,138,2)
+(39,251,2)
+(245,233,2)
+(185,138,2)
+(202,189,2)
+(20,138,2)
+(31,5,2)
+(15,138,2)
+(238,138,2)
+(32,138,2)
+(203,239,2)
+(145,138,2)
+(22,138,2)
+(63,138,2)
+(172,18,2)
+(18,138,2)
+(45,189,2)
+(133,193,2)
+(164,247,2)
+(236,247,2)
+(149,138,2)
+(44,106,2)
+(202,146,2)
+(140,47,2)
+(30,166,2)
+(153,72,2)
+-----------------------------------
+(0,wm)
+(1,1)
+(2,full)
+(3,dmif_size = 12288)
+(4,mc_latency)
+(5,struct dce8_wm_params *wm)
+(6,wm->num_heads)
+(7,full)
+(8,worst_chunk_return_time = (512 * 8 * 1000)
+(9,mc_latency = 2000)
+(10,512 * 8 * 1000)
+(11,available_bandwidth)
+(12,a)
+(13,wm)
+(14,latency)
+(15,a.full = dfixed_const(max_src_lines_per_dst_line * wm->src_width * wm->bytes_per_pixel)
+(16,wm)
+(17,2000)
+(18,div_u64((u64)
+(19,full)
+(20,b)
+(21,a.full = dfixed_div(a, b)
+(22,(wm->vsc.full > a.full)
+(23,max_src_lines_per_dst_line)
+(24,wm->num_heads)
+(25,if ((wm->vsc.full > a.full)
+(26,b)
+(27,8 * 1000)
+(28,worst_chunk_return_time)
+(29,wm)
+(30,wm)
+(31,wm->active_time)
+(32,dfixed_div(c, b)
+(33,b)
+(34,dc_latency)
+(35,dmif_size)
+(36,min(tmp, wm->disp_clk * wm->bytes_per_pixel / 1000)
+(37,vsc)
+(38,0)
+(39,line_fill_time - wm->active_time)
+(40,full)
+(41,c.full)
+(42,wm)
+(43,vtaps)
+(44,wm->vsc.full >= a.full)
+(45,latency + (line_fill_time - wm->active_time)
+(46,b.full = dfixed_const(wm->num_heads)
+(47,wm->vsc)
+(48,a)
+(49,wm)
+(50,vsc)
+(51,512)
+(52,mc_latency + other_heads_data_return_time + dc_latency)
+(53,dfixed_const(1000)
+(54,1000)
+(55,disp_clk)
+(56,wm)
+(57,worst_chunk_return_time)
+(58,0)
+(59,wm->interlaced)
+(60,b.full = dfixed_const(1000)
+(61,b.full)
+(62,max_src_lines_per_dst_line * wm->src_width * wm->bytes_per_pixel)
+(63,full)
+(64,max_src_lines_per_dst_line = 2)
+(65,b.full)
+(66,u64)
+(67,2)
+(68,b)
+(69,dmif_size)
+(70,4)
+(71,a.full)
+(72,wm->disp_clk)
+(73,wm)
+(74,128)
+(75,a)
+(76,full)
+(77,mc_latency)
+(78,wm)
+(79,disp_clk)
+(80,a)
+(81,40000000)
+(82,lb_fill_bw)
+(83,num_heads)
+(84,12288)
+(85,b)
+(86,wm->vtaps >= 3)
+(87,4 * 1000)
+(88,latency)
+(89,disp_clk)
+(90,1000)
+(91,full)
+(92,vtaps)
+(93,full)
+(94,1000)
+(95,other_heads_data_return_time)
+(96,dce_v8_0_available_bandwidth(wm)
+(97,other_heads_data_return_time = ((wm->num_heads + 1)
+(98,full)
+(99,wm->vsc.full)
+(100,lb_fill_bw)
+(101,b)
+(102,latency)
+(103,tmp)
+(104,tmp)
+(105,dc_latency)
+(106,wm->vtaps >= 5)
+(107,a.full)
+(108,max_src_lines_per_dst_line)
+(109,a)
+(110,cursor_line_pair_return_time)
+(111,other_heads_data_return_time)
+(112,line_fill_time)
+(113,wm)
+(114,1)
+(115,a)
+(116,1000)
+(117,full)
+(118,c)
+(119,max_src_lines_per_dst_line = 4)
+(120,available_bandwidth)
+(121,min(dfixed_trunc(a)
+(122,cursor_line_pair_return_time)
+(123,other_heads_data_return_time + dc_latency)
+(124,latency)
+(125,8)
+(126,wm)
+(127,wm->num_heads)
+(128,u64)
+(129,c)
+(130,c)
+(131,(wm->vtaps >= 5)
+(132,wm->vtaps)
+(133,(128 * 4 * 1000)
+(134,return 0;)
+(135,src_width)
+(136,lb_fill_bw)
+(137,mc_latency)
+(138,wm->num_heads == 0)
+(139,active_time)
+(140,wm->vsc.full)
+(141,wm->bytes_per_pixel)
+(142,dfixed_const(available_bandwidth)
+(143,(u64)
+(144,available_bandwidth)
+(145,wm->disp_clk)
+(146,b.full)
+(147,a)
+(148,line_fill_time)
+(149,wm->vsc)
+(150,b.full = dfixed_div(c, b)
+(151,b)
+(152,wm)
+(153,40000000 / wm->disp_clk)
+(154,wm)
+(155,c.full = dfixed_const(lb_fill_bw)
+(156,wm)
+(157,other_heads_data_return_time)
+(158,((wm->num_heads + 1)
+(159,num_heads)
+(160,full)
+(161,wm->disp_clk * wm->bytes_per_pixel / 1000)
+(162,tmp)
+(163,wm->vtaps)
+(164,wm->vsc)
+(165,dfixed_trunc(a)
+(166,wm->vsc.full > b.full)
+(167,full)
+(168,wm->num_heads * cursor_line_pair_return_time)
+(169,RET)
+(170,active_time)
+(171,line_fill_time)
+(172,tmp = div_u64((u64)
+(173,full)
+(174,b.full)
+(175,wm->num_heads + 1)
+(176,lb_fill_bw = min(tmp, wm->disp_clk * wm->bytes_per_pixel / 1000)
+(177,(u64)
+(178,dfixed_const(lb_fill_bw)
+(179,b)
+(180,((wm->vsc.full > b.full)
+(181,dfixed_div(a, b)
+(182,line_fill_time)
+(183,wm->src_width)
+(184,512)
+(185,bytes_per_pixel)
+(186,(wm->vsc.full >= a.full)
+(187,(wm->num_heads + 1)
+(188,b.full = dfixed_const(1)
+(189,line_fill_time < wm->active_time)
+(190,worst_chunk_return_time)
+(191,num_heads)
+(192,dfixed_trunc(a)
+(193,128 * 4 * 1000)
+(194,(512 * 8 * 1000)
+(195,available_bandwidth = dce_v8_0_available_bandwidth(wm)
+(196,a.full)
+(197,a)
+(198,tmp)
+(199,available_bandwidth)
+(200,a.full)
+(201,b.full)
+(202,return latency + (line_fill_time - wm->active_time)
+(203,a.full)
+(204,full)
+(205,mc_latency)
+(206,wm)
+(207,tmp)
+(208,a.full)
+(209,wm->active_time)
+(210,wm->disp_clk)
+(211,wm)
+(212,a.full)
+(213,a.full = dfixed_div(a, b)
+(214,dfixed_const(max_src_lines_per_dst_line * wm->src_width * wm->bytes_per_pixel)
+(215,a)
+(216,num_heads)
+(217,mc_latency + 512)
+(218,latency = mc_latency + other_heads_data_return_time + dc_latency)
+(219,dfixed_const(2)
+(220,max_src_lines_per_dst_line)
+(221,dmif_size)
+(222,return latency;)
+(223,tmp = min(dfixed_trunc(a)
+(224,full)
+(225,a)
+(226,interlaced)
+(227,if (line_fill_time < wm->active_time)
+(228,full)
+(229,2)
+(230,dfixed_div(a, b)
+(231,3)
+(232,cursor_line_pair_return_time)
+(233,wm->bytes_per_pixel)
+(234,wm->num_heads)
+(235,5)
+(236,wm)
+(237,wm->src_width * wm->bytes_per_pixel)
+(238,a)
+(239,a.full = dfixed_const(2)
+(240,a.full = dfixed_const(available_bandwidth)
+(241,cursor_line_pair_return_time = (128 * 4 * 1000)
+(242,dc_latency)
+(243,)
+(244,dc_latency = 40000000 / wm->disp_clk)
+(245,wm->bytes_per_pixel / 1000)
+(246,a)
+(247,wm->vsc.full > a.full)
+(248,4)
+(249,dfixed_const(1)
+(250,wm->vsc.full)
+(251,line_fill_time = dfixed_trunc(a)
+(252,b)
+(253,available_bandwidth)
+(254,dfixed_const(wm->num_heads)
+(255,(u64)
+(256,max_src_lines_per_dst_line)
+(257,if (wm->num_heads == 0)
+(258,(wm->vsc.full > b.full)
+(259,vsc)
+(260,wm)
+(261,bytes_per_pixel)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

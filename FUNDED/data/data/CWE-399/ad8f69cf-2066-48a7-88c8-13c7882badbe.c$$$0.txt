@@ -1,0 +1,1070 @@
+-----label-----
+0
+-----code-----
+wpt_packet * wpalPacketAlloc(wpt_packet_type pktType, wpt_uint32 nPktSize,
+                             wpalPacketLowPacketCB rxLowCB, void *usrData)
+{
+   VOS_STATUS   vosStatus = VOS_STATUS_E_FAILURE;
+   wpt_packet*  pPkt      = NULL;
+   vos_pkt_t*   pVosPkt   = NULL;
+   void*        pData     = NULL;
+   v_U16_t      allocLen;
+   /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+   switch (pktType)
+   {
+   case eWLAN_PAL_PKT_TYPE_TX_802_11_MGMT:
+      vosStatus = vos_pkt_get_packet(&pVosPkt, VOS_PKT_TYPE_TX_802_11_MGMT,
+                                       nPktSize, 1, VOS_FALSE,
+                                       NULL, NULL /*no callback*/);
+      break;
+
+   case eWLAN_PAL_PKT_TYPE_RX_RAW:
+      vosStatus = vos_pkt_get_packet(&pVosPkt, VOS_PKT_TYPE_RX_RAW,
+                                       nPktSize, 1, VOS_FALSE,
+                                       wpalPacketRXLowResourceCB, usrData);
+
+#ifndef FEATURE_R33D
+      /* Reserve the entire raw rx buffer for DXE */
+      if( vosStatus == VOS_STATUS_SUCCESS )
+      {
+        vosStatus =  vos_pkt_reserve_head_fast( pVosPkt, &pData, nPktSize );
+      }
+      else
+      {
+        wpalPacketAvailableCB = rxLowCB;
+      }
+#endif /* FEATURE_R33D */
+      if((NULL != pVosPkt) && (VOS_STATUS_E_RESOURCES != vosStatus))
+      {
+         vos_pkt_get_packet_length(pVosPkt, &allocLen);
+         if (nPktSize != allocLen)
+         {
+            WPAL_TRACE(eWLAN_MODULE_PAL, eWLAN_PAL_TRACE_LEVEL_ERROR,
+                       "RX packet alloc has problem, discard this frame, Len %d", allocLen);
+            vos_pkt_return_packet(pVosPkt);
+            return NULL;
+         }
+      }
+      break;
+
+   default:
+      WPAL_TRACE(eWLAN_MODULE_PAL, eWLAN_PAL_TRACE_LEVEL_ERROR,
+                  " try to allocate unsupported packet type (%d)", pktType);
+      break;
+   }
+
+   if(VOS_IS_STATUS_SUCCESS(vosStatus))
+   {
+      pPkt = (wpt_packet *)pVosPkt;
+   }
+
+
+   return pPkt;
+}
+-----children-----
+1,2
+1,3
+1,4
+2,3
+4,5
+4,6
+4,7
+4,8
+4,9
+4,10
+7,8
+7,9
+8,9
+10,11
+12,13
+12,14
+13,14
+15,16
+17,18
+17,19
+18,19
+20,21
+22,23
+22,24
+24,25
+24,26
+27,28
+27,29
+27,30
+27,31
+27,32
+27,33
+27,34
+27,35
+28,29
+29,30
+29,31
+30,31
+32,33
+32,34
+34,35
+35,36
+37,38
+38,39
+38,40
+39,40
+41,42
+41,43
+41,44
+44,45
+45,46
+47,48
+48,49
+48,50
+49,50
+51,52
+51,53
+51,54
+54,55
+55,56
+57,58
+58,59
+58,60
+60,61
+60,62
+60,63
+63,64
+64,65
+66,67
+67,68
+67,69
+68,69
+70,71
+72,73
+72,74
+73,74
+75,76
+75,77
+75,78
+75,79
+75,80
+75,81
+75,82
+75,83
+75,84
+75,85
+75,86
+76,77
+77,78
+79,80
+80,81
+80,82
+81,82
+83,84
+83,85
+83,86
+83,87
+83,88
+83,89
+83,90
+83,91
+84,85
+86,87
+87,88
+89,90
+91,92
+94,95
+96,97
+98,99
+101,102
+102,103
+104,105
+105,106
+105,107
+106,107
+108,109
+108,110
+108,111
+108,112
+108,113
+108,114
+108,115
+108,116
+109,110
+111,112
+112,113
+114,115
+116,117
+119,120
+121,122
+123,124
+125,126
+125,127
+125,128
+126,127
+126,128
+127,128
+129,130
+131,132
+132,133
+133,134
+133,135
+134,135
+136,137
+136,138
+136,139
+136,140
+137,138
+139,140
+141,142
+142,143
+144,145
+146,147
+147,148
+148,149
+148,150
+149,150
+151,152
+153,154
+153,155
+154,155
+154,156
+155,156
+156,157
+156,158
+157,158
+159,160
+161,162
+162,163
+162,164
+163,164
+165,166
+167,168
+167,169
+168,169
+169,170
+169,171
+169,172
+170,171
+172,173
+174,175
+175,176
+177,178
+177,179
+178,179
+178,180
+179,180
+181,182
+183,184
+183,185
+183,186
+184,185
+185,186
+185,187
+185,188
+185,189
+185,190
+186,187
+188,189
+190,191
+193,194
+195,196
+196,197
+196,198
+197,198
+199,200
+201,202
+202,203
+206,207
+207,208
+207,209
+207,210
+207,211
+207,212
+208,209
+210,211
+212,213
+215,216
+218,219
+218,220
+219,220
+219,221
+220,221
+222,223
+224,225
+225,226
+226,227
+226,228
+227,228
+229,230
+229,231
+230,231
+230,232
+231,232
+233,234
+235,236
+237,238
+238,239
+-----nextToken-----
+3,5,6,9,11,14,16,19,21,23,25,26,31,33,36,40,42,43,46,50,52,53,56,59,61,62,65,69,71,74,78,82,85,88,90,92,93,95,97,99,100,103,107,110,113,115,117,118,120,122,124,128,130,135,138,140,143,145,150,152,158,160,164,166,171,173,176,180,182,187,189,191,192,194,198,200,203,204,205,209,211,213,214,216,217,221,223,228,232,234,236,239
+-----computeFrom-----
+80,81
+80,82
+105,106
+105,107
+126,127
+126,128
+133,134
+133,135
+148,149
+148,150
+154,155
+154,156
+156,157
+156,158
+162,163
+162,164
+178,179
+178,180
+226,227
+226,228
+-----guardedBy-----
+128,135
+158,203
+160,200
+182,194
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;NamedTypeSpecifier;Name;FunctionDeclarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;SwitchStatement;IdExpression;Name;CompoundStatement;CaseStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;BreakStatement;DefaultStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;BreakStatement;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;Pointer;IdExpression;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+wpt_packet * wpalPacketAlloc(wpt_packet_type pktType, wpt_uint32 nPktSize,                             wpalPacketLowPacketCB rxLowCB, void *usrData){   VOS_STATUS   vosStatus = VOS_STATUS_E_FAILURE;   wpt_packet*  pPkt      = NULL;   vos_pkt_t*   pVosPkt   = NULL;   void*        pData     = NULL;   v_U16_t      allocLen;   /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */   switch (pktType)   {   case eWLAN_PAL_PKT_TYPE_TX_802_11_MGMT:      vosStatus = vos_pkt_get_packet(&pVosPkt, VOS_PKT_TYPE_TX_802_11_MGMT,                                       nPktSize, 1, VOS_FALSE,                                       NULL, NULL /*no callback*/);      break;   case eWLAN_PAL_PKT_TYPE_RX_RAW:      vosStatus = vos_pkt_get_packet(&pVosPkt, VOS_PKT_TYPE_RX_RAW,                                       nPktSize, 1, VOS_FALSE,                                       wpalPacketRXLowResourceCB, usrData);#ifndef FEATURE_R33D      /* Reserve the entire raw rx buffer for DXE */      if( vosStatus == VOS_STATUS_SUCCESS )      {        vosStatus =  vos_pkt_reserve_head_fast( pVosPkt, &pData, nPktSize );      }      else      {        wpalPacketAvailableCB = rxLowCB;      }#endif /* FEATURE_R33D */      if((NULL != pVosPkt) && (VOS_STATUS_E_RESOURCES != vosStatus))      {         vos_pkt_get_packet_length(pVosPkt, &allocLen);         if (nPktSize != allocLen)         {            WPAL_TRACE(eWLAN_MODULE_PAL, eWLAN_PAL_TRACE_LEVEL_ERROR,                       "RX packet alloc has problem, discard this frame, Len %d", allocLen);            vos_pkt_return_packet(pVosPkt);            return NULL;         }      }      break;   default:      WPAL_TRACE(eWLAN_MODULE_PAL, eWLAN_PAL_TRACE_LEVEL_ERROR,                  " try to allocate unsupported packet type (%d)", pktType);      break;   }   if(VOS_IS_STATUS_SUCCESS(vosStatus))   {      pPkt = (wpt_packet *)pVosPkt;   }   return pPkt;}
+wpt_packet
+wpt_packet
+* wpalPacketAlloc(wpt_packet_type pktType, wpt_uint32 nPktSize,                             wpalPacketLowPacketCB rxLowCB, void *usrData)
+*
+wpalPacketAlloc
+wpt_packet_type pktType
+wpt_packet_type
+wpt_packet_type
+pktType
+pktType
+wpt_uint32 nPktSize
+wpt_uint32
+wpt_uint32
+nPktSize
+nPktSize
+wpalPacketLowPacketCB rxLowCB
+wpalPacketLowPacketCB
+wpalPacketLowPacketCB
+rxLowCB
+rxLowCB
+void *usrData
+void
+*usrData
+*
+usrData
+{   VOS_STATUS   vosStatus = VOS_STATUS_E_FAILURE;   wpt_packet*  pPkt      = NULL;   vos_pkt_t*   pVosPkt   = NULL;   void*        pData     = NULL;   v_U16_t      allocLen;   /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */   switch (pktType)   {   case eWLAN_PAL_PKT_TYPE_TX_802_11_MGMT:      vosStatus = vos_pkt_get_packet(&pVosPkt, VOS_PKT_TYPE_TX_802_11_MGMT,                                       nPktSize, 1, VOS_FALSE,                                       NULL, NULL /*no callback*/);      break;   case eWLAN_PAL_PKT_TYPE_RX_RAW:      vosStatus = vos_pkt_get_packet(&pVosPkt, VOS_PKT_TYPE_RX_RAW,                                       nPktSize, 1, VOS_FALSE,                                       wpalPacketRXLowResourceCB, usrData);#ifndef FEATURE_R33D      /* Reserve the entire raw rx buffer for DXE */      if( vosStatus == VOS_STATUS_SUCCESS )      {        vosStatus =  vos_pkt_reserve_head_fast( pVosPkt, &pData, nPktSize );      }      else      {        wpalPacketAvailableCB = rxLowCB;      }#endif /* FEATURE_R33D */      if((NULL != pVosPkt) && (VOS_STATUS_E_RESOURCES != vosStatus))      {         vos_pkt_get_packet_length(pVosPkt, &allocLen);         if (nPktSize != allocLen)         {            WPAL_TRACE(eWLAN_MODULE_PAL, eWLAN_PAL_TRACE_LEVEL_ERROR,                       "RX packet alloc has problem, discard this frame, Len %d", allocLen);            vos_pkt_return_packet(pVosPkt);            return NULL;         }      }      break;   default:      WPAL_TRACE(eWLAN_MODULE_PAL, eWLAN_PAL_TRACE_LEVEL_ERROR,                  " try to allocate unsupported packet type (%d)", pktType);      break;   }   if(VOS_IS_STATUS_SUCCESS(vosStatus))   {      pPkt = (wpt_packet *)pVosPkt;   }   return pPkt;}
+VOS_STATUS   vosStatus = VOS_STATUS_E_FAILURE;
+VOS_STATUS   vosStatus = VOS_STATUS_E_FAILURE;
+VOS_STATUS
+VOS_STATUS
+vosStatus = VOS_STATUS_E_FAILURE
+vosStatus
+= VOS_STATUS_E_FAILURE
+VOS_STATUS_E_FAILURE
+VOS_STATUS_E_FAILURE
+wpt_packet*  pPkt      = NULL;
+wpt_packet*  pPkt      = NULL;
+wpt_packet
+wpt_packet
+*  pPkt      = NULL
+*
+pPkt
+= NULL
+NULL
+NULL
+vos_pkt_t*   pVosPkt   = NULL;
+vos_pkt_t*   pVosPkt   = NULL;
+vos_pkt_t
+vos_pkt_t
+*   pVosPkt   = NULL
+*
+pVosPkt
+= NULL
+NULL
+NULL
+void*        pData     = NULL;
+void*        pData     = NULL;
+void
+*        pData     = NULL
+*
+pData
+= NULL
+NULL
+NULL
+v_U16_t      allocLen;
+v_U16_t      allocLen;
+v_U16_t
+v_U16_t
+allocLen
+allocLen
+switch (pktType)   {   case eWLAN_PAL_PKT_TYPE_TX_802_11_MGMT:      vosStatus = vos_pkt_get_packet(&pVosPkt, VOS_PKT_TYPE_TX_802_11_MGMT,                                       nPktSize, 1, VOS_FALSE,                                       NULL, NULL /*no callback*/);      break;   case eWLAN_PAL_PKT_TYPE_RX_RAW:      vosStatus = vos_pkt_get_packet(&pVosPkt, VOS_PKT_TYPE_RX_RAW,                                       nPktSize, 1, VOS_FALSE,                                       wpalPacketRXLowResourceCB, usrData);#ifndef FEATURE_R33D      /* Reserve the entire raw rx buffer for DXE */      if( vosStatus == VOS_STATUS_SUCCESS )      {        vosStatus =  vos_pkt_reserve_head_fast( pVosPkt, &pData, nPktSize );      }      else      {        wpalPacketAvailableCB = rxLowCB;      }#endif /* FEATURE_R33D */      if((NULL != pVosPkt) && (VOS_STATUS_E_RESOURCES != vosStatus))      {         vos_pkt_get_packet_length(pVosPkt, &allocLen);         if (nPktSize != allocLen)         {            WPAL_TRACE(eWLAN_MODULE_PAL, eWLAN_PAL_TRACE_LEVEL_ERROR,                       "RX packet alloc has problem, discard this frame, Len %d", allocLen);            vos_pkt_return_packet(pVosPkt);            return NULL;         }      }      break;   default:      WPAL_TRACE(eWLAN_MODULE_PAL, eWLAN_PAL_TRACE_LEVEL_ERROR,                  " try to allocate unsupported packet type (%d)", pktType);      break;   }
+pktType
+pktType
+{   case eWLAN_PAL_PKT_TYPE_TX_802_11_MGMT:      vosStatus = vos_pkt_get_packet(&pVosPkt, VOS_PKT_TYPE_TX_802_11_MGMT,                                       nPktSize, 1, VOS_FALSE,                                       NULL, NULL /*no callback*/);      break;   case eWLAN_PAL_PKT_TYPE_RX_RAW:      vosStatus = vos_pkt_get_packet(&pVosPkt, VOS_PKT_TYPE_RX_RAW,                                       nPktSize, 1, VOS_FALSE,                                       wpalPacketRXLowResourceCB, usrData);#ifndef FEATURE_R33D      /* Reserve the entire raw rx buffer for DXE */      if( vosStatus == VOS_STATUS_SUCCESS )      {        vosStatus =  vos_pkt_reserve_head_fast( pVosPkt, &pData, nPktSize );      }      else      {        wpalPacketAvailableCB = rxLowCB;      }#endif /* FEATURE_R33D */      if((NULL != pVosPkt) && (VOS_STATUS_E_RESOURCES != vosStatus))      {         vos_pkt_get_packet_length(pVosPkt, &allocLen);         if (nPktSize != allocLen)         {            WPAL_TRACE(eWLAN_MODULE_PAL, eWLAN_PAL_TRACE_LEVEL_ERROR,                       "RX packet alloc has problem, discard this frame, Len %d", allocLen);            vos_pkt_return_packet(pVosPkt);            return NULL;         }      }      break;   default:      WPAL_TRACE(eWLAN_MODULE_PAL, eWLAN_PAL_TRACE_LEVEL_ERROR,                  " try to allocate unsupported packet type (%d)", pktType);      break;   }
+case eWLAN_PAL_PKT_TYPE_TX_802_11_MGMT:
+eWLAN_PAL_PKT_TYPE_TX_802_11_MGMT
+eWLAN_PAL_PKT_TYPE_TX_802_11_MGMT
+vosStatus = vos_pkt_get_packet(&pVosPkt, VOS_PKT_TYPE_TX_802_11_MGMT,                                       nPktSize, 1, VOS_FALSE,                                       NULL, NULL /*no callback*/);
+vosStatus = vos_pkt_get_packet(&pVosPkt, VOS_PKT_TYPE_TX_802_11_MGMT,                                       nPktSize, 1, VOS_FALSE,                                       NULL, NULL /*no callback*/)
+vosStatus
+vosStatus
+vos_pkt_get_packet(&pVosPkt, VOS_PKT_TYPE_TX_802_11_MGMT,                                       nPktSize, 1, VOS_FALSE,                                       NULL, NULL /*no callback*/)
+vos_pkt_get_packet
+vos_pkt_get_packet
+&pVosPkt
+pVosPkt
+pVosPkt
+VOS_PKT_TYPE_TX_802_11_MGMT
+VOS_PKT_TYPE_TX_802_11_MGMT
+nPktSize
+nPktSize
+1
+VOS_FALSE
+VOS_FALSE
+NULL
+NULL
+NULL
+NULL
+break;
+case eWLAN_PAL_PKT_TYPE_RX_RAW:
+eWLAN_PAL_PKT_TYPE_RX_RAW
+eWLAN_PAL_PKT_TYPE_RX_RAW
+vosStatus = vos_pkt_get_packet(&pVosPkt, VOS_PKT_TYPE_RX_RAW,                                       nPktSize, 1, VOS_FALSE,                                       wpalPacketRXLowResourceCB, usrData);
+vosStatus = vos_pkt_get_packet(&pVosPkt, VOS_PKT_TYPE_RX_RAW,                                       nPktSize, 1, VOS_FALSE,                                       wpalPacketRXLowResourceCB, usrData)
+vosStatus
+vosStatus
+vos_pkt_get_packet(&pVosPkt, VOS_PKT_TYPE_RX_RAW,                                       nPktSize, 1, VOS_FALSE,                                       wpalPacketRXLowResourceCB, usrData)
+vos_pkt_get_packet
+vos_pkt_get_packet
+&pVosPkt
+pVosPkt
+pVosPkt
+VOS_PKT_TYPE_RX_RAW
+VOS_PKT_TYPE_RX_RAW
+nPktSize
+nPktSize
+1
+VOS_FALSE
+VOS_FALSE
+wpalPacketRXLowResourceCB
+wpalPacketRXLowResourceCB
+usrData
+usrData
+if( vosStatus == VOS_STATUS_SUCCESS )      {        vosStatus =  vos_pkt_reserve_head_fast( pVosPkt, &pData, nPktSize );      }      else      {        wpalPacketAvailableCB = rxLowCB;      }
+vosStatus == VOS_STATUS_SUCCESS
+vosStatus
+vosStatus
+VOS_STATUS_SUCCESS
+VOS_STATUS_SUCCESS
+{        vosStatus =  vos_pkt_reserve_head_fast( pVosPkt, &pData, nPktSize );      }
+vosStatus =  vos_pkt_reserve_head_fast( pVosPkt, &pData, nPktSize );
+vosStatus =  vos_pkt_reserve_head_fast( pVosPkt, &pData, nPktSize )
+vosStatus
+vosStatus
+vos_pkt_reserve_head_fast( pVosPkt, &pData, nPktSize )
+vos_pkt_reserve_head_fast
+vos_pkt_reserve_head_fast
+pVosPkt
+pVosPkt
+&pData
+pData
+pData
+nPktSize
+nPktSize
+{        wpalPacketAvailableCB = rxLowCB;      }
+wpalPacketAvailableCB = rxLowCB;
+wpalPacketAvailableCB = rxLowCB
+wpalPacketAvailableCB
+wpalPacketAvailableCB
+rxLowCB
+rxLowCB
+if((NULL != pVosPkt) && (VOS_STATUS_E_RESOURCES != vosStatus))      {         vos_pkt_get_packet_length(pVosPkt, &allocLen);         if (nPktSize != allocLen)         {            WPAL_TRACE(eWLAN_MODULE_PAL, eWLAN_PAL_TRACE_LEVEL_ERROR,                       "RX packet alloc has problem, discard this frame, Len %d", allocLen);            vos_pkt_return_packet(pVosPkt);            return NULL;         }      }
+(NULL != pVosPkt) && (VOS_STATUS_E_RESOURCES != vosStatus)
+(NULL != pVosPkt)
+NULL != pVosPkt
+NULL
+NULL
+pVosPkt
+pVosPkt
+(VOS_STATUS_E_RESOURCES != vosStatus)
+VOS_STATUS_E_RESOURCES != vosStatus
+VOS_STATUS_E_RESOURCES
+VOS_STATUS_E_RESOURCES
+vosStatus
+vosStatus
+{         vos_pkt_get_packet_length(pVosPkt, &allocLen);         if (nPktSize != allocLen)         {            WPAL_TRACE(eWLAN_MODULE_PAL, eWLAN_PAL_TRACE_LEVEL_ERROR,                       "RX packet alloc has problem, discard this frame, Len %d", allocLen);            vos_pkt_return_packet(pVosPkt);            return NULL;         }      }
+vos_pkt_get_packet_length(pVosPkt, &allocLen);
+vos_pkt_get_packet_length(pVosPkt, &allocLen)
+vos_pkt_get_packet_length
+vos_pkt_get_packet_length
+pVosPkt
+pVosPkt
+&allocLen
+allocLen
+allocLen
+if (nPktSize != allocLen)         {            WPAL_TRACE(eWLAN_MODULE_PAL, eWLAN_PAL_TRACE_LEVEL_ERROR,                       "RX packet alloc has problem, discard this frame, Len %d", allocLen);            vos_pkt_return_packet(pVosPkt);            return NULL;         }
+nPktSize != allocLen
+nPktSize
+nPktSize
+allocLen
+allocLen
+{            WPAL_TRACE(eWLAN_MODULE_PAL, eWLAN_PAL_TRACE_LEVEL_ERROR,                       "RX packet alloc has problem, discard this frame, Len %d", allocLen);            vos_pkt_return_packet(pVosPkt);            return NULL;         }
+WPAL_TRACE(eWLAN_MODULE_PAL, eWLAN_PAL_TRACE_LEVEL_ERROR,                       "RX packet alloc has problem, discard this frame, Len %d", allocLen);
+WPAL_TRACE(eWLAN_MODULE_PAL, eWLAN_PAL_TRACE_LEVEL_ERROR,                       "RX packet alloc has problem, discard this frame, Len %d", allocLen)
+WPAL_TRACE
+WPAL_TRACE
+eWLAN_MODULE_PAL
+eWLAN_MODULE_PAL
+eWLAN_PAL_TRACE_LEVEL_ERROR
+eWLAN_PAL_TRACE_LEVEL_ERROR
+"RX packet alloc has problem, discard this frame, Len %d"
+allocLen
+allocLen
+vos_pkt_return_packet(pVosPkt);
+vos_pkt_return_packet(pVosPkt)
+vos_pkt_return_packet
+vos_pkt_return_packet
+pVosPkt
+pVosPkt
+return NULL;
+NULL
+NULL
+break;
+default:
+WPAL_TRACE(eWLAN_MODULE_PAL, eWLAN_PAL_TRACE_LEVEL_ERROR,                  " try to allocate unsupported packet type (%d)", pktType);
+WPAL_TRACE(eWLAN_MODULE_PAL, eWLAN_PAL_TRACE_LEVEL_ERROR,                  " try to allocate unsupported packet type (%d)", pktType)
+WPAL_TRACE
+WPAL_TRACE
+eWLAN_MODULE_PAL
+eWLAN_MODULE_PAL
+eWLAN_PAL_TRACE_LEVEL_ERROR
+eWLAN_PAL_TRACE_LEVEL_ERROR
+" try to allocate unsupported packet type (%d)"
+pktType
+pktType
+break;
+if(VOS_IS_STATUS_SUCCESS(vosStatus))   {      pPkt = (wpt_packet *)pVosPkt;   }
+VOS_IS_STATUS_SUCCESS(vosStatus)
+VOS_IS_STATUS_SUCCESS
+VOS_IS_STATUS_SUCCESS
+vosStatus
+vosStatus
+{      pPkt = (wpt_packet *)pVosPkt;   }
+pPkt = (wpt_packet *)pVosPkt;
+pPkt = (wpt_packet *)pVosPkt
+pPkt
+pPkt
+(wpt_packet *)pVosPkt
+wpt_packet *
+wpt_packet
+wpt_packet
+*
+*
+pVosPkt
+pVosPkt
+return pPkt;
+pPkt
+pPkt
+-----joern-----
+(26,18,0)
+(28,81,0)
+(111,77,0)
+(5,77,0)
+(6,60,0)
+(8,33,0)
+(101,98,0)
+(46,82,0)
+(102,71,0)
+(79,71,0)
+(57,19,0)
+(58,48,0)
+(15,77,0)
+(41,28,0)
+(31,87,0)
+(64,48,0)
+(91,108,0)
+(55,77,0)
+(27,71,0)
+(108,77,0)
+(112,60,0)
+(35,70,0)
+(12,8,0)
+(30,70,0)
+(44,29,0)
+(72,77,0)
+(59,18,0)
+(24,68,0)
+(40,108,0)
+(93,37,0)
+(8,61,0)
+(75,77,0)
+(99,18,0)
+(60,33,0)
+(33,18,0)
+(33,60,0)
+(74,64,0)
+(32,35,0)
+(66,79,0)
+(102,72,0)
+(2,65,0)
+(60,68,0)
+(16,36,0)
+(84,60,0)
+(67,72,0)
+(35,19,0)
+(103,74,0)
+(78,77,0)
+(27,2,0)
+(3,101,0)
+(7,72,0)
+(95,109,0)
+(69,79,0)
+(110,79,0)
+(19,35,0)
+(104,18,0)
+(62,27,0)
+(106,37,0)
+(22,93,0)
+(109,77,0)
+(36,93,0)
+(48,64,0)
+(80,75,0)
+(29,72,0)
+(8,75,0)
+(51,98,0)
+(97,18,0)
+(1,61,0)
+(101,61,0)
+(17,26,0)
+(41,108,0)
+(93,36,0)
+(87,38,0)
+(76,79,0)
+(101,38,0)
+(14,101,0)
+(73,75,0)
+(11,74,0)
+(70,25,0)
+(98,72,0)
+(88,101,0)
+(34,60,0)
+(9,82,0)
+(60,38,0)
+(48,61,0)
+(48,70,0)
+(68,72,0)
+(61,18,0)
+(96,77,0)
+(74,72,0)
+(64,74,0)
+(89,48,0)
+(45,29,0)
+(62,41,0)
+(35,72,0)
+(83,77,0)
+(86,2,0)
+(92,27,0)
+(82,61,0)
+(90,102,0)
+(10,18,0)
+(54,26,0)
+(47,33,0)
+(26,56,0)
+(29,28,0)
+(39,101,0)
+(100,26,0)
+(70,35,0)
+(13,101,0)
+(68,60,0)
+(94,26,0)
+(53,18,0)
+(28,29,0)
+(85,2,0)
+(43,18,0)
+(21,60,0)
+(93,72,0)
+(52,28,0)
+(2,42,0)
+(4,101,0)
+(61,101,0)
+(20,18,0)
+(29,44,0)
+(19,109,0)
+(101,49,0)
+(8,70,0)
+(105,35,0)
+(41,77,0)
+(23,41,0)
+(50,87,0)
+(0,60,0)
+(63,109,0)
+(35,38,0)
+(98,101,0)
+(29,44,1)
+(45,52,1)
+(80,73,1)
+(41,108,1)
+(12,59,1)
+(8,75,1)
+(11,70,1)
+(61,101,1)
+(41,23,1)
+(87,38,1)
+(108,40,1)
+(50,93,1)
+(94,54,1)
+(88,39,1)
+(99,64,1)
+(98,51,1)
+(7,67,1)
+(60,6,1)
+(102,72,1)
+(87,31,1)
+(84,68,1)
+(100,107,1)
+(0,21,1)
+(64,48,1)
+(26,56,1)
+(40,91,1)
+(2,86,1)
+(93,36,1)
+(86,85,1)
+(105,30,1)
+(70,35,1)
+(35,38,1)
+(93,72,1)
+(101,14,1)
+(29,72,1)
+(14,88,1)
+(8,70,1)
+(6,112,1)
+(4,3,1)
+(41,28,1)
+(112,0,1)
+(107,109,1)
+(79,76,1)
+(12,43,1)
+(12,99,1)
+(92,102,1)
+(43,26,1)
+(101,98,1)
+(8,12,1)
+(21,34,1)
+(95,63,1)
+(54,100,1)
+(13,98,1)
+(24,47,1)
+(47,107,1)
+(31,50,1)
+(48,70,1)
+(68,24,1)
+(58,89,1)
+(60,68,1)
+(59,33,1)
+(72,7,1)
+(23,28,1)
+(101,38,1)
+(35,32,1)
+(27,2,1)
+(46,61,1)
+(85,82,1)
+(101,49,1)
+(39,4,1)
+(66,87,1)
+(89,74,1)
+(9,46,1)
+(52,8,1)
+(8,33,1)
+(48,58,1)
+(102,90,1)
+(98,72,1)
+(33,60,1)
+(51,1,1)
+(17,94,1)
+(2,42,1)
+(57,105,1)
+(28,29,1)
+(19,109,1)
+(109,95,1)
+(63,72,1)
+(16,22,1)
+(36,16,1)
+(75,80,1)
+(11,2,1)
+(62,41,1)
+(23,8,1)
+(90,79,1)
+(69,110,1)
+(99,87,1)
+(62,27,1)
+(34,84,1)
+(35,72,1)
+(35,19,1)
+(27,92,1)
+(82,61,1)
+(8,61,1)
+(76,69,1)
+(91,75,1)
+(30,82,1)
+(22,64,1)
+(1,107,1)
+(19,57,1)
+(26,17,1)
+(48,61,1)
+(103,11,1)
+(3,13,1)
+(32,19,1)
+(68,72,1)
+(74,103,1)
+(82,9,1)
+(60,38,1)
+(64,74,1)
+(29,45,1)
+(110,66,1)
+(67,108,1)
+(74,72,1)
+(43,107,2)
+(87,64,2)
+(28,8,2)
+(8,61,2)
+(85,82,2)
+(39,107,2)
+(26,56,2)
+(64,48,2)
+(31,64,2)
+(68,107,2)
+(4,107,2)
+(70,35,2)
+(101,107,2)
+(112,107,2)
+(8,70,2)
+(48,74,2)
+(74,107,2)
+(3,107,2)
+(99,64,2)
+(46,107,2)
+(19,82,2)
+(64,74,2)
+(41,107,2)
+(33,60,2)
+(60,38,2)
+(98,72,2)
+(93,64,2)
+(101,38,2)
+(6,107,2)
+(8,64,2)
+(35,38,2)
+(94,107,2)
+(93,36,2)
+(84,107,2)
+(69,87,2)
+(1,107,2)
+(52,8,2)
+(45,8,2)
+(22,64,2)
+(60,68,2)
+(24,107,2)
+(102,87,2)
+(2,42,2)
+(61,101,2)
+(8,33,2)
+(98,107,2)
+(8,87,2)
+(23,107,2)
+(26,107,2)
+(13,107,2)
+(2,82,2)
+(14,107,2)
+(79,87,2)
+(8,107,2)
+(76,87,2)
+(88,107,2)
+(27,87,2)
+(105,82,2)
+(48,70,2)
+(100,107,2)
+(23,64,2)
+(23,87,2)
+(34,107,2)
+(110,87,2)
+(8,75,2)
+(12,107,2)
+(35,82,2)
+(89,74,2)
+(9,107,2)
+(12,87,2)
+(27,2,2)
+(28,29,2)
+(86,82,2)
+(41,108,2)
+(29,72,2)
+(57,82,2)
+(30,82,2)
+(62,41,2)
+(41,87,2)
+(64,107,2)
+(66,87,2)
+(92,87,2)
+(59,107,2)
+(103,107,2)
+(58,74,2)
+(35,19,2)
+(33,107,2)
+(90,87,2)
+(70,82,2)
+(0,107,2)
+(36,64,2)
+(68,72,2)
+(29,44,2)
+(74,72,2)
+(21,107,2)
+(47,107,2)
+(54,107,2)
+(101,98,2)
+(62,27,2)
+(50,64,2)
+(101,49,2)
+(12,64,2)
+(35,72,2)
+(102,72,2)
+(82,107,2)
+(48,61,2)
+(29,8,2)
+(41,28,2)
+(19,109,2)
+(93,72,2)
+(16,64,2)
+(32,82,2)
+(51,107,2)
+(60,107,2)
+(87,38,2)
+(61,107,2)
+(82,61,2)
+(99,87,2)
+(41,64,2)
+(11,107,2)
+(17,107,2)
+-----------------------------------
+(0,VOS_FALSE)
+(1,vosStatus)
+(2,wpalPacketAvailableCB = rxLowCB)
+(3,nPktSize)
+(4,1)
+(5,switch (pktType)
+(6,NULL)
+(7,NULL)
+(8,VOS_IS_STATUS_SUCCESS(vosStatus)
+(9,VOS_STATUS_SUCCESS)
+(10,case eWLAN_PAL_PKT_TYPE_RX_RAW:)
+(11,NULL)
+(12,vosStatus)
+(13,VOS_PKT_TYPE_RX_RAW)
+(14,usrData)
+(15,pData)
+(16,allocLen)
+(17,pktType)
+(18,)
+(19,&pData)
+(20,if((NULL != pVosPkt)
+(21,1)
+(22,pVosPkt)
+(23,pPkt)
+(24,pVosPkt)
+(25,)
+(26,WPAL_TRACE(eWLAN_MODULE_PAL, eWLAN_PAL_TRACE_LEVEL_ERROR,\n\\n                  " try to allocate unsupported packet type (%d)
+(27,return NULL;)
+(28,pPkt = (wpt_packet *)
+(29,(wpt_packet *)
+(30,vosStatus)
+(31,allocLen)
+(32,nPktSize)
+(33,vosStatus = vos_pkt_get_packet(&pVosPkt, VOS_PKT_TYPE_TX_802_11_MGMT,\n\\n                                       nPktSize, 1, VOS_FALSE,\n\\n                                       NULL, NULL /*no callback*/)
+(34,nPktSize)
+(35,vos_pkt_reserve_head_fast( pVosPkt, &pData, nPktSize )
+(36,&allocLen)
+(37,)
+(38,wpt_uint32 nPktSize)
+(39,VOS_FALSE)
+(40,NULL)
+(41,return pPkt;)
+(42,wpalPacketLowPacketCB rxLowCB)
+(43,break;)
+(44,wpt_packet *)
+(45,pVosPkt)
+(46,vosStatus)
+(47,vosStatus)
+(48,VOS_STATUS_E_RESOURCES != vosStatus)
+(49,void *usrData)
+(50,nPktSize)
+(51,pVosPkt)
+(52,pPkt)
+(53,if( vosStatus == VOS_STATUS_SUCCESS )
+(54,eWLAN_PAL_TRACE_LEVEL_ERROR)
+(55,pPkt)
+(56,wpt_packet_type pktType)
+(57,pData)
+(58,vosStatus)
+(59,break;)
+(60,vos_pkt_get_packet(&pVosPkt, VOS_PKT_TYPE_TX_802_11_MGMT,\n\\n                                       nPktSize, 1, VOS_FALSE,\n\\n                                       NULL, NULL /*no callback*/)
+(61,vosStatus = vos_pkt_get_packet(&pVosPkt, VOS_PKT_TYPE_RX_RAW,\n\\n                                       nPktSize, 1, VOS_FALSE,\n\\n                                       wpalPacketRXLowResourceCB, usrData)
+(62,RET)
+(63,pData)
+(64,(NULL != pVosPkt)
+(65,)
+(66,eWLAN_MODULE_PAL)
+(67,pVosPkt)
+(68,&pVosPkt)
+(69,"RX packet alloc has problem, discard this frame, Len %d")
+(70,vosStatus =  vos_pkt_reserve_head_fast( pVosPkt, &pData, nPktSize )
+(71,)
+(72,*   pVosPkt   = NULL)
+(73,vosStatus)
+(74,NULL != pVosPkt)
+(75,vosStatus = VOS_STATUS_E_FAILURE)
+(76,allocLen)
+(77,)
+(78,vosStatus)
+(79,WPAL_TRACE(eWLAN_MODULE_PAL, eWLAN_PAL_TRACE_LEVEL_ERROR,\n\\n                       "RX packet alloc has problem, discard this frame, Len %d", allocLen)
+(80,VOS_STATUS_E_FAILURE)
+(81,)
+(82,vosStatus == VOS_STATUS_SUCCESS)
+(83,pVosPkt)
+(84,VOS_PKT_TYPE_TX_802_11_MGMT)
+(85,wpalPacketAvailableCB)
+(86,rxLowCB)
+(87,nPktSize != allocLen)
+(88,wpalPacketRXLowResourceCB)
+(89,VOS_STATUS_E_RESOURCES)
+(90,pVosPkt)
+(91,pPkt)
+(92,NULL)
+(93,vos_pkt_get_packet_length(pVosPkt, &allocLen)
+(94," try to allocate unsupported packet type (%d)
+(95,NULL)
+(96,if(VOS_IS_STATUS_SUCCESS(vosStatus)
+(97,default:)
+(98,&pVosPkt)
+(99,break;)
+(100,eWLAN_MODULE_PAL)
+(101,vos_pkt_get_packet(&pVosPkt, VOS_PKT_TYPE_RX_RAW,\n\\n                                       nPktSize, 1, VOS_FALSE,\n\\n                                       wpalPacketRXLowResourceCB, usrData)
+(102,vos_pkt_return_packet(pVosPkt)
+(103,pVosPkt)
+(104,case eWLAN_PAL_PKT_TYPE_TX_802_11_MGMT:)
+(105,pVosPkt)
+(106,if (nPktSize != allocLen)
+(107,pktType)
+(108,*  pPkt      = NULL)
+(109,*        pData     = NULL)
+(110,eWLAN_PAL_TRACE_LEVEL_ERROR)
+(111,allocLen)
+(112,NULL)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

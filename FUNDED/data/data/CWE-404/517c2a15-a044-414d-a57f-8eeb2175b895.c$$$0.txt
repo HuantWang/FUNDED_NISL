@@ -1,0 +1,3610 @@
+-----label-----
+1
+-----code-----
+static int do_strip(struct gfs2_inode *ip, struct buffer_head *dibh,
+		    struct buffer_head *bh, __be64 *top, __be64 *bottom,
+		    unsigned int height, struct strip_mine *sm)
+{
+	struct gfs2_sbd *sdp = GFS2_SB(&ip->i_inode);
+	struct gfs2_rgrp_list rlist;
+	u64 bn, bstart;
+	u32 blen, btotal;
+	__be64 *p;
+	unsigned int rg_blocks = 0;
+	int metadata;
+	unsigned int revokes = 0;
+	int x;
+	int error;
+
+	error = gfs2_rindex_update(sdp);
+	if (error)
+		return error;
+
+	if (!*top)
+		sm->sm_first = 0;
+
+	if (height != sm->sm_height)
+		return 0;
+
+	if (sm->sm_first) {
+		top++;
+		sm->sm_first = 0;
+	}
+
+	metadata = (height != ip->i_height - 1);
+	if (metadata)
+		revokes = (height) ? sdp->sd_inptrs : sdp->sd_diptrs;
+	else if (ip->i_depth)
+		revokes = sdp->sd_inptrs;
+
+	memset(&rlist, 0, sizeof(struct gfs2_rgrp_list));
+	bstart = 0;
+	blen = 0;
+
+	for (p = top; p < bottom; p++) {
+		if (!*p)
+			continue;
+
+		bn = be64_to_cpu(*p);
+
+		if (bstart + blen == bn)
+			blen++;
+		else {
+			if (bstart)
+				gfs2_rlist_add(ip, &rlist, bstart);
+
+			bstart = bn;
+			blen = 1;
+		}
+	}
+
+	if (bstart)
+		gfs2_rlist_add(ip, &rlist, bstart);
+	else
+		goto out; /* Nothing to do */
+
+	gfs2_rlist_alloc(&rlist, LM_ST_EXCLUSIVE);
+
+	for (x = 0; x < rlist.rl_rgrps; x++) {
+		struct gfs2_rgrpd *rgd;
+		rgd = rlist.rl_ghs[x].gh_gl->gl_object;
+		rg_blocks += rgd->rd_length;
+	}
+
+	error = gfs2_glock_nq_m(rlist.rl_rgrps, rlist.rl_ghs);
+	if (error)
+		goto out_rlist;
+
+	if (gfs2_rs_active(&ip->i_res)) /* needs to be done with the rgrp glock held */
+		gfs2_rs_deltree(&ip->i_res);
+
+	error = gfs2_trans_begin(sdp, rg_blocks + RES_DINODE +
+				 RES_INDIRECT + RES_STATFS + RES_QUOTA,
+				 revokes);
+	if (error)
+		goto out_rg_gunlock;
+
+	down_write(&ip->i_rw_mutex);
+
+	gfs2_trans_add_meta(ip->i_gl, dibh);
+	gfs2_trans_add_meta(ip->i_gl, bh);
+
+	bstart = 0;
+	blen = 0;
+	btotal = 0;
+
+	for (p = top; p < bottom; p++) {
+		if (!*p)
+			continue;
+
+		bn = be64_to_cpu(*p);
+
+		if (bstart + blen == bn)
+			blen++;
+		else {
+			if (bstart) {
+				__gfs2_free_blocks(ip, bstart, blen, metadata);
+				btotal += blen;
+			}
+
+			bstart = bn;
+			blen = 1;
+		}
+
+		*p = 0;
+		gfs2_add_inode_blocks(&ip->i_inode, -1);
+	}
+	if (bstart) {
+		__gfs2_free_blocks(ip, bstart, blen, metadata);
+		btotal += blen;
+	}
+
+	gfs2_statfs_change(sdp, 0, +btotal, 0);
+	gfs2_quota_change(ip, -(s64)btotal, ip->i_inode.i_uid,
+			  ip->i_inode.i_gid);
+
+	ip->i_inode.i_mtime = ip->i_inode.i_ctime = CURRENT_TIME;
+
+	gfs2_dinode_out(ip, dibh->b_data);
+
+	up_write(&ip->i_rw_mutex);
+
+	gfs2_trans_end(sdp);
+
+out_rg_gunlock:
+	gfs2_glock_dq_m(rlist.rl_rgrps, rlist.rl_ghs);
+out_rlist:
+	gfs2_rlist_free(&rlist);
+out:
+	return error;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+3,8
+3,9
+3,10
+3,11
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+17,19
+18,19
+20,21
+20,22
+23,24
+23,25
+24,25
+26,27
+26,28
+29,30
+29,31
+30,31
+32,33
+32,34
+35,36
+35,37
+37,38
+39,40
+39,41
+40,41
+42,43
+42,44
+45,46
+45,47
+45,48
+45,49
+45,50
+45,51
+45,52
+45,53
+45,54
+45,55
+45,56
+45,57
+45,58
+45,59
+45,60
+45,61
+45,62
+45,63
+45,64
+45,65
+45,66
+45,67
+45,68
+45,69
+45,70
+45,71
+45,72
+45,73
+45,74
+45,75
+45,76
+45,77
+45,78
+45,79
+45,80
+45,81
+45,82
+45,83
+45,84
+45,85
+45,86
+45,87
+45,88
+45,89
+45,90
+45,91
+46,47
+47,48
+47,49
+48,49
+50,51
+50,52
+50,53
+53,54
+54,55
+54,56
+55,56
+57,58
+58,59
+58,60
+59,60
+62,63
+63,64
+63,65
+64,65
+66,67
+68,69
+69,70
+69,71
+69,72
+70,71
+72,73
+74,75
+76,77
+77,78
+77,79
+77,80
+78,79
+80,81
+82,83
+84,85
+85,86
+85,87
+86,87
+88,89
+88,90
+91,92
+92,93
+92,94
+94,95
+94,96
+96,97
+98,99
+99,100
+99,101
+101,102
+103,104
+104,105
+104,106
+106,107
+106,108
+108,109
+110,111
+111,112
+111,113
+113,114
+115,116
+116,117
+116,118
+118,119
+120,121
+121,122
+121,123
+122,123
+124,125
+124,126
+125,126
+127,128
+129,130
+129,131
+130,131
+132,133
+133,134
+135,136
+135,137
+136,137
+137,138
+138,139
+140,141
+141,142
+141,143
+142,143
+142,144
+143,144
+147,148
+147,149
+148,149
+148,150
+149,150
+151,152
+151,153
+152,153
+155,156
+157,158
+157,159
+158,159
+158,160
+159,160
+162,163
+162,164
+163,164
+164,165
+165,166
+167,168
+168,169
+168,170
+169,170
+169,171
+170,171
+174,175
+175,176
+175,177
+176,177
+178,179
+179,180
+179,181
+180,181
+182,183
+182,184
+183,184
+183,185
+184,185
+188,189
+188,190
+188,191
+189,190
+191,192
+192,193
+192,194
+193,194
+195,196
+195,197
+195,198
+196,197
+197,198
+199,200
+199,201
+200,201
+203,204
+203,205
+204,205
+207,208
+207,209
+208,209
+208,210
+209,210
+212,213
+213,214
+213,215
+214,215
+216,217
+216,218
+217,218
+220,221
+221,222
+221,223
+221,224
+221,225
+222,223
+224,225
+225,226
+228,229
+229,230
+229,231
+230,231
+233,234
+234,235
+234,236
+235,236
+238,239
+239,240
+239,241
+240,241
+243,244
+243,245
+243,246
+243,247
+244,245
+245,246
+245,247
+246,247
+248,249
+250,251
+250,252
+251,252
+253,254
+255,256
+256,257
+258,259
+258,260
+258,261
+259,260
+259,261
+260,261
+261,262
+262,263
+265,266
+266,267
+266,268
+267,268
+269,270
+269,271
+270,271
+272,273
+273,274
+275,276
+275,277
+275,278
+276,277
+276,278
+277,278
+277,279
+278,279
+280,281
+282,283
+284,285
+285,286
+286,287
+288,289
+288,290
+288,291
+289,290
+289,291
+290,291
+292,293
+293,294
+293,295
+293,296
+293,297
+294,295
+296,297
+298,299
+299,300
+301,302
+303,304
+304,305
+304,306
+305,306
+307,308
+309,310
+310,311
+310,312
+311,312
+314,315
+314,316
+314,317
+315,316
+317,318
+318,319
+318,320
+318,321
+318,322
+319,320
+321,322
+323,324
+324,325
+326,327
+328,329
+330,331
+331,332
+331,333
+331,334
+332,333
+334,335
+335,336
+337,338
+339,340
+339,341
+339,342
+339,343
+340,341
+341,342
+341,343
+342,343
+345,346
+345,347
+346,347
+348,349
+348,350
+349,350
+352,353
+353,354
+355,356
+355,357
+355,358
+356,357
+357,358
+357,359
+358,359
+360,361
+360,362
+363,364
+364,365
+364,366
+365,366
+367,368
+367,369
+368,369
+368,370
+369,370
+369,371
+370,371
+370,372
+371,372
+374,375
+378,379
+379,380
+379,381
+380,381
+382,383
+382,384
+383,384
+386,387
+387,388
+387,389
+388,389
+390,391
+390,392
+390,393
+391,392
+393,394
+393,395
+394,395
+397,398
+397,399
+398,399
+401,402
+401,403
+402,403
+404,405
+406,407
+406,408
+407,408
+407,409
+408,409
+410,411
+411,412
+411,413
+412,413
+415,416
+416,417
+416,418
+417,418
+419,420
+420,421
+420,422
+421,422
+424,425
+425,426
+425,427
+426,427
+428,429
+428,430
+428,431
+428,432
+429,430
+431,432
+433,434
+433,435
+434,435
+434,436
+435,436
+435,437
+436,437
+436,438
+437,438
+439,440
+441,442
+443,444
+445,446
+447,448
+449,450
+449,451
+450,451
+452,453
+454,455
+455,456
+455,457
+456,457
+458,459
+459,460
+459,461
+460,461
+463,464
+464,465
+464,466
+464,467
+465,466
+467,468
+467,469
+468,469
+471,472
+473,474
+474,475
+474,476
+474,477
+475,476
+477,478
+477,479
+478,479
+481,482
+483,484
+484,485
+484,486
+485,486
+488,489
+489,490
+489,491
+490,491
+493,494
+494,495
+494,496
+495,496
+498,499
+498,500
+498,501
+498,502
+499,500
+500,501
+500,502
+501,502
+503,504
+505,506
+505,507
+506,507
+508,509
+510,511
+511,512
+513,514
+513,515
+513,516
+513,517
+513,518
+514,515
+514,516
+515,516
+516,517
+517,518
+520,521
+521,522
+521,523
+522,523
+524,525
+524,526
+525,526
+527,528
+528,529
+530,531
+530,532
+530,533
+531,532
+531,533
+532,533
+532,534
+533,534
+535,536
+537,538
+539,540
+540,541
+541,542
+543,544
+543,545
+543,546
+544,545
+544,546
+545,546
+547,548
+547,549
+548,549
+549,550
+549,551
+549,552
+549,553
+549,554
+550,551
+552,553
+554,555
+556,557
+558,559
+560,561
+561,562
+561,563
+562,563
+564,565
+566,567
+567,568
+567,569
+568,569
+570,571
+572,573
+573,574
+573,575
+574,575
+577,578
+578,579
+578,580
+579,580
+580,581
+583,584
+584,585
+584,586
+584,587
+585,586
+587,588
+588,589
+588,590
+589,590
+592,593
+594,595
+594,596
+595,596
+597,598
+597,599
+598,599
+599,600
+599,601
+599,602
+599,603
+599,604
+600,601
+602,603
+604,605
+606,607
+608,609
+610,611
+611,612
+611,613
+612,613
+614,615
+616,617
+617,618
+617,619
+617,620
+617,621
+617,622
+618,619
+620,621
+623,624
+624,625
+627,628
+628,629
+628,630
+628,631
+628,632
+628,633
+629,630
+631,632
+633,634
+634,635
+634,636
+635,636
+635,637
+636,637
+639,640
+641,642
+641,643
+642,643
+642,644
+643,644
+647,648
+647,649
+648,649
+648,650
+649,650
+653,654
+654,655
+654,656
+655,656
+655,657
+656,657
+656,658
+657,658
+661,662
+661,663
+662,663
+662,664
+663,664
+663,665
+664,665
+668,669
+670,671
+671,672
+671,673
+671,674
+672,673
+674,675
+676,677
+676,678
+677,678
+680,681
+681,682
+681,683
+682,683
+684,685
+685,686
+685,687
+686,687
+689,690
+690,691
+690,692
+691,692
+693,694
+695,696
+695,697
+697,698
+698,699
+698,700
+698,701
+699,700
+701,702
+701,703
+702,703
+705,706
+705,707
+706,707
+709,710
+709,711
+711,712
+712,713
+712,714
+713,714
+715,716
+716,717
+718,719
+718,720
+720,721
+721,722
+-----nextToken-----
+2,4,7,9,10,13,15,16,19,21,22,25,27,28,31,33,34,36,38,41,43,44,49,51,52,56,60,61,65,67,71,73,75,79,81,83,87,89,90,93,95,97,100,102,105,107,109,112,114,117,119,123,126,128,131,134,139,144,145,146,150,153,154,156,160,161,166,171,172,173,177,181,185,186,187,190,194,198,201,202,205,206,210,211,215,218,219,223,226,227,231,232,236,237,241,242,247,249,252,254,257,263,264,268,271,274,279,281,283,287,291,295,297,300,302,306,308,312,313,316,320,322,325,327,329,333,336,338,343,344,347,350,351,354,359,361,362,366,372,373,375,376,377,381,384,385,389,392,395,396,399,400,403,405,409,413,414,418,422,423,427,430,432,438,440,442,444,446,448,451,453,457,461,462,466,469,470,472,476,479,480,482,486,487,491,492,496,497,502,504,507,509,512,518,519,523,526,529,534,536,538,542,546,551,553,555,557,559,563,565,569,571,575,576,581,582,586,590,591,593,596,601,603,605,607,609,613,615,619,621,622,625,626,630,632,637,638,640,644,645,646,650,651,652,658,659,660,665,666,667,669,673,675,678,679,683,687,688,692,694,696,700,703,704,707,708,710,714,717,719,722
+-----computeFrom-----
+121,122
+121,123
+141,142
+141,143
+148,149
+148,150
+168,169
+168,170
+175,176
+175,177
+179,180
+179,181
+182,183
+182,184
+192,193
+192,194
+213,214
+213,215
+234,235
+234,236
+239,240
+239,241
+245,246
+245,247
+250,251
+250,252
+266,267
+266,268
+276,277
+276,278
+277,278
+277,279
+304,305
+304,306
+310,311
+310,312
+341,342
+341,343
+345,346
+345,347
+364,365
+364,366
+379,380
+379,381
+387,388
+387,389
+425,426
+425,427
+433,434
+433,435
+434,435
+434,436
+435,436
+435,437
+436,437
+436,438
+484,485
+484,486
+489,490
+489,491
+494,495
+494,496
+500,501
+500,502
+505,506
+505,507
+521,522
+521,523
+531,532
+531,533
+532,533
+532,534
+561,562
+561,563
+567,568
+567,569
+573,574
+573,575
+578,579
+578,580
+611,612
+611,613
+654,655
+654,656
+661,662
+661,663
+-----guardedBy-----
+281,287
+536,542
+-----guardedByNegation-----
+279,306
+283,308
+281,312
+534,569
+538,571
+536,575
+-----lastLexicalUse-----
+281,312
+536,575
+-----jump-----
+281,312
+536,575
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;IdExpression;Name;ReturnStatement;IdExpression;Name;IfStatement;UnaryExpression;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ReturnStatement;LiteralExpression;IfStatement;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;IfStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;ConditionalExpression;UnaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IfStatement;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;TypeIdExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;IfStatement;UnaryExpression;UnaryExpression;IdExpression;Name;ContinueStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;UnaryExpression;IdExpression;Name;CompoundStatement;IfStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;GotoStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;FieldReference;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IfStatement;IdExpression;Name;GotoStatement;Name;IfStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;BinaryExpression;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;IdExpression;Name;GotoStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;IfStatement;UnaryExpression;UnaryExpression;IdExpression;Name;ContinueStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;UnaryExpression;IdExpression;Name;CompoundStatement;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;UnaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;LiteralExpression;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;UnaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LabelStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;LabelStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LabelStatement;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+static int do_strip(struct gfs2_inode *ip, struct buffer_head *dibh,		    struct buffer_head *bh, __be64 *top, __be64 *bottom,		    unsigned int height, struct strip_mine *sm){	struct gfs2_sbd *sdp = GFS2_SB(&ip->i_inode);	struct gfs2_rgrp_list rlist;	u64 bn, bstart;	u32 blen, btotal;	__be64 *p;	unsigned int rg_blocks = 0;	int metadata;	unsigned int revokes = 0;	int x;	int error;	error = gfs2_rindex_update(sdp);	if (error)		return error;	if (!*top)		sm->sm_first = 0;	if (height != sm->sm_height)		return 0;	if (sm->sm_first) {		top++;		sm->sm_first = 0;	}	metadata = (height != ip->i_height - 1);	if (metadata)		revokes = (height) ? sdp->sd_inptrs : sdp->sd_diptrs;	else if (ip->i_depth)		revokes = sdp->sd_inptrs;	memset(&rlist, 0, sizeof(struct gfs2_rgrp_list));	bstart = 0;	blen = 0;	for (p = top; p < bottom; p++) {		if (!*p)			continue;		bn = be64_to_cpu(*p);		if (bstart + blen == bn)			blen++;		else {			if (bstart)				gfs2_rlist_add(ip, &rlist, bstart);			bstart = bn;			blen = 1;		}	}	if (bstart)		gfs2_rlist_add(ip, &rlist, bstart);	else		goto out; /* Nothing to do */	gfs2_rlist_alloc(&rlist, LM_ST_EXCLUSIVE);	for (x = 0; x < rlist.rl_rgrps; x++) {		struct gfs2_rgrpd *rgd;		rgd = rlist.rl_ghs[x].gh_gl->gl_object;		rg_blocks += rgd->rd_length;	}	error = gfs2_glock_nq_m(rlist.rl_rgrps, rlist.rl_ghs);	if (error)		goto out_rlist;	if (gfs2_rs_active(&ip->i_res)) /* needs to be done with the rgrp glock held */		gfs2_rs_deltree(&ip->i_res);	error = gfs2_trans_begin(sdp, rg_blocks + RES_DINODE +				 RES_INDIRECT + RES_STATFS + RES_QUOTA,				 revokes);	if (error)		goto out_rg_gunlock;	down_write(&ip->i_rw_mutex);	gfs2_trans_add_meta(ip->i_gl, dibh);	gfs2_trans_add_meta(ip->i_gl, bh);	bstart = 0;	blen = 0;	btotal = 0;	for (p = top; p < bottom; p++) {		if (!*p)			continue;		bn = be64_to_cpu(*p);		if (bstart + blen == bn)			blen++;		else {			if (bstart) {				__gfs2_free_blocks(ip, bstart, blen, metadata);				btotal += blen;			}			bstart = bn;			blen = 1;		}		*p = 0;		gfs2_add_inode_blocks(&ip->i_inode, -1);	}	if (bstart) {		__gfs2_free_blocks(ip, bstart, blen, metadata);		btotal += blen;	}	gfs2_statfs_change(sdp, 0, +btotal, 0);	gfs2_quota_change(ip, -(s64)btotal, ip->i_inode.i_uid,			  ip->i_inode.i_gid);	ip->i_inode.i_mtime = ip->i_inode.i_ctime = CURRENT_TIME;	gfs2_dinode_out(ip, dibh->b_data);	up_write(&ip->i_rw_mutex);	gfs2_trans_end(sdp);out_rg_gunlock:	gfs2_glock_dq_m(rlist.rl_rgrps, rlist.rl_ghs);out_rlist:	gfs2_rlist_free(&rlist);out:	return error;}
+static int
+do_strip(struct gfs2_inode *ip, struct buffer_head *dibh,		    struct buffer_head *bh, __be64 *top, __be64 *bottom,		    unsigned int height, struct strip_mine *sm)
+do_strip
+struct gfs2_inode *ip
+struct gfs2_inode
+gfs2_inode
+*ip
+*
+ip
+struct buffer_head *dibh
+struct buffer_head
+buffer_head
+*dibh
+*
+dibh
+struct buffer_head *bh
+struct buffer_head
+buffer_head
+*bh
+*
+bh
+__be64 *top
+__be64
+__be64
+*top
+*
+top
+__be64 *bottom
+__be64
+__be64
+*bottom
+*
+bottom
+unsigned int height
+unsigned int
+height
+height
+struct strip_mine *sm
+struct strip_mine
+strip_mine
+*sm
+*
+sm
+{	struct gfs2_sbd *sdp = GFS2_SB(&ip->i_inode);	struct gfs2_rgrp_list rlist;	u64 bn, bstart;	u32 blen, btotal;	__be64 *p;	unsigned int rg_blocks = 0;	int metadata;	unsigned int revokes = 0;	int x;	int error;	error = gfs2_rindex_update(sdp);	if (error)		return error;	if (!*top)		sm->sm_first = 0;	if (height != sm->sm_height)		return 0;	if (sm->sm_first) {		top++;		sm->sm_first = 0;	}	metadata = (height != ip->i_height - 1);	if (metadata)		revokes = (height) ? sdp->sd_inptrs : sdp->sd_diptrs;	else if (ip->i_depth)		revokes = sdp->sd_inptrs;	memset(&rlist, 0, sizeof(struct gfs2_rgrp_list));	bstart = 0;	blen = 0;	for (p = top; p < bottom; p++) {		if (!*p)			continue;		bn = be64_to_cpu(*p);		if (bstart + blen == bn)			blen++;		else {			if (bstart)				gfs2_rlist_add(ip, &rlist, bstart);			bstart = bn;			blen = 1;		}	}	if (bstart)		gfs2_rlist_add(ip, &rlist, bstart);	else		goto out; /* Nothing to do */	gfs2_rlist_alloc(&rlist, LM_ST_EXCLUSIVE);	for (x = 0; x < rlist.rl_rgrps; x++) {		struct gfs2_rgrpd *rgd;		rgd = rlist.rl_ghs[x].gh_gl->gl_object;		rg_blocks += rgd->rd_length;	}	error = gfs2_glock_nq_m(rlist.rl_rgrps, rlist.rl_ghs);	if (error)		goto out_rlist;	if (gfs2_rs_active(&ip->i_res)) /* needs to be done with the rgrp glock held */		gfs2_rs_deltree(&ip->i_res);	error = gfs2_trans_begin(sdp, rg_blocks + RES_DINODE +				 RES_INDIRECT + RES_STATFS + RES_QUOTA,				 revokes);	if (error)		goto out_rg_gunlock;	down_write(&ip->i_rw_mutex);	gfs2_trans_add_meta(ip->i_gl, dibh);	gfs2_trans_add_meta(ip->i_gl, bh);	bstart = 0;	blen = 0;	btotal = 0;	for (p = top; p < bottom; p++) {		if (!*p)			continue;		bn = be64_to_cpu(*p);		if (bstart + blen == bn)			blen++;		else {			if (bstart) {				__gfs2_free_blocks(ip, bstart, blen, metadata);				btotal += blen;			}			bstart = bn;			blen = 1;		}		*p = 0;		gfs2_add_inode_blocks(&ip->i_inode, -1);	}	if (bstart) {		__gfs2_free_blocks(ip, bstart, blen, metadata);		btotal += blen;	}	gfs2_statfs_change(sdp, 0, +btotal, 0);	gfs2_quota_change(ip, -(s64)btotal, ip->i_inode.i_uid,			  ip->i_inode.i_gid);	ip->i_inode.i_mtime = ip->i_inode.i_ctime = CURRENT_TIME;	gfs2_dinode_out(ip, dibh->b_data);	up_write(&ip->i_rw_mutex);	gfs2_trans_end(sdp);out_rg_gunlock:	gfs2_glock_dq_m(rlist.rl_rgrps, rlist.rl_ghs);out_rlist:	gfs2_rlist_free(&rlist);out:	return error;}
+struct gfs2_sbd *sdp = GFS2_SB(&ip->i_inode);
+struct gfs2_sbd *sdp = GFS2_SB(&ip->i_inode);
+struct gfs2_sbd
+gfs2_sbd
+*sdp = GFS2_SB(&ip->i_inode)
+*
+sdp
+= GFS2_SB(&ip->i_inode)
+GFS2_SB(&ip->i_inode)
+GFS2_SB
+GFS2_SB
+&ip->i_inode
+ip->i_inode
+ip
+ip
+i_inode
+struct gfs2_rgrp_list rlist;
+struct gfs2_rgrp_list rlist;
+struct gfs2_rgrp_list
+gfs2_rgrp_list
+rlist
+rlist
+u64 bn, bstart;
+u64 bn, bstart;
+u64
+u64
+bn
+bn
+bstart
+bstart
+u32 blen, btotal;
+u32 blen, btotal;
+u32
+u32
+blen
+blen
+btotal
+btotal
+__be64 *p;
+__be64 *p;
+__be64
+__be64
+*p
+*
+p
+unsigned int rg_blocks = 0;
+unsigned int rg_blocks = 0;
+unsigned int
+rg_blocks = 0
+rg_blocks
+= 0
+0
+int metadata;
+int metadata;
+int
+metadata
+metadata
+unsigned int revokes = 0;
+unsigned int revokes = 0;
+unsigned int
+revokes = 0
+revokes
+= 0
+0
+int x;
+int x;
+int
+x
+x
+int error;
+int error;
+int
+error
+error
+error = gfs2_rindex_update(sdp);
+error = gfs2_rindex_update(sdp)
+error
+error
+gfs2_rindex_update(sdp)
+gfs2_rindex_update
+gfs2_rindex_update
+sdp
+sdp
+if (error)		return error;
+error
+error
+return error;
+error
+error
+if (!*top)		sm->sm_first = 0;
+!*top
+*top
+top
+top
+sm->sm_first = 0;
+sm->sm_first = 0
+sm->sm_first
+sm
+sm
+sm_first
+0
+if (height != sm->sm_height)		return 0;
+height != sm->sm_height
+height
+height
+sm->sm_height
+sm
+sm
+sm_height
+return 0;
+0
+if (sm->sm_first) {		top++;		sm->sm_first = 0;	}
+sm->sm_first
+sm
+sm
+sm_first
+{		top++;		sm->sm_first = 0;	}
+top++;
+top++
+top
+top
+sm->sm_first = 0;
+sm->sm_first = 0
+sm->sm_first
+sm
+sm
+sm_first
+0
+metadata = (height != ip->i_height - 1);
+metadata = (height != ip->i_height - 1)
+metadata
+metadata
+(height != ip->i_height - 1)
+height != ip->i_height - 1
+height
+height
+ip->i_height - 1
+ip->i_height
+ip
+ip
+i_height
+1
+if (metadata)		revokes = (height) ? sdp->sd_inptrs : sdp->sd_diptrs;	else if (ip->i_depth)		revokes = sdp->sd_inptrs;
+metadata
+metadata
+revokes = (height) ? sdp->sd_inptrs : sdp->sd_diptrs;
+revokes = (height) ? sdp->sd_inptrs : sdp->sd_diptrs
+revokes
+revokes
+(height) ? sdp->sd_inptrs : sdp->sd_diptrs
+(height)
+height
+height
+sdp->sd_inptrs
+sdp
+sdp
+sd_inptrs
+sdp->sd_diptrs
+sdp
+sdp
+sd_diptrs
+if (ip->i_depth)		revokes = sdp->sd_inptrs;
+ip->i_depth
+ip
+ip
+i_depth
+revokes = sdp->sd_inptrs;
+revokes = sdp->sd_inptrs
+revokes
+revokes
+sdp->sd_inptrs
+sdp
+sdp
+sd_inptrs
+memset(&rlist, 0, sizeof(struct gfs2_rgrp_list));
+memset(&rlist, 0, sizeof(struct gfs2_rgrp_list))
+memset
+memset
+&rlist
+rlist
+rlist
+0
+sizeof(struct gfs2_rgrp_list)
+struct gfs2_rgrp_list
+struct gfs2_rgrp_list
+gfs2_rgrp_list
+
+bstart = 0;
+bstart = 0
+bstart
+bstart
+0
+blen = 0;
+blen = 0
+blen
+blen
+0
+for (p = top; p < bottom; p++) {		if (!*p)			continue;		bn = be64_to_cpu(*p);		if (bstart + blen == bn)			blen++;		else {			if (bstart)				gfs2_rlist_add(ip, &rlist, bstart);			bstart = bn;			blen = 1;		}	}
+p = top;
+p = top
+p
+p
+top
+top
+p < bottom
+p
+p
+bottom
+bottom
+p++
+p
+p
+{		if (!*p)			continue;		bn = be64_to_cpu(*p);		if (bstart + blen == bn)			blen++;		else {			if (bstart)				gfs2_rlist_add(ip, &rlist, bstart);			bstart = bn;			blen = 1;		}	}
+if (!*p)			continue;
+!*p
+*p
+p
+p
+continue;
+bn = be64_to_cpu(*p);
+bn = be64_to_cpu(*p)
+bn
+bn
+be64_to_cpu(*p)
+be64_to_cpu
+be64_to_cpu
+*p
+p
+p
+if (bstart + blen == bn)			blen++;		else {			if (bstart)				gfs2_rlist_add(ip, &rlist, bstart);			bstart = bn;			blen = 1;		}
+bstart + blen == bn
+bstart + blen
+bstart
+bstart
+blen
+blen
+bn
+bn
+blen++;
+blen++
+blen
+blen
+{			if (bstart)				gfs2_rlist_add(ip, &rlist, bstart);			bstart = bn;			blen = 1;		}
+if (bstart)				gfs2_rlist_add(ip, &rlist, bstart);
+bstart
+bstart
+gfs2_rlist_add(ip, &rlist, bstart);
+gfs2_rlist_add(ip, &rlist, bstart)
+gfs2_rlist_add
+gfs2_rlist_add
+ip
+ip
+&rlist
+rlist
+rlist
+bstart
+bstart
+bstart = bn;
+bstart = bn
+bstart
+bstart
+bn
+bn
+blen = 1;
+blen = 1
+blen
+blen
+1
+if (bstart)		gfs2_rlist_add(ip, &rlist, bstart);	else		goto out;
+bstart
+bstart
+gfs2_rlist_add(ip, &rlist, bstart);
+gfs2_rlist_add(ip, &rlist, bstart)
+gfs2_rlist_add
+gfs2_rlist_add
+ip
+ip
+&rlist
+rlist
+rlist
+bstart
+bstart
+goto out;
+out
+gfs2_rlist_alloc(&rlist, LM_ST_EXCLUSIVE);
+gfs2_rlist_alloc(&rlist, LM_ST_EXCLUSIVE)
+gfs2_rlist_alloc
+gfs2_rlist_alloc
+&rlist
+rlist
+rlist
+LM_ST_EXCLUSIVE
+LM_ST_EXCLUSIVE
+for (x = 0; x < rlist.rl_rgrps; x++) {		struct gfs2_rgrpd *rgd;		rgd = rlist.rl_ghs[x].gh_gl->gl_object;		rg_blocks += rgd->rd_length;	}
+x = 0;
+x = 0
+x
+x
+0
+x < rlist.rl_rgrps
+x
+x
+rlist.rl_rgrps
+rlist
+rlist
+rl_rgrps
+x++
+x
+x
+{		struct gfs2_rgrpd *rgd;		rgd = rlist.rl_ghs[x].gh_gl->gl_object;		rg_blocks += rgd->rd_length;	}
+struct gfs2_rgrpd *rgd;
+struct gfs2_rgrpd *rgd;
+struct gfs2_rgrpd
+gfs2_rgrpd
+*rgd
+*
+rgd
+rgd = rlist.rl_ghs[x].gh_gl->gl_object;
+rgd = rlist.rl_ghs[x].gh_gl->gl_object
+rgd
+rgd
+rlist.rl_ghs[x].gh_gl->gl_object
+rlist.rl_ghs[x].gh_gl
+rlist.rl_ghs[x]
+rlist.rl_ghs
+rlist
+rlist
+rl_ghs
+x
+x
+gh_gl
+gl_object
+rg_blocks += rgd->rd_length;
+rg_blocks += rgd->rd_length
+rg_blocks
+rg_blocks
+rgd->rd_length
+rgd
+rgd
+rd_length
+error = gfs2_glock_nq_m(rlist.rl_rgrps, rlist.rl_ghs);
+error = gfs2_glock_nq_m(rlist.rl_rgrps, rlist.rl_ghs)
+error
+error
+gfs2_glock_nq_m(rlist.rl_rgrps, rlist.rl_ghs)
+gfs2_glock_nq_m
+gfs2_glock_nq_m
+rlist.rl_rgrps
+rlist
+rlist
+rl_rgrps
+rlist.rl_ghs
+rlist
+rlist
+rl_ghs
+if (error)		goto out_rlist;
+error
+error
+goto out_rlist;
+out_rlist
+if (gfs2_rs_active(&ip->i_res)) /* needs to be done with the rgrp glock held */		gfs2_rs_deltree(&ip->i_res);
+gfs2_rs_active(&ip->i_res)
+gfs2_rs_active
+gfs2_rs_active
+&ip->i_res
+ip->i_res
+ip
+ip
+i_res
+gfs2_rs_deltree(&ip->i_res);
+gfs2_rs_deltree(&ip->i_res)
+gfs2_rs_deltree
+gfs2_rs_deltree
+&ip->i_res
+ip->i_res
+ip
+ip
+i_res
+error = gfs2_trans_begin(sdp, rg_blocks + RES_DINODE +				 RES_INDIRECT + RES_STATFS + RES_QUOTA,				 revokes);
+error = gfs2_trans_begin(sdp, rg_blocks + RES_DINODE +				 RES_INDIRECT + RES_STATFS + RES_QUOTA,				 revokes)
+error
+error
+gfs2_trans_begin(sdp, rg_blocks + RES_DINODE +				 RES_INDIRECT + RES_STATFS + RES_QUOTA,				 revokes)
+gfs2_trans_begin
+gfs2_trans_begin
+sdp
+sdp
+rg_blocks + RES_DINODE +				 RES_INDIRECT + RES_STATFS + RES_QUOTA
+rg_blocks + RES_DINODE +				 RES_INDIRECT + RES_STATFS
+rg_blocks + RES_DINODE +				 RES_INDIRECT
+rg_blocks + RES_DINODE
+rg_blocks
+rg_blocks
+RES_DINODE
+RES_DINODE
+RES_INDIRECT
+RES_INDIRECT
+RES_STATFS
+RES_STATFS
+RES_QUOTA
+RES_QUOTA
+revokes
+revokes
+if (error)		goto out_rg_gunlock;
+error
+error
+goto out_rg_gunlock;
+out_rg_gunlock
+down_write(&ip->i_rw_mutex);
+down_write(&ip->i_rw_mutex)
+down_write
+down_write
+&ip->i_rw_mutex
+ip->i_rw_mutex
+ip
+ip
+i_rw_mutex
+gfs2_trans_add_meta(ip->i_gl, dibh);
+gfs2_trans_add_meta(ip->i_gl, dibh)
+gfs2_trans_add_meta
+gfs2_trans_add_meta
+ip->i_gl
+ip
+ip
+i_gl
+dibh
+dibh
+gfs2_trans_add_meta(ip->i_gl, bh);
+gfs2_trans_add_meta(ip->i_gl, bh)
+gfs2_trans_add_meta
+gfs2_trans_add_meta
+ip->i_gl
+ip
+ip
+i_gl
+bh
+bh
+bstart = 0;
+bstart = 0
+bstart
+bstart
+0
+blen = 0;
+blen = 0
+blen
+blen
+0
+btotal = 0;
+btotal = 0
+btotal
+btotal
+0
+for (p = top; p < bottom; p++) {		if (!*p)			continue;		bn = be64_to_cpu(*p);		if (bstart + blen == bn)			blen++;		else {			if (bstart) {				__gfs2_free_blocks(ip, bstart, blen, metadata);				btotal += blen;			}			bstart = bn;			blen = 1;		}		*p = 0;		gfs2_add_inode_blocks(&ip->i_inode, -1);	}
+p = top;
+p = top
+p
+p
+top
+top
+p < bottom
+p
+p
+bottom
+bottom
+p++
+p
+p
+{		if (!*p)			continue;		bn = be64_to_cpu(*p);		if (bstart + blen == bn)			blen++;		else {			if (bstart) {				__gfs2_free_blocks(ip, bstart, blen, metadata);				btotal += blen;			}			bstart = bn;			blen = 1;		}		*p = 0;		gfs2_add_inode_blocks(&ip->i_inode, -1);	}
+if (!*p)			continue;
+!*p
+*p
+p
+p
+continue;
+bn = be64_to_cpu(*p);
+bn = be64_to_cpu(*p)
+bn
+bn
+be64_to_cpu(*p)
+be64_to_cpu
+be64_to_cpu
+*p
+p
+p
+if (bstart + blen == bn)			blen++;		else {			if (bstart) {				__gfs2_free_blocks(ip, bstart, blen, metadata);				btotal += blen;			}			bstart = bn;			blen = 1;		}
+bstart + blen == bn
+bstart + blen
+bstart
+bstart
+blen
+blen
+bn
+bn
+blen++;
+blen++
+blen
+blen
+{			if (bstart) {				__gfs2_free_blocks(ip, bstart, blen, metadata);				btotal += blen;			}			bstart = bn;			blen = 1;		}
+if (bstart) {				__gfs2_free_blocks(ip, bstart, blen, metadata);				btotal += blen;			}
+bstart
+bstart
+{				__gfs2_free_blocks(ip, bstart, blen, metadata);				btotal += blen;			}
+__gfs2_free_blocks(ip, bstart, blen, metadata);
+__gfs2_free_blocks(ip, bstart, blen, metadata)
+__gfs2_free_blocks
+__gfs2_free_blocks
+ip
+ip
+bstart
+bstart
+blen
+blen
+metadata
+metadata
+btotal += blen;
+btotal += blen
+btotal
+btotal
+blen
+blen
+bstart = bn;
+bstart = bn
+bstart
+bstart
+bn
+bn
+blen = 1;
+blen = 1
+blen
+blen
+1
+*p = 0;
+*p = 0
+*p
+p
+p
+0
+gfs2_add_inode_blocks(&ip->i_inode, -1);
+gfs2_add_inode_blocks(&ip->i_inode, -1)
+gfs2_add_inode_blocks
+gfs2_add_inode_blocks
+&ip->i_inode
+ip->i_inode
+ip
+ip
+i_inode
+-1
+1
+if (bstart) {		__gfs2_free_blocks(ip, bstart, blen, metadata);		btotal += blen;	}
+bstart
+bstart
+{		__gfs2_free_blocks(ip, bstart, blen, metadata);		btotal += blen;	}
+__gfs2_free_blocks(ip, bstart, blen, metadata);
+__gfs2_free_blocks(ip, bstart, blen, metadata)
+__gfs2_free_blocks
+__gfs2_free_blocks
+ip
+ip
+bstart
+bstart
+blen
+blen
+metadata
+metadata
+btotal += blen;
+btotal += blen
+btotal
+btotal
+blen
+blen
+gfs2_statfs_change(sdp, 0, +btotal, 0);
+gfs2_statfs_change(sdp, 0, +btotal, 0)
+gfs2_statfs_change
+gfs2_statfs_change
+sdp
+sdp
+0
++btotal
+btotal
+btotal
+0
+gfs2_quota_change(ip, -(s64)btotal, ip->i_inode.i_uid,			  ip->i_inode.i_gid);
+gfs2_quota_change(ip, -(s64)btotal, ip->i_inode.i_uid,			  ip->i_inode.i_gid)
+gfs2_quota_change
+gfs2_quota_change
+ip
+ip
+-(s64)btotal
+(s64)btotal
+s64
+s64
+s64
+
+btotal
+btotal
+ip->i_inode.i_uid
+ip->i_inode
+ip
+ip
+i_inode
+i_uid
+ip->i_inode.i_gid
+ip->i_inode
+ip
+ip
+i_inode
+i_gid
+ip->i_inode.i_mtime = ip->i_inode.i_ctime = CURRENT_TIME;
+ip->i_inode.i_mtime = ip->i_inode.i_ctime = CURRENT_TIME
+ip->i_inode.i_mtime
+ip->i_inode
+ip
+ip
+i_inode
+i_mtime
+ip->i_inode.i_ctime = CURRENT_TIME
+ip->i_inode.i_ctime
+ip->i_inode
+ip
+ip
+i_inode
+i_ctime
+CURRENT_TIME
+CURRENT_TIME
+gfs2_dinode_out(ip, dibh->b_data);
+gfs2_dinode_out(ip, dibh->b_data)
+gfs2_dinode_out
+gfs2_dinode_out
+ip
+ip
+dibh->b_data
+dibh
+dibh
+b_data
+up_write(&ip->i_rw_mutex);
+up_write(&ip->i_rw_mutex)
+up_write
+up_write
+&ip->i_rw_mutex
+ip->i_rw_mutex
+ip
+ip
+i_rw_mutex
+gfs2_trans_end(sdp);
+gfs2_trans_end(sdp)
+gfs2_trans_end
+gfs2_trans_end
+sdp
+sdp
+out_rg_gunlock:	gfs2_glock_dq_m(rlist.rl_rgrps, rlist.rl_ghs);
+out_rg_gunlock
+gfs2_glock_dq_m(rlist.rl_rgrps, rlist.rl_ghs);
+gfs2_glock_dq_m(rlist.rl_rgrps, rlist.rl_ghs)
+gfs2_glock_dq_m
+gfs2_glock_dq_m
+rlist.rl_rgrps
+rlist
+rlist
+rl_rgrps
+rlist.rl_ghs
+rlist
+rlist
+rl_ghs
+out_rlist:	gfs2_rlist_free(&rlist);
+out_rlist
+gfs2_rlist_free(&rlist);
+gfs2_rlist_free(&rlist)
+gfs2_rlist_free
+gfs2_rlist_free
+&rlist
+rlist
+rlist
+out:	return error;
+out
+return error;
+error
+error
+-----joern-----
+(19,79,0)
+(71,236,0)
+(309,24,0)
+(365,24,0)
+(286,196,0)
+(287,126,0)
+(384,234,0)
+(351,69,0)
+(188,4,0)
+(141,282,0)
+(7,337,0)
+(321,366,0)
+(190,365,0)
+(301,258,0)
+(4,258,0)
+(119,211,0)
+(343,258,0)
+(379,315,0)
+(151,287,0)
+(361,157,0)
+(344,242,0)
+(87,373,0)
+(236,328,0)
+(113,323,0)
+(344,365,0)
+(349,24,0)
+(163,244,0)
+(290,262,0)
+(323,7,0)
+(348,343,0)
+(384,224,0)
+(245,244,0)
+(99,296,0)
+(164,262,0)
+(69,210,0)
+(261,24,0)
+(105,118,0)
+(143,193,0)
+(58,111,0)
+(159,59,0)
+(300,184,0)
+(174,143,0)
+(327,258,0)
+(22,11,0)
+(267,109,0)
+(330,35,0)
+(315,211,0)
+(366,214,0)
+(25,147,0)
+(66,63,0)
+(273,323,0)
+(184,41,0)
+(194,81,0)
+(113,46,0)
+(63,267,0)
+(47,242,0)
+(367,48,0)
+(143,174,0)
+(89,379,0)
+(212,334,0)
+(217,226,0)
+(17,374,0)
+(70,141,0)
+(47,21,0)
+(196,158,0)
+(265,23,0)
+(322,67,0)
+(48,21,0)
+(23,21,0)
+(297,24,0)
+(332,138,0)
+(192,334,0)
+(232,24,0)
+(106,238,0)
+(348,314,0)
+(74,38,0)
+(158,196,0)
+(128,24,0)
+(200,205,0)
+(34,226,0)
+(6,360,0)
+(291,317,0)
+(236,113,0)
+(372,147,0)
+(272,207,0)
+(113,328,0)
+(234,242,0)
+(237,330,0)
+(290,309,0)
+(77,317,0)
+(289,70,0)
+(14,172,0)
+(165,4,0)
+(380,335,0)
+(378,195,0)
+(307,290,0)
+(112,160,0)
+(241,218,0)
+(219,214,0)
+(159,161,0)
+(157,24,0)
+(27,24,0)
+(248,189,0)
+(315,379,0)
+(126,21,0)
+(120,311,0)
+(78,90,0)
+(38,24,0)
+(374,242,0)
+(174,267,0)
+(324,62,0)
+(7,46,0)
+(164,242,0)
+(328,24,0)
+(74,244,0)
+(3,48,0)
+(369,153,0)
+(253,83,0)
+(83,124,0)
+(60,93,0)
+(98,174,0)
+(320,281,0)
+(1,144,0)
+(342,59,0)
+(263,126,0)
+(221,365,0)
+(26,123,0)
+(363,198,0)
+(191,66,0)
+(168,24,0)
+(374,309,0)
+(367,24,0)
+(234,59,0)
+(186,153,0)
+(338,164,0)
+(47,254,0)
+(193,143,0)
+(222,374,0)
+(247,113,0)
+(259,24,0)
+(199,309,0)
+(82,176,0)
+(197,379,0)
+(164,365,0)
+(242,240,0)
+(82,236,0)
+(220,24,0)
+(133,250,0)
+(84,136,0)
+(267,24,0)
+(374,185,0)
+(82,193,0)
+(80,24,0)
+(298,35,0)
+(189,248,0)
+(370,364,0)
+(246,105,0)
+(305,312,0)
+(229,158,0)
+(268,157,0)
+(327,134,0)
+(45,376,0)
+(228,24,0)
+(81,386,0)
+(126,287,0)
+(161,24,0)
+(206,189,0)
+(325,24,0)
+(188,232,0)
+(349,16,0)
+(13,337,0)
+(257,138,0)
+(35,21,0)
+(110,339,0)
+(185,240,0)
+(108,374,0)
+(224,384,0)
+(79,363,0)
+(18,281,0)
+(310,17,0)
+(32,384,0)
+(184,123,0)
+(28,376,0)
+(64,210,0)
+(225,24,0)
+(170,267,0)
+(237,24,0)
+(271,16,0)
+(25,235,0)
+(276,309,0)
+(258,281,0)
+(345,118,0)
+(256,361,0)
+(155,386,0)
+(178,337,0)
+(354,136,0)
+(364,370,0)
+(311,120,0)
+(373,80,0)
+(374,365,0)
+(250,188,0)
+(121,315,0)
+(294,35,0)
+(211,315,0)
+(207,272,0)
+(296,386,0)
+(118,21,0)
+(107,161,0)
+(113,113,0)
+(144,255,0)
+(214,366,0)
+(382,23,0)
+(230,319,0)
+(75,134,0)
+(346,198,0)
+(47,185,0)
+(324,24,0)
+(30,343,0)
+(313,348,0)
+(153,217,0)
+(195,267,0)
+(161,159,0)
+(358,206,0)
+(47,365,0)
+(23,357,0)
+(353,46,0)
+(63,66,0)
+(363,24,0)
+(37,344,0)
+(261,154,0)
+(369,24,0)
+(124,21,0)
+(145,47,0)
+(31,328,0)
+(331,290,0)
+(311,282,0)
+(348,232,0)
+(188,250,0)
+(251,24,0)
+(33,238,0)
+(381,255,0)
+(111,291,0)
+(333,236,0)
+(203,63,0)
+(141,70,0)
+(9,176,0)
+(161,267,0)
+(215,24,0)
+(356,11,0)
+(388,1,0)
+(138,41,0)
+(177,226,0)
+(156,160,0)
+(230,272,0)
+(264,363,0)
+(56,185,0)
+(157,361,0)
+(95,62,0)
+(243,123,0)
+(323,113,0)
+(15,70,0)
+(172,82,0)
+(360,120,0)
+(123,317,0)
+(303,64,0)
+(180,7,0)
+(42,24,0)
+(148,24,0)
+(258,327,0)
+(266,123,0)
+(2,24,0)
+(132,24,0)
+(54,81,0)
+(189,206,0)
+(355,339,0)
+(360,21,0)
+(234,164,0)
+(162,360,0)
+(255,144,0)
+(248,312,0)
+(370,291,0)
+(81,178,0)
+(322,21,0)
+(211,21,0)
+(70,210,0)
+(55,367,0)
+(304,47,0)
+(249,24,0)
+(67,322,0)
+(244,74,0)
+(44,218,0)
+(100,24,0)
+(83,211,0)
+(158,386,0)
+(376,123,0)
+(188,21,0)
+(352,143,0)
+(348,136,0)
+(150,54,0)
+(285,322,0)
+(5,24,0)
+(11,217,0)
+(211,83,0)
+(343,348,0)
+(142,242,0)
+(12,118,0)
+(157,383,0)
+(370,218,0)
+(80,373,0)
+(319,230,0)
+(143,282,0)
+(290,254,0)
+(86,290,0)
+(49,185,0)
+(223,314,0)
+(336,275,0)
+(77,90,0)
+(198,267,0)
+(20,120,0)
+(152,336,0)
+(81,54,0)
+(47,309,0)
+(384,59,0)
+(330,237,0)
+(374,17,0)
+(299,124,0)
+(234,139,0)
+(341,311,0)
+(211,24,0)
+(290,185,0)
+(239,156,0)
+(147,21,0)
+(169,161,0)
+(103,312,0)
+(140,141,0)
+(93,21,0)
+(216,93,0)
+(235,25,0)
+(187,275,0)
+(227,161,0)
+(329,188,0)
+(238,80,0)
+(369,172,0)
+(122,24,0)
+(350,369,0)
+(205,116,0)
+(17,1,0)
+(278,64,0)
+(236,333,0)
+(109,357,0)
+(65,174,0)
+(334,143,0)
+(88,291,0)
+(80,238,0)
+(73,240,0)
+(260,24,0)
+(369,363,0)
+(10,362,0)
+(275,336,0)
+(339,317,0)
+(336,62,0)
+(312,248,0)
+(275,21,0)
+(159,164,0)
+(306,242,0)
+(384,32,0)
+(59,24,0)
+(357,23,0)
+(269,188,0)
+(385,291,0)
+(293,234,0)
+(254,311,0)
+(109,267,0)
+(62,324,0)
+(334,267,0)
+(214,21,0)
+(288,79,0)
+(53,319,0)
+(178,81,0)
+(125,4,0)
+(72,205,0)
+(211,32,0)
+(117,124,0)
+(149,261,0)
+(347,176,0)
+(185,1,0)
+(284,204,0)
+(35,330,0)
+(160,333,0)
+(287,151,0)
+(40,234,0)
+(318,196,0)
+(50,241,0)
+(270,290,0)
+(366,383,0)
+(252,266,0)
+(144,1,0)
+(137,147,0)
+(348,4,0)
+(4,204,0)
+(244,21,0)
+(384,164,0)
+(292,67,0)
+(223,136,0)
+(172,24,0)
+(176,24,0)
+(1,362,0)
+(52,322,0)
+(114,193,0)
+(201,362,0)
+(217,11,0)
+(272,230,0)
+(82,267,0)
+(290,242,0)
+(127,184,0)
+(134,327,0)
+(8,384,0)
+(295,154,0)
+(92,24,0)
+(134,123,0)
+(91,24,0)
+(47,139,0)
+(153,24,0)
+(314,24,0)
+(38,74,0)
+(208,24,0)
+(181,116,0)
+(129,126,0)
+(312,21,0)
+(147,25,0)
+(67,324,0)
+(367,94,0)
+(316,361,0)
+(48,367,0)
+(0,373,0)
+(102,232,0)
+(231,275,0)
+(337,7,0)
+(376,28,0)
+(82,66,0)
+(130,386,0)
+(195,24,0)
+(214,24,0)
+(104,314,0)
+(308,82,0)
+(368,24,0)
+(115,24,0)
+(209,63,0)
+(340,254,0)
+(375,156,0)
+(279,24,0)
+(337,178,0)
+(198,363,0)
+(359,323,0)
+(64,78,0)
+(255,291,0)
+(379,21,0)
+(167,59,0)
+(233,164,0)
+(333,160,0)
+(19,369,0)
+(302,328,0)
+(154,261,0)
+(120,360,0)
+(171,48,0)
+(283,370,0)
+(254,24,0)
+(217,153,0)
+(39,333,0)
+(361,21,0)
+(138,291,0)
+(290,21,0)
+(290,365,0)
+(371,232,0)
+(205,210,0)
+(357,109,0)
+(189,362,0)
+(164,59,0)
+(16,349,0)
+(241,291,0)
+(118,232,0)
+(274,230,0)
+(236,82,0)
+(234,365,0)
+(43,178,0)
+(160,156,0)
+(280,159,0)
+(82,172,0)
+(213,54,0)
+(218,362,0)
+(335,205,0)
+(277,47,0)
+(377,223,0)
+(135,82,0)
+(101,69,0)
+(339,110,0)
+(118,4,0)
+(85,24,0)
+(311,254,0)
+(124,83,0)
+(136,204,0)
+(164,164,0)
+(226,217,0)
+(61,24,0)
+(179,314,0)
+(32,211,0)
+(255,218,0)
+(97,77,0)
+(118,105,0)
+(143,334,0)
+(19,335,0)
+(230,24,0)
+(159,234,0)
+(173,78,0)
+(202,47,0)
+(68,366,0)
+(29,348,0)
+(43,81,1)
+(163,214,1)
+(192,352,1)
+(352,114,1)
+(69,210,1)
+(375,239,1)
+(287,126,1)
+(141,70,1)
+(34,186,1)
+(333,160,1)
+(31,302,1)
+(290,309,1)
+(187,67,1)
+(348,313,1)
+(164,365,1)
+(374,365,1)
+(198,267,1)
+(307,146,1)
+(361,21,1)
+(63,209,1)
+(195,267,1)
+(118,232,1)
+(366,383,1)
+(98,65,1)
+(376,45,1)
+(37,17,1)
+(164,164,1)
+(305,218,1)
+(343,348,1)
+(17,374,1)
+(223,377,1)
+(13,178,1)
+(16,271,1)
+(358,248,1)
+(301,28,1)
+(79,363,1)
+(103,305,1)
+(214,366,1)
+(334,212,1)
+(191,93,1)
+(54,213,1)
+(221,309,1)
+(82,176,1)
+(205,200,1)
+(83,253,1)
+(15,289,1)
+(30,348,1)
+(166,153,1)
+(382,170,1)
+(211,21,1)
+(310,374,1)
+(82,308,1)
+(312,21,1)
+(272,274,1)
+(213,150,1)
+(47,21,1)
+(107,76,1)
+(153,217,1)
+(227,159,1)
+(369,350,1)
+(232,371,1)
+(234,293,1)
+(87,0,1)
+(359,273,1)
+(360,21,1)
+(47,185,1)
+(255,218,1)
+(385,59,1)
+(74,244,1)
+(195,378,1)
+(4,258,1)
+(211,315,1)
+(239,112,1)
+(172,82,1)
+(23,265,1)
+(149,154,1)
+(162,6,1)
+(86,331,1)
+(370,283,1)
+(138,291,1)
+(290,21,1)
+(322,21,1)
+(302,267,1)
+(364,370,1)
+(124,117,1)
+(188,4,1)
+(114,51,1)
+(348,232,1)
+(344,37,1)
+(186,158,1)
+(237,330,1)
+(280,169,1)
+(124,21,1)
+(324,62,1)
+(14,235,1)
+(93,60,1)
+(275,231,1)
+(203,191,1)
+(340,69,1)
+(314,104,1)
+(143,334,1)
+(119,161,1)
+(374,242,1)
+(361,256,1)
+(71,135,1)
+(238,106,1)
+(188,250,1)
+(365,190,1)
+(315,121,1)
+(150,180,1)
+(185,49,1)
+(40,47,1)
+(141,282,1)
+(184,41,1)
+(50,242,1)
+(334,267,1)
+(113,113,1)
+(70,210,1)
+(155,130,1)
+(194,54,1)
+(25,147,1)
+(211,83,1)
+(83,124,1)
+(247,7,1)
+(165,387,1)
+(137,372,1)
+(113,323,1)
+(357,23,1)
+(346,264,1)
+(11,22,1)
+(344,242,1)
+(1,144,1)
+(197,32,1)
+(245,163,1)
+(19,79,1)
+(261,154,1)
+(45,184,1)
+(348,4,1)
+(4,125,1)
+(253,124,1)
+(126,263,1)
+(308,236,1)
+(116,181,1)
+(374,185,1)
+(121,379,1)
+(51,254,1)
+(57,172,1)
+(288,131,1)
+(176,9,1)
+(111,291,1)
+(138,332,1)
+(23,21,1)
+(123,317,1)
+(235,25,1)
+(250,133,1)
+(244,245,1)
+(126,21,1)
+(241,50,1)
+(349,16,1)
+(255,291,1)
+(50,344,1)
+(105,246,1)
+(378,38,1)
+(144,255,1)
+(219,324,1)
+(188,21,1)
+(254,311,1)
+(174,267,1)
+(178,43,1)
+(7,337,1)
+(60,216,1)
+(55,48,1)
+(77,317,1)
+(271,80,1)
+(188,232,1)
+(261,149,1)
+(161,227,1)
+(234,59,1)
+(66,63,1)
+(143,174,1)
+(157,361,1)
+(234,242,1)
+(270,86,1)
+(56,164,1)
+(84,4,1)
+(64,210,1)
+(89,197,1)
+(118,345,1)
+(341,340,1)
+(304,202,1)
+(189,206,1)
+(157,383,1)
+(178,81,1)
+(17,1,1)
+(70,15,1)
+(340,78,1)
+(3,171,1)
+(182,36,1)
+(80,238,1)
+(344,365,1)
+(53,93,1)
+(82,66,1)
+(371,102,1)
+(283,138,1)
+(278,303,1)
+(348,136,1)
+(39,71,1)
+(351,101,1)
+(315,379,1)
+(384,8,1)
+(56,146,1)
+(211,32,1)
+(154,295,1)
+(272,207,1)
+(111,58,1)
+(350,182,1)
+(143,282,1)
+(338,233,1)
+(109,357,1)
+(255,381,1)
+(120,20,1)
+(234,164,1)
+(185,1,1)
+(331,307,1)
+(243,314,1)
+(146,17,1)
+(296,99,1)
+(65,352,1)
+(104,179,1)
+(323,7,1)
+(274,319,1)
+(271,326,1)
+(164,242,1)
+(147,137,1)
+(82,267,1)
+(202,277,1)
+(380,141,1)
+(299,315,1)
+(369,172,1)
+(336,152,1)
+(290,270,1)
+(142,306,1)
+(264,176,1)
+(180,158,1)
+(26,243,1)
+(165,118,1)
+(135,14,1)
+(313,29,1)
+(335,205,1)
+(290,254,1)
+(193,143,1)
+(343,30,1)
+(257,111,1)
+(147,21,1)
+(184,127,1)
+(379,89,1)
+(335,380,1)
+(366,68,1)
+(33,195,1)
+(167,342,1)
+(110,339,1)
+(384,224,1)
+(160,156,1)
+(292,322,1)
+(291,317,1)
+(236,328,1)
+(229,296,1)
+(354,84,1)
+(14,151,1)
+(296,386,1)
+(67,292,1)
+(48,3,1)
+(125,165,1)
+(257,291,1)
+(134,75,1)
+(129,166,1)
+(123,26,1)
+(268,361,1)
+(79,288,1)
+(106,33,1)
+(19,335,1)
+(96,28,1)
+(78,173,1)
+(345,105,1)
+(309,276,1)
+(179,232,1)
+(339,317,1)
+(336,275,1)
+(49,56,1)
+(68,321,1)
+(303,77,1)
+(347,328,1)
+(216,51,1)
+(47,309,1)
+(214,21,1)
+(388,364,1)
+(223,136,1)
+(229,386,1)
+(118,4,1)
+(38,74,1)
+(200,72,1)
+(118,21,1)
+(6,341,1)
+(173,64,1)
+(294,298,1)
+(300,266,1)
+(386,155,1)
+(209,203,1)
+(159,164,1)
+(62,95,1)
+(339,355,1)
+(291,88,1)
+(244,21,1)
+(82,236,1)
+(306,185,1)
+(64,278,1)
+(234,365,1)
+(120,360,1)
+(363,198,1)
+(75,301,1)
+(113,328,1)
+(355,131,1)
+(63,267,1)
+(47,254,1)
+(88,385,1)
+(93,21,1)
+(47,242,1)
+(252,136,1)
+(290,185,1)
+(47,365,1)
+(217,226,1)
+(322,52,1)
+(189,248,1)
+(379,21,1)
+(101,141,1)
+(266,252,1)
+(183,57,1)
+(58,175,1)
+(212,192,1)
+(17,310,1)
+(81,54,1)
+(145,76,1)
+(233,290,1)
+(369,363,1)
+(77,97,1)
+(158,386,1)
+(81,386,1)
+(131,363,1)
+(311,120,1)
+(328,31,1)
+(157,268,1)
+(48,21,1)
+(369,153,1)
+(289,140,1)
+(58,189,1)
+(311,282,1)
+(118,105,1)
+(72,110,1)
+(348,314,1)
+(321,219,1)
+(196,286,1)
+(241,291,1)
+(47,304,1)
+(161,267,1)
+(252,223,1)
+(134,123,1)
+(256,316,1)
+(223,314,1)
+(152,275,1)
+(29,258,1)
+(360,162,1)
+(107,234,1)
+(286,318,1)
+(199,367,1)
+(164,59,1)
+(175,364,1)
+(330,35,1)
+(59,167,1)
+(370,291,1)
+(108,222,1)
+(198,346,1)
+(326,166,1)
+(285,211,1)
+(377,343,1)
+(343,258,1)
+(174,98,1)
+(161,159,1)
+(323,359,1)
+(356,226,1)
+(252,96,1)
+(276,199,1)
+(269,250,1)
+(367,48,1)
+(205,210,1)
+(293,40,1)
+(374,108,1)
+(159,59,1)
+(273,247,1)
+(266,123,1)
+(169,107,1)
+(319,53,1)
+(97,69,1)
+(140,116,1)
+(36,184,1)
+(248,312,1)
+(267,109,1)
+(22,356,1)
+(367,94,1)
+(332,257,1)
+(164,338,1)
+(206,358,1)
+(236,113,1)
+(374,309,1)
+(53,193,1)
+(112,39,1)
+(20,360,1)
+(367,55,1)
+(277,145,1)
+(188,269,1)
+(258,327,1)
+(242,142,1)
+(337,13,1)
+(184,123,1)
+(316,237,1)
+(82,193,1)
+(127,300,1)
+(275,21,1)
+(33,183,1)
+(12,387,1)
+(218,44,1)
+(19,369,1)
+(117,299,1)
+(376,123,1)
+(350,349,1)
+(35,294,1)
+(44,241,1)
+(373,87,1)
+(327,134,1)
+(337,178,1)
+(69,351,1)
+(0,238,1)
+(136,354,1)
+(312,103,1)
+(387,343,1)
+(230,319,1)
+(140,110,1)
+(138,41,1)
+(230,272,1)
+(9,347,1)
+(151,287,1)
+(53,66,1)
+(133,329,1)
+(298,57,1)
+(159,234,1)
+(81,194,1)
+(222,1,1)
+(246,12,1)
+(76,138,1)
+(318,229,1)
+(67,322,1)
+(384,234,1)
+(52,285,1)
+(158,196,1)
+(156,375,1)
+(171,157,1)
+(181,205,1)
+(159,280,1)
+(384,59,1)
+(290,242,1)
+(217,11,1)
+(8,119,1)
+(370,218,1)
+(236,333,1)
+(381,388,1)
+(28,376,1)
+(231,187,1)
+(329,36,1)
+(372,151,1)
+(99,113,1)
+(102,230,1)
+(300,123,1)
+(265,382,1)
+(295,188,1)
+(32,384,1)
+(263,129,1)
+(95,336,1)
+(35,21,1)
+(80,373,1)
+(177,34,1)
+(342,365,1)
+(384,164,1)
+(226,177,1)
+(290,365,1)
+(130,261,1)
+(190,221,1)
+(266,184,2)
+(278,69,2)
+(178,81,2)
+(47,185,2)
+(189,364,2)
+(34,36,2)
+(254,141,2)
+(89,57,2)
+(364,138,2)
+(15,131,2)
+(354,343,2)
+(348,136,2)
+(195,267,2)
+(374,309,2)
+(25,151,2)
+(82,236,2)
+(77,69,2)
+(63,93,2)
+(318,158,2)
+(294,57,2)
+(22,36,2)
+(361,21,2)
+(133,36,2)
+(126,166,2)
+(291,57,2)
+(144,255,2)
+(365,57,2)
+(70,131,2)
+(312,21,2)
+(341,141,2)
+(113,328,2)
+(379,57,2)
+(159,164,2)
+(164,164,2)
+(113,323,2)
+(376,123,2)
+(189,248,2)
+(188,250,2)
+(246,387,2)
+(310,364,2)
+(119,57,2)
+(355,131,2)
+(113,113,2)
+(234,242,2)
+(369,363,2)
+(77,317,2)
+(49,17,2)
+(197,57,2)
+(127,184,2)
+(140,131,2)
+(205,110,2)
+(180,158,2)
+(169,57,2)
+(375,166,2)
+(315,57,2)
+(50,364,2)
+(185,17,2)
+(364,370,2)
+(211,83,2)
+(312,364,2)
+(343,28,2)
+(71,166,2)
+(35,57,2)
+(385,57,2)
+(104,141,2)
+(217,36,2)
+(235,151,2)
+(381,364,2)
+(19,369,2)
+(343,348,2)
+(330,35,2)
+(158,386,2)
+(4,258,2)
+(47,309,2)
+(211,21,2)
+(87,166,2)
+(118,387,2)
+(257,57,2)
+(118,21,2)
+(238,166,2)
+(126,21,2)
+(370,138,2)
+(286,158,2)
+(214,57,2)
+(30,28,2)
+(136,343,2)
+(231,57,2)
+(8,57,2)
+(110,339,2)
+(229,158,2)
+(226,36,2)
+(358,364,2)
+(82,267,2)
+(11,36,2)
+(338,146,2)
+(360,21,2)
+(258,327,2)
+(290,146,2)
+(269,36,2)
+(40,76,2)
+(232,141,2)
+(4,343,2)
+(167,57,2)
+(311,141,2)
+(158,158,2)
+(121,57,2)
+(1,144,2)
+(258,28,2)
+(33,166,2)
+(16,36,2)
+(199,57,2)
+(68,57,2)
+(337,178,2)
+(386,36,2)
+(348,232,2)
+(340,141,2)
+(19,335,2)
+(234,59,2)
+(271,36,2)
+(277,76,2)
+(29,28,2)
+(93,21,2)
+(188,21,2)
+(230,319,2)
+(142,17,2)
+(112,166,2)
+(138,57,2)
+(324,62,2)
+(138,138,2)
+(299,57,2)
+(63,267,2)
+(209,93,2)
+(67,322,2)
+(292,57,2)
+(187,57,2)
+(283,138,2)
+(253,57,2)
+(138,41,2)
+(380,141,2)
+(211,57,2)
+(359,158,2)
+(95,57,2)
+(217,11,2)
+(301,28,2)
+(143,334,2)
+(206,364,2)
+(217,226,2)
+(387,343,2)
+(28,184,2)
+(164,242,2)
+(366,57,2)
+(377,343,2)
+(192,352,2)
+(235,25,2)
+(186,36,2)
+(3,57,2)
+(323,7,2)
+(184,141,2)
+(242,17,2)
+(289,131,2)
+(344,17,2)
+(171,57,2)
+(272,207,2)
+(322,57,2)
+(374,364,2)
+(370,218,2)
+(105,387,2)
+(324,57,2)
+(275,57,2)
+(335,205,2)
+(304,76,2)
+(82,166,2)
+(333,166,2)
+(84,343,2)
+(166,36,2)
+(316,57,2)
+(184,41,2)
+(343,258,2)
+(296,386,2)
+(223,343,2)
+(20,141,2)
+(138,291,2)
+(79,131,2)
+(286,36,2)
+(369,172,2)
+(230,141,2)
+(196,36,2)
+(222,364,2)
+(7,158,2)
+(101,141,2)
+(272,141,2)
+(111,138,2)
+(308,166,2)
+(134,28,2)
+(118,232,2)
+(184,123,2)
+(370,291,2)
+(256,57,2)
+(239,166,2)
+(53,141,2)
+(384,59,2)
+(151,166,2)
+(17,374,2)
+(164,146,2)
+(52,57,2)
+(248,364,2)
+(234,365,2)
+(39,166,2)
+(252,184,2)
+(111,291,2)
+(182,36,2)
+(255,364,2)
+(229,36,2)
+(137,151,2)
+(26,141,2)
+(276,57,2)
+(75,28,2)
+(78,69,2)
+(134,123,2)
+(79,363,2)
+(96,28,2)
+(97,69,2)
+(234,164,2)
+(141,70,2)
+(70,210,2)
+(300,141,2)
+(367,57,2)
+(147,21,2)
+(155,36,2)
+(184,184,2)
+(241,291,2)
+(164,365,2)
+(38,74,2)
+(159,59,2)
+(241,364,2)
+(309,57,2)
+(327,134,2)
+(69,210,2)
+(80,373,2)
+(280,57,2)
+(332,57,2)
+(257,138,2)
+(352,51,2)
+(86,146,2)
+(66,93,2)
+(205,210,2)
+(183,57,2)
+(319,141,2)
+(158,196,2)
+(38,57,2)
+(237,330,2)
+(333,160,2)
+(65,352,2)
+(80,166,2)
+(342,57,2)
+(193,143,2)
+(200,110,2)
+(188,232,2)
+(273,158,2)
+(379,21,2)
+(114,51,2)
+(36,141,2)
+(290,309,2)
+(288,131,2)
+(88,57,2)
+(66,63,2)
+(233,146,2)
+(223,314,2)
+(93,51,2)
+(330,57,2)
+(195,57,2)
+(144,364,2)
+(106,166,2)
+(247,158,2)
+(339,131,2)
+(82,66,2)
+(270,146,2)
+(48,21,2)
+(120,141,2)
+(369,141,2)
+(248,312,2)
+(218,364,2)
+(378,57,2)
+(321,57,2)
+(123,317,2)
+(0,166,2)
+(287,166,2)
+(13,158,2)
+(384,224,2)
+(43,158,2)
+(191,93,2)
+(64,210,2)
+(373,166,2)
+(127,141,2)
+(72,110,2)
+(55,57,2)
+(298,57,2)
+(185,1,2)
+(243,141,2)
+(388,364,2)
+(331,146,2)
+(102,141,2)
+(153,36,2)
+(124,21,2)
+(153,217,2)
+(164,59,2)
+(80,238,2)
+(125,343,2)
+(213,158,2)
+(23,21,2)
+(221,57,2)
+(295,36,2)
+(45,184,2)
+(165,343,2)
+(336,57,2)
+(7,337,2)
+(266,123,2)
+(348,314,2)
+(374,365,2)
+(67,57,2)
+(47,242,2)
+(161,57,2)
+(60,51,2)
+(103,364,2)
+(37,17,2)
+(293,76,2)
+(120,360,2)
+(332,138,2)
+(261,154,2)
+(236,166,2)
+(190,57,2)
+(337,158,2)
+(376,184,2)
+(287,126,2)
+(47,254,2)
+(219,57,2)
+(17,364,2)
+(216,51,2)
+(110,131,2)
+(372,151,2)
+(345,387,2)
+(147,151,2)
+(25,147,2)
+(109,357,2)
+(175,364,2)
+(290,185,2)
+(237,57,2)
+(12,387,2)
+(62,57,2)
+(344,365,2)
+(143,282,2)
+(236,113,2)
+(374,242,2)
+(54,158,2)
+(300,184,2)
+(318,36,2)
+(74,57,2)
+(214,366,2)
+(59,57,2)
+(159,57,2)
+(181,110,2)
+(124,57,2)
+(303,69,2)
+(290,21,2)
+(348,28,2)
+(172,166,2)
+(203,93,2)
+(349,36,2)
+(151,287,2)
+(261,36,2)
+(291,317,2)
+(236,333,2)
+(1,364,2)
+(274,141,2)
+(28,376,2)
+(14,166,2)
+(161,159,2)
+(51,141,2)
+(211,32,2)
+(263,166,2)
+(160,166,2)
+(161,267,2)
+(323,158,2)
+(255,291,2)
+(32,384,2)
+(157,361,2)
+(82,176,2)
+(162,141,2)
+(150,158,2)
+(307,146,2)
+(369,153,2)
+(296,158,2)
+(118,4,2)
+(244,57,2)
+(6,141,2)
+(188,36,2)
+(69,141,2)
+(223,136,2)
+(179,141,2)
+(118,105,2)
+(212,352,2)
+(47,76,2)
+(329,36,2)
+(156,166,2)
+(152,57,2)
+(384,234,2)
+(371,141,2)
+(339,317,2)
+(154,36,2)
+(350,141,2)
+(143,51,2)
+(254,311,2)
+(230,272,2)
+(17,1,2)
+(32,57,2)
+(174,267,2)
+(311,282,2)
+(202,76,2)
+(367,94,2)
+(178,158,2)
+(349,16,2)
+(174,352,2)
+(146,17,2)
+(189,206,2)
+(35,21,2)
+(360,141,2)
+(384,164,2)
+(117,57,2)
+(335,141,2)
+(56,17,2)
+(356,36,2)
+(255,218,2)
+(64,69,2)
+(19,79,2)
+(334,352,2)
+(314,141,2)
+(81,386,2)
+(188,4,2)
+(326,166,2)
+(290,365,2)
+(83,57,2)
+(351,141,2)
+(82,193,2)
+(141,282,2)
+(129,166,2)
+(290,254,2)
+(336,275,2)
+(74,244,2)
+(177,36,2)
+(163,57,2)
+(348,4,2)
+(196,158,2)
+(305,364,2)
+(250,36,2)
+(160,156,2)
+(116,110,2)
+(48,57,2)
+(313,28,2)
+(130,36,2)
+(367,48,2)
+(143,174,2)
+(214,21,2)
+(311,120,2)
+(344,242,2)
+(173,69,2)
+(57,166,2)
+(194,158,2)
+(76,57,2)
+(236,328,2)
+(44,364,2)
+(322,21,2)
+(81,158,2)
+(361,57,2)
+(108,364,2)
+(357,23,2)
+(113,158,2)
+(374,185,2)
+(47,21,2)
+(285,57,2)
+(327,28,2)
+(363,198,2)
+(172,82,2)
+(159,234,2)
+(157,57,2)
+(334,267,2)
+(211,315,2)
+(193,51,2)
+(290,242,2)
+(244,21,2)
+(157,383,2)
+(198,267,2)
+(268,57,2)
+(141,131,2)
+(267,109,2)
+(123,141,2)
+(234,76,2)
+(107,57,2)
+(158,36,2)
+(98,352,2)
+(275,21,2)
+(145,76,2)
+(227,57,2)
+(315,379,2)
+(245,57,2)
+(366,383,2)
+(306,17,2)
+(83,124,2)
+(149,36,2)
+(135,166,2)
+(58,138,2)
+(384,57,2)
+(99,158,2)
+(47,365,2)
+(81,54,2)
+-----------------------------------
+(0,rlist)
+(1,bn = be64_to_cpu(*p)
+(2,rg_blocks)
+(3,i_gl)
+(4,bstart = bn)
+(5,out_rlist:)
+(6,ip)
+(7,rgd = rlist.rl_ghs[x].gh_gl->gl_object)
+(8,btotal)
+(9,0)
+(10,if (bstart + blen == bn)
+(11,rlist.rl_ghs)
+(12,ip)
+(13,gl_object)
+(14,error)
+(15,sm_height)
+(16,&rlist)
+(17,bstart + blen == bn)
+(18,if (!*p)
+(19,RET)
+(20,1)
+(21,struct gfs2_inode *ip)
+(22,rl_ghs)
+(23,ip->i_inode)
+(24,)
+(25,&ip->i_res)
+(26,top)
+(27,if (gfs2_rs_active(&ip->i_res)
+(28,!*p)
+(29,bstart)
+(30,bn)
+(31,0)
+(32,-(s64)
+(33,rlist)
+(34,rlist)
+(35,ip->i_rw_mutex)
+(36,bstart)
+(37,blen)
+(38,up_write(&ip->i_rw_mutex)
+(39,RES_DINODE)
+(40,btotal)
+(41,__be64 *bottom)
+(42,for (p = top; p < bottom; p++)
+(43,gh_gl)
+(44,0)
+(45,p)
+(46,)
+(47,__gfs2_free_blocks(ip, bstart, blen, metadata)
+(48,ip->i_gl)
+(49,bn)
+(50,p)
+(51,metadata)
+(52,i_inode)
+(53,rlist)
+(54,rlist.rl_ghs)
+(55,bh)
+(56,bstart)
+(57,error)
+(58,p)
+(59,btotal = 0)
+(60,i_depth)
+(61,error)
+(62,ip->i_inode.i_ctime = CURRENT_TIME)
+(63,sdp->sd_inptrs)
+(64,sm->sm_first)
+(65,sdp)
+(66,revokes = sdp->sd_inptrs)
+(67,ip->i_inode.i_mtime)
+(68,b_data)
+(69,sm->sm_first)
+(70,sm->sm_height)
+(71,rg_blocks)
+(72,sm)
+(73,if (bstart)
+(74,&ip->i_rw_mutex)
+(75,p)
+(76,bstart)
+(77,top++)
+(78,sm->sm_first = 0)
+(79,return error;)
+(80,gfs2_glock_dq_m(rlist.rl_rgrps, rlist.rl_ghs)
+(81,rlist.rl_ghs[x])
+(82,gfs2_trans_begin(sdp, rg_blocks + RES_DINODE +\n\\n\\t\\t\\t\\t RES_INDIRECT + RES_STATFS + RES_QUOTA,\n\\n\\t\\t\\t\\t revokes)
+(83,ip->i_inode.i_gid)
+(84,blen)
+(85,p)
+(86,blen)
+(87,rl_ghs)
+(88,top)
+(89,i_inode)
+(90,)
+(91,if (sm->sm_first)
+(92,bn)
+(93,ip->i_depth)
+(94,struct buffer_head *bh)
+(95,CURRENT_TIME)
+(96,continue;)
+(97,top)
+(98,sd_inptrs)
+(99,x)
+(100,if (error)
+(101,sm)
+(102,bstart)
+(103,i_inode)
+(104,0)
+(105,&rlist)
+(106,rl_rgrps)
+(107,sdp)
+(108,blen)
+(109,GFS2_SB(&ip->i_inode)
+(110,!*top)
+(111,p++)
+(112,RES_INDIRECT)
+(113,rg_blocks += rgd->rd_length)
+(114,revokes)
+(115,x)
+(116,sm->sm_first = 0)
+(117,i_inode)
+(118,gfs2_rlist_add(ip, &rlist, bstart)
+(119,ip)
+(120,ip->i_height - 1)
+(121,i_uid)
+(122,for (x = 0; x < rlist.rl_rgrps; x++)
+(123,p = top)
+(124,ip->i_inode)
+(125,bn)
+(126,ip->i_res)
+(127,bottom)
+(128,if (error)
+(129,ip)
+(130,x)
+(131,error)
+(132,out_rg_gunlock:)
+(133,rlist)
+(134,*p)
+(135,sdp)
+(136,blen = 1)
+(137,i_res)
+(138,p < bottom)
+(139,)
+(140,height)
+(141,height != sm->sm_height)
+(142,1)
+(143,(height)
+(144,be64_to_cpu(*p)
+(145,ip)
+(146,bstart)
+(147,ip->i_res)
+(148,out:)
+(149,LM_ST_EXCLUSIVE)
+(150,rlist)
+(151,gfs2_rs_active(&ip->i_res)
+(152,i_ctime)
+(153,error = gfs2_glock_nq_m(rlist.rl_rgrps, rlist.rl_ghs)
+(154,&rlist)
+(155,0)
+(156,RES_STATFS + RES_QUOTA)
+(157,gfs2_trans_add_meta(ip->i_gl, dibh)
+(158,x < rlist.rl_rgrps)
+(159,+btotal)
+(160,RES_INDIRECT + RES_STATFS + RES_QUOTA)
+(161,gfs2_statfs_change(sdp, 0, +btotal, 0)
+(162,i_height)
+(163,ip)
+(164,btotal += blen)
+(165,bstart)
+(166,error)
+(167,0)
+(168,if (metadata)
+(169,0)
+(170,sdp)
+(171,ip)
+(172,error = gfs2_trans_begin(sdp, rg_blocks + RES_DINODE +\n\\n\\t\\t\\t\\t RES_INDIRECT + RES_STATFS + RES_QUOTA,\n\\n\\t\\t\\t\\t revokes)
+(173,0)
+(174,sdp->sd_inptrs)
+(175,continue;)
+(176,revokes = 0)
+(177,rl_rgrps)
+(178,rlist.rl_ghs[x].gh_gl)
+(179,blen)
+(180,rgd)
+(181,0)
+(182,goto out;)
+(183,goto out_rg_gunlock;)
+(184,p < bottom)
+(185,bstart = bn)
+(186,error)
+(187,ip)
+(188,gfs2_rlist_add(ip, &rlist, bstart)
+(189,gfs2_add_inode_blocks(&ip->i_inode, -1)
+(190,0)
+(191,revokes)
+(192,sdp)
+(193,revokes = (height)
+(194,x)
+(195,gfs2_trans_end(sdp)
+(196,rlist.rl_rgrps)
+(197,ip)
+(198,gfs2_rindex_update(sdp)
+(199,bstart)
+(200,sm_first)
+(201,if (!*p)
+(202,blen)
+(203,sdp)
+(204,)
+(205,sm->sm_first)
+(206,-1)
+(207,struct gfs2_rgrp_list)
+(208,rlist)
+(209,sd_inptrs)
+(210,struct strip_mine *sm)
+(211,gfs2_quota_change(ip, -(s64)
+(212,sd_diptrs)
+(213,rl_ghs)
+(214,gfs2_dinode_out(ip, dibh->b_data)
+(215,if (height != sm->sm_height)
+(216,ip)
+(217,gfs2_glock_nq_m(rlist.rl_rgrps, rlist.rl_ghs)
+(218,*p = 0)
+(219,ip)
+(220,for (p = top; p < bottom; p++)
+(221,blen)
+(222,bstart)
+(223,blen++)
+(224,s64)
+(225,if (bstart)
+(226,rlist.rl_rgrps)
+(227,0)
+(228,bstart)
+(229,x)
+(230,memset(&rlist, 0, sizeof(struct gfs2_rgrp_list)
+(231,i_inode)
+(232,bstart = 0)
+(233,btotal)
+(234,btotal += blen)
+(235,gfs2_rs_deltree(&ip->i_res)
+(236,rg_blocks + RES_DINODE +\n\\n\\t\\t\\t\\t RES_INDIRECT + RES_STATFS + RES_QUOTA)
+(237,down_write(&ip->i_rw_mutex)
+(238,rlist.rl_rgrps)
+(239,RES_STATFS)
+(240,)
+(241,*p)
+(242,blen = 1)
+(243,p)
+(244,ip->i_rw_mutex)
+(245,i_rw_mutex)
+(246,rlist)
+(247,rg_blocks)
+(248,&ip->i_inode)
+(249,metadata)
+(250,&rlist)
+(251,sdp)
+(252,p)
+(253,i_gid)
+(254,metadata = (height != ip->i_height - 1)
+(255,*p)
+(256,i_gl)
+(257,p)
+(258,bn = be64_to_cpu(*p)
+(259,blen)
+(260,if (bstart)
+(261,gfs2_rlist_alloc(&rlist, LM_ST_EXCLUSIVE)
+(262,)
+(263,i_res)
+(264,error)
+(265,i_inode)
+(266,p++)
+(267,*sdp = GFS2_SB(&ip->i_inode)
+(268,dibh)
+(269,bstart)
+(270,metadata)
+(271,rlist)
+(272,sizeof(struct gfs2_rgrp_list)
+(273,rgd)
+(274,0)
+(275,ip->i_inode)
+(276,0)
+(277,bstart)
+(278,sm_first)
+(279,revokes)
+(280,btotal)
+(281,)
+(282,unsigned int height)
+(283,p)
+(284,if (bstart)
+(285,ip)
+(286,rl_rgrps)
+(287,&ip->i_res)
+(288,error)
+(289,sm)
+(290,__gfs2_free_blocks(ip, bstart, blen, metadata)
+(291,p = top)
+(292,i_mtime)
+(293,blen)
+(294,i_rw_mutex)
+(295,rlist)
+(296,x++)
+(297,btotal)
+(298,ip)
+(299,ip)
+(300,p)
+(301,bn)
+(302,rg_blocks)
+(303,sm)
+(304,metadata)
+(305,ip)
+(306,blen)
+(307,ip)
+(308,revokes)
+(309,bstart = 0)
+(310,bn)
+(311,height != ip->i_height - 1)
+(312,ip->i_inode)
+(313,blen)
+(314,blen = 0)
+(315,ip->i_inode.i_uid)
+(316,ip)
+(317,__be64 *top)
+(318,rlist)
+(319,&rlist)
+(320,if (bstart + blen == bn)
+(321,dibh)
+(322,ip->i_inode)
+(323,rgd->rd_length)
+(324,ip->i_inode.i_mtime = ip->i_inode.i_ctime = CURRENT_TIME)
+(325,if (!*top)
+(326,goto out_rlist;)
+(327,be64_to_cpu(*p)
+(328,rg_blocks = 0)
+(329,ip)
+(330,&ip->i_rw_mutex)
+(331,bstart)
+(332,bottom)
+(333,RES_DINODE +\n\\n\\t\\t\\t\\t RES_INDIRECT + RES_STATFS + RES_QUOTA)
+(334,sdp->sd_diptrs)
+(335,return 0;)
+(336,ip->i_inode.i_ctime)
+(337,rlist.rl_ghs[x].gh_gl->gl_object)
+(338,blen)
+(339,*top)
+(340,metadata)
+(341,height)
+(342,btotal)
+(343,bstart + blen == bn)
+(344,blen++)
+(345,bstart)
+(346,sdp)
+(347,revokes)
+(348,bstart + blen)
+(349,gfs2_rlist_free(&rlist)
+(350,error)
+(351,sm_first)
+(352,height)
+(353,rgd)
+(354,1)
+(355,top)
+(356,rlist)
+(357,&ip->i_inode)
+(358,1)
+(359,rd_length)
+(360,ip->i_height)
+(361,ip->i_gl)
+(362,)
+(363,error = gfs2_rindex_update(sdp)
+(364,!*p)
+(365,blen = 0)
+(366,dibh->b_data)
+(367,gfs2_trans_add_meta(ip->i_gl, bh)
+(368,if (error)
+(369,return error;)
+(370,*p)
+(371,0)
+(372,ip)
+(373,rlist.rl_ghs)
+(374,bstart + blen)
+(375,RES_QUOTA)
+(376,*p)
+(377,blen)
+(378,sdp)
+(379,ip->i_inode)
+(380,0)
+(381,p)
+(382,ip)
+(383,struct buffer_head *dibh)
+(384,(s64)
+(385,p)
+(386,x = 0)
+(387,bstart)
+(388,bn)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

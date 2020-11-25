@@ -1,0 +1,1042 @@
+-----label-----
+0
+-----code-----
+int
+process_wait (tid_t child_tid)
+{
+  struct thread *t = thread_current ();
+  struct list *child_list = &(t->child_list);
+
+  // lookup the process with tid equals 'child_tid' from 'child_list'
+  struct process_control_block *child_pcb = NULL;
+  struct list_elem *it = NULL;
+
+  if (!list_empty(child_list)) {
+    for (it = list_front(child_list); it != list_end(child_list); it = list_next(it)) {
+      struct process_control_block *pcb = list_entry(
+          it, struct process_control_block, elem);
+
+      if(pcb->pid == child_tid) { // OK, the direct child found
+        child_pcb = pcb;
+        break;
+      }
+    }
+  }
+
+  // if child process is not found, return -1 immediately
+  if (child_pcb == NULL) {
+    _DEBUG_PRINTF("[DEBUG] wait(): child not found, pid = %d\n", child_tid);
+    return -1;
+  }
+
+  if (child_pcb->waiting) {
+    // already waiting (the parent already called wait on child's pid)
+    _DEBUG_PRINTF("[DEBUG] wait(): child found, pid = %d, but it is already waiting\n", child_tid);
+    return -1; // a process may wait for any fixed child at most once
+  }
+  else {
+    child_pcb->waiting = true;
+  }
+
+  // wait(block) until child terminates
+  // see process_exit() for signaling this semaphore
+  if (! child_pcb->exited) {
+    sema_down(& (child_pcb->sema_wait));
+  }
+  ASSERT (child_pcb->exited == true);
+
+  // remove from child_list
+  ASSERT (it != NULL);
+  list_remove (it);
+
+  // return the exit code of the child process
+  int retcode = child_pcb->exitcode;
+
+  // Now the pcb object of the child process can be finally freed.
+  // (in this context, the child process is guaranteed to have been exited)
+  palloc_free_page(child_pcb);
+
+  return retcode;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+5,6
+5,7
+6,7
+8,9
+10,11
+10,12
+10,13
+10,14
+10,15
+10,16
+10,17
+10,18
+10,19
+10,20
+10,21
+10,22
+10,23
+10,24
+11,12
+12,13
+12,14
+13,14
+15,16
+15,17
+15,18
+18,19
+19,20
+20,21
+22,23
+23,24
+23,25
+24,25
+26,27
+26,28
+26,29
+29,30
+30,31
+31,32
+32,33
+32,34
+33,34
+36,37
+37,38
+37,39
+38,39
+40,41
+40,42
+40,43
+43,44
+44,45
+46,47
+47,48
+47,49
+48,49
+50,51
+50,52
+50,53
+53,54
+54,55
+56,57
+56,58
+57,58
+58,59
+58,60
+59,60
+61,62
+63,64
+64,65
+64,66
+64,67
+64,68
+65,66
+66,67
+66,68
+67,68
+69,70
+69,71
+70,71
+72,73
+74,75
+74,76
+75,76
+77,78
+77,79
+78,79
+80,81
+82,83
+82,84
+83,84
+85,86
+85,87
+86,87
+88,89
+90,91
+90,92
+90,93
+90,94
+91,92
+92,93
+93,94
+95,96
+96,97
+97,98
+97,99
+98,99
+98,100
+99,100
+99,101
+100,101
+103,104
+105,106
+105,107
+106,107
+107,108
+107,109
+108,109
+110,111
+113,114
+113,115
+114,115
+114,116
+115,116
+117,118
+119,120
+119,121
+120,121
+121,122
+121,123
+121,124
+122,123
+125,126
+127,128
+128,129
+130,131
+130,132
+130,133
+131,132
+131,133
+132,133
+135,136
+135,137
+136,137
+137,138
+137,139
+137,140
+138,139
+141,142
+143,144
+144,145
+146,147
+147,148
+148,149
+148,150
+149,150
+149,151
+150,151
+154,155
+154,156
+155,156
+156,157
+156,158
+157,158
+160,161
+161,162
+162,163
+162,164
+163,164
+165,166
+166,167
+167,168
+167,169
+168,169
+171,172
+172,173
+172,174
+173,174
+175,176
+175,177
+176,177
+176,178
+177,178
+181,182
+182,183
+182,184
+183,184
+185,186
+185,187
+186,187
+188,189
+190,191
+191,192
+191,193
+192,193
+194,195
+196,197
+197,198
+197,199
+199,200
+199,201
+201,202
+202,203
+202,204
+203,204
+206,207
+207,208
+207,209
+208,209
+210,211
+212,213
+213,214
+-----nextToken-----
+2,4,7,9,14,16,17,21,25,27,28,34,35,39,41,42,45,49,51,52,55,60,62,68,71,73,76,79,81,84,87,89,94,101,102,104,109,111,112,116,118,123,124,126,129,133,134,139,140,142,145,151,152,153,158,159,164,169,170,174,178,179,180,184,187,189,193,195,198,200,204,205,209,211,214
+-----computeFrom-----
+66,67
+66,68
+74,75
+74,76
+82,83
+82,84
+98,99
+98,100
+107,108
+107,109
+114,115
+114,116
+148,149
+148,150
+175,176
+175,177
+185,186
+185,187
+-----guardedBy-----
+101,111
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;UnaryExpression;UnaryExpression;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;ProblemStatement;ProblemStatement;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;BreakStatement;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;ReturnStatement;UnaryExpression;LiteralExpression;IfStatement;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;ReturnStatement;UnaryExpression;LiteralExpression;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;IfStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+intprocess_wait (tid_t child_tid){  struct thread *t = thread_current ();  struct list *child_list = &(t->child_list);  // lookup the process with tid equals 'child_tid' from 'child_list'  struct process_control_block *child_pcb = NULL;  struct list_elem *it = NULL;  if (!list_empty(child_list)) {    for (it = list_front(child_list); it != list_end(child_list); it = list_next(it)) {      struct process_control_block *pcb = list_entry(          it, struct process_control_block, elem);      if(pcb->pid == child_tid) { // OK, the direct child found        child_pcb = pcb;        break;      }    }  }  // if child process is not found, return -1 immediately  if (child_pcb == NULL) {    _DEBUG_PRINTF("[DEBUG] wait(): child not found, pid = %d\n", child_tid);    return -1;  }  if (child_pcb->waiting) {    // already waiting (the parent already called wait on child's pid)    _DEBUG_PRINTF("[DEBUG] wait(): child found, pid = %d, but it is already waiting\n", child_tid);    return -1; // a process may wait for any fixed child at most once  }  else {    child_pcb->waiting = true;  }  // wait(block) until child terminates  // see process_exit() for signaling this semaphore  if (! child_pcb->exited) {    sema_down(& (child_pcb->sema_wait));  }  ASSERT (child_pcb->exited == true);  // remove from child_list  ASSERT (it != NULL);  list_remove (it);  // return the exit code of the child process  int retcode = child_pcb->exitcode;  // Now the pcb object of the child process can be finally freed.  // (in this context, the child process is guaranteed to have been exited)  palloc_free_page(child_pcb);  return retcode;}
+int
+process_wait (tid_t child_tid)
+process_wait
+tid_t child_tid
+tid_t
+tid_t
+child_tid
+child_tid
+{  struct thread *t = thread_current ();  struct list *child_list = &(t->child_list);  // lookup the process with tid equals 'child_tid' from 'child_list'  struct process_control_block *child_pcb = NULL;  struct list_elem *it = NULL;  if (!list_empty(child_list)) {    for (it = list_front(child_list); it != list_end(child_list); it = list_next(it)) {      struct process_control_block *pcb = list_entry(          it, struct process_control_block, elem);      if(pcb->pid == child_tid) { // OK, the direct child found        child_pcb = pcb;        break;      }    }  }  // if child process is not found, return -1 immediately  if (child_pcb == NULL) {    _DEBUG_PRINTF("[DEBUG] wait(): child not found, pid = %d\n", child_tid);    return -1;  }  if (child_pcb->waiting) {    // already waiting (the parent already called wait on child's pid)    _DEBUG_PRINTF("[DEBUG] wait(): child found, pid = %d, but it is already waiting\n", child_tid);    return -1; // a process may wait for any fixed child at most once  }  else {    child_pcb->waiting = true;  }  // wait(block) until child terminates  // see process_exit() for signaling this semaphore  if (! child_pcb->exited) {    sema_down(& (child_pcb->sema_wait));  }  ASSERT (child_pcb->exited == true);  // remove from child_list  ASSERT (it != NULL);  list_remove (it);  // return the exit code of the child process  int retcode = child_pcb->exitcode;  // Now the pcb object of the child process can be finally freed.  // (in this context, the child process is guaranteed to have been exited)  palloc_free_page(child_pcb);  return retcode;}
+struct thread *t = thread_current ();
+struct thread *t = thread_current ();
+struct thread
+thread
+*t = thread_current ()
+*
+t
+= thread_current ()
+thread_current ()
+thread_current
+thread_current
+struct list *child_list = &(t->child_list);
+struct list *child_list = &(t->child_list);
+struct list
+list
+*child_list = &(t->child_list)
+*
+child_list
+= &(t->child_list)
+&(t->child_list)
+(t->child_list)
+t->child_list
+t
+t
+child_list
+struct process_control_block *child_pcb = NULL;
+struct process_control_block *child_pcb = NULL;
+struct process_control_block
+process_control_block
+*child_pcb = NULL
+*
+child_pcb
+= NULL
+NULL
+NULL
+struct list_elem *it = NULL;
+struct list_elem *it = NULL;
+struct list_elem
+list_elem
+*it = NULL
+*
+it
+= NULL
+NULL
+NULL
+if (!list_empty(child_list)) {    for (it = list_front(child_list); it != list_end(child_list); it = list_next(it)) {      struct process_control_block *pcb = list_entry(          it, struct process_control_block, elem);      if(pcb->pid == child_tid) { // OK, the direct child found        child_pcb = pcb;        break;      }    }  }
+!list_empty(child_list)
+list_empty(child_list)
+list_empty
+list_empty
+child_list
+child_list
+{    for (it = list_front(child_list); it != list_end(child_list); it = list_next(it)) {      struct process_control_block *pcb = list_entry(          it, struct process_control_block, elem);      if(pcb->pid == child_tid) { // OK, the direct child found        child_pcb = pcb;        break;      }    }  }
+for (it = list_front(child_list); it != list_end(child_list); it = list_next(it)) {      struct process_control_block *pcb = list_entry(          it, struct process_control_block, elem);      if(pcb->pid == child_tid) { // OK, the direct child found        child_pcb = pcb;        break;      }    }
+it = list_front(child_list);
+it = list_front(child_list)
+it
+it
+list_front(child_list)
+list_front
+list_front
+child_list
+child_list
+it != list_end(child_list)
+it
+it
+list_end(child_list)
+list_end
+list_end
+child_list
+child_list
+it = list_next(it)
+it
+it
+list_next(it)
+list_next
+list_next
+it
+it
+{      struct process_control_block *pcb = list_entry(          it, struct process_control_block, elem);      if(pcb->pid == child_tid) { // OK, the direct child found        child_pcb = pcb;        break;      }    }
+struct process_control_block
+struct process_control_block
+struct process_control_block
+process_control_block
+k
+*pcb = list_entry(          it, struct process_control_block, elem);
+if(pcb->pid == child_tid) { // OK, the direct child found        child_pcb = pcb;        break;      }
+pcb->pid == child_tid
+pcb->pid
+pcb
+pcb
+pid
+child_tid
+child_tid
+{ // OK, the direct child found        child_pcb = pcb;        break;      }
+child_pcb = pcb;
+child_pcb = pcb
+child_pcb
+child_pcb
+pcb
+pcb
+break;
+if (child_pcb == NULL) {    _DEBUG_PRINTF("[DEBUG] wait(): child not found, pid = %d\n", child_tid);    return -1;  }
+child_pcb == NULL
+child_pcb
+child_pcb
+NULL
+NULL
+{    _DEBUG_PRINTF("[DEBUG] wait(): child not found, pid = %d\n", child_tid);    return -1;  }
+_DEBUG_PRINTF("[DEBUG] wait(): child not found, pid = %d\n", child_tid);
+_DEBUG_PRINTF("[DEBUG] wait(): child not found, pid = %d\n", child_tid)
+_DEBUG_PRINTF
+_DEBUG_PRINTF
+"[DEBUG] wait(): child not found, pid = %d\n"
+child_tid
+child_tid
+return -1;
+-1
+1
+if (child_pcb->waiting) {    // already waiting (the parent already called wait on child's pid)    _DEBUG_PRINTF("[DEBUG] wait(): child found, pid = %d, but it is already waiting\n", child_tid);    return -1; // a process may wait for any fixed child at most once  }  else {    child_pcb->waiting = true;  }
+child_pcb->waiting
+child_pcb
+child_pcb
+waiting
+{    // already waiting (the parent already called wait on child's pid)    _DEBUG_PRINTF("[DEBUG] wait(): child found, pid = %d, but it is already waiting\n", child_tid);    return -1; // a process may wait for any fixed child at most once  }
+_DEBUG_PRINTF("[DEBUG] wait(): child found, pid = %d, but it is already waiting\n", child_tid);
+_DEBUG_PRINTF("[DEBUG] wait(): child found, pid = %d, but it is already waiting\n", child_tid)
+_DEBUG_PRINTF
+_DEBUG_PRINTF
+"[DEBUG] wait(): child found, pid = %d, but it is already waiting\n"
+child_tid
+child_tid
+return -1;
+-1
+1
+{    child_pcb->waiting = true;  }
+child_pcb->waiting = true;
+child_pcb->waiting = true
+child_pcb->waiting
+child_pcb
+child_pcb
+waiting
+true
+if (! child_pcb->exited) {    sema_down(& (child_pcb->sema_wait));  }
+! child_pcb->exited
+child_pcb->exited
+child_pcb
+child_pcb
+exited
+{    sema_down(& (child_pcb->sema_wait));  }
+sema_down(& (child_pcb->sema_wait));
+sema_down(& (child_pcb->sema_wait))
+sema_down
+sema_down
+& (child_pcb->sema_wait)
+(child_pcb->sema_wait)
+child_pcb->sema_wait
+child_pcb
+child_pcb
+sema_wait
+ASSERT (child_pcb->exited == true);
+ASSERT (child_pcb->exited == true)
+ASSERT
+ASSERT
+child_pcb->exited == true
+child_pcb->exited
+child_pcb
+child_pcb
+exited
+true
+ASSERT (it != NULL);
+ASSERT (it != NULL)
+ASSERT
+ASSERT
+it != NULL
+it
+it
+NULL
+NULL
+list_remove (it);
+list_remove (it)
+list_remove
+list_remove
+it
+it
+int retcode = child_pcb->exitcode;
+int retcode = child_pcb->exitcode;
+int
+retcode = child_pcb->exitcode
+retcode
+= child_pcb->exitcode
+child_pcb->exitcode
+child_pcb
+child_pcb
+exitcode
+palloc_free_page(child_pcb);
+palloc_free_page(child_pcb)
+palloc_free_page
+palloc_free_page
+child_pcb
+child_pcb
+return retcode;
+retcode
+retcode
+-----joern-----
+(53,20,0)
+(58,93,0)
+(108,1,0)
+(17,92,0)
+(71,67,0)
+(109,57,0)
+(88,47,0)
+(63,84,0)
+(39,20,0)
+(7,92,0)
+(89,92,0)
+(76,1,0)
+(82,34,0)
+(49,92,0)
+(86,92,0)
+(50,46,0)
+(75,47,0)
+(1,47,0)
+(50,47,0)
+(11,28,0)
+(44,89,0)
+(78,49,0)
+(1,108,0)
+(96,47,0)
+(82,74,0)
+(86,47,0)
+(18,2,0)
+(68,67,0)
+(26,47,0)
+(31,47,0)
+(80,89,0)
+(40,43,0)
+(2,47,0)
+(67,25,0)
+(90,103,0)
+(23,86,0)
+(26,52,0)
+(52,47,0)
+(27,52,0)
+(60,41,0)
+(100,79,0)
+(13,81,0)
+(0,79,0)
+(35,1,0)
+(21,0,0)
+(11,77,0)
+(65,77,0)
+(15,90,0)
+(35,4,0)
+(51,65,0)
+(90,67,0)
+(33,32,0)
+(10,38,0)
+(11,26,0)
+(95,102,0)
+(90,92,0)
+(42,68,0)
+(20,52,0)
+(48,7,0)
+(112,92,0)
+(84,1,0)
+(6,93,0)
+(103,90,0)
+(106,47,0)
+(29,47,0)
+(2,57,0)
+(8,67,0)
+(52,20,0)
+(32,28,0)
+(24,12,0)
+(89,34,0)
+(2,19,0)
+(72,35,0)
+(36,13,0)
+(9,57,0)
+(102,67,0)
+(83,58,0)
+(105,40,0)
+(97,25,0)
+(86,67,0)
+(12,24,0)
+(91,84,0)
+(5,47,0)
+(20,67,0)
+(16,93,0)
+(41,43,0)
+(34,89,0)
+(89,67,0)
+(66,79,0)
+(7,67,0)
+(102,92,0)
+(54,109,0)
+(79,47,0)
+(111,38,0)
+(49,67,0)
+(49,24,0)
+(38,50,0)
+(38,108,0)
+(0,96,0)
+(12,47,0)
+(46,50,0)
+(20,92,0)
+(30,40,0)
+(87,47,0)
+(68,92,0)
+(91,57,0)
+(62,49,0)
+(41,22,0)
+(24,49,0)
+(2,79,0)
+(108,38,0)
+(69,7,0)
+(92,47,0)
+(102,13,0)
+(101,68,0)
+(107,41,0)
+(0,19,0)
+(77,99,0)
+(45,102,0)
+(84,91,0)
+(91,19,0)
+(94,19,0)
+(0,57,0)
+(28,22,0)
+(96,0,0)
+(37,50,0)
+(19,94,0)
+(55,56,0)
+(14,47,0)
+(73,26,0)
+(70,90,0)
+(3,0,0)
+(57,109,0)
+(34,82,0)
+(109,1,0)
+(94,57,0)
+(4,35,0)
+(85,19,0)
+(64,24,0)
+(110,47,0)
+(58,43,0)
+(40,99,0)
+(104,91,0)
+(98,94,0)
+(93,58,0)
+(61,59,0)
+(2,19,1)
+(97,67,1)
+(51,40,1)
+(57,109,1)
+(0,79,1)
+(72,79,1)
+(7,67,1)
+(64,49,1)
+(58,43,1)
+(96,0,1)
+(16,91,1)
+(45,7,1)
+(63,104,1)
+(35,72,1)
+(24,49,1)
+(7,69,1)
+(42,97,1)
+(54,9,1)
+(2,57,1)
+(94,19,1)
+(82,34,1)
+(35,1,1)
+(53,27,1)
+(2,18,1)
+(78,62,1)
+(109,1,1)
+(102,92,1)
+(58,83,1)
+(0,19,1)
+(49,92,1)
+(91,84,1)
+(40,43,1)
+(65,51,1)
+(68,101,1)
+(32,33,1)
+(104,19,1)
+(86,67,1)
+(102,67,1)
+(111,76,1)
+(93,6,1)
+(94,57,1)
+(76,50,1)
+(49,78,1)
+(80,44,1)
+(20,39,1)
+(71,8,1)
+(107,68,1)
+(2,79,1)
+(84,63,1)
+(66,100,1)
+(89,80,1)
+(104,57,1)
+(0,57,1)
+(69,48,1)
+(92,17,1)
+(103,90,1)
+(73,86,1)
+(7,92,1)
+(109,54,1)
+(11,77,1)
+(41,43,1)
+(38,10,1)
+(83,93,1)
+(11,26,1)
+(20,67,1)
+(98,85,1)
+(34,89,1)
+(39,53,1)
+(28,32,1)
+(94,98,1)
+(17,112,1)
+(90,92,1)
+(40,30,1)
+(58,93,1)
+(67,71,1)
+(100,92,1)
+(95,45,1)
+(90,15,1)
+(24,64,1)
+(1,108,1)
+(13,36,1)
+(62,82,1)
+(70,13,1)
+(26,52,1)
+(46,37,1)
+(42,91,1)
+(23,52,1)
+(36,102,1)
+(21,12,1)
+(68,92,1)
+(101,42,1)
+(3,21,1)
+(4,35,1)
+(44,103,1)
+(8,58,1)
+(15,70,1)
+(77,65,1)
+(10,111,1)
+(33,41,1)
+(12,24,1)
+(11,28,1)
+(84,1,1)
+(18,96,1)
+(30,105,1)
+(112,1,1)
+(26,73,1)
+(62,103,1)
+(90,67,1)
+(52,20,1)
+(85,58,1)
+(27,2,1)
+(9,4,1)
+(41,60,1)
+(6,16,1)
+(86,23,1)
+(38,50,1)
+(89,92,1)
+(102,95,1)
+(86,92,1)
+(20,92,1)
+(91,57,1)
+(91,19,1)
+(42,4,1)
+(79,66,1)
+(49,67,1)
+(89,67,1)
+(105,7,1)
+(48,68,1)
+(68,67,1)
+(19,94,1)
+(50,46,1)
+(0,3,1)
+(108,38,1)
+(60,107,1)
+(103,90,2)
+(82,34,2)
+(52,20,2)
+(19,58,2)
+(86,7,2)
+(4,35,2)
+(91,58,2)
+(16,91,2)
+(35,1,2)
+(104,58,2)
+(24,49,2)
+(48,68,2)
+(91,84,2)
+(85,58,2)
+(0,79,2)
+(89,92,2)
+(40,43,2)
+(102,92,2)
+(68,92,2)
+(60,68,2)
+(91,19,2)
+(30,7,2)
+(58,93,2)
+(98,58,2)
+(2,7,2)
+(26,52,2)
+(94,57,2)
+(109,4,2)
+(70,7,2)
+(57,109,2)
+(32,68,2)
+(78,7,2)
+(11,77,2)
+(6,91,2)
+(86,67,2)
+(52,7,2)
+(41,68,2)
+(105,7,2)
+(26,7,2)
+(107,68,2)
+(91,57,2)
+(77,7,2)
+(13,7,2)
+(50,46,2)
+(97,58,2)
+(96,0,2)
+(63,58,2)
+(34,103,2)
+(12,7,2)
+(89,67,2)
+(44,103,2)
+(84,58,2)
+(71,58,2)
+(39,7,2)
+(20,7,2)
+(103,7,2)
+(41,43,2)
+(20,67,2)
+(91,4,2)
+(90,92,2)
+(38,50,2)
+(2,79,2)
+(34,89,2)
+(102,67,2)
+(2,57,2)
+(63,4,2)
+(8,58,2)
+(73,7,2)
+(11,28,2)
+(7,67,2)
+(93,91,2)
+(19,94,2)
+(90,7,2)
+(49,92,2)
+(21,7,2)
+(18,7,2)
+(108,38,2)
+(84,1,2)
+(69,68,2)
+(0,19,2)
+(24,7,2)
+(0,57,2)
+(49,67,2)
+(49,7,2)
+(2,19,2)
+(28,68,2)
+(45,7,2)
+(65,7,2)
+(89,103,2)
+(58,43,2)
+(104,4,2)
+(0,7,2)
+(11,26,2)
+(62,7,2)
+(36,7,2)
+(7,68,2)
+(84,4,2)
+(95,7,2)
+(83,91,2)
+(27,7,2)
+(51,7,2)
+(80,103,2)
+(12,24,2)
+(15,7,2)
+(90,67,2)
+(58,91,2)
+(82,103,2)
+(23,7,2)
+(96,7,2)
+(86,92,2)
+(1,108,2)
+(57,4,2)
+(3,7,2)
+(102,7,2)
+(109,1,2)
+(7,92,2)
+(67,58,2)
+(20,92,2)
+(94,58,2)
+(94,19,2)
+(9,4,2)
+(68,67,2)
+(64,7,2)
+(40,7,2)
+(53,7,2)
+(54,4,2)
+(33,68,2)
+-----------------------------------
+(0,it != NULL)
+(1,*child_list = &(t->child_list)
+(2,list_remove (it)
+(3,NULL)
+(4,!list_empty(child_list)
+(5,t)
+(6,pid)
+(7,child_pcb->waiting)
+(8,child_pcb)
+(9,it)
+(10,child_list)
+(11,RET)
+(12,ASSERT (child_pcb->exited == true)
+(13,child_pcb->waiting = true)
+(14,child_list)
+(15,exited)
+(16,pcb)
+(17,NULL)
+(18,it)
+(19,it = list_next(it)
+(20,child_pcb->exitcode)
+(21,it)
+(22,)
+(23,child_pcb)
+(24,child_pcb->exited == true)
+(25,)
+(26,return retcode;)
+(27,retcode)
+(28,return -1;)
+(29,if (child_pcb->waiting)
+(30,child_tid)
+(31,if (!list_empty(child_list)
+(32,-1)
+(33,1)
+(34,& (child_pcb->sema_wait)
+(35,list_empty(child_list)
+(36,true)
+(37,t)
+(38,t->child_list)
+(39,exitcode)
+(40,_DEBUG_PRINTF("[DEBUG] wait()
+(41,_DEBUG_PRINTF("[DEBUG] wait()
+(42,child_pcb)
+(43,tid_t child_tid)
+(44,child_pcb)
+(45,child_pcb)
+(46,thread_current ()
+(47,)
+(48,child_pcb)
+(49,child_pcb->exited)
+(50,*t = thread_current ()
+(51,1)
+(52,retcode = child_pcb->exitcode)
+(53,child_pcb)
+(54,child_list)
+(55,if(pcb->pid == child_tid)
+(56,)
+(57,it = list_front(child_list)
+(58,pcb->pid == child_tid)
+(59,)
+(60,child_tid)
+(61,for (it = list_front(child_list)
+(62,child_pcb)
+(63,child_list)
+(64,true)
+(65,-1)
+(66,NULL)
+(67,child_pcb = pcb)
+(68,child_pcb == NULL)
+(69,waiting)
+(70,child_pcb)
+(71,pcb)
+(72,child_list)
+(73,retcode)
+(74,)
+(75,if (child_pcb == NULL)
+(76,child_list)
+(77,return -1;)
+(78,exited)
+(79,*it = NULL)
+(80,sema_wait)
+(81,)
+(82,sema_down(& (child_pcb->sema_wait)
+(83,child_tid)
+(84,list_end(child_list)
+(85,it)
+(86,palloc_free_page(child_pcb)
+(87,if (! child_pcb->exited)
+(88,it)
+(89,child_pcb->sema_wait)
+(90,child_pcb->exited)
+(91,it != list_end(child_list)
+(92,*child_pcb = NULL)
+(93,pcb->pid)
+(94,list_next(it)
+(95,waiting)
+(96,ASSERT (it != NULL)
+(97,break;)
+(98,it)
+(99,)
+(100,it)
+(101,NULL)
+(102,child_pcb->waiting)
+(103,! child_pcb->exited)
+(104,it)
+(105,"[DEBUG] wait()
+(106,retcode)
+(107,"[DEBUG] wait()
+(108,&(t->child_list)
+(109,list_front(child_list)
+(110,child_pcb)
+(111,t)
+(112,child_pcb)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,1971 @@
+-----label-----
+0
+-----code-----
+static void drm_mm_insert_helper_range(struct drm_mm_node *hole_node,
+				       struct drm_mm_node *node,
+				       u64 size, unsigned alignment,
+				       unsigned long color,
+				       u64 start, u64 end,
+				       enum drm_mm_allocator_flags flags)
+{
+	struct drm_mm *mm = hole_node->mm;
+	u64 hole_start = drm_mm_hole_node_start(hole_node);
+	u64 hole_end = drm_mm_hole_node_end(hole_node);
+	u64 adj_start = hole_start;
+	u64 adj_end = hole_end;
+
+	BUG_ON(!hole_node->hole_follows || node->allocated);
+
+	if (mm->color_adjust)
+		mm->color_adjust(hole_node, color, &adj_start, &adj_end);
+
+	adj_start = max(adj_start, start);
+	adj_end = min(adj_end, end);
+
+	if (flags & DRM_MM_CREATE_TOP)
+		adj_start = adj_end - size;
+
+	if (alignment) {
+		u64 tmp = adj_start;
+		unsigned rem;
+
+		rem = do_div(tmp, alignment);
+		if (rem) {
+			if (flags & DRM_MM_CREATE_TOP)
+				adj_start -= rem;
+			else
+				adj_start += alignment - rem;
+		}
+	}
+
+	if (adj_start == hole_start) {
+		hole_node->hole_follows = 0;
+		list_del(&hole_node->hole_stack);
+		rb_erase_hole_node(hole_node, mm);
+	}
+
+	node->start = adj_start;
+	node->size = size;
+	node->mm = mm;
+	node->color = color;
+	node->allocated = 1;
+
+	list_add(&node->node_list, &hole_node->node_list);
+
+	drm_mm_interval_tree_add_node(hole_node, node);
+
+	BUG_ON(node->start < start);
+	BUG_ON(node->start < adj_start);
+	BUG_ON(node->start + node->size > adj_end);
+	BUG_ON(node->start + node->size > end);
+
+	node->hole_follows = 0;
+	if (__drm_mm_hole_node_start(node) < hole_end) {
+		list_add(&node->hole_stack, &mm->hole_stack);
+		rb_insert_hole_node(node, mm);
+		node->hole_follows = 1;
+	}
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+3,8
+3,9
+3,10
+3,11
+3,12
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+17,19
+18,19
+20,21
+22,23
+22,24
+24,25
+26,27
+26,28
+28,29
+30,31
+30,32
+31,32
+33,34
+35,36
+35,37
+36,37
+38,39
+40,41
+40,42
+41,42
+43,44
+45,46
+45,47
+45,48
+45,49
+45,50
+45,51
+45,52
+45,53
+45,54
+45,55
+45,56
+45,57
+45,58
+45,59
+45,60
+45,61
+45,62
+45,63
+45,64
+45,65
+45,66
+45,67
+45,68
+45,69
+45,70
+46,47
+47,48
+47,49
+48,49
+50,51
+50,52
+50,53
+53,54
+54,55
+54,56
+55,56
+58,59
+59,60
+59,61
+60,61
+62,63
+62,64
+64,65
+65,66
+65,67
+66,67
+68,69
+70,71
+71,72
+71,73
+72,73
+74,75
+74,76
+76,77
+77,78
+77,79
+78,79
+80,81
+82,83
+83,84
+83,85
+84,85
+86,87
+86,88
+88,89
+89,90
+91,92
+92,93
+92,94
+93,94
+95,96
+95,97
+97,98
+98,99
+100,101
+101,102
+101,103
+102,103
+104,105
+104,106
+105,106
+106,107
+106,108
+107,108
+110,111
+110,112
+111,112
+114,115
+114,116
+115,116
+115,117
+116,117
+119,120
+120,121
+120,122
+120,123
+120,124
+120,125
+121,122
+121,123
+122,123
+125,126
+127,128
+129,130
+130,131
+132,133
+133,134
+135,136
+136,137
+136,138
+137,138
+139,140
+139,141
+139,142
+140,141
+142,143
+144,145
+146,147
+147,148
+147,149
+148,149
+150,151
+150,152
+150,153
+151,152
+153,154
+155,156
+157,158
+157,159
+158,159
+158,160
+159,160
+161,162
+163,164
+164,165
+164,166
+165,166
+167,168
+167,169
+168,169
+170,171
+172,173
+172,174
+173,174
+175,176
+175,177
+175,178
+175,179
+176,177
+177,178
+177,179
+178,179
+180,181
+180,182
+182,183
+183,184
+185,186
+186,187
+186,188
+188,189
+190,191
+191,192
+191,193
+192,193
+194,195
+194,196
+194,197
+195,196
+197,198
+199,200
+201,202
+201,203
+202,203
+204,205
+205,206
+205,207
+205,208
+206,207
+206,208
+207,208
+209,210
+211,212
+212,213
+212,214
+213,214
+215,216
+217,218
+218,219
+218,220
+219,220
+221,222
+221,223
+222,223
+224,225
+226,227
+226,228
+227,228
+227,229
+228,229
+230,231
+232,233
+232,234
+232,235
+233,234
+234,235
+234,236
+235,236
+235,237
+236,237
+240,241
+241,242
+241,243
+242,243
+244,245
+245,246
+245,247
+246,247
+249,250
+250,251
+250,252
+250,253
+251,252
+253,254
+255,256
+257,258
+258,259
+258,260
+259,260
+259,261
+260,261
+263,264
+265,266
+266,267
+266,268
+267,268
+267,269
+268,269
+271,272
+273,274
+274,275
+274,276
+275,276
+275,277
+276,277
+279,280
+281,282
+282,283
+282,284
+283,284
+283,285
+284,285
+287,288
+289,290
+290,291
+290,292
+291,292
+291,293
+292,293
+296,297
+297,298
+297,299
+297,300
+298,299
+300,301
+301,302
+301,303
+302,303
+305,306
+306,307
+306,308
+307,308
+310,311
+311,312
+311,313
+311,314
+312,313
+314,315
+316,317
+318,319
+319,320
+319,321
+320,321
+322,323
+322,324
+323,324
+323,325
+324,325
+327,328
+329,330
+330,331
+330,332
+331,332
+333,334
+333,335
+334,335
+334,336
+335,336
+338,339
+340,341
+341,342
+341,343
+342,343
+344,345
+344,346
+345,346
+345,347
+346,347
+346,348
+347,348
+350,351
+350,352
+351,352
+354,355
+356,357
+357,358
+357,359
+358,359
+360,361
+360,362
+361,362
+361,363
+362,363
+362,364
+363,364
+366,367
+366,368
+367,368
+370,371
+372,373
+373,374
+373,375
+374,375
+374,376
+375,376
+379,380
+379,381
+380,381
+380,382
+381,382
+381,383
+382,383
+384,385
+386,387
+388,389
+388,390
+388,391
+389,390
+390,391
+390,392
+390,393
+391,392
+393,394
+394,395
+394,396
+395,396
+398,399
+399,400
+399,401
+400,401
+403,404
+404,405
+404,406
+404,407
+405,406
+407,408
+409,410
+411,412
+412,413
+412,414
+413,414
+413,415
+414,415
+-----nextToken-----
+2,4,7,9,10,13,15,16,19,21,23,25,27,29,32,34,37,39,42,44,49,51,52,56,57,61,63,67,69,73,75,79,81,85,87,90,94,96,99,103,108,109,112,113,117,118,123,124,126,128,131,134,138,141,143,145,149,152,154,156,160,162,166,169,171,174,179,181,184,187,189,193,196,198,200,203,208,210,214,216,220,223,225,229,231,237,238,239,243,247,248,252,254,256,261,262,264,269,270,272,277,278,280,285,286,288,293,294,295,299,303,304,308,309,313,315,317,321,325,326,328,332,336,337,339,343,348,349,352,353,355,359,364,365,368,369,371,376,377,378,383,385,387,392,396,397,401,402,406,408,410,415,416,417
+-----computeFrom-----
+104,105
+104,106
+136,137
+136,138
+147,148
+147,149
+158,159
+158,160
+164,165
+164,166
+167,168
+167,169
+191,192
+191,193
+206,207
+206,208
+212,213
+212,214
+218,219
+218,220
+221,222
+221,223
+227,228
+227,229
+234,235
+234,236
+258,259
+258,260
+266,267
+266,268
+274,275
+274,276
+282,283
+282,284
+290,291
+290,292
+322,323
+322,324
+333,334
+333,335
+344,345
+344,346
+345,346
+345,347
+360,361
+360,362
+361,362
+361,363
+373,374
+373,375
+380,381
+380,382
+412,413
+412,414
+-----guardedBy-----
+385,415
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;UnaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IfStatement;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;
+-----ast_node-----
+static void drm_mm_insert_helper_range(struct drm_mm_node *hole_node,				       struct drm_mm_node *node,				       u64 size, unsigned alignment,				       unsigned long color,				       u64 start, u64 end,				       enum drm_mm_allocator_flags flags){	struct drm_mm *mm = hole_node->mm;	u64 hole_start = drm_mm_hole_node_start(hole_node);	u64 hole_end = drm_mm_hole_node_end(hole_node);	u64 adj_start = hole_start;	u64 adj_end = hole_end;	BUG_ON(!hole_node->hole_follows || node->allocated);	if (mm->color_adjust)		mm->color_adjust(hole_node, color, &adj_start, &adj_end);	adj_start = max(adj_start, start);	adj_end = min(adj_end, end);	if (flags & DRM_MM_CREATE_TOP)		adj_start = adj_end - size;	if (alignment) {		u64 tmp = adj_start;		unsigned rem;		rem = do_div(tmp, alignment);		if (rem) {			if (flags & DRM_MM_CREATE_TOP)				adj_start -= rem;			else				adj_start += alignment - rem;		}	}	if (adj_start == hole_start) {		hole_node->hole_follows = 0;		list_del(&hole_node->hole_stack);		rb_erase_hole_node(hole_node, mm);	}	node->start = adj_start;	node->size = size;	node->mm = mm;	node->color = color;	node->allocated = 1;	list_add(&node->node_list, &hole_node->node_list);	drm_mm_interval_tree_add_node(hole_node, node);	BUG_ON(node->start < start);	BUG_ON(node->start < adj_start);	BUG_ON(node->start + node->size > adj_end);	BUG_ON(node->start + node->size > end);	node->hole_follows = 0;	if (__drm_mm_hole_node_start(node) < hole_end) {		list_add(&node->hole_stack, &mm->hole_stack);		rb_insert_hole_node(node, mm);		node->hole_follows = 1;	}}
+static void
+drm_mm_insert_helper_range(struct drm_mm_node *hole_node,				       struct drm_mm_node *node,				       u64 size, unsigned alignment,				       unsigned long color,				       u64 start, u64 end,				       enum drm_mm_allocator_flags flags)
+drm_mm_insert_helper_range
+struct drm_mm_node *hole_node
+struct drm_mm_node
+drm_mm_node
+*hole_node
+*
+hole_node
+struct drm_mm_node *node
+struct drm_mm_node
+drm_mm_node
+*node
+*
+node
+u64 size
+u64
+u64
+size
+size
+unsigned alignment
+unsigned
+alignment
+alignment
+unsigned long color
+unsigned long
+color
+color
+u64 start
+u64
+u64
+start
+start
+u64 end
+u64
+u64
+end
+end
+enum drm_mm_allocator_flags flags
+enum drm_mm_allocator_flags
+drm_mm_allocator_flags
+flags
+flags
+{	struct drm_mm *mm = hole_node->mm;	u64 hole_start = drm_mm_hole_node_start(hole_node);	u64 hole_end = drm_mm_hole_node_end(hole_node);	u64 adj_start = hole_start;	u64 adj_end = hole_end;	BUG_ON(!hole_node->hole_follows || node->allocated);	if (mm->color_adjust)		mm->color_adjust(hole_node, color, &adj_start, &adj_end);	adj_start = max(adj_start, start);	adj_end = min(adj_end, end);	if (flags & DRM_MM_CREATE_TOP)		adj_start = adj_end - size;	if (alignment) {		u64 tmp = adj_start;		unsigned rem;		rem = do_div(tmp, alignment);		if (rem) {			if (flags & DRM_MM_CREATE_TOP)				adj_start -= rem;			else				adj_start += alignment - rem;		}	}	if (adj_start == hole_start) {		hole_node->hole_follows = 0;		list_del(&hole_node->hole_stack);		rb_erase_hole_node(hole_node, mm);	}	node->start = adj_start;	node->size = size;	node->mm = mm;	node->color = color;	node->allocated = 1;	list_add(&node->node_list, &hole_node->node_list);	drm_mm_interval_tree_add_node(hole_node, node);	BUG_ON(node->start < start);	BUG_ON(node->start < adj_start);	BUG_ON(node->start + node->size > adj_end);	BUG_ON(node->start + node->size > end);	node->hole_follows = 0;	if (__drm_mm_hole_node_start(node) < hole_end) {		list_add(&node->hole_stack, &mm->hole_stack);		rb_insert_hole_node(node, mm);		node->hole_follows = 1;	}}
+struct drm_mm *mm = hole_node->mm;
+struct drm_mm *mm = hole_node->mm;
+struct drm_mm
+drm_mm
+*mm = hole_node->mm
+*
+mm
+= hole_node->mm
+hole_node->mm
+hole_node
+hole_node
+mm
+u64 hole_start = drm_mm_hole_node_start(hole_node);
+u64 hole_start = drm_mm_hole_node_start(hole_node);
+u64
+u64
+hole_start = drm_mm_hole_node_start(hole_node)
+hole_start
+= drm_mm_hole_node_start(hole_node)
+drm_mm_hole_node_start(hole_node)
+drm_mm_hole_node_start
+drm_mm_hole_node_start
+hole_node
+hole_node
+u64 hole_end = drm_mm_hole_node_end(hole_node);
+u64 hole_end = drm_mm_hole_node_end(hole_node);
+u64
+u64
+hole_end = drm_mm_hole_node_end(hole_node)
+hole_end
+= drm_mm_hole_node_end(hole_node)
+drm_mm_hole_node_end(hole_node)
+drm_mm_hole_node_end
+drm_mm_hole_node_end
+hole_node
+hole_node
+u64 adj_start = hole_start;
+u64 adj_start = hole_start;
+u64
+u64
+adj_start = hole_start
+adj_start
+= hole_start
+hole_start
+hole_start
+u64 adj_end = hole_end;
+u64 adj_end = hole_end;
+u64
+u64
+adj_end = hole_end
+adj_end
+= hole_end
+hole_end
+hole_end
+BUG_ON(!hole_node->hole_follows || node->allocated);
+BUG_ON(!hole_node->hole_follows || node->allocated)
+BUG_ON
+BUG_ON
+!hole_node->hole_follows || node->allocated
+!hole_node->hole_follows
+hole_node->hole_follows
+hole_node
+hole_node
+hole_follows
+node->allocated
+node
+node
+allocated
+if (mm->color_adjust)		mm->color_adjust(hole_node, color, &adj_start, &adj_end);
+mm->color_adjust
+mm
+mm
+color_adjust
+mm->color_adjust(hole_node, color, &adj_start, &adj_end);
+mm->color_adjust(hole_node, color, &adj_start, &adj_end)
+mm->color_adjust
+mm
+mm
+color_adjust
+hole_node
+hole_node
+color
+color
+&adj_start
+adj_start
+adj_start
+&adj_end
+adj_end
+adj_end
+adj_start = max(adj_start, start);
+adj_start = max(adj_start, start)
+adj_start
+adj_start
+max(adj_start, start)
+max
+max
+adj_start
+adj_start
+start
+start
+adj_end = min(adj_end, end);
+adj_end = min(adj_end, end)
+adj_end
+adj_end
+min(adj_end, end)
+min
+min
+adj_end
+adj_end
+end
+end
+if (flags & DRM_MM_CREATE_TOP)		adj_start = adj_end - size;
+flags & DRM_MM_CREATE_TOP
+flags
+flags
+DRM_MM_CREATE_TOP
+DRM_MM_CREATE_TOP
+adj_start = adj_end - size;
+adj_start = adj_end - size
+adj_start
+adj_start
+adj_end - size
+adj_end
+adj_end
+size
+size
+if (alignment) {		u64 tmp = adj_start;		unsigned rem;		rem = do_div(tmp, alignment);		if (rem) {			if (flags & DRM_MM_CREATE_TOP)				adj_start -= rem;			else				adj_start += alignment - rem;		}	}
+alignment
+alignment
+{		u64 tmp = adj_start;		unsigned rem;		rem = do_div(tmp, alignment);		if (rem) {			if (flags & DRM_MM_CREATE_TOP)				adj_start -= rem;			else				adj_start += alignment - rem;		}	}
+u64 tmp = adj_start;
+u64 tmp = adj_start;
+u64
+u64
+tmp = adj_start
+tmp
+= adj_start
+adj_start
+adj_start
+unsigned rem;
+unsigned rem;
+unsigned
+rem
+rem
+rem = do_div(tmp, alignment);
+rem = do_div(tmp, alignment)
+rem
+rem
+do_div(tmp, alignment)
+do_div
+do_div
+tmp
+tmp
+alignment
+alignment
+if (rem) {			if (flags & DRM_MM_CREATE_TOP)				adj_start -= rem;			else				adj_start += alignment - rem;		}
+rem
+rem
+{			if (flags & DRM_MM_CREATE_TOP)				adj_start -= rem;			else				adj_start += alignment - rem;		}
+if (flags & DRM_MM_CREATE_TOP)				adj_start -= rem;			else				adj_start += alignment - rem;
+flags & DRM_MM_CREATE_TOP
+flags
+flags
+DRM_MM_CREATE_TOP
+DRM_MM_CREATE_TOP
+adj_start -= rem;
+adj_start -= rem
+adj_start
+adj_start
+rem
+rem
+adj_start += alignment - rem;
+adj_start += alignment - rem
+adj_start
+adj_start
+alignment - rem
+alignment
+alignment
+rem
+rem
+if (adj_start == hole_start) {		hole_node->hole_follows = 0;		list_del(&hole_node->hole_stack);		rb_erase_hole_node(hole_node, mm);	}
+adj_start == hole_start
+adj_start
+adj_start
+hole_start
+hole_start
+{		hole_node->hole_follows = 0;		list_del(&hole_node->hole_stack);		rb_erase_hole_node(hole_node, mm);	}
+hole_node->hole_follows = 0;
+hole_node->hole_follows = 0
+hole_node->hole_follows
+hole_node
+hole_node
+hole_follows
+0
+list_del(&hole_node->hole_stack);
+list_del(&hole_node->hole_stack)
+list_del
+list_del
+&hole_node->hole_stack
+hole_node->hole_stack
+hole_node
+hole_node
+hole_stack
+rb_erase_hole_node(hole_node, mm);
+rb_erase_hole_node(hole_node, mm)
+rb_erase_hole_node
+rb_erase_hole_node
+hole_node
+hole_node
+mm
+mm
+node->start = adj_start;
+node->start = adj_start
+node->start
+node
+node
+start
+adj_start
+adj_start
+node->size = size;
+node->size = size
+node->size
+node
+node
+size
+size
+size
+node->mm = mm;
+node->mm = mm
+node->mm
+node
+node
+mm
+mm
+mm
+node->color = color;
+node->color = color
+node->color
+node
+node
+color
+color
+color
+node->allocated = 1;
+node->allocated = 1
+node->allocated
+node
+node
+allocated
+1
+list_add(&node->node_list, &hole_node->node_list);
+list_add(&node->node_list, &hole_node->node_list)
+list_add
+list_add
+&node->node_list
+node->node_list
+node
+node
+node_list
+&hole_node->node_list
+hole_node->node_list
+hole_node
+hole_node
+node_list
+drm_mm_interval_tree_add_node(hole_node, node);
+drm_mm_interval_tree_add_node(hole_node, node)
+drm_mm_interval_tree_add_node
+drm_mm_interval_tree_add_node
+hole_node
+hole_node
+node
+node
+BUG_ON(node->start < start);
+BUG_ON(node->start < start)
+BUG_ON
+BUG_ON
+node->start < start
+node->start
+node
+node
+start
+start
+start
+BUG_ON(node->start < adj_start);
+BUG_ON(node->start < adj_start)
+BUG_ON
+BUG_ON
+node->start < adj_start
+node->start
+node
+node
+start
+adj_start
+adj_start
+BUG_ON(node->start + node->size > adj_end);
+BUG_ON(node->start + node->size > adj_end)
+BUG_ON
+BUG_ON
+node->start + node->size > adj_end
+node->start + node->size
+node->start
+node
+node
+start
+node->size
+node
+node
+size
+adj_end
+adj_end
+BUG_ON(node->start + node->size > end);
+BUG_ON(node->start + node->size > end)
+BUG_ON
+BUG_ON
+node->start + node->size > end
+node->start + node->size
+node->start
+node
+node
+start
+node->size
+node
+node
+size
+end
+end
+node->hole_follows = 0;
+node->hole_follows = 0
+node->hole_follows
+node
+node
+hole_follows
+0
+if (__drm_mm_hole_node_start(node) < hole_end) {		list_add(&node->hole_stack, &mm->hole_stack);		rb_insert_hole_node(node, mm);		node->hole_follows = 1;	}
+__drm_mm_hole_node_start(node) < hole_end
+__drm_mm_hole_node_start(node)
+__drm_mm_hole_node_start
+__drm_mm_hole_node_start
+node
+node
+hole_end
+hole_end
+{		list_add(&node->hole_stack, &mm->hole_stack);		rb_insert_hole_node(node, mm);		node->hole_follows = 1;	}
+list_add(&node->hole_stack, &mm->hole_stack);
+list_add(&node->hole_stack, &mm->hole_stack)
+list_add
+list_add
+&node->hole_stack
+node->hole_stack
+node
+node
+hole_stack
+&mm->hole_stack
+mm->hole_stack
+mm
+mm
+hole_stack
+rb_insert_hole_node(node, mm);
+rb_insert_hole_node(node, mm)
+rb_insert_hole_node
+rb_insert_hole_node
+node
+node
+mm
+mm
+node->hole_follows = 1;
+node->hole_follows = 1
+node->hole_follows
+node
+node
+hole_follows
+1
+-----joern-----
+(9,33,0)
+(104,68,0)
+(214,125,0)
+(178,50,0)
+(68,12,0)
+(19,116,0)
+(75,196,0)
+(174,150,0)
+(99,109,0)
+(32,53,0)
+(78,33,0)
+(179,203,0)
+(213,177,0)
+(69,197,0)
+(160,206,0)
+(107,29,0)
+(18,209,0)
+(158,61,0)
+(36,53,0)
+(42,203,0)
+(39,33,0)
+(45,152,0)
+(51,33,0)
+(104,67,0)
+(136,33,0)
+(215,131,0)
+(177,42,0)
+(155,25,0)
+(105,33,0)
+(57,25,0)
+(175,65,0)
+(170,33,0)
+(177,84,0)
+(161,13,0)
+(35,64,0)
+(189,4,0)
+(145,107,0)
+(6,84,0)
+(173,130,0)
+(208,33,0)
+(77,149,0)
+(31,122,0)
+(79,87,0)
+(155,4,0)
+(42,65,0)
+(9,71,0)
+(208,206,0)
+(171,143,0)
+(75,33,0)
+(42,84,0)
+(90,133,0)
+(143,137,0)
+(151,173,0)
+(133,53,0)
+(110,33,0)
+(23,65,0)
+(65,135,0)
+(108,125,0)
+(95,12,0)
+(197,27,0)
+(69,33,0)
+(52,114,0)
+(191,107,0)
+(167,135,0)
+(206,64,0)
+(187,150,0)
+(209,159,0)
+(24,103,0)
+(14,13,0)
+(144,187,0)
+(185,97,0)
+(61,178,0)
+(125,108,0)
+(32,189,0)
+(76,36,0)
+(114,182,0)
+(148,132,0)
+(120,12,0)
+(177,23,0)
+(139,177,0)
+(34,125,0)
+(7,98,0)
+(55,164,0)
+(62,186,0)
+(1,12,0)
+(175,23,0)
+(181,159,0)
+(127,68,0)
+(37,159,0)
+(50,178,0)
+(64,206,0)
+(93,68,0)
+(186,51,0)
+(204,74,0)
+(25,57,0)
+(82,139,0)
+(17,64,0)
+(149,77,0)
+(120,159,0)
+(30,83,0)
+(196,75,0)
+(209,33,0)
+(74,83,0)
+(129,23,0)
+(66,87,0)
+(172,173,0)
+(67,110,0)
+(108,87,0)
+(141,97,0)
+(16,74,0)
+(120,108,0)
+(122,31,0)
+(20,135,0)
+(173,172,0)
+(116,42,0)
+(194,33,0)
+(87,108,0)
+(213,116,0)
+(175,42,0)
+(83,74,0)
+(125,172,0)
+(11,149,0)
+(186,159,0)
+(31,152,0)
+(116,23,0)
+(117,67,0)
+(3,161,0)
+(100,164,0)
+(165,57,0)
+(190,172,0)
+(211,1,0)
+(154,164,0)
+(40,178,0)
+(43,65,0)
+(121,203,0)
+(61,177,0)
+(67,104,0)
+(203,183,0)
+(142,33,0)
+(98,36,0)
+(133,98,0)
+(73,92,0)
+(12,29,0)
+(195,69,0)
+(27,53,0)
+(212,181,0)
+(197,33,0)
+(38,98,0)
+(196,181,0)
+(210,1,0)
+(135,65,0)
+(98,33,0)
+(184,33,0)
+(81,213,0)
+(215,53,0)
+(103,9,0)
+(107,172,0)
+(67,130,0)
+(74,55,0)
+(44,33,0)
+(205,175,0)
+(8,189,0)
+(103,159,0)
+(109,53,0)
+(193,96,0)
+(203,102,0)
+(86,32,0)
+(126,109,0)
+(122,137,0)
+(164,126,0)
+(122,21,0)
+(188,161,0)
+(65,33,0)
+(96,39,0)
+(156,61,0)
+(142,116,0)
+(21,122,0)
+(63,54,0)
+(168,7,0)
+(26,187,0)
+(85,173,0)
+(77,197,0)
+(2,102,0)
+(87,159,0)
+(102,150,0)
+(175,126,0)
+(47,120,0)
+(50,33,0)
+(173,69,0)
+(209,53,0)
+(187,65,0)
+(143,98,0)
+(123,213,0)
+(57,53,0)
+(135,0,0)
+(125,34,0)
+(177,65,0)
+(109,126,0)
+(104,139,0)
+(106,163,0)
+(111,163,0)
+(126,33,0)
+(192,197,0)
+(64,159,0)
+(132,160,0)
+(177,33,0)
+(41,7,0)
+(116,142,0)
+(116,65,0)
+(74,71,0)
+(152,98,0)
+(139,159,0)
+(134,103,0)
+(147,55,0)
+(200,181,0)
+(60,32,0)
+(37,177,0)
+(149,159,0)
+(178,0,0)
+(169,133,0)
+(102,124,0)
+(163,21,0)
+(96,159,0)
+(92,137,0)
+(176,177,0)
+(97,182,0)
+(139,104,0)
+(83,69,0)
+(23,84,0)
+(128,120,0)
+(21,163,0)
+(203,42,0)
+(140,209,0)
+(164,33,0)
+(207,9,0)
+(101,175,0)
+(94,215,0)
+(153,124,0)
+(161,159,0)
+(12,33,0)
+(23,102,0)
+(206,160,0)
+(74,53,0)
+(163,159,0)
+(84,107,0)
+(107,84,0)
+(87,177,0)
+(213,159,0)
+(172,33,0)
+(112,119,0)
+(198,51,0)
+(187,84,0)
+(80,150,0)
+(143,159,0)
+(36,98,0)
+(13,33,0)
+(48,186,0)
+(51,98,0)
+(116,213,0)
+(146,33,0)
+(115,37,0)
+(162,132,0)
+(113,33,0)
+(46,33,0)
+(131,75,0)
+(124,187,0)
+(160,132,0)
+(56,215,0)
+(118,152,0)
+(119,159,0)
+(68,104,0)
+(15,42,0)
+(10,96,0)
+(175,84,0)
+(124,102,0)
+(152,31,0)
+(124,183,0)
+(157,37,0)
+(68,159,0)
+(89,69,0)
+(25,155,0)
+(131,215,0)
+(199,126,0)
+(178,61,0)
+(61,159,0)
+(75,131,0)
+(91,150,0)
+(49,27,0)
+(135,164,0)
+(34,33,0)
+(133,4,0)
+(201,23,0)
+(138,57,0)
+(206,208,0)
+(88,139,0)
+(5,119,0)
+(116,84,0)
+(70,143,0)
+(1,159,0)
+(180,77,0)
+(28,36,0)
+(181,196,0)
+(166,124,0)
+(22,39,0)
+(132,53,0)
+(27,197,0)
+(55,74,0)
+(110,67,0)
+(108,120,0)
+(72,114,0)
+(119,92,0)
+(209,159,1)
+(110,67,1)
+(50,178,1)
+(115,157,1)
+(87,159,1)
+(67,117,1)
+(73,119,1)
+(35,160,1)
+(89,164,1)
+(177,65,1)
+(32,53,1)
+(166,2,1)
+(144,26,1)
+(120,159,1)
+(61,177,1)
+(19,213,1)
+(203,183,1)
+(175,205,1)
+(101,59,1)
+(169,90,1)
+(83,69,1)
+(175,126,1)
+(112,143,1)
+(186,159,1)
+(101,202,1)
+(52,72,1)
+(122,21,1)
+(65,135,1)
+(68,12,1)
+(20,43,1)
+(152,118,1)
+(143,159,1)
+(173,69,1)
+(103,159,1)
+(175,84,1)
+(12,29,1)
+(209,140,1)
+(124,187,1)
+(161,3,1)
+(116,213,1)
+(214,108,1)
+(121,179,1)
+(42,65,1)
+(157,133,1)
+(132,53,1)
+(116,23,1)
+(15,97,1)
+(181,200,1)
+(116,19,1)
+(55,147,1)
+(23,102,1)
+(86,175,1)
+(3,188,1)
+(92,73,1)
+(43,74,1)
+(193,10,1)
+(143,70,1)
+(135,0,1)
+(177,23,1)
+(36,53,1)
+(22,96,1)
+(55,164,1)
+(82,88,1)
+(9,207,1)
+(64,17,1)
+(1,159,1)
+(37,159,1)
+(202,84,1)
+(201,129,1)
+(75,131,1)
+(213,177,1)
+(154,197,1)
+(173,130,1)
+(96,193,1)
+(17,35,1)
+(128,47,1)
+(129,97,1)
+(199,98,1)
+(62,48,1)
+(77,197,1)
+(74,55,1)
+(153,166,1)
+(27,49,1)
+(114,182,1)
+(179,15,1)
+(127,139,1)
+(67,104,1)
+(109,99,1)
+(79,142,1)
+(148,162,1)
+(175,42,1)
+(109,53,1)
+(161,159,1)
+(100,154,1)
+(139,177,1)
+(97,182,1)
+(28,38,1)
+(156,209,1)
+(125,108,1)
+(151,190,1)
+(87,177,1)
+(51,198,1)
+(171,122,1)
+(94,56,1)
+(61,158,1)
+(186,62,1)
+(26,202,1)
+(102,124,1)
+(51,98,1)
+(178,0,1)
+(49,192,1)
+(41,168,1)
+(164,100,1)
+(212,13,1)
+(68,93,1)
+(7,41,1)
+(203,121,1)
+(75,196,1)
+(85,151,1)
+(181,159,1)
+(175,23,1)
+(206,160,1)
+(6,114,1)
+(61,159,1)
+(207,103,1)
+(9,71,1)
+(58,92,1)
+(132,148,1)
+(60,86,1)
+(99,199,1)
+(108,87,1)
+(143,98,1)
+(72,172,1)
+(173,85,1)
+(7,98,1)
+(103,24,1)
+(36,76,1)
+(187,84,1)
+(59,102,1)
+(116,42,1)
+(215,94,1)
+(164,126,1)
+(142,116,1)
+(135,167,1)
+(172,173,1)
+(175,65,1)
+(177,84,1)
+(141,185,1)
+(125,214,1)
+(106,77,1)
+(176,37,1)
+(18,75,1)
+(24,134,1)
+(104,139,1)
+(213,123,1)
+(25,57,1)
+(69,197,1)
+(197,27,1)
+(97,141,1)
+(204,7,1)
+(139,82,1)
+(210,211,1)
+(163,111,1)
+(58,77,1)
+(191,145,1)
+(120,128,1)
+(123,81,1)
+(67,130,1)
+(11,39,1)
+(37,115,1)
+(27,53,1)
+(40,61,1)
+(158,156,1)
+(107,29,1)
+(83,30,1)
+(190,65,1)
+(84,107,1)
+(48,12,1)
+(76,28,1)
+(93,127,1)
+(177,176,1)
+(23,201,1)
+(88,34,1)
+(74,83,1)
+(87,66,1)
+(1,210,1)
+(21,163,1)
+(213,159,1)
+(34,125,1)
+(139,159,1)
+(188,9,1)
+(138,189,1)
+(187,65,1)
+(10,110,1)
+(180,149,1)
+(124,183,1)
+(168,208,1)
+(114,52,1)
+(107,172,1)
+(81,50,1)
+(140,18,1)
+(116,65,1)
+(90,155,1)
+(101,42,1)
+(42,84,1)
+(98,36,1)
+(77,149,1)
+(215,53,1)
+(133,169,1)
+(122,31,1)
+(77,180,1)
+(14,161,1)
+(32,60,1)
+(47,87,1)
+(108,120,1)
+(155,25,1)
+(163,159,1)
+(64,159,1)
+(185,59,1)
+(118,45,1)
+(131,215,1)
+(198,186,1)
+(23,84,1)
+(206,64,1)
+(126,109,1)
+(189,8,1)
+(13,14,1)
+(209,53,1)
+(39,22,1)
+(149,159,1)
+(101,23,1)
+(107,191,1)
+(208,206,1)
+(145,6,1)
+(23,65,1)
+(162,69,1)
+(202,114,1)
+(167,20,1)
+(57,53,1)
+(149,11,1)
+(178,61,1)
+(66,79,1)
+(119,159,1)
+(133,98,1)
+(124,153,1)
+(2,187,1)
+(56,196,1)
+(120,12,1)
+(160,132,1)
+(95,1,1)
+(68,159,1)
+(70,171,1)
+(196,181,1)
+(134,51,1)
+(157,175,1)
+(74,71,1)
+(57,165,1)
+(200,212,1)
+(69,195,1)
+(96,159,1)
+(187,144,1)
+(12,95,1)
+(177,42,1)
+(203,102,1)
+(195,89,1)
+(192,126,1)
+(45,21,1)
+(5,112,1)
+(117,104,1)
+(152,98,1)
+(135,164,1)
+(30,55,1)
+(111,106,1)
+(119,5,1)
+(178,40,1)
+(8,32,1)
+(104,68,1)
+(43,7,1)
+(125,172,1)
+(211,177,1)
+(42,203,1)
+(165,138,1)
+(74,53,1)
+(205,101,1)
+(147,16,1)
+(116,84,1)
+(16,204,1)
+(31,152,1)
+(133,53,1)
+(108,87,2)
+(175,126,2)
+(36,53,2)
+(143,159,2)
+(185,59,2)
+(107,172,2)
+(69,197,2)
+(161,159,2)
+(164,126,2)
+(177,84,2)
+(178,0,2)
+(107,114,2)
+(55,7,2)
+(196,181,2)
+(201,97,2)
+(42,84,2)
+(68,12,2)
+(187,65,2)
+(177,65,2)
+(172,173,2)
+(2,202,2)
+(116,213,2)
+(110,67,2)
+(135,0,2)
+(132,53,2)
+(87,159,2)
+(155,25,2)
+(131,215,2)
+(55,164,2)
+(213,159,2)
+(209,159,2)
+(31,152,2)
+(84,107,2)
+(5,77,2)
+(87,177,2)
+(32,175,2)
+(57,175,2)
+(86,175,2)
+(119,77,2)
+(57,53,2)
+(133,175,2)
+(23,84,2)
+(103,159,2)
+(111,77,2)
+(25,57,2)
+(51,98,2)
+(124,183,2)
+(153,202,2)
+(191,114,2)
+(139,177,2)
+(116,65,2)
+(77,197,2)
+(1,159,2)
+(119,159,2)
+(204,7,2)
+(23,65,2)
+(74,7,2)
+(125,108,2)
+(102,202,2)
+(163,77,2)
+(118,77,2)
+(74,53,2)
+(133,53,2)
+(107,29,2)
+(109,53,2)
+(124,187,2)
+(31,77,2)
+(152,77,2)
+(179,97,2)
+(83,7,2)
+(189,175,2)
+(206,160,2)
+(42,203,2)
+(187,84,2)
+(141,59,2)
+(35,160,2)
+(68,159,2)
+(166,202,2)
+(61,159,2)
+(116,23,2)
+(90,175,2)
+(175,84,2)
+(106,77,2)
+(45,77,2)
+(143,98,2)
+(139,159,2)
+(9,71,2)
+(23,97,2)
+(6,114,2)
+(197,27,2)
+(75,131,2)
+(144,202,2)
+(97,182,2)
+(27,53,2)
+(186,159,2)
+(121,97,2)
+(42,65,2)
+(77,149,2)
+(160,132,2)
+(206,64,2)
+(70,77,2)
+(142,116,2)
+(23,102,2)
+(208,206,2)
+(213,177,2)
+(203,183,2)
+(175,23,2)
+(147,7,2)
+(120,12,2)
+(61,177,2)
+(135,164,2)
+(74,55,2)
+(26,202,2)
+(59,202,2)
+(12,29,2)
+(64,160,2)
+(32,53,2)
+(122,31,2)
+(83,69,2)
+(138,175,2)
+(171,77,2)
+(67,130,2)
+(173,130,2)
+(42,97,2)
+(125,172,2)
+(116,84,2)
+(124,202,2)
+(203,102,2)
+(98,36,2)
+(15,97,2)
+(177,42,2)
+(133,98,2)
+(122,21,2)
+(65,135,2)
+(175,42,2)
+(178,61,2)
+(75,196,2)
+(114,182,2)
+(16,7,2)
+(7,98,2)
+(112,77,2)
+(60,175,2)
+(30,7,2)
+(173,69,2)
+(50,178,2)
+(169,175,2)
+(25,175,2)
+(120,159,2)
+(175,65,2)
+(67,104,2)
+(21,77,2)
+(34,125,2)
+(203,97,2)
+(152,98,2)
+(92,77,2)
+(116,42,2)
+(8,175,2)
+(17,160,2)
+(96,159,2)
+(181,159,2)
+(21,163,2)
+(104,68,2)
+(108,120,2)
+(143,77,2)
+(126,109,2)
+(163,159,2)
+(145,114,2)
+(165,175,2)
+(215,53,2)
+(84,114,2)
+(177,23,2)
+(129,97,2)
+(187,202,2)
+(209,53,2)
+(155,175,2)
+(37,159,2)
+(149,159,2)
+(97,59,2)
+(122,77,2)
+(104,139,2)
+(74,71,2)
+(73,77,2)
+(102,124,2)
+(64,159,2)
+(74,83,2)
+-----------------------------------
+(0,u64 start)
+(1,node->size)
+(2,rem)
+(3,allocated)
+(4,)
+(5,hole_follows)
+(6,adj_start)
+(7,mm->color_adjust)
+(8,0)
+(9,node->color = color)
+(10,node)
+(11,node)
+(12,node->size = size)
+(13,node->allocated = 1)
+(14,1)
+(15,adj_start)
+(16,color)
+(17,allocated)
+(18,hole_node)
+(19,adj_start)
+(20,adj_start)
+(21,&node->hole_stack)
+(22,0)
+(23,adj_start -= rem)
+(24,color)
+(25,&hole_node->hole_stack)
+(26,tmp)
+(27,drm_mm_hole_node_end(hole_node)
+(28,hole_node)
+(29,u64 size)
+(30,adj_end)
+(31,&mm->hole_stack)
+(32,hole_node->hole_follows)
+(33,)
+(34,BUG_ON(node->start + node->size > adj_end)
+(35,node)
+(36,hole_node->mm)
+(37,node->start)
+(38,mm)
+(39,node->hole_follows = 0)
+(40,start)
+(41,color_adjust)
+(42,adj_start += alignment - rem)
+(43,adj_start)
+(44,adj_start)
+(45,mm)
+(46,if (mm->color_adjust)
+(47,node)
+(48,node)
+(49,hole_node)
+(50,BUG_ON(node->start < start)
+(51,node->mm = mm)
+(52,DRM_MM_CREATE_TOP)
+(53,struct drm_mm_node *hole_node)
+(54,)
+(55,&adj_start)
+(56,hole_node)
+(57,hole_node->hole_stack)
+(58,RET)
+(59,rem)
+(60,hole_follows)
+(61,node->start)
+(62,mm)
+(63,if (flags & DRM_MM_CREATE_TOP)
+(64,node->allocated)
+(65,adj_start = max(adj_start, start)
+(66,start)
+(67,node->start + node->size > end)
+(68,node->size)
+(69,adj_end = hole_end)
+(70,mm)
+(71,unsigned long color)
+(72,flags)
+(73,1)
+(74,mm->color_adjust(hole_node, color, &adj_start, &adj_end)
+(75,list_add(&node->node_list, &hole_node->node_list)
+(76,mm)
+(77,__drm_mm_hole_node_start(node)
+(78,adj_end)
+(79,node)
+(80,tmp)
+(81,node)
+(82,start)
+(83,&adj_end)
+(84,adj_start = adj_end - size)
+(85,end)
+(86,hole_node)
+(87,node->start)
+(88,node)
+(89,adj_end)
+(90,hole_node)
+(91,rem)
+(92,node->hole_follows = 1)
+(93,size)
+(94,node_list)
+(95,size)
+(96,node->hole_follows)
+(97,flags & DRM_MM_CREATE_TOP)
+(98,*mm = hole_node->mm)
+(99,hole_node)
+(100,hole_start)
+(101,adj_start)
+(102,rem = do_div(tmp, alignment)
+(103,node->color)
+(104,node->start + node->size)
+(105,hole_end)
+(106,node)
+(107,adj_end - size)
+(108,node->start + node->size)
+(109,drm_mm_hole_node_start(hole_node)
+(110,BUG_ON(node->start + node->size > end)
+(111,hole_stack)
+(112,node)
+(113,mm)
+(114,flags & DRM_MM_CREATE_TOP)
+(115,start)
+(116,node->start < adj_start)
+(117,end)
+(118,hole_stack)
+(119,node->hole_follows)
+(120,node->size)
+(121,rem)
+(122,list_add(&node->hole_stack, &mm->hole_stack)
+(123,start)
+(124,do_div(tmp, alignment)
+(125,node->start + node->size > adj_end)
+(126,hole_start = drm_mm_hole_node_start(hole_node)
+(127,node)
+(128,size)
+(129,adj_start)
+(130,u64 end)
+(131,&hole_node->node_list)
+(132,hole_node->hole_follows)
+(133,rb_erase_hole_node(hole_node, mm)
+(134,node)
+(135,max(adj_start, start)
+(136,if (adj_start == hole_start)
+(137,)
+(138,hole_node)
+(139,node->start)
+(140,node)
+(141,DRM_MM_CREATE_TOP)
+(142,BUG_ON(node->start < adj_start)
+(143,rb_insert_hole_node(node, mm)
+(144,adj_start)
+(145,adj_end)
+(146,if (alignment)
+(147,adj_start)
+(148,hole_follows)
+(149,__drm_mm_hole_node_start(node)
+(150,)
+(151,adj_end)
+(152,mm->hole_stack)
+(153,alignment)
+(154,adj_start)
+(155,list_del(&hole_node->hole_stack)
+(156,node)
+(157,node)
+(158,start)
+(159,struct drm_mm_node *node)
+(160,!hole_node->hole_follows)
+(161,node->allocated)
+(162,hole_node)
+(163,node->hole_stack)
+(164,adj_start = hole_start)
+(165,hole_stack)
+(166,tmp)
+(167,start)
+(168,mm)
+(169,mm)
+(170,hole_start)
+(171,node)
+(172,adj_end = min(adj_end, end)
+(173,min(adj_end, end)
+(174,if (rem)
+(175,adj_start == hole_start)
+(176,adj_start)
+(177,node->start = adj_start)
+(178,node->start < start)
+(179,alignment)
+(180,hole_end)
+(181,node->node_list)
+(182,enum drm_mm_allocator_flags flags)
+(183,unsigned alignment)
+(184,if (flags & DRM_MM_CREATE_TOP)
+(185,flags)
+(186,node->mm)
+(187,tmp = adj_start)
+(188,node)
+(189,hole_node->hole_follows = 0)
+(190,adj_end)
+(191,size)
+(192,hole_end)
+(193,hole_follows)
+(194,if (__drm_mm_hole_node_start(node)
+(195,hole_end)
+(196,&node->node_list)
+(197,hole_end = drm_mm_hole_node_end(hole_node)
+(198,mm)
+(199,hole_start)
+(200,node_list)
+(201,rem)
+(202,alignment)
+(203,alignment - rem)
+(204,hole_node)
+(205,hole_start)
+(206,!hole_node->hole_follows || node->allocated)
+(207,color)
+(208,BUG_ON(!hole_node->hole_follows || node->allocated)
+(209,drm_mm_interval_tree_add_node(hole_node, node)
+(210,size)
+(211,node)
+(212,node)
+(213,node->start)
+(214,adj_end)
+(215,hole_node->node_list)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

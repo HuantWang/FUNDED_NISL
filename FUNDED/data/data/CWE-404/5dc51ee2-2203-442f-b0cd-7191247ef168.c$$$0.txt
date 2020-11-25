@@ -1,0 +1,4169 @@
+-----label-----
+1
+-----code-----
+VOS_STATUS hdd_wlan_re_init(void)
+{
+   VOS_STATUS       vosStatus;
+   v_CONTEXT_t      pVosContext = NULL;
+   hdd_context_t    *pHddCtx = NULL;
+   eHalStatus       halStatus;
+#ifdef HAVE_WCNSS_CAL_DOWNLOAD
+   int              max_retries = 0;
+#endif
+#ifdef HAVE_CBC_DONE
+   int              max_cbc_retries = 0;
+#endif
+#ifdef WLAN_BTAMP_FEATURE
+   hdd_config_t     *pConfig = NULL;
+   WLANBAP_ConfigType btAmpConfig;
+#endif
+
+   struct device *dev = NULL;
+   hdd_ssr_timer_del();
+   hdd_prevent_suspend(WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT);
+
+#ifdef HAVE_WCNSS_CAL_DOWNLOAD
+   /* wait until WCNSS driver downloads NV */
+   while (!wcnss_device_ready() && 10 >= ++max_retries) {
+       msleep(1000);
+   }
+   if (max_retries >= 10) {
+      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: WCNSS driver not ready", __func__);
+      goto err_re_init;
+   }
+#endif
+
+#ifdef HAVE_CBC_DONE
+   while (!wcnss_cbc_complete() && 20 >= ++max_cbc_retries) {
+       msleep(1000);
+   }
+   if (max_cbc_retries >= 20) {
+      hddLog(VOS_TRACE_LEVEL_FATAL, "%s:CBC not completed", __func__);
+   }
+#endif
+
+   vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, TRUE);
+
+   /* The driver should always be initialized in STA mode after SSR */
+   hdd_set_conparam(0);
+
+   dev = wcnss_wlan_get_device();
+   if (NULL == dev)
+   {
+      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: wcnss dev is NULL",__func__);
+      goto err_re_init;
+   }
+
+   /* Re-open VOSS, it is a re-open b'se control transport was never closed. */
+   vosStatus = vos_open(&pVosContext, dev);
+   if (!VOS_IS_STATUS_SUCCESS(vosStatus))
+   {
+      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: vos_open failed",__func__);
+      goto err_re_init;
+   }
+
+   /* Get the HDD context. */
+   pHddCtx = (hdd_context_t *)vos_get_context(VOS_MODULE_ID_HDD, pVosContext);
+   if(!pHddCtx)
+   {
+      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: HDD context is Null",__func__);
+      goto err_vosclose;
+   }
+
+   /* Save the hal context in Adapter */
+   pHddCtx->hHal = (tHalHandle)vos_get_context( VOS_MODULE_ID_SME, pVosContext );
+   if ( NULL == pHddCtx->hHal )
+   {
+      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: HAL context is null",__func__);
+      goto err_vosclose;
+   }
+
+   /* Set the SME configuration parameters. */
+   vosStatus = hdd_set_sme_config(pHddCtx);
+   if ( VOS_STATUS_SUCCESS != vosStatus )
+   {
+      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: Failed hdd_set_sme_config",__func__);
+      goto err_vosclose;
+   }
+
+   vosStatus = vos_preStart( pHddCtx->pvosContext );
+   if ( !VOS_IS_STATUS_SUCCESS( vosStatus ) )
+   {
+      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: vos_preStart failed",__func__);
+      goto err_vosclose;
+   }
+
+   /* In the integrated architecture we update the configuration from
+      the INI file and from NV before vOSS has been started so that
+      the final contents are available to send down to the cCPU   */
+   /* Apply the cfg.ini to cfg.dat */
+   if (FALSE == hdd_update_config_dat(pHddCtx))
+   {
+      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: config update failed",__func__ );
+      goto err_vosclose;
+   }
+
+   /* Set the MAC Address, currently this is used by HAL to add self sta.
+    * Remove this once self sta is added as part of session open. */
+   halStatus = cfgSetStr(pHddCtx->hHal, WNI_CFG_STA_ID,
+         (v_U8_t *)&pHddCtx->cfg_ini->intfMacAddr[0],
+           sizeof(pHddCtx->cfg_ini->intfMacAddr[0]));
+   if (!HAL_STATUS_SUCCESS(halStatus))
+   {
+      hddLog(VOS_TRACE_LEVEL_ERROR,"%s: Failed to set MAC Address. "
+            "HALStatus is %08d [x%08x]",__func__, halStatus, halStatus);
+      goto err_vosclose;
+   }
+
+   /* Start VOSS which starts up the SME/MAC/HAL modules and everything else
+      Note: Firmware image will be read and downloaded inside vos_start API */
+   vosStatus = vos_start( pVosContext );
+   if ( !VOS_IS_STATUS_SUCCESS( vosStatus ) )
+   {
+      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: vos_start failed",__func__);
+      if (isSsrPanicOnFailure())
+          VOS_BUG(0);
+      goto err_vosclose;
+   }
+
+   /* Exchange capability info between Host and FW and also get versioning info from FW */
+   hdd_exchange_version_and_caps(pHddCtx);
+
+   vosStatus = hdd_post_voss_start_config( pHddCtx );
+   if ( !VOS_IS_STATUS_SUCCESS( vosStatus ) )
+   {
+      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: hdd_post_voss_start_config failed",
+         __func__);
+      goto err_vosstop;
+   }
+
+#ifdef CONFIG_ENABLE_LINUX_REG
+   vosStatus = wlan_hdd_init_channels_for_cc(pHddCtx, REINIT);
+   if ( !VOS_IS_STATUS_SUCCESS( vosStatus ) )
+   {
+      hddLog(VOS_TRACE_LEVEL_FATAL, "%s: wlan_hdd_init_channels_for_cc failed",
+             __func__);
+      goto err_vosstop;
+   }
+#endif
+
+#ifdef WLAN_BTAMP_FEATURE
+   vosStatus = WLANBAP_Open(pVosContext);
+   if(!VOS_IS_STATUS_SUCCESS(vosStatus))
+   {
+     VOS_TRACE( VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,
+        "%s: Failed to open BAP",__func__);
+      goto err_vosstop;
+   }
+   vosStatus = BSL_Init(pVosContext);
+   if(!VOS_IS_STATUS_SUCCESS(vosStatus))
+   {
+     VOS_TRACE( VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,
+        "%s: Failed to Init BSL",__func__);
+     goto err_bap_close;
+   }
+   vosStatus = WLANBAP_Start(pVosContext);
+   if (!VOS_IS_STATUS_SUCCESS(vosStatus))
+   {
+       VOS_TRACE( VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,
+               "%s: Failed to start TL",__func__);
+       goto err_bap_close;
+   }
+   pConfig = pHddCtx->cfg_ini;
+   btAmpConfig.ucPreferredChannel = pConfig->preferredChannel;
+   vosStatus = WLANBAP_SetConfig(&btAmpConfig);
+#endif //WLAN_BTAMP_FEATURE
+
+    /* Restart all adapters */
+   hdd_start_all_adapters(pHddCtx);
+   pHddCtx->con_scan_abort_cnt = 0;
+   pHddCtx->hdd_mcastbcast_filter_set = FALSE;
+   pHddCtx->btCoexModeSet = FALSE;
+   hdd_register_mcast_bcast_filter(pHddCtx);
+   wlan_hdd_tdls_init(pHddCtx);
+   /* Register with platform driver as client for Suspend/Resume */
+   vosStatus = hddRegisterPmOps(pHddCtx);
+   if ( !VOS_IS_STATUS_SUCCESS( vosStatus ) )
+   {
+      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: hddRegisterPmOps failed",__func__);
+      goto err_bap_stop;
+   }
+
+#ifdef WLAN_LOGGING_SOCK_SVC_ENABLE
+   if (pHddCtx->cfg_ini->wlanLoggingEnable &&
+               (pHddCtx->cfg_ini->enableFWLogging ||
+                pHddCtx->cfg_ini->enableMgmtLogging ||
+                pHddCtx->cfg_ini->enableContFWLogging))
+   {
+       hdd_init_frame_logging(pHddCtx);
+   }
+#endif
+
+   /* Allow the phone to go to sleep */
+   hdd_allow_suspend(WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT);
+   /* register for riva power on lock */
+   if (req_riva_power_on_lock("wlan"))
+   {
+      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: req riva power on lock failed",
+                                        __func__);
+      goto err_unregister_pmops;
+   }
+   sme_set_rssi_threshold_breached_cb(pHddCtx->hHal, hdd_rssi_threshold_breached_cb);
+   vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, FALSE);
+
+   sme_register_mgmt_frame_ind_callback(pHddCtx->hHal,hdd_indicate_mgmt_frame);
+
+#ifdef WLAN_FEATURE_EXTSCAN
+    sme_EXTScanRegisterCallback(pHddCtx->hHal,
+            wlan_hdd_cfg80211_extscan_callback,
+                           pHddCtx);
+#endif /* WLAN_FEATURE_EXTSCAN */
+
+#ifdef FEATURE_OEM_DATA_SUPPORT
+    sme_OemDataRegisterCallback(pHddCtx->hHal,
+             wlan_hdd_cfg80211_oemdata_callback,
+                          pHddCtx);
+#endif /* FEATURE_OEM_DATA_SUPPORT */
+
+   goto success;
+
+err_unregister_pmops:
+   hddDeregisterPmOps(pHddCtx);
+
+err_bap_stop:
+#ifdef CONFIG_HAS_EARLYSUSPEND
+   hdd_unregister_mcast_bcast_filter(pHddCtx);
+#endif
+   hdd_close_all_adapters(pHddCtx);
+#ifdef WLAN_BTAMP_FEATURE
+   WLANBAP_Stop(pVosContext);
+#endif
+
+#ifdef WLAN_BTAMP_FEATURE
+err_bap_close:
+   WLANBAP_Close(pVosContext);
+#endif
+
+err_vosstop:
+   vos_stop(pVosContext);
+
+err_vosclose:
+   if(!isSsrPanicOnFailure())
+   {
+       /* If we hit this, it means wlan driver is in bad state and needs
+       * driver unload and load.
+       */
+       vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, FALSE);
+       return VOS_STATUS_E_FAILURE;
+   }
+
+   vos_close(pVosContext);
+   vos_sched_close(pVosContext);
+   if (pHddCtx)
+   {
+       /* Unregister the Net Device Notifier */
+       unregister_netdevice_notifier(&hdd_netdev_notifier);
+       /* Clean up HDD Nlink Service */
+       send_btc_nlink_msg(WLAN_MODULE_DOWN_IND, 0);
+#ifdef WLAN_KD_READY_NOTIFIER
+       nl_srv_exit(pHddCtx->ptt_pid);
+#else
+       nl_srv_exit();
+#endif /* WLAN_KD_READY_NOTIFIER */
+       /* Free up dynamically allocated members inside HDD Adapter */
+       kfree(pHddCtx->cfg_ini);
+       pHddCtx->cfg_ini= NULL;
+
+       wiphy_unregister(pHddCtx->wiphy);
+       hdd_wlan_free_wiphy_channels(pHddCtx->wiphy);
+       wiphy_free(pHddCtx->wiphy);
+   }
+   vos_preClose(&pVosContext);
+
+#ifdef MEMORY_DEBUG
+   vos_mem_exit();
+#endif
+
+err_re_init:
+   /* Allow the phone to go to sleep */
+   hdd_allow_suspend(WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT);
+   vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, FALSE);
+   VOS_BUG(0);
+   return -EPERM;
+
+success:
+   /* Trigger replay of BTC events */
+   send_btc_nlink_msg(WLAN_MODULE_DOWN_IND, 0);
+   return VOS_STATUS_SUCCESS;
+}
+-----children-----
+1,2
+1,3
+1,4
+2,3
+4,5
+4,6
+6,7
+6,8
+8,9
+10,11
+10,12
+10,13
+10,14
+10,15
+10,16
+10,17
+10,18
+10,19
+10,20
+10,21
+10,22
+10,23
+10,24
+10,25
+10,26
+10,27
+10,28
+10,29
+10,30
+10,31
+10,32
+10,33
+10,34
+10,35
+10,36
+10,37
+10,38
+10,39
+10,40
+10,41
+10,42
+10,43
+10,44
+10,45
+10,46
+10,47
+10,48
+10,49
+10,50
+10,51
+10,52
+10,53
+10,54
+10,55
+10,56
+10,57
+10,58
+10,59
+10,60
+10,61
+10,62
+10,63
+10,64
+10,65
+10,66
+10,67
+11,12
+12,13
+12,14
+13,14
+15,16
+17,18
+18,19
+18,20
+19,20
+21,22
+21,23
+23,24
+24,25
+26,27
+27,28
+27,29
+28,29
+30,31
+30,32
+30,33
+33,34
+34,35
+36,37
+37,38
+37,39
+38,39
+40,41
+42,43
+43,44
+43,45
+44,45
+46,47
+46,48
+46,49
+49,50
+50,51
+52,53
+53,54
+54,55
+56,57
+57,58
+57,59
+58,59
+60,61
+61,62
+63,64
+64,65
+64,66
+64,67
+65,66
+67,68
+69,70
+71,72
+72,73
+72,74
+73,74
+76,77
+77,78
+77,79
+78,79
+80,81
+81,82
+83,84
+83,85
+84,85
+84,86
+85,86
+87,88
+89,90
+89,91
+90,91
+91,92
+91,93
+91,94
+91,95
+92,93
+94,95
+97,98
+99,100
+101,102
+102,103
+102,104
+103,104
+105,106
+105,107
+105,108
+106,107
+108,109
+109,110
+111,112
+113,114
+113,115
+114,115
+115,116
+115,117
+116,117
+118,119
+120,121
+120,122
+121,122
+122,123
+122,124
+122,125
+122,126
+123,124
+125,126
+128,129
+130,131
+132,133
+133,134
+133,135
+134,135
+136,137
+136,138
+137,138
+137,139
+138,139
+140,141
+142,143
+142,144
+142,145
+143,144
+145,146
+147,148
+149,150
+149,151
+150,151
+151,152
+153,154
+153,155
+154,155
+155,156
+155,157
+155,158
+155,159
+156,157
+158,159
+161,162
+163,164
+165,166
+166,167
+166,168
+167,168
+167,169
+168,169
+171,172
+171,173
+172,173
+172,174
+173,174
+176,177
+176,178
+176,179
+177,178
+179,180
+181,182
+183,184
+183,185
+184,185
+184,186
+185,186
+187,188
+187,189
+188,189
+191,192
+191,193
+192,193
+193,194
+193,195
+193,196
+193,197
+194,195
+196,197
+199,200
+201,202
+203,204
+204,205
+204,206
+205,206
+207,208
+207,209
+208,209
+210,211
+212,213
+212,214
+213,214
+213,215
+214,215
+216,217
+218,219
+218,220
+219,220
+220,221
+220,222
+220,223
+220,224
+221,222
+223,224
+226,227
+228,229
+230,231
+231,232
+231,233
+232,233
+234,235
+234,236
+235,236
+237,238
+237,239
+238,239
+241,242
+241,243
+242,243
+243,244
+243,245
+244,245
+246,247
+248,249
+248,250
+249,250
+250,251
+250,252
+250,253
+250,254
+251,252
+253,254
+256,257
+258,259
+260,261
+260,262
+261,262
+261,263
+262,263
+264,265
+264,266
+265,266
+267,268
+269,270
+269,271
+270,271
+271,272
+271,273
+271,274
+271,275
+272,273
+274,275
+277,278
+279,280
+281,282
+282,283
+282,284
+283,284
+285,286
+285,287
+285,288
+285,289
+285,290
+286,287
+288,289
+288,290
+289,290
+292,293
+294,295
+294,296
+295,296
+295,297
+296,297
+298,299
+300,301
+301,302
+301,303
+302,303
+302,304
+303,304
+303,305
+304,305
+309,310
+310,311
+311,312
+311,313
+312,313
+312,314
+313,314
+313,315
+314,315
+319,320
+319,321
+320,321
+321,322
+321,323
+322,323
+324,325
+326,327
+326,328
+327,328
+328,329
+328,330
+328,331
+328,332
+328,333
+328,334
+329,330
+331,332
+334,335
+336,337
+338,339
+340,341
+342,343
+343,344
+343,345
+344,345
+346,347
+346,348
+347,348
+349,350
+351,352
+351,353
+352,353
+353,354
+353,355
+354,355
+356,357
+358,359
+358,360
+358,361
+359,360
+360,361
+360,362
+360,363
+360,364
+361,362
+363,364
+366,367
+368,369
+368,370
+369,370
+370,371
+372,373
+373,374
+373,375
+374,375
+377,378
+379,380
+380,381
+380,382
+381,382
+383,384
+385,386
+386,387
+386,388
+387,388
+389,390
+389,391
+390,391
+392,393
+394,395
+394,396
+395,396
+396,397
+396,398
+397,398
+399,400
+401,402
+401,403
+402,403
+403,404
+403,405
+403,406
+403,407
+404,405
+406,407
+409,410
+411,412
+413,414
+414,415
+414,416
+415,416
+417,418
+419,420
+420,421
+420,422
+421,422
+421,423
+422,423
+426,427
+427,428
+427,429
+428,429
+428,430
+429,430
+432,433
+434,435
+435,436
+435,437
+436,437
+436,438
+437,438
+440,441
+442,443
+443,444
+443,445
+444,445
+446,447
+448,449
+449,450
+449,451
+450,451
+452,453
+454,455
+455,456
+455,457
+456,457
+458,459
+458,460
+459,460
+461,462
+463,464
+463,465
+464,465
+465,466
+465,467
+466,467
+468,469
+470,471
+470,472
+471,472
+472,473
+472,474
+472,475
+472,476
+473,474
+475,476
+478,479
+480,481
+482,483
+483,484
+483,485
+484,485
+486,487
+488,489
+488,490
+489,490
+489,491
+490,491
+493,494
+493,495
+494,495
+495,496
+495,497
+495,498
+495,499
+496,497
+498,499
+501,502
+503,504
+505,506
+506,507
+506,508
+506,509
+507,508
+509,510
+509,511
+510,511
+513,514
+515,516
+516,517
+516,518
+516,519
+517,518
+519,520
+521,522
+523,524
+524,525
+524,526
+524,527
+525,526
+527,528
+527,529
+528,529
+531,532
+533,534
+535,536
+535,537
+537,538
+538,539
+538,540
+539,540
+541,542
+543,544
+543,545
+545,546
+546,547
+546,548
+547,548
+549,550
+551,552
+551,553
+553,554
+554,555
+554,556
+555,556
+557,558
+559,560
+559,561
+561,562
+561,563
+562,563
+563,564
+564,565
+566,567
+566,568
+567,568
+568,569
+568,570
+568,571
+569,570
+571,572
+573,574
+575,576
+576,577
+578,579
+579,580
+579,581
+580,581
+582,583
+584,585
+585,586
+585,587
+586,587
+588,589
+590,591
+590,592
+591,592
+593,594
+593,595
+593,596
+593,597
+593,598
+593,599
+593,600
+593,601
+594,595
+595,596
+595,597
+596,597
+598,599
+599,600
+599,601
+602,603
+603,604
+603,605
+603,606
+604,605
+606,607
+609,610
+610,611
+611,612
+613,614
+614,615
+614,616
+615,616
+617,618
+617,619
+618,619
+621,622
+622,623
+622,624
+623,624
+623,625
+624,625
+627,628
+629,630
+630,631
+630,632
+631,632
+633,634
+633,635
+634,635
+637,638
+638,639
+638,640
+639,640
+641,642
+641,643
+642,643
+645,646
+646,647
+646,648
+647,648
+649,650
+649,651
+650,651
+653,654
+654,655
+654,656
+655,656
+657,658
+658,659
+660,661
+660,662
+662,663
+663,664
+663,665
+664,665
+666,667
+668,669
+669,670
+669,671
+669,672
+670,671
+672,673
+674,675
+676,677
+677,678
+677,679
+678,679
+681,682
+682,683
+683,684
+685,686
+685,687
+687,688
+688,689
+688,690
+688,691
+689,690
+691,692
+694,695
+695,696
+-----nextToken-----
+3,5,7,9,14,16,20,22,25,29,31,32,35,39,41,45,47,48,51,55,59,62,66,68,70,74,75,79,82,86,88,93,95,96,98,100,104,107,110,112,117,119,124,126,127,129,131,135,139,141,144,146,148,152,157,159,160,162,164,169,170,174,175,178,180,182,186,189,190,195,197,198,200,202,206,209,211,215,217,222,224,225,227,229,233,236,239,240,245,247,252,254,255,257,259,263,266,268,273,275,276,278,280,284,287,290,291,293,297,299,305,306,307,308,315,316,317,318,323,325,330,332,333,335,337,339,341,345,348,350,355,357,362,364,365,367,371,375,376,378,382,384,388,391,393,398,400,405,407,408,410,412,416,418,423,424,425,430,431,433,438,439,441,445,447,451,453,457,460,462,467,469,474,476,477,479,481,485,487,491,492,497,499,500,502,504,508,511,512,514,518,520,522,526,529,530,532,534,536,540,542,544,548,550,552,556,558,560,565,570,572,574,577,581,583,587,589,592,597,600,601,605,607,608,612,616,619,620,625,626,628,632,635,636,640,643,644,648,651,652,656,659,661,665,667,671,673,675,679,680,684,686,690,692,693,696
+-----computeFrom-----
+77,78
+77,79
+84,85
+84,86
+102,103
+102,104
+133,134
+133,135
+166,167
+166,168
+184,185
+184,186
+204,205
+204,206
+213,214
+213,215
+231,232
+231,233
+261,262
+261,263
+282,283
+282,284
+343,344
+343,345
+386,387
+386,388
+420,421
+420,422
+427,428
+427,429
+435,436
+435,437
+455,456
+455,457
+622,623
+622,624
+-----guardedBy-----
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;NamedTypeSpecifier;Name;FunctionDeclarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;GotoStatement;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;GotoStatement;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;Pointer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;GotoStatement;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;GotoStatement;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;GotoStatement;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;GotoStatement;Name;IfStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;GotoStatement;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;Pointer;UnaryExpression;ArraySubscriptExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;LiteralExpression;UnaryExpression;UnaryExpression;ArraySubscriptExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;LiteralExpression;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;GotoStatement;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;GotoStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;GotoStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;GotoStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;GotoStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;GotoStatement;Name;LabelStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LabelStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LabelStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LabelStatement;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;ReferenceOperator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LabelStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ReturnStatement;UnaryExpression;IdExpression;Name;LabelStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+VOS_STATUS hdd_wlan_re_init(void){   VOS_STATUS       vosStatus;   v_CONTEXT_t      pVosContext = NULL;   hdd_context_t    *pHddCtx = NULL;   eHalStatus       halStatus;#ifdef HAVE_WCNSS_CAL_DOWNLOAD   int              max_retries = 0;#endif#ifdef HAVE_CBC_DONE   int              max_cbc_retries = 0;#endif#ifdef WLAN_BTAMP_FEATURE   hdd_config_t     *pConfig = NULL;   WLANBAP_ConfigType btAmpConfig;#endif   struct device *dev = NULL;   hdd_ssr_timer_del();   hdd_prevent_suspend(WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT);#ifdef HAVE_WCNSS_CAL_DOWNLOAD   /* wait until WCNSS driver downloads NV */   while (!wcnss_device_ready() && 10 >= ++max_retries) {       msleep(1000);   }   if (max_retries >= 10) {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: WCNSS driver not ready", __func__);      goto err_re_init;   }#endif#ifdef HAVE_CBC_DONE   while (!wcnss_cbc_complete() && 20 >= ++max_cbc_retries) {       msleep(1000);   }   if (max_cbc_retries >= 20) {      hddLog(VOS_TRACE_LEVEL_FATAL, "%s:CBC not completed", __func__);   }#endif   vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, TRUE);   /* The driver should always be initialized in STA mode after SSR */   hdd_set_conparam(0);   dev = wcnss_wlan_get_device();   if (NULL == dev)   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: wcnss dev is NULL",__func__);      goto err_re_init;   }   /* Re-open VOSS, it is a re-open b'se control transport was never closed. */   vosStatus = vos_open(&pVosContext, dev);   if (!VOS_IS_STATUS_SUCCESS(vosStatus))   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: vos_open failed",__func__);      goto err_re_init;   }   /* Get the HDD context. */   pHddCtx = (hdd_context_t *)vos_get_context(VOS_MODULE_ID_HDD, pVosContext);   if(!pHddCtx)   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: HDD context is Null",__func__);      goto err_vosclose;   }   /* Save the hal context in Adapter */   pHddCtx->hHal = (tHalHandle)vos_get_context( VOS_MODULE_ID_SME, pVosContext );   if ( NULL == pHddCtx->hHal )   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: HAL context is null",__func__);      goto err_vosclose;   }   /* Set the SME configuration parameters. */   vosStatus = hdd_set_sme_config(pHddCtx);   if ( VOS_STATUS_SUCCESS != vosStatus )   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: Failed hdd_set_sme_config",__func__);      goto err_vosclose;   }   vosStatus = vos_preStart( pHddCtx->pvosContext );   if ( !VOS_IS_STATUS_SUCCESS( vosStatus ) )   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: vos_preStart failed",__func__);      goto err_vosclose;   }   /* In the integrated architecture we update the configuration from      the INI file and from NV before vOSS has been started so that      the final contents are available to send down to the cCPU   */   /* Apply the cfg.ini to cfg.dat */   if (FALSE == hdd_update_config_dat(pHddCtx))   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: config update failed",__func__ );      goto err_vosclose;   }   /* Set the MAC Address, currently this is used by HAL to add self sta.    * Remove this once self sta is added as part of session open. */   halStatus = cfgSetStr(pHddCtx->hHal, WNI_CFG_STA_ID,         (v_U8_t *)&pHddCtx->cfg_ini->intfMacAddr[0],           sizeof(pHddCtx->cfg_ini->intfMacAddr[0]));   if (!HAL_STATUS_SUCCESS(halStatus))   {      hddLog(VOS_TRACE_LEVEL_ERROR,"%s: Failed to set MAC Address. "            "HALStatus is %08d [x%08x]",__func__, halStatus, halStatus);      goto err_vosclose;   }   /* Start VOSS which starts up the SME/MAC/HAL modules and everything else      Note: Firmware image will be read and downloaded inside vos_start API */   vosStatus = vos_start( pVosContext );   if ( !VOS_IS_STATUS_SUCCESS( vosStatus ) )   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: vos_start failed",__func__);      if (isSsrPanicOnFailure())          VOS_BUG(0);      goto err_vosclose;   }   /* Exchange capability info between Host and FW and also get versioning info from FW */   hdd_exchange_version_and_caps(pHddCtx);   vosStatus = hdd_post_voss_start_config( pHddCtx );   if ( !VOS_IS_STATUS_SUCCESS( vosStatus ) )   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: hdd_post_voss_start_config failed",         __func__);      goto err_vosstop;   }#ifdef CONFIG_ENABLE_LINUX_REG   vosStatus = wlan_hdd_init_channels_for_cc(pHddCtx, REINIT);   if ( !VOS_IS_STATUS_SUCCESS( vosStatus ) )   {      hddLog(VOS_TRACE_LEVEL_FATAL, "%s: wlan_hdd_init_channels_for_cc failed",             __func__);      goto err_vosstop;   }#endif#ifdef WLAN_BTAMP_FEATURE   vosStatus = WLANBAP_Open(pVosContext);   if(!VOS_IS_STATUS_SUCCESS(vosStatus))   {     VOS_TRACE( VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,        "%s: Failed to open BAP",__func__);      goto err_vosstop;   }   vosStatus = BSL_Init(pVosContext);   if(!VOS_IS_STATUS_SUCCESS(vosStatus))   {     VOS_TRACE( VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,        "%s: Failed to Init BSL",__func__);     goto err_bap_close;   }   vosStatus = WLANBAP_Start(pVosContext);   if (!VOS_IS_STATUS_SUCCESS(vosStatus))   {       VOS_TRACE( VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,               "%s: Failed to start TL",__func__);       goto err_bap_close;   }   pConfig = pHddCtx->cfg_ini;   btAmpConfig.ucPreferredChannel = pConfig->preferredChannel;   vosStatus = WLANBAP_SetConfig(&btAmpConfig);#endif //WLAN_BTAMP_FEATURE    /* Restart all adapters */   hdd_start_all_adapters(pHddCtx);   pHddCtx->con_scan_abort_cnt = 0;   pHddCtx->hdd_mcastbcast_filter_set = FALSE;   pHddCtx->btCoexModeSet = FALSE;   hdd_register_mcast_bcast_filter(pHddCtx);   wlan_hdd_tdls_init(pHddCtx);   /* Register with platform driver as client for Suspend/Resume */   vosStatus = hddRegisterPmOps(pHddCtx);   if ( !VOS_IS_STATUS_SUCCESS( vosStatus ) )   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: hddRegisterPmOps failed",__func__);      goto err_bap_stop;   }#ifdef WLAN_LOGGING_SOCK_SVC_ENABLE   if (pHddCtx->cfg_ini->wlanLoggingEnable &&               (pHddCtx->cfg_ini->enableFWLogging ||                pHddCtx->cfg_ini->enableMgmtLogging ||                pHddCtx->cfg_ini->enableContFWLogging))   {       hdd_init_frame_logging(pHddCtx);   }#endif   /* Allow the phone to go to sleep */   hdd_allow_suspend(WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT);   /* register for riva power on lock */   if (req_riva_power_on_lock("wlan"))   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: req riva power on lock failed",                                        __func__);      goto err_unregister_pmops;   }   sme_set_rssi_threshold_breached_cb(pHddCtx->hHal, hdd_rssi_threshold_breached_cb);   vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, FALSE);   sme_register_mgmt_frame_ind_callback(pHddCtx->hHal,hdd_indicate_mgmt_frame);#ifdef WLAN_FEATURE_EXTSCAN    sme_EXTScanRegisterCallback(pHddCtx->hHal,            wlan_hdd_cfg80211_extscan_callback,                           pHddCtx);#endif /* WLAN_FEATURE_EXTSCAN */#ifdef FEATURE_OEM_DATA_SUPPORT    sme_OemDataRegisterCallback(pHddCtx->hHal,             wlan_hdd_cfg80211_oemdata_callback,                          pHddCtx);#endif /* FEATURE_OEM_DATA_SUPPORT */   goto success;err_unregister_pmops:   hddDeregisterPmOps(pHddCtx);err_bap_stop:#ifdef CONFIG_HAS_EARLYSUSPEND   hdd_unregister_mcast_bcast_filter(pHddCtx);#endif   hdd_close_all_adapters(pHddCtx);#ifdef WLAN_BTAMP_FEATURE   WLANBAP_Stop(pVosContext);#endif#ifdef WLAN_BTAMP_FEATUREerr_bap_close:   WLANBAP_Close(pVosContext);#endiferr_vosstop:   vos_stop(pVosContext);err_vosclose:   if(!isSsrPanicOnFailure())   {       /* If we hit this, it means wlan driver is in bad state and needs       * driver unload and load.       */       vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, FALSE);       return VOS_STATUS_E_FAILURE;   }   vos_close(pVosContext);   vos_sched_close(pVosContext);   if (pHddCtx)   {       /* Unregister the Net Device Notifier */       unregister_netdevice_notifier(&hdd_netdev_notifier);       /* Clean up HDD Nlink Service */       send_btc_nlink_msg(WLAN_MODULE_DOWN_IND, 0);#ifdef WLAN_KD_READY_NOTIFIER       nl_srv_exit(pHddCtx->ptt_pid);#else       nl_srv_exit();#endif /* WLAN_KD_READY_NOTIFIER */       /* Free up dynamically allocated members inside HDD Adapter */       kfree(pHddCtx->cfg_ini);       pHddCtx->cfg_ini= NULL;       wiphy_unregister(pHddCtx->wiphy);       hdd_wlan_free_wiphy_channels(pHddCtx->wiphy);       wiphy_free(pHddCtx->wiphy);   }   vos_preClose(&pVosContext);#ifdef MEMORY_DEBUG   vos_mem_exit();#endiferr_re_init:   /* Allow the phone to go to sleep */   hdd_allow_suspend(WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT);   vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, FALSE);   VOS_BUG(0);   return -EPERM;success:   /* Trigger replay of BTC events */   send_btc_nlink_msg(WLAN_MODULE_DOWN_IND, 0);   return VOS_STATUS_SUCCESS;}
+VOS_STATUS
+VOS_STATUS
+hdd_wlan_re_init(void)
+hdd_wlan_re_init
+void
+void
+
+
+{   VOS_STATUS       vosStatus;   v_CONTEXT_t      pVosContext = NULL;   hdd_context_t    *pHddCtx = NULL;   eHalStatus       halStatus;#ifdef HAVE_WCNSS_CAL_DOWNLOAD   int              max_retries = 0;#endif#ifdef HAVE_CBC_DONE   int              max_cbc_retries = 0;#endif#ifdef WLAN_BTAMP_FEATURE   hdd_config_t     *pConfig = NULL;   WLANBAP_ConfigType btAmpConfig;#endif   struct device *dev = NULL;   hdd_ssr_timer_del();   hdd_prevent_suspend(WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT);#ifdef HAVE_WCNSS_CAL_DOWNLOAD   /* wait until WCNSS driver downloads NV */   while (!wcnss_device_ready() && 10 >= ++max_retries) {       msleep(1000);   }   if (max_retries >= 10) {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: WCNSS driver not ready", __func__);      goto err_re_init;   }#endif#ifdef HAVE_CBC_DONE   while (!wcnss_cbc_complete() && 20 >= ++max_cbc_retries) {       msleep(1000);   }   if (max_cbc_retries >= 20) {      hddLog(VOS_TRACE_LEVEL_FATAL, "%s:CBC not completed", __func__);   }#endif   vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, TRUE);   /* The driver should always be initialized in STA mode after SSR */   hdd_set_conparam(0);   dev = wcnss_wlan_get_device();   if (NULL == dev)   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: wcnss dev is NULL",__func__);      goto err_re_init;   }   /* Re-open VOSS, it is a re-open b'se control transport was never closed. */   vosStatus = vos_open(&pVosContext, dev);   if (!VOS_IS_STATUS_SUCCESS(vosStatus))   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: vos_open failed",__func__);      goto err_re_init;   }   /* Get the HDD context. */   pHddCtx = (hdd_context_t *)vos_get_context(VOS_MODULE_ID_HDD, pVosContext);   if(!pHddCtx)   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: HDD context is Null",__func__);      goto err_vosclose;   }   /* Save the hal context in Adapter */   pHddCtx->hHal = (tHalHandle)vos_get_context( VOS_MODULE_ID_SME, pVosContext );   if ( NULL == pHddCtx->hHal )   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: HAL context is null",__func__);      goto err_vosclose;   }   /* Set the SME configuration parameters. */   vosStatus = hdd_set_sme_config(pHddCtx);   if ( VOS_STATUS_SUCCESS != vosStatus )   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: Failed hdd_set_sme_config",__func__);      goto err_vosclose;   }   vosStatus = vos_preStart( pHddCtx->pvosContext );   if ( !VOS_IS_STATUS_SUCCESS( vosStatus ) )   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: vos_preStart failed",__func__);      goto err_vosclose;   }   /* In the integrated architecture we update the configuration from      the INI file and from NV before vOSS has been started so that      the final contents are available to send down to the cCPU   */   /* Apply the cfg.ini to cfg.dat */   if (FALSE == hdd_update_config_dat(pHddCtx))   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: config update failed",__func__ );      goto err_vosclose;   }   /* Set the MAC Address, currently this is used by HAL to add self sta.    * Remove this once self sta is added as part of session open. */   halStatus = cfgSetStr(pHddCtx->hHal, WNI_CFG_STA_ID,         (v_U8_t *)&pHddCtx->cfg_ini->intfMacAddr[0],           sizeof(pHddCtx->cfg_ini->intfMacAddr[0]));   if (!HAL_STATUS_SUCCESS(halStatus))   {      hddLog(VOS_TRACE_LEVEL_ERROR,"%s: Failed to set MAC Address. "            "HALStatus is %08d [x%08x]",__func__, halStatus, halStatus);      goto err_vosclose;   }   /* Start VOSS which starts up the SME/MAC/HAL modules and everything else      Note: Firmware image will be read and downloaded inside vos_start API */   vosStatus = vos_start( pVosContext );   if ( !VOS_IS_STATUS_SUCCESS( vosStatus ) )   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: vos_start failed",__func__);      if (isSsrPanicOnFailure())          VOS_BUG(0);      goto err_vosclose;   }   /* Exchange capability info between Host and FW and also get versioning info from FW */   hdd_exchange_version_and_caps(pHddCtx);   vosStatus = hdd_post_voss_start_config( pHddCtx );   if ( !VOS_IS_STATUS_SUCCESS( vosStatus ) )   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: hdd_post_voss_start_config failed",         __func__);      goto err_vosstop;   }#ifdef CONFIG_ENABLE_LINUX_REG   vosStatus = wlan_hdd_init_channels_for_cc(pHddCtx, REINIT);   if ( !VOS_IS_STATUS_SUCCESS( vosStatus ) )   {      hddLog(VOS_TRACE_LEVEL_FATAL, "%s: wlan_hdd_init_channels_for_cc failed",             __func__);      goto err_vosstop;   }#endif#ifdef WLAN_BTAMP_FEATURE   vosStatus = WLANBAP_Open(pVosContext);   if(!VOS_IS_STATUS_SUCCESS(vosStatus))   {     VOS_TRACE( VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,        "%s: Failed to open BAP",__func__);      goto err_vosstop;   }   vosStatus = BSL_Init(pVosContext);   if(!VOS_IS_STATUS_SUCCESS(vosStatus))   {     VOS_TRACE( VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,        "%s: Failed to Init BSL",__func__);     goto err_bap_close;   }   vosStatus = WLANBAP_Start(pVosContext);   if (!VOS_IS_STATUS_SUCCESS(vosStatus))   {       VOS_TRACE( VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,               "%s: Failed to start TL",__func__);       goto err_bap_close;   }   pConfig = pHddCtx->cfg_ini;   btAmpConfig.ucPreferredChannel = pConfig->preferredChannel;   vosStatus = WLANBAP_SetConfig(&btAmpConfig);#endif //WLAN_BTAMP_FEATURE    /* Restart all adapters */   hdd_start_all_adapters(pHddCtx);   pHddCtx->con_scan_abort_cnt = 0;   pHddCtx->hdd_mcastbcast_filter_set = FALSE;   pHddCtx->btCoexModeSet = FALSE;   hdd_register_mcast_bcast_filter(pHddCtx);   wlan_hdd_tdls_init(pHddCtx);   /* Register with platform driver as client for Suspend/Resume */   vosStatus = hddRegisterPmOps(pHddCtx);   if ( !VOS_IS_STATUS_SUCCESS( vosStatus ) )   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: hddRegisterPmOps failed",__func__);      goto err_bap_stop;   }#ifdef WLAN_LOGGING_SOCK_SVC_ENABLE   if (pHddCtx->cfg_ini->wlanLoggingEnable &&               (pHddCtx->cfg_ini->enableFWLogging ||                pHddCtx->cfg_ini->enableMgmtLogging ||                pHddCtx->cfg_ini->enableContFWLogging))   {       hdd_init_frame_logging(pHddCtx);   }#endif   /* Allow the phone to go to sleep */   hdd_allow_suspend(WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT);   /* register for riva power on lock */   if (req_riva_power_on_lock("wlan"))   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: req riva power on lock failed",                                        __func__);      goto err_unregister_pmops;   }   sme_set_rssi_threshold_breached_cb(pHddCtx->hHal, hdd_rssi_threshold_breached_cb);   vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, FALSE);   sme_register_mgmt_frame_ind_callback(pHddCtx->hHal,hdd_indicate_mgmt_frame);#ifdef WLAN_FEATURE_EXTSCAN    sme_EXTScanRegisterCallback(pHddCtx->hHal,            wlan_hdd_cfg80211_extscan_callback,                           pHddCtx);#endif /* WLAN_FEATURE_EXTSCAN */#ifdef FEATURE_OEM_DATA_SUPPORT    sme_OemDataRegisterCallback(pHddCtx->hHal,             wlan_hdd_cfg80211_oemdata_callback,                          pHddCtx);#endif /* FEATURE_OEM_DATA_SUPPORT */   goto success;err_unregister_pmops:   hddDeregisterPmOps(pHddCtx);err_bap_stop:#ifdef CONFIG_HAS_EARLYSUSPEND   hdd_unregister_mcast_bcast_filter(pHddCtx);#endif   hdd_close_all_adapters(pHddCtx);#ifdef WLAN_BTAMP_FEATURE   WLANBAP_Stop(pVosContext);#endif#ifdef WLAN_BTAMP_FEATUREerr_bap_close:   WLANBAP_Close(pVosContext);#endiferr_vosstop:   vos_stop(pVosContext);err_vosclose:   if(!isSsrPanicOnFailure())   {       /* If we hit this, it means wlan driver is in bad state and needs       * driver unload and load.       */       vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, FALSE);       return VOS_STATUS_E_FAILURE;   }   vos_close(pVosContext);   vos_sched_close(pVosContext);   if (pHddCtx)   {       /* Unregister the Net Device Notifier */       unregister_netdevice_notifier(&hdd_netdev_notifier);       /* Clean up HDD Nlink Service */       send_btc_nlink_msg(WLAN_MODULE_DOWN_IND, 0);#ifdef WLAN_KD_READY_NOTIFIER       nl_srv_exit(pHddCtx->ptt_pid);#else       nl_srv_exit();#endif /* WLAN_KD_READY_NOTIFIER */       /* Free up dynamically allocated members inside HDD Adapter */       kfree(pHddCtx->cfg_ini);       pHddCtx->cfg_ini= NULL;       wiphy_unregister(pHddCtx->wiphy);       hdd_wlan_free_wiphy_channels(pHddCtx->wiphy);       wiphy_free(pHddCtx->wiphy);   }   vos_preClose(&pVosContext);#ifdef MEMORY_DEBUG   vos_mem_exit();#endiferr_re_init:   /* Allow the phone to go to sleep */   hdd_allow_suspend(WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT);   vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, FALSE);   VOS_BUG(0);   return -EPERM;success:   /* Trigger replay of BTC events */   send_btc_nlink_msg(WLAN_MODULE_DOWN_IND, 0);   return VOS_STATUS_SUCCESS;}
+VOS_STATUS       vosStatus;
+VOS_STATUS       vosStatus;
+VOS_STATUS
+VOS_STATUS
+vosStatus
+vosStatus
+v_CONTEXT_t      pVosContext = NULL;
+v_CONTEXT_t      pVosContext = NULL;
+v_CONTEXT_t
+v_CONTEXT_t
+pVosContext = NULL
+pVosContext
+= NULL
+NULL
+NULL
+hdd_context_t    *pHddCtx = NULL;
+hdd_context_t    *pHddCtx = NULL;
+hdd_context_t
+hdd_context_t
+*pHddCtx = NULL
+*
+pHddCtx
+= NULL
+NULL
+NULL
+eHalStatus       halStatus;
+eHalStatus       halStatus;
+eHalStatus
+eHalStatus
+halStatus
+halStatus
+struct device *dev = NULL;
+struct device *dev = NULL;
+struct device
+device
+*dev = NULL
+*
+dev
+= NULL
+NULL
+NULL
+hdd_ssr_timer_del();
+hdd_ssr_timer_del()
+hdd_ssr_timer_del
+hdd_ssr_timer_del
+hdd_prevent_suspend(WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT);
+hdd_prevent_suspend(WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT);
+hdd_prevent_suspend
+hdd_prevent_suspend
+(WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT)
+WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT
+WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT
+vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, TRUE);
+vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, TRUE)
+vos_set_reinit_in_progress
+vos_set_reinit_in_progress
+VOS_MODULE_ID_VOSS
+VOS_MODULE_ID_VOSS
+TRUE
+TRUE
+hdd_set_conparam(0);
+hdd_set_conparam(0)
+hdd_set_conparam
+hdd_set_conparam
+0
+dev = wcnss_wlan_get_device();
+dev = wcnss_wlan_get_device()
+dev
+dev
+wcnss_wlan_get_device()
+wcnss_wlan_get_device
+wcnss_wlan_get_device
+if (NULL == dev)   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: wcnss dev is NULL",__func__);      goto err_re_init;   }
+NULL == dev
+NULL
+NULL
+dev
+dev
+{      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: wcnss dev is NULL",__func__);      goto err_re_init;   }
+hddLog(VOS_TRACE_LEVEL_FATAL,"%s: wcnss dev is NULL",__func__);
+hddLog(VOS_TRACE_LEVEL_FATAL,"%s: wcnss dev is NULL",__func__)
+hddLog
+hddLog
+VOS_TRACE_LEVEL_FATAL
+VOS_TRACE_LEVEL_FATAL
+"%s: wcnss dev is NULL"
+__func__
+__func__
+goto err_re_init;
+err_re_init
+vosStatus = vos_open(&pVosContext, dev);
+vosStatus = vos_open(&pVosContext, dev)
+vosStatus
+vosStatus
+vos_open(&pVosContext, dev)
+vos_open
+vos_open
+&pVosContext
+pVosContext
+pVosContext
+dev
+dev
+if (!VOS_IS_STATUS_SUCCESS(vosStatus))   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: vos_open failed",__func__);      goto err_re_init;   }
+!VOS_IS_STATUS_SUCCESS(vosStatus)
+VOS_IS_STATUS_SUCCESS(vosStatus)
+VOS_IS_STATUS_SUCCESS
+VOS_IS_STATUS_SUCCESS
+vosStatus
+vosStatus
+{      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: vos_open failed",__func__);      goto err_re_init;   }
+hddLog(VOS_TRACE_LEVEL_FATAL,"%s: vos_open failed",__func__);
+hddLog(VOS_TRACE_LEVEL_FATAL,"%s: vos_open failed",__func__)
+hddLog
+hddLog
+VOS_TRACE_LEVEL_FATAL
+VOS_TRACE_LEVEL_FATAL
+"%s: vos_open failed"
+__func__
+__func__
+goto err_re_init;
+err_re_init
+pHddCtx = (hdd_context_t *)vos_get_context(VOS_MODULE_ID_HDD, pVosContext);
+pHddCtx = (hdd_context_t *)vos_get_context(VOS_MODULE_ID_HDD, pVosContext)
+pHddCtx
+pHddCtx
+(hdd_context_t *)vos_get_context(VOS_MODULE_ID_HDD, pVosContext)
+hdd_context_t *
+hdd_context_t
+hdd_context_t
+*
+*
+vos_get_context(VOS_MODULE_ID_HDD, pVosContext)
+vos_get_context
+vos_get_context
+VOS_MODULE_ID_HDD
+VOS_MODULE_ID_HDD
+pVosContext
+pVosContext
+if(!pHddCtx)   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: HDD context is Null",__func__);      goto err_vosclose;   }
+!pHddCtx
+pHddCtx
+pHddCtx
+{      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: HDD context is Null",__func__);      goto err_vosclose;   }
+hddLog(VOS_TRACE_LEVEL_FATAL,"%s: HDD context is Null",__func__);
+hddLog(VOS_TRACE_LEVEL_FATAL,"%s: HDD context is Null",__func__)
+hddLog
+hddLog
+VOS_TRACE_LEVEL_FATAL
+VOS_TRACE_LEVEL_FATAL
+"%s: HDD context is Null"
+__func__
+__func__
+goto err_vosclose;
+err_vosclose
+pHddCtx->hHal = (tHalHandle)vos_get_context( VOS_MODULE_ID_SME, pVosContext );
+pHddCtx->hHal = (tHalHandle)vos_get_context( VOS_MODULE_ID_SME, pVosContext )
+pHddCtx->hHal
+pHddCtx
+pHddCtx
+hHal
+(tHalHandle)vos_get_context( VOS_MODULE_ID_SME, pVosContext )
+tHalHandle
+tHalHandle
+tHalHandle
+
+vos_get_context( VOS_MODULE_ID_SME, pVosContext )
+vos_get_context
+vos_get_context
+VOS_MODULE_ID_SME
+VOS_MODULE_ID_SME
+pVosContext
+pVosContext
+if ( NULL == pHddCtx->hHal )   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: HAL context is null",__func__);      goto err_vosclose;   }
+NULL == pHddCtx->hHal
+NULL
+NULL
+pHddCtx->hHal
+pHddCtx
+pHddCtx
+hHal
+{      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: HAL context is null",__func__);      goto err_vosclose;   }
+hddLog(VOS_TRACE_LEVEL_FATAL,"%s: HAL context is null",__func__);
+hddLog(VOS_TRACE_LEVEL_FATAL,"%s: HAL context is null",__func__)
+hddLog
+hddLog
+VOS_TRACE_LEVEL_FATAL
+VOS_TRACE_LEVEL_FATAL
+"%s: HAL context is null"
+__func__
+__func__
+goto err_vosclose;
+err_vosclose
+vosStatus = hdd_set_sme_config(pHddCtx);
+vosStatus = hdd_set_sme_config(pHddCtx)
+vosStatus
+vosStatus
+hdd_set_sme_config(pHddCtx)
+hdd_set_sme_config
+hdd_set_sme_config
+pHddCtx
+pHddCtx
+if ( VOS_STATUS_SUCCESS != vosStatus )   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: Failed hdd_set_sme_config",__func__);      goto err_vosclose;   }
+VOS_STATUS_SUCCESS != vosStatus
+VOS_STATUS_SUCCESS
+VOS_STATUS_SUCCESS
+vosStatus
+vosStatus
+{      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: Failed hdd_set_sme_config",__func__);      goto err_vosclose;   }
+hddLog(VOS_TRACE_LEVEL_FATAL,"%s: Failed hdd_set_sme_config",__func__);
+hddLog(VOS_TRACE_LEVEL_FATAL,"%s: Failed hdd_set_sme_config",__func__)
+hddLog
+hddLog
+VOS_TRACE_LEVEL_FATAL
+VOS_TRACE_LEVEL_FATAL
+"%s: Failed hdd_set_sme_config"
+__func__
+__func__
+goto err_vosclose;
+err_vosclose
+vosStatus = vos_preStart( pHddCtx->pvosContext );
+vosStatus = vos_preStart( pHddCtx->pvosContext )
+vosStatus
+vosStatus
+vos_preStart( pHddCtx->pvosContext )
+vos_preStart
+vos_preStart
+pHddCtx->pvosContext
+pHddCtx
+pHddCtx
+pvosContext
+if ( !VOS_IS_STATUS_SUCCESS( vosStatus ) )   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: vos_preStart failed",__func__);      goto err_vosclose;   }
+!VOS_IS_STATUS_SUCCESS( vosStatus )
+VOS_IS_STATUS_SUCCESS( vosStatus )
+VOS_IS_STATUS_SUCCESS
+VOS_IS_STATUS_SUCCESS
+vosStatus
+vosStatus
+{      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: vos_preStart failed",__func__);      goto err_vosclose;   }
+hddLog(VOS_TRACE_LEVEL_FATAL,"%s: vos_preStart failed",__func__);
+hddLog(VOS_TRACE_LEVEL_FATAL,"%s: vos_preStart failed",__func__)
+hddLog
+hddLog
+VOS_TRACE_LEVEL_FATAL
+VOS_TRACE_LEVEL_FATAL
+"%s: vos_preStart failed"
+__func__
+__func__
+goto err_vosclose;
+err_vosclose
+if (FALSE == hdd_update_config_dat(pHddCtx))   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: config update failed",__func__ );      goto err_vosclose;   }
+FALSE == hdd_update_config_dat(pHddCtx)
+FALSE
+FALSE
+hdd_update_config_dat(pHddCtx)
+hdd_update_config_dat
+hdd_update_config_dat
+pHddCtx
+pHddCtx
+{      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: config update failed",__func__ );      goto err_vosclose;   }
+hddLog(VOS_TRACE_LEVEL_FATAL,"%s: config update failed",__func__ );
+hddLog(VOS_TRACE_LEVEL_FATAL,"%s: config update failed",__func__ )
+hddLog
+hddLog
+VOS_TRACE_LEVEL_FATAL
+VOS_TRACE_LEVEL_FATAL
+"%s: config update failed"
+__func__
+__func__
+goto err_vosclose;
+err_vosclose
+halStatus = cfgSetStr(pHddCtx->hHal, WNI_CFG_STA_ID,         (v_U8_t *)&pHddCtx->cfg_ini->intfMacAddr[0],           sizeof(pHddCtx->cfg_ini->intfMacAddr[0]));
+halStatus = cfgSetStr(pHddCtx->hHal, WNI_CFG_STA_ID,         (v_U8_t *)&pHddCtx->cfg_ini->intfMacAddr[0],           sizeof(pHddCtx->cfg_ini->intfMacAddr[0]))
+halStatus
+halStatus
+cfgSetStr(pHddCtx->hHal, WNI_CFG_STA_ID,         (v_U8_t *)&pHddCtx->cfg_ini->intfMacAddr[0],           sizeof(pHddCtx->cfg_ini->intfMacAddr[0]))
+cfgSetStr
+cfgSetStr
+pHddCtx->hHal
+pHddCtx
+pHddCtx
+hHal
+WNI_CFG_STA_ID
+WNI_CFG_STA_ID
+(v_U8_t *)&pHddCtx->cfg_ini->intfMacAddr[0]
+v_U8_t *
+v_U8_t
+v_U8_t
+*
+*
+&pHddCtx->cfg_ini->intfMacAddr[0]
+pHddCtx->cfg_ini->intfMacAddr[0]
+pHddCtx->cfg_ini->intfMacAddr
+pHddCtx->cfg_ini
+pHddCtx
+pHddCtx
+cfg_ini
+intfMacAddr
+0
+sizeof(pHddCtx->cfg_ini->intfMacAddr[0])
+(pHddCtx->cfg_ini->intfMacAddr[0])
+pHddCtx->cfg_ini->intfMacAddr[0]
+pHddCtx->cfg_ini->intfMacAddr
+pHddCtx->cfg_ini
+pHddCtx
+pHddCtx
+cfg_ini
+intfMacAddr
+0
+if (!HAL_STATUS_SUCCESS(halStatus))   {      hddLog(VOS_TRACE_LEVEL_ERROR,"%s: Failed to set MAC Address. "            "HALStatus is %08d [x%08x]",__func__, halStatus, halStatus);      goto err_vosclose;   }
+!HAL_STATUS_SUCCESS(halStatus)
+HAL_STATUS_SUCCESS(halStatus)
+HAL_STATUS_SUCCESS
+HAL_STATUS_SUCCESS
+halStatus
+halStatus
+{      hddLog(VOS_TRACE_LEVEL_ERROR,"%s: Failed to set MAC Address. "            "HALStatus is %08d [x%08x]",__func__, halStatus, halStatus);      goto err_vosclose;   }
+hddLog(VOS_TRACE_LEVEL_ERROR,"%s: Failed to set MAC Address. "            "HALStatus is %08d [x%08x]",__func__, halStatus, halStatus);
+hddLog(VOS_TRACE_LEVEL_ERROR,"%s: Failed to set MAC Address. "            "HALStatus is %08d [x%08x]",__func__, halStatus, halStatus)
+hddLog
+hddLog
+VOS_TRACE_LEVEL_ERROR
+VOS_TRACE_LEVEL_ERROR
+"%s: Failed to set MAC Address. "            "HALStatus is %08d [x%08x]"
+__func__
+__func__
+halStatus
+halStatus
+halStatus
+halStatus
+goto err_vosclose;
+err_vosclose
+vosStatus = vos_start( pVosContext );
+vosStatus = vos_start( pVosContext )
+vosStatus
+vosStatus
+vos_start( pVosContext )
+vos_start
+vos_start
+pVosContext
+pVosContext
+if ( !VOS_IS_STATUS_SUCCESS( vosStatus ) )   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: vos_start failed",__func__);      if (isSsrPanicOnFailure())          VOS_BUG(0);      goto err_vosclose;   }
+!VOS_IS_STATUS_SUCCESS( vosStatus )
+VOS_IS_STATUS_SUCCESS( vosStatus )
+VOS_IS_STATUS_SUCCESS
+VOS_IS_STATUS_SUCCESS
+vosStatus
+vosStatus
+{      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: vos_start failed",__func__);      if (isSsrPanicOnFailure())          VOS_BUG(0);      goto err_vosclose;   }
+hddLog(VOS_TRACE_LEVEL_FATAL,"%s: vos_start failed",__func__);
+hddLog(VOS_TRACE_LEVEL_FATAL,"%s: vos_start failed",__func__)
+hddLog
+hddLog
+VOS_TRACE_LEVEL_FATAL
+VOS_TRACE_LEVEL_FATAL
+"%s: vos_start failed"
+__func__
+__func__
+if (isSsrPanicOnFailure())          VOS_BUG(0);
+isSsrPanicOnFailure()
+isSsrPanicOnFailure
+isSsrPanicOnFailure
+VOS_BUG(0);
+VOS_BUG(0)
+VOS_BUG
+VOS_BUG
+0
+goto err_vosclose;
+err_vosclose
+hdd_exchange_version_and_caps(pHddCtx);
+hdd_exchange_version_and_caps(pHddCtx)
+hdd_exchange_version_and_caps
+hdd_exchange_version_and_caps
+pHddCtx
+pHddCtx
+vosStatus = hdd_post_voss_start_config( pHddCtx );
+vosStatus = hdd_post_voss_start_config( pHddCtx )
+vosStatus
+vosStatus
+hdd_post_voss_start_config( pHddCtx )
+hdd_post_voss_start_config
+hdd_post_voss_start_config
+pHddCtx
+pHddCtx
+if ( !VOS_IS_STATUS_SUCCESS( vosStatus ) )   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: hdd_post_voss_start_config failed",         __func__);      goto err_vosstop;   }
+!VOS_IS_STATUS_SUCCESS( vosStatus )
+VOS_IS_STATUS_SUCCESS( vosStatus )
+VOS_IS_STATUS_SUCCESS
+VOS_IS_STATUS_SUCCESS
+vosStatus
+vosStatus
+{      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: hdd_post_voss_start_config failed",         __func__);      goto err_vosstop;   }
+hddLog(VOS_TRACE_LEVEL_FATAL,"%s: hdd_post_voss_start_config failed",         __func__);
+hddLog(VOS_TRACE_LEVEL_FATAL,"%s: hdd_post_voss_start_config failed",         __func__)
+hddLog
+hddLog
+VOS_TRACE_LEVEL_FATAL
+VOS_TRACE_LEVEL_FATAL
+"%s: hdd_post_voss_start_config failed"
+__func__
+__func__
+goto err_vosstop;
+err_vosstop
+hdd_start_all_adapters(pHddCtx);
+hdd_start_all_adapters(pHddCtx)
+hdd_start_all_adapters
+hdd_start_all_adapters
+pHddCtx
+pHddCtx
+pHddCtx->con_scan_abort_cnt = 0;
+pHddCtx->con_scan_abort_cnt = 0
+pHddCtx->con_scan_abort_cnt
+pHddCtx
+pHddCtx
+con_scan_abort_cnt
+0
+pHddCtx->hdd_mcastbcast_filter_set = FALSE;
+pHddCtx->hdd_mcastbcast_filter_set = FALSE
+pHddCtx->hdd_mcastbcast_filter_set
+pHddCtx
+pHddCtx
+hdd_mcastbcast_filter_set
+FALSE
+FALSE
+pHddCtx->btCoexModeSet = FALSE;
+pHddCtx->btCoexModeSet = FALSE
+pHddCtx->btCoexModeSet
+pHddCtx
+pHddCtx
+btCoexModeSet
+FALSE
+FALSE
+hdd_register_mcast_bcast_filter(pHddCtx);
+hdd_register_mcast_bcast_filter(pHddCtx)
+hdd_register_mcast_bcast_filter
+hdd_register_mcast_bcast_filter
+pHddCtx
+pHddCtx
+wlan_hdd_tdls_init(pHddCtx);
+wlan_hdd_tdls_init(pHddCtx)
+wlan_hdd_tdls_init
+wlan_hdd_tdls_init
+pHddCtx
+pHddCtx
+vosStatus = hddRegisterPmOps(pHddCtx);
+vosStatus = hddRegisterPmOps(pHddCtx)
+vosStatus
+vosStatus
+hddRegisterPmOps(pHddCtx)
+hddRegisterPmOps
+hddRegisterPmOps
+pHddCtx
+pHddCtx
+if ( !VOS_IS_STATUS_SUCCESS( vosStatus ) )   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: hddRegisterPmOps failed",__func__);      goto err_bap_stop;   }
+!VOS_IS_STATUS_SUCCESS( vosStatus )
+VOS_IS_STATUS_SUCCESS( vosStatus )
+VOS_IS_STATUS_SUCCESS
+VOS_IS_STATUS_SUCCESS
+vosStatus
+vosStatus
+{      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: hddRegisterPmOps failed",__func__);      goto err_bap_stop;   }
+hddLog(VOS_TRACE_LEVEL_FATAL,"%s: hddRegisterPmOps failed",__func__);
+hddLog(VOS_TRACE_LEVEL_FATAL,"%s: hddRegisterPmOps failed",__func__)
+hddLog
+hddLog
+VOS_TRACE_LEVEL_FATAL
+VOS_TRACE_LEVEL_FATAL
+"%s: hddRegisterPmOps failed"
+__func__
+__func__
+goto err_bap_stop;
+err_bap_stop
+hdd_allow_suspend(WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT);
+hdd_allow_suspend(WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT)
+hdd_allow_suspend
+hdd_allow_suspend
+WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT
+WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT
+if (req_riva_power_on_lock("wlan"))   {      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: req riva power on lock failed",                                        __func__);      goto err_unregister_pmops;   }
+req_riva_power_on_lock("wlan")
+req_riva_power_on_lock
+req_riva_power_on_lock
+"wlan"
+{      hddLog(VOS_TRACE_LEVEL_FATAL,"%s: req riva power on lock failed",                                        __func__);      goto err_unregister_pmops;   }
+hddLog(VOS_TRACE_LEVEL_FATAL,"%s: req riva power on lock failed",                                        __func__);
+hddLog(VOS_TRACE_LEVEL_FATAL,"%s: req riva power on lock failed",                                        __func__)
+hddLog
+hddLog
+VOS_TRACE_LEVEL_FATAL
+VOS_TRACE_LEVEL_FATAL
+"%s: req riva power on lock failed"
+__func__
+__func__
+goto err_unregister_pmops;
+err_unregister_pmops
+sme_set_rssi_threshold_breached_cb(pHddCtx->hHal, hdd_rssi_threshold_breached_cb);
+sme_set_rssi_threshold_breached_cb(pHddCtx->hHal, hdd_rssi_threshold_breached_cb)
+sme_set_rssi_threshold_breached_cb
+sme_set_rssi_threshold_breached_cb
+pHddCtx->hHal
+pHddCtx
+pHddCtx
+hHal
+hdd_rssi_threshold_breached_cb
+hdd_rssi_threshold_breached_cb
+vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, FALSE);
+vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, FALSE)
+vos_set_reinit_in_progress
+vos_set_reinit_in_progress
+VOS_MODULE_ID_VOSS
+VOS_MODULE_ID_VOSS
+FALSE
+FALSE
+sme_register_mgmt_frame_ind_callback(pHddCtx->hHal,hdd_indicate_mgmt_frame);
+sme_register_mgmt_frame_ind_callback(pHddCtx->hHal,hdd_indicate_mgmt_frame)
+sme_register_mgmt_frame_ind_callback
+sme_register_mgmt_frame_ind_callback
+pHddCtx->hHal
+pHddCtx
+pHddCtx
+hHal
+hdd_indicate_mgmt_frame
+hdd_indicate_mgmt_frame
+goto success;
+success
+err_unregister_pmops:   hddDeregisterPmOps(pHddCtx);
+err_unregister_pmops
+hddDeregisterPmOps(pHddCtx);
+hddDeregisterPmOps(pHddCtx)
+hddDeregisterPmOps
+hddDeregisterPmOps
+pHddCtx
+pHddCtx
+err_bap_stop:#ifdef CONFIG_HAS_EARLYSUSPEND   hdd_unregister_mcast_bcast_filter(pHddCtx);#endif   hdd_close_all_adapters(pHddCtx);
+err_bap_stop
+hdd_close_all_adapters(pHddCtx);
+hdd_close_all_adapters(pHddCtx)
+hdd_close_all_adapters
+hdd_close_all_adapters
+pHddCtx
+pHddCtx
+err_vosstop:   vos_stop(pVosContext);
+err_vosstop
+vos_stop(pVosContext);
+vos_stop(pVosContext)
+vos_stop
+vos_stop
+pVosContext
+pVosContext
+err_vosclose:   if(!isSsrPanicOnFailure())   {       /* If we hit this, it means wlan driver is in bad state and needs       * driver unload and load.       */       vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, FALSE);       return VOS_STATUS_E_FAILURE;   }
+err_vosclose
+if(!isSsrPanicOnFailure())   {       /* If we hit this, it means wlan driver is in bad state and needs       * driver unload and load.       */       vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, FALSE);       return VOS_STATUS_E_FAILURE;   }
+!isSsrPanicOnFailure()
+isSsrPanicOnFailure()
+isSsrPanicOnFailure
+isSsrPanicOnFailure
+{       /* If we hit this, it means wlan driver is in bad state and needs       * driver unload and load.       */       vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, FALSE);       return VOS_STATUS_E_FAILURE;   }
+vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, FALSE);
+vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, FALSE)
+vos_set_reinit_in_progress
+vos_set_reinit_in_progress
+VOS_MODULE_ID_VOSS
+VOS_MODULE_ID_VOSS
+FALSE
+FALSE
+return VOS_STATUS_E_FAILURE;
+VOS_STATUS_E_FAILURE
+VOS_STATUS_E_FAILURE
+vos_close(pVosContext);
+vos_close(pVosContext)
+vos_close
+vos_close
+pVosContext
+pVosContext
+vos_sched_close(pVosContext);
+vos_sched_close(pVosContext)
+vos_sched_close
+vos_sched_close
+pVosContext
+pVosContext
+if (pHddCtx)   {       /* Unregister the Net Device Notifier */       unregister_netdevice_notifier(&hdd_netdev_notifier);       /* Clean up HDD Nlink Service */       send_btc_nlink_msg(WLAN_MODULE_DOWN_IND, 0);#ifdef WLAN_KD_READY_NOTIFIER       nl_srv_exit(pHddCtx->ptt_pid);#else       nl_srv_exit();#endif /* WLAN_KD_READY_NOTIFIER */       /* Free up dynamically allocated members inside HDD Adapter */       kfree(pHddCtx->cfg_ini);       pHddCtx->cfg_ini= NULL;       wiphy_unregister(pHddCtx->wiphy);       hdd_wlan_free_wiphy_channels(pHddCtx->wiphy);       wiphy_free(pHddCtx->wiphy);   }
+pHddCtx
+pHddCtx
+{       /* Unregister the Net Device Notifier */       unregister_netdevice_notifier(&hdd_netdev_notifier);       /* Clean up HDD Nlink Service */       send_btc_nlink_msg(WLAN_MODULE_DOWN_IND, 0);#ifdef WLAN_KD_READY_NOTIFIER       nl_srv_exit(pHddCtx->ptt_pid);#else       nl_srv_exit();#endif /* WLAN_KD_READY_NOTIFIER */       /* Free up dynamically allocated members inside HDD Adapter */       kfree(pHddCtx->cfg_ini);       pHddCtx->cfg_ini= NULL;       wiphy_unregister(pHddCtx->wiphy);       hdd_wlan_free_wiphy_channels(pHddCtx->wiphy);       wiphy_free(pHddCtx->wiphy);   }
+unregister_netdevice_notifier(&hdd_netdev_notifier);
+unregister_netdevice_notifier(&hdd_netdev_notifier);
+unregister_netdevice_notifier
+unregister_netdevice_notifier
+(&hdd_netdev_notifier)
+&hdd_netdev_notifier
+&
+hdd_netdev_notifier
+send_btc_nlink_msg(WLAN_MODULE_DOWN_IND, 0);
+send_btc_nlink_msg(WLAN_MODULE_DOWN_IND, 0)
+send_btc_nlink_msg
+send_btc_nlink_msg
+WLAN_MODULE_DOWN_IND
+WLAN_MODULE_DOWN_IND
+0
+nl_srv_exit();
+nl_srv_exit()
+nl_srv_exit
+nl_srv_exit
+kfree(pHddCtx->cfg_ini);
+kfree(pHddCtx->cfg_ini)
+kfree
+kfree
+pHddCtx->cfg_ini
+pHddCtx
+pHddCtx
+cfg_ini
+pHddCtx->cfg_ini= NULL;
+pHddCtx->cfg_ini= NULL
+pHddCtx->cfg_ini
+pHddCtx
+pHddCtx
+cfg_ini
+NULL
+NULL
+wiphy_unregister(pHddCtx->wiphy);
+wiphy_unregister(pHddCtx->wiphy)
+wiphy_unregister
+wiphy_unregister
+pHddCtx->wiphy
+pHddCtx
+pHddCtx
+wiphy
+hdd_wlan_free_wiphy_channels(pHddCtx->wiphy);
+hdd_wlan_free_wiphy_channels(pHddCtx->wiphy)
+hdd_wlan_free_wiphy_channels
+hdd_wlan_free_wiphy_channels
+pHddCtx->wiphy
+pHddCtx
+pHddCtx
+wiphy
+wiphy_free(pHddCtx->wiphy);
+wiphy_free(pHddCtx->wiphy)
+wiphy_free
+wiphy_free
+pHddCtx->wiphy
+pHddCtx
+pHddCtx
+wiphy
+vos_preClose(&pVosContext);
+vos_preClose(&pVosContext)
+vos_preClose
+vos_preClose
+&pVosContext
+pVosContext
+pVosContext
+err_re_init:   /* Allow the phone to go to sleep */   hdd_allow_suspend(WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT);
+err_re_init
+hdd_allow_suspend(WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT);
+hdd_allow_suspend(WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT)
+hdd_allow_suspend
+hdd_allow_suspend
+WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT
+WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT
+vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, FALSE);
+vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, FALSE)
+vos_set_reinit_in_progress
+vos_set_reinit_in_progress
+VOS_MODULE_ID_VOSS
+VOS_MODULE_ID_VOSS
+FALSE
+FALSE
+VOS_BUG(0);
+VOS_BUG(0)
+VOS_BUG
+VOS_BUG
+0
+return -EPERM;
+-EPERM
+EPERM
+EPERM
+success:   /* Trigger replay of BTC events */   send_btc_nlink_msg(WLAN_MODULE_DOWN_IND, 0);
+success
+send_btc_nlink_msg(WLAN_MODULE_DOWN_IND, 0);
+send_btc_nlink_msg(WLAN_MODULE_DOWN_IND, 0)
+send_btc_nlink_msg
+send_btc_nlink_msg
+WLAN_MODULE_DOWN_IND
+WLAN_MODULE_DOWN_IND
+0
+return VOS_STATUS_SUCCESS;
+VOS_STATUS_SUCCESS
+VOS_STATUS_SUCCESS
+-----joern-----
+(214,300,0)
+(81,407,0)
+(82,452,0)
+(327,284,0)
+(390,293,0)
+(53,293,0)
+(314,477,0)
+(55,84,0)
+(0,351,0)
+(427,293,0)
+(200,168,0)
+(491,69,0)
+(212,221,0)
+(460,125,0)
+(334,223,0)
+(86,6,0)
+(295,42,0)
+(428,438,0)
+(270,69,0)
+(296,221,0)
+(27,26,0)
+(435,69,0)
+(459,385,0)
+(239,423,0)
+(374,425,0)
+(512,326,0)
+(447,158,0)
+(24,69,0)
+(84,293,0)
+(503,158,0)
+(313,364,0)
+(394,402,0)
+(267,387,0)
+(331,355,0)
+(141,488,0)
+(112,390,0)
+(474,189,0)
+(7,69,0)
+(25,209,0)
+(443,88,0)
+(78,293,0)
+(165,53,0)
+(40,155,0)
+(206,277,0)
+(426,11,0)
+(207,333,0)
+(274,258,0)
+(185,212,0)
+(13,215,0)
+(410,69,0)
+(43,280,0)
+(449,60,0)
+(283,335,0)
+(464,209,0)
+(288,351,0)
+(409,197,0)
+(441,502,0)
+(423,101,0)
+(83,293,0)
+(8,58,0)
+(161,248,0)
+(452,177,0)
+(105,258,0)
+(260,73,0)
+(185,293,0)
+(402,26,0)
+(498,260,0)
+(344,22,0)
+(393,112,0)
+(82,183,0)
+(95,380,0)
+(39,261,0)
+(286,248,0)
+(385,293,0)
+(40,261,0)
+(36,214,0)
+(192,238,0)
+(290,508,0)
+(503,488,0)
+(3,69,0)
+(257,510,0)
+(340,216,0)
+(7,293,0)
+(319,293,0)
+(352,422,0)
+(325,293,0)
+(158,503,0)
+(10,416,0)
+(353,242,0)
+(308,389,0)
+(121,260,0)
+(35,112,0)
+(183,391,0)
+(222,69,0)
+(448,76,0)
+(201,424,0)
+(492,162,0)
+(380,95,0)
+(349,3,0)
+(396,480,0)
+(200,359,0)
+(477,69,0)
+(236,69,0)
+(120,22,0)
+(233,358,0)
+(134,261,0)
+(205,337,0)
+(516,69,0)
+(377,69,0)
+(404,35,0)
+(188,69,0)
+(425,69,0)
+(468,69,0)
+(320,352,0)
+(515,273,0)
+(264,345,0)
+(269,171,0)
+(213,391,0)
+(500,168,0)
+(365,253,0)
+(304,340,0)
+(350,46,0)
+(41,454,0)
+(379,338,0)
+(245,16,0)
+(6,293,0)
+(183,53,0)
+(509,56,0)
+(256,406,0)
+(251,69,0)
+(131,357,0)
+(129,162,0)
+(400,215,0)
+(244,26,0)
+(34,345,0)
+(108,344,0)
+(85,427,0)
+(138,69,0)
+(382,152,0)
+(481,412,0)
+(354,69,0)
+(276,488,0)
+(450,194,0)
+(503,358,0)
+(507,69,0)
+(204,187,0)
+(511,373,0)
+(294,221,0)
+(387,267,0)
+(99,243,0)
+(95,69,0)
+(410,145,0)
+(370,69,0)
+(52,454,0)
+(208,293,0)
+(371,53,0)
+(383,490,0)
+(279,382,0)
+(271,69,0)
+(235,88,0)
+(228,302,0)
+(56,238,0)
+(248,286,0)
+(452,319,0)
+(199,354,0)
+(226,338,0)
+(381,176,0)
+(268,1,0)
+(502,213,0)
+(192,242,0)
+(438,96,0)
+(92,155,0)
+(514,293,0)
+(299,69,0)
+(187,152,0)
+(301,270,0)
+(3,293,0)
+(506,329,0)
+(402,381,0)
+(12,61,0)
+(349,293,0)
+(6,288,0)
+(297,380,0)
+(293,155,0)
+(39,69,0)
+(112,35,0)
+(437,69,0)
+(196,69,0)
+(359,200,0)
+(369,60,0)
+(59,392,0)
+(489,308,0)
+(218,424,0)
+(21,496,0)
+(238,56,0)
+(175,69,0)
+(61,69,0)
+(159,40,0)
+(35,118,0)
+(380,261,0)
+(324,69,0)
+(487,69,0)
+(76,69,0)
+(75,293,0)
+(209,358,0)
+(406,1,0)
+(122,69,0)
+(483,512,0)
+(302,118,0)
+(466,132,0)
+(411,69,0)
+(348,319,0)
+(115,293,0)
+(322,298,0)
+(292,189,0)
+(76,261,0)
+(247,186,0)
+(83,137,0)
+(497,226,0)
+(370,298,0)
+(321,69,0)
+(476,321,0)
+(223,142,0)
+(88,69,0)
+(44,69,0)
+(213,78,0)
+(31,83,0)
+(182,69,0)
+(378,439,0)
+(65,3,0)
+(19,512,0)
+(499,58,0)
+(199,293,0)
+(213,177,0)
+(47,69,0)
+(234,69,0)
+(56,509,0)
+(209,464,0)
+(53,507,0)
+(457,69,0)
+(349,288,0)
+(184,3,0)
+(220,325,0)
+(71,40,0)
+(67,333,0)
+(231,396,0)
+(183,319,0)
+(487,6,0)
+(514,288,0)
+(102,7,0)
+(262,406,0)
+(137,69,0)
+(5,207,0)
+(171,340,0)
+(107,327,0)
+(427,69,0)
+(111,214,0)
+(330,69,0)
+(119,339,0)
+(148,414,0)
+(172,79,0)
+(470,78,0)
+(117,300,0)
+(515,293,0)
+(14,364,0)
+(42,392,0)
+(213,53,0)
+(403,214,0)
+(216,444,0)
+(479,69,0)
+(132,69,0)
+(176,1,0)
+(363,69,0)
+(419,66,0)
+(87,339,0)
+(1,406,0)
+(309,440,0)
+(162,477,0)
+(58,261,0)
+(341,69,0)
+(154,69,0)
+(504,207,0)
+(368,440,0)
+(490,14,0)
+(384,208,0)
+(340,171,0)
+(265,8,0)
+(424,218,0)
+(171,293,0)
+(298,288,0)
+(96,293,0)
+(397,487,0)
+(373,462,0)
+(416,10,0)
+(23,223,0)
+(203,477,0)
+(79,69,0)
+(461,327,0)
+(431,501,0)
+(343,78,0)
+(501,431,0)
+(3,349,0)
+(315,266,0)
+(253,293,0)
+(160,115,0)
+(80,73,0)
+(46,501,0)
+(125,221,0)
+(388,295,0)
+(183,177,0)
+(429,260,0)
+(168,500,0)
+(381,402,0)
+(382,279,0)
+(446,189,0)
+(465,344,0)
+(486,177,0)
+(372,493,0)
+(14,490,0)
+(110,293,0)
+(509,230,0)
+(302,417,0)
+(456,326,0)
+(232,356,0)
+(62,514,0)
+(128,512,0)
+(266,221,0)
+(291,227,0)
+(376,390,0)
+(155,92,0)
+(70,257,0)
+(490,293,0)
+(164,357,0)
+(49,83,0)
+(255,327,0)
+(156,186,0)
+(332,308,0)
+(54,168,0)
+(33,444,0)
+(213,319,0)
+(358,69,0)
+(439,69,0)
+(424,364,0)
+(458,69,0)
+(191,69,0)
+(18,514,0)
+(401,325,0)
+(417,302,0)
+(181,298,0)
+(60,369,0)
+(454,69,0)
+(189,16,0)
+(277,69,0)
+(48,357,0)
+(339,261,0)
+(224,426,0)
+(444,216,0)
+(133,389,0)
+(197,335,0)
+(281,260,0)
+(294,195,0)
+(514,62,0)
+(98,144,0)
+(216,381,0)
+(118,302,0)
+(472,226,0)
+(63,293,0)
+(106,69,0)
+(37,396,0)
+(110,414,0)
+(177,293,0)
+(187,261,0)
+(305,69,0)
+(51,514,0)
+(391,11,0)
+(299,261,0)
+(388,347,0)
+(351,288,0)
+(342,57,0)
+(399,267,0)
+(364,14,0)
+(375,496,0)
+(414,69,0)
+(418,303,0)
+(211,428,0)
+(453,513,0)
+(78,288,0)
+(406,293,0)
+(115,125,0)
+(385,459,0)
+(373,247,0)
+(362,293,0)
+(445,515,0)
+(312,66,0)
+(137,83,0)
+(26,402,0)
+(257,477,0)
+(82,213,0)
+(50,39,0)
+(176,381,0)
+(355,69,0)
+(227,293,0)
+(360,46,0)
+(412,217,0)
+(250,396,0)
+(488,276,0)
+(227,69,0)
+(113,132,0)
+(278,246,0)
+(493,293,0)
+(173,60,0)
+(482,280,0)
+(452,391,0)
+(118,35,0)
+(74,207,0)
+(130,69,0)
+(282,69,0)
+(83,288,0)
+(351,0,0)
+(68,438,0)
+(215,508,0)
+(127,417,0)
+(261,69,0)
+(26,293,0)
+(9,69,0)
+(145,407,0)
+(230,509,0)
+(386,440,0)
+(94,69,0)
+(500,261,0)
+(285,69,0)
+(72,42,0)
+(155,293,0)
+(431,293,0)
+(84,180,0)
+(452,78,0)
+(302,509,0)
+(414,110,0)
+(34,293,0)
+(267,345,0)
+(336,302,0)
+(273,515,0)
+(242,293,0)
+(418,455,0)
+(462,373,0)
+(11,69,0)
+(438,69,0)
+(242,192,0)
+(319,243,0)
+(485,197,0)
+(166,69,0)
+(216,340,0)
+(296,253,0)
+(488,69,0)
+(11,426,0)
+(432,450,0)
+(140,223,0)
+(420,199,0)
+(168,69,0)
+(63,69,0)
+(219,319,0)
+(478,469,0)
+(328,69,0)
+(139,503,0)
+(288,69,0)
+(494,410,0)
+(354,199,0)
+(152,69,0)
+(6,487,0)
+(155,40,0)
+(153,96,0)
+(66,439,0)
+(220,221,0)
+(143,349,0)
+(213,69,0)
+(212,185,0)
+(302,228,0)
+(366,183,0)
+(208,444,0)
+(408,63,0)
+(195,294,0)
+(225,246,0)
+(413,62,0)
+(238,192,0)
+(104,226,0)
+(246,488,0)
+(259,452,0)
+(430,182,0)
+(505,501,0)
+(93,185,0)
+(2,325,0)
+(398,439,0)
+(126,236,0)
+(177,61,0)
+(183,78,0)
+(202,450,0)
+(213,115,0)
+(303,418,0)
+(243,69,0)
+(254,215,0)
+(440,469,0)
+(428,211,0)
+(289,428,0)
+(392,42,0)
+(207,228,0)
+(45,507,0)
+(369,221,0)
+(145,410,0)
+(325,220,0)
+(287,110,0)
+(247,69,0)
+(28,197,0)
+(467,69,0)
+(163,266,0)
+(295,388,0)
+(77,261,0)
+(91,69,0)
+(364,69,0)
+(463,391,0)
+(60,293,0)
+(4,370,0)
+(407,145,0)
+(496,8,0)
+(229,349,0)
+(249,171,0)
+(339,351,0)
+(186,247,0)
+(510,455,0)
+(346,6,0)
+(169,199,0)
+(79,293,0)
+(150,152,0)
+(252,189,0)
+(20,185,0)
+(1,176,0)
+(442,195,0)
+(151,69,0)
+(473,382,0)
+(452,69,0)
+(421,270,0)
+(307,321,0)
+(124,228,0)
+(193,236,0)
+(381,216,0)
+(190,356,0)
+(158,261,0)
+(258,69,0)
+(356,414,0)
+(100,510,0)
+(109,116,0)
+(361,137,0)
+(356,232,0)
+(116,261,0)
+(455,510,0)
+(240,34,0)
+(306,453,0)
+(38,308,0)
+(136,238,0)
+(510,257,0)
+(390,112,0)
+(263,390,0)
+(174,208,0)
+(42,295,0)
+(114,459,0)
+(415,354,0)
+(323,142,0)
+(392,439,0)
+(293,69,0)
+(8,69,0)
+(178,417,0)
+(103,480,0)
+(147,426,0)
+(58,8,0)
+(451,423,0)
+(64,69,0)
+(273,221,0)
+(152,187,0)
+(237,299,0)
+(90,479,0)
+(277,261,0)
+(280,144,0)
+(405,69,0)
+(452,53,0)
+(444,208,0)
+(228,69,0)
+(248,228,0)
+(298,370,0)
+(455,418,0)
+(358,503,0)
+(329,293,0)
+(116,69,0)
+(357,275,0)
+(15,385,0)
+(318,284,0)
+(253,296,0)
+(29,242,0)
+(434,192,0)
+(30,391,0)
+(311,275,0)
+(475,115,0)
+(395,177,0)
+(417,288,0)
+(146,431,0)
+(495,207,0)
+(170,412,0)
+(433,370,0)
+(183,101,0)
+(345,34,0)
+(493,69,0)
+(501,69,0)
+(370,293,0)
+(316,344,0)
+(97,253,0)
+(96,438,0)
+(210,500,0)
+(179,344,0)
+(135,450,0)
+(509,302,0)
+(17,280,0)
+(198,142,0)
+(157,207,0)
+(471,94,0)
+(317,69,0)
+(351,339,0)
+(167,515,0)
+(436,490,0)
+(347,388,0)
+(496,375,0)
+(426,354,0)
+(186,261,0)
+(123,96,0)
+(345,69,0)
+(272,69,0)
+(32,200,0)
+(484,412,0)
+(417,293,0)
+(149,247,0)
+(298,293,0)
+(310,362,0)
+(367,217,0)
+(329,69,0)
+(417,293,1)
+(455,418,1)
+(207,495,1)
+(203,88,1)
+(380,261,1)
+(27,1,1)
+(452,177,1)
+(135,202,1)
+(212,185,1)
+(53,293,1)
+(356,414,1)
+(152,187,1)
+(429,121,1)
+(262,256,1)
+(121,498,1)
+(116,109,1)
+(311,357,1)
+(84,293,1)
+(404,112,1)
+(133,308,1)
+(248,161,1)
+(445,296,1)
+(357,164,1)
+(253,293,1)
+(455,510,1)
+(62,514,1)
+(425,374,1)
+(342,355,1)
+(287,148,1)
+(370,293,1)
+(459,385,1)
+(160,475,1)
+(141,479,1)
+(472,497,1)
+(178,124,1)
+(215,13,1)
+(319,219,1)
+(477,314,1)
+(385,293,1)
+(55,176,1)
+(298,181,1)
+(162,477,1)
+(190,414,1)
+(136,192,1)
+(34,240,1)
+(49,270,1)
+(476,307,1)
+(71,75,1)
+(249,269,1)
+(257,477,1)
+(245,189,1)
+(208,293,1)
+(120,344,1)
+(463,30,1)
+(500,210,1)
+(416,103,1)
+(329,293,1)
+(192,434,1)
+(420,169,1)
+(99,319,1)
+(322,3,1)
+(374,117,1)
+(165,371,1)
+(76,261,1)
+(205,241,1)
+(114,218,1)
+(289,438,1)
+(374,290,1)
+(126,193,1)
+(117,214,1)
+(38,387,1)
+(370,298,1)
+(187,261,1)
+(440,309,1)
+(6,346,1)
+(505,62,1)
+(343,470,1)
+(310,293,1)
+(213,53,1)
+(25,358,1)
+(54,211,1)
+(384,174,1)
+(314,203,1)
+(213,177,1)
+(29,353,1)
+(119,87,1)
+(112,390,1)
+(150,359,1)
+(361,83,1)
+(173,220,1)
+(495,157,1)
+(442,89,1)
+(410,145,1)
+(104,362,1)
+(441,94,1)
+(57,342,1)
+(216,444,1)
+(7,293,1)
+(213,78,1)
+(406,262,1)
+(500,261,1)
+(331,176,1)
+(76,448,1)
+(279,382,1)
+(379,226,1)
+(110,293,1)
+(214,111,1)
+(202,66,1)
+(337,205,1)
+(286,248,1)
+(444,33,1)
+(87,78,1)
+(351,339,1)
+(246,225,1)
+(516,370,1)
+(312,419,1)
+(302,417,1)
+(70,100,1)
+(416,367,1)
+(68,232,1)
+(199,293,1)
+(172,462,1)
+(431,293,1)
+(28,485,1)
+(50,283,1)
+(155,40,1)
+(183,53,1)
+(306,295,1)
+(52,41,1)
+(124,459,1)
+(318,327,1)
+(303,352,1)
+(452,391,1)
+(143,229,1)
+(483,46,1)
+(382,152,1)
+(451,239,1)
+(303,182,1)
+(428,289,1)
+(298,288,1)
+(213,115,1)
+(110,287,1)
+(375,496,1)
+(32,168,1)
+(132,466,1)
+(473,152,1)
+(304,171,1)
+(233,246,1)
+(291,478,1)
+(5,74,1)
+(231,62,1)
+(470,362,1)
+(39,50,1)
+(416,456,1)
+(77,134,1)
+(200,32,1)
+(484,481,1)
+(6,288,1)
+(416,39,1)
+(35,112,1)
+(413,288,1)
+(125,460,1)
+(83,293,1)
+(263,509,1)
+(452,53,1)
+(355,331,1)
+(313,46,1)
+(496,21,1)
+(183,391,1)
+(443,261,1)
+(424,201,1)
+(35,404,1)
+(21,8,1)
+(66,439,1)
+(428,438,1)
+(315,294,1)
+(174,340,1)
+(23,140,1)
+(503,139,1)
+(168,500,1)
+(43,482,1)
+(185,293,1)
+(227,291,1)
+(390,376,1)
+(392,59,1)
+(444,208,1)
+(417,127,1)
+(421,487,1)
+(479,90,1)
+(240,264,1)
+(254,246,1)
+(206,245,1)
+(446,252,1)
+(503,158,1)
+(498,359,1)
+(185,20,1)
+(466,113,1)
+(406,293,1)
+(276,141,1)
+(507,45,1)
+(2,401,1)
+(299,237,1)
+(45,53,1)
+(115,293,1)
+(3,293,1)
+(417,288,1)
+(426,147,1)
+(90,236,1)
+(58,499,1)
+(515,167,1)
+(396,37,1)
+(116,261,1)
+(460,115,1)
+(510,257,1)
+(208,384,1)
+(369,60,1)
+(490,293,1)
+(319,293,1)
+(171,293,1)
+(85,227,1)
+(219,348,1)
+(183,177,1)
+(227,293,1)
+(169,415,1)
+(450,432,1)
+(462,373,1)
+(399,345,1)
+(283,197,1)
+(299,261,1)
+(243,99,1)
+(89,116,1)
+(373,511,1)
+(380,297,1)
+(402,394,1)
+(156,149,1)
+(316,179,1)
+(118,35,1)
+(237,329,1)
+(14,490,1)
+(339,119,1)
+(302,509,1)
+(58,261,1)
+(51,413,1)
+(187,204,1)
+(75,464,1)
+(509,230,1)
+(493,293,1)
+(206,120,1)
+(358,503,1)
+(111,36,1)
+(487,6,1)
+(246,488,1)
+(83,31,1)
+(74,504,1)
+(250,231,1)
+(454,52,1)
+(452,78,1)
+(370,4,1)
+(9,95,1)
+(78,293,1)
+(26,244,1)
+(351,0,1)
+(403,162,1)
+(216,340,1)
+(149,286,1)
+(176,1,1)
+(84,55,1)
+(392,439,1)
+(186,156,1)
+(288,351,1)
+(414,110,1)
+(497,104,1)
+(416,67,1)
+(1,406,1)
+(93,125,1)
+(492,129,1)
+(325,293,1)
+(225,278,1)
+(182,430,1)
+(354,199,1)
+(252,474,1)
+(487,397,1)
+(50,277,1)
+(514,293,1)
+(241,223,1)
+(19,483,1)
+(232,356,1)
+(82,213,1)
+(475,369,1)
+(449,173,1)
+(278,488,1)
+(490,436,1)
+(186,261,1)
+(170,218,1)
+(131,48,1)
+(184,65,1)
+(177,486,1)
+(268,406,1)
+(365,97,1)
+(401,266,1)
+(162,492,1)
+(336,417,1)
+(280,17,1)
+(264,63,1)
+(481,170,1)
+(321,476,1)
+(452,319,1)
+(415,375,1)
+(123,153,1)
+(397,6,1)
+(85,133,1)
+(293,155,1)
+(478,440,1)
+(292,279,1)
+(128,19,1)
+(229,137,1)
+(427,293,1)
+(325,2,1)
+(261,77,1)
+(434,242,1)
+(238,136,1)
+(108,375,1)
+(127,178,1)
+(218,424,1)
+(201,364,1)
+(199,420,1)
+(427,85,1)
+(171,249,1)
+(34,293,1)
+(464,209,1)
+(66,312,1)
+(96,293,1)
+(350,360,1)
+(366,423,1)
+(97,212,1)
+(115,160,1)
+(189,446,1)
+(297,273,1)
+(412,484,1)
+(347,453,1)
+(514,18,1)
+(39,261,1)
+(26,293,1)
+(368,57,1)
+(50,98,1)
+(267,399,1)
+(402,26,1)
+(465,316,1)
+(390,293,1)
+(209,358,1)
+(409,28,1)
+(386,368,1)
+(349,143,1)
+(3,184,1)
+(192,242,1)
+(13,400,1)
+(488,276,1)
+(295,388,1)
+(391,463,1)
+(407,81,1)
+(374,318,1)
+(113,258,1)
+(207,228,1)
+(381,402,1)
+(504,286,1)
+(37,250,1)
+(426,354,1)
+(183,78,1)
+(387,267,1)
+(67,207,1)
+(438,96,1)
+(382,473,1)
+(247,186,1)
+(181,322,1)
+(376,263,1)
+(489,38,1)
+(213,391,1)
+(6,293,1)
+(78,343,1)
+(332,489,1)
+(158,261,1)
+(11,426,1)
+(244,27,1)
+(63,408,1)
+(1,268,1)
+(20,93,1)
+(259,454,1)
+(42,392,1)
+(378,477,1)
+(98,280,1)
+(356,190,1)
+(220,325,1)
+(112,393,1)
+(385,15,1)
+(345,34,1)
+(308,332,1)
+(423,451,1)
+(398,378,1)
+(60,293,1)
+(56,238,1)
+(60,449,1)
+(364,14,1)
+(298,293,1)
+(211,428,1)
+(209,25,1)
+(296,253,1)
+(290,215,1)
+(235,443,1)
+(329,506,1)
+(163,315,1)
+(471,321,1)
+(177,293,1)
+(269,402,1)
+(511,247,1)
+(486,395,1)
+(193,450,1)
+(155,92,1)
+(347,162,1)
+(161,228,1)
+(373,247,1)
+(105,439,1)
+(83,288,1)
+(515,293,1)
+(499,265,1)
+(7,102,1)
+(100,418,1)
+(494,11,1)
+(213,502,1)
+(158,447,1)
+(339,261,1)
+(157,5,1)
+(153,68,1)
+(461,107,1)
+(485,232,1)
+(226,472,1)
+(242,29,1)
+(65,349,1)
+(94,471,1)
+(107,255,1)
+(302,118,1)
+(327,461,1)
+(297,89,1)
+(294,195,1)
+(46,501,1)
+(228,302,1)
+(12,177,1)
+(248,228,1)
+(448,10,1)
+(239,10,1)
+(439,398,1)
+(79,172,1)
+(145,407,1)
+(267,345,1)
+(48,459,1)
+(197,409,1)
+(416,379,1)
+(346,86,1)
+(307,425,1)
+(270,301,1)
+(295,42,1)
+(10,416,1)
+(3,349,1)
+(159,71,1)
+(195,442,1)
+(256,387,1)
+(340,304,1)
+(30,354,1)
+(309,386,1)
+(81,494,1)
+(41,516,1)
+(238,192,1)
+(193,66,1)
+(183,366,1)
+(388,347,1)
+(433,298,1)
+(416,311,1)
+(274,105,1)
+(164,131,1)
+(400,254,1)
+(33,208,1)
+(353,336,1)
+(146,505,1)
+(456,512,1)
+(344,465,1)
+(137,83,1)
+(224,391,1)
+(102,410,1)
+(8,58,1)
+(514,288,1)
+(301,421,1)
+(395,7,1)
+(206,299,1)
+(359,200,1)
+(506,427,1)
+(198,337,1)
+(183,319,1)
+(501,431,1)
+(512,128,1)
+(40,261,1)
+(80,260,1)
+(273,515,1)
+(213,319,1)
+(418,303,1)
+(79,293,1)
+(139,158,1)
+(148,79,1)
+(352,320,1)
+(242,293,1)
+(372,243,1)
+(371,61,1)
+(331,84,1)
+(393,390,1)
+(31,49,1)
+(260,281,1)
+(362,310,1)
+(447,233,1)
+(176,381,1)
+(430,317,1)
+(496,8,1)
+(281,429,1)
+(482,211,1)
+(419,295,1)
+(236,126,1)
+(109,76,1)
+(61,12,1)
+(53,165,1)
+(253,365,1)
+(18,51,1)
+(210,54,1)
+(394,26,1)
+(179,108,1)
+(255,464,1)
+(317,132,1)
+(348,507,1)
+(503,488,1)
+(408,493,1)
+(493,372,1)
+(82,452,1)
+(198,241,1)
+(453,306,1)
+(431,146,1)
+(36,403,1)
+(502,441,1)
+(59,72,1)
+(266,163,1)
+(40,159,1)
+(96,123,1)
+(129,455,1)
+(474,292,1)
+(72,388,1)
+(383,313,1)
+(374,9,1)
+(82,183,1)
+(147,224,1)
+(349,288,1)
+(88,235,1)
+(362,293,1)
+(17,43,1)
+(223,334,1)
+(46,350,1)
+(452,259,1)
+(258,274,1)
+(432,135,1)
+(277,261,1)
+(265,279,1)
+(137,361,1)
+(334,23,1)
+(95,380,1)
+(4,433,1)
+(86,57,1)
+(360,501,1)
+(103,396,1)
+(277,206,1)
+(50,80,1)
+(320,455,1)
+(200,168,1)
+(424,364,1)
+(140,462,1)
+(63,293,1)
+(509,56,1)
+(257,70,1)
+(340,171,1)
+(367,412,1)
+(167,445,1)
+(436,383,1)
+(15,114,1)
+(416,198,1)
+(381,216,1)
+(204,150,1)
+(349,293,1)
+(497,362,2)
+(78,293,2)
+(131,459,2)
+(82,183,2)
+(396,62,2)
+(500,211,2)
+(416,462,2)
+(392,439,2)
+(471,246,2)
+(343,362,2)
+(459,218,2)
+(350,62,2)
+(231,62,2)
+(509,230,2)
+(487,57,2)
+(159,464,2)
+(388,347,2)
+(303,455,2)
+(388,162,2)
+(4,57,2)
+(425,10,2)
+(416,375,2)
+(111,162,2)
+(146,62,2)
+(273,515,2)
+(34,293,2)
+(119,362,2)
+(181,57,2)
+(293,464,2)
+(50,359,2)
+(441,464,2)
+(58,279,2)
+(331,387,2)
+(168,500,2)
+(319,375,2)
+(501,62,2)
+(376,459,2)
+(34,375,2)
+(102,375,2)
+(220,89,2)
+(503,488,2)
+(155,92,2)
+(35,112,2)
+(281,359,2)
+(486,375,2)
+(46,62,2)
+(444,340,2)
+(515,89,2)
+(260,359,2)
+(76,261,2)
+(95,10,2)
+(444,208,2)
+(385,218,2)
+(41,57,2)
+(173,89,2)
+(364,14,2)
+(464,209,2)
+(10,459,2)
+(220,325,2)
+(213,464,2)
+(212,89,2)
+(349,57,2)
+(117,162,2)
+(424,364,2)
+(496,8,2)
+(347,162,2)
+(213,246,2)
+(502,464,2)
+(10,62,2)
+(66,162,2)
+(107,464,2)
+(516,57,2)
+(309,57,2)
+(200,168,2)
+(79,462,2)
+(488,162,2)
+(509,56,2)
+(227,57,2)
+(393,459,2)
+(390,293,2)
+(474,279,2)
+(373,286,2)
+(65,57,2)
+(364,46,2)
+(200,211,2)
+(307,246,2)
+(417,293,2)
+(162,477,2)
+(112,459,2)
+(209,358,2)
+(3,57,2)
+(276,162,2)
+(329,57,2)
+(329,293,2)
+(176,1,2)
+(465,375,2)
+(150,359,2)
+(483,46,2)
+(449,89,2)
+(298,288,2)
+(403,162,2)
+(302,118,2)
+(452,53,2)
+(139,246,2)
+(501,431,2)
+(10,387,2)
+(53,293,2)
+(168,211,2)
+(277,57,2)
+(206,375,2)
+(216,444,2)
+(499,279,2)
+(83,293,2)
+(97,89,2)
+(290,246,2)
+(381,1,2)
+(322,57,2)
+(39,211,2)
+(56,459,2)
+(207,228,2)
+(75,464,2)
+(246,488,2)
+(416,218,2)
+(440,57,2)
+(423,10,2)
+(471,464,2)
+(279,359,2)
+(7,293,2)
+(460,89,2)
+(237,57,2)
+(257,477,2)
+(375,496,2)
+(204,359,2)
+(239,10,2)
+(306,295,2)
+(354,375,2)
+(494,375,2)
+(298,293,2)
+(294,195,2)
+(349,288,2)
+(346,57,2)
+(213,177,2)
+(72,388,2)
+(45,375,2)
+(463,375,2)
+(163,89,2)
+(416,211,2)
+(473,359,2)
+(302,417,2)
+(137,83,2)
+(23,462,2)
+(135,66,2)
+(295,162,2)
+(66,439,2)
+(124,459,2)
+(206,57,2)
+(123,232,2)
+(155,40,2)
+(442,89,2)
+(12,375,2)
+(96,293,2)
+(54,211,2)
+(136,459,2)
+(490,293,2)
+(387,267,2)
+(83,57,2)
+(164,459,2)
+(81,375,2)
+(441,10,2)
+(390,459,2)
+(299,387,2)
+(336,459,2)
+(10,359,2)
+(26,293,2)
+(187,261,2)
+(401,89,2)
+(252,279,2)
+(412,218,2)
+(368,57,2)
+(143,57,2)
+(18,362,2)
+(493,293,2)
+(14,46,2)
+(242,293,2)
+(133,387,2)
+(288,362,2)
+(116,261,2)
+(387,375,2)
+(386,57,2)
+(267,345,2)
+(311,459,2)
+(329,387,2)
+(397,57,2)
+(307,10,2)
+(240,375,2)
+(198,462,2)
+(199,293,2)
+(56,238,2)
+(507,375,2)
+(425,246,2)
+(289,232,2)
+(10,279,2)
+(110,293,2)
+(232,462,2)
+(476,464,2)
+(277,279,2)
+(416,459,2)
+(380,261,2)
+(118,459,2)
+(296,253,2)
+(118,35,2)
+(372,375,2)
+(152,187,2)
+(425,162,2)
+(256,387,2)
+(108,375,2)
+(514,288,2)
+(38,387,2)
+(255,464,2)
+(404,459,2)
+(359,200,2)
+(316,375,2)
+(49,57,2)
+(98,211,2)
+(304,402,2)
+(33,340,2)
+(141,162,2)
+(213,78,2)
+(257,418,2)
+(498,359,2)
+(247,186,2)
+(384,340,2)
+(50,279,2)
+(452,177,2)
+(472,362,2)
+(450,66,2)
+(115,293,2)
+(370,298,2)
+(345,34,2)
+(273,89,2)
+(481,218,2)
+(382,359,2)
+(85,57,2)
+(35,459,2)
+(493,375,2)
+(207,286,2)
+(120,375,2)
+(165,375,2)
+(298,57,2)
+(186,261,2)
+(310,464,2)
+(213,115,2)
+(506,57,2)
+(59,388,2)
+(89,10,2)
+(10,375,2)
+(370,57,2)
+(464,246,2)
+(416,232,2)
+(29,459,2)
+(385,293,2)
+(382,152,2)
+(10,218,2)
+(325,293,2)
+(125,89,2)
+(416,286,2)
+(84,176,2)
+(39,375,2)
+(484,218,2)
+(84,293,2)
+(121,359,2)
+(19,46,2)
+(248,228,2)
+(431,62,2)
+(453,295,2)
+(183,391,2)
+(245,279,2)
+(402,1,2)
+(115,89,2)
+(224,375,2)
+(269,402,2)
+(487,6,2)
+(406,387,2)
+(433,57,2)
+(373,247,2)
+(228,459,2)
+(490,46,2)
+(428,232,2)
+(295,388,2)
+(388,295,2)
+(147,375,2)
+(448,10,2)
+(352,455,2)
+(153,232,2)
+(246,162,2)
+(242,459,2)
+(186,286,2)
+(25,246,2)
+(355,387,2)
+(478,57,2)
+(58,261,2)
+(461,464,2)
+(32,211,2)
+(425,464,2)
+(62,514,2)
+(302,509,2)
+(116,10,2)
+(277,387,2)
+(152,359,2)
+(1,387,2)
+(259,57,2)
+(429,359,2)
+(10,362,2)
+(254,246,2)
+(237,387,2)
+(94,162,2)
+(39,387,2)
+(40,464,2)
+(299,57,2)
+(40,261,2)
+(93,89,2)
+(294,89,2)
+(351,362,2)
+(394,1,2)
+(76,10,2)
+(340,402,2)
+(63,293,2)
+(417,288,2)
+(414,462,2)
+(137,57,2)
+(345,375,2)
+(229,57,2)
+(415,375,2)
+(416,62,2)
+(353,459,2)
+(51,362,2)
+(277,375,2)
+(157,286,2)
+(286,248,2)
+(417,459,2)
+(185,89,2)
+(211,428,2)
+(126,162,2)
+(46,501,2)
+(452,57,2)
+(202,66,2)
+(485,232,2)
+(48,459,2)
+(192,459,2)
+(511,286,2)
+(247,286,2)
+(428,438,2)
+(62,362,2)
+(63,375,2)
+(193,162,2)
+(358,246,2)
+(109,10,2)
+(370,293,2)
+(308,387,2)
+(500,261,2)
+(96,232,2)
+(238,459,2)
+(176,387,2)
+(339,261,2)
+(375,279,2)
+(299,261,2)
+(158,261,2)
+(82,452,2)
+(489,387,2)
+(283,232,2)
+(177,375,2)
+(183,78,2)
+(6,288,2)
+(426,375,2)
+(391,375,2)
+(232,356,2)
+(205,241,2)
+(177,293,2)
+(427,57,2)
+(170,218,2)
+(504,286,2)
+(223,462,2)
+(183,53,2)
+(208,293,2)
+(214,162,2)
+(337,241,2)
+(502,162,2)
+(340,171,2)
+(43,211,2)
+(241,462,2)
+(183,319,2)
+(171,293,2)
+(218,46,2)
+(339,362,2)
+(11,426,2)
+(402,26,2)
+(441,162,2)
+(28,232,2)
+(213,162,2)
+(456,46,2)
+(296,89,2)
+(476,246,2)
+(3,293,2)
+(179,375,2)
+(409,232,2)
+(455,455,2)
+(359,211,2)
+(427,293,2)
+(148,462,2)
+(446,279,2)
+(514,362,2)
+(171,402,2)
+(438,96,2)
+(416,46,2)
+(321,162,2)
+(307,162,2)
+(319,293,2)
+(238,192,2)
+(50,232,2)
+(362,464,2)
+(210,211,2)
+(10,57,2)
+(80,359,2)
+(366,10,2)
+(140,462,2)
+(424,46,2)
+(30,375,2)
+(277,261,2)
+(127,459,2)
+(395,375,2)
+(462,373,2)
+(479,162,2)
+(11,375,2)
+(104,362,2)
+(83,288,2)
+(10,286,2)
+(503,246,2)
+(86,57,2)
+(95,380,2)
+(441,246,2)
+(413,362,2)
+(103,62,2)
+(209,246,2)
+(462,286,2)
+(8,279,2)
+(476,162,2)
+(320,455,2)
+(233,246,2)
+(216,402,2)
+(410,375,2)
+(455,418,2)
+(211,232,2)
+(50,375,2)
+(225,162,2)
+(509,459,2)
+(160,89,2)
+(369,89,2)
+(351,0,2)
+(312,162,2)
+(199,375,2)
+(420,375,2)
+(53,375,2)
+(99,375,2)
+(14,490,2)
+(347,295,2)
+(10,211,2)
+(248,459,2)
+(470,362,2)
+(226,362,2)
+(434,459,2)
+(52,57,2)
+(112,390,2)
+(334,462,2)
+(184,57,2)
+(321,464,2)
+(455,510,2)
+(445,89,2)
+(250,62,2)
+(400,246,2)
+(57,387,2)
+(174,340,2)
+(197,232,2)
+(85,387,2)
+(50,211,2)
+(288,351,2)
+(406,293,2)
+(50,57,2)
+(216,340,2)
+(26,1,2)
+(74,286,2)
+(249,402,2)
+(266,89,2)
+(488,276,2)
+(50,387,2)
+(307,464,2)
+(287,462,2)
+(383,46,2)
+(313,46,2)
+(362,293,2)
+(145,375,2)
+(292,279,2)
+(6,57,2)
+(71,464,2)
+(218,424,2)
+(295,295,2)
+(361,57,2)
+(128,46,2)
+(253,293,2)
+(10,46,2)
+(227,293,2)
+(416,387,2)
+(270,57,2)
+(416,279,2)
+(60,293,2)
+(496,279,2)
+(189,279,2)
+(155,464,2)
+(55,176,2)
+(374,162,2)
+(68,232,2)
+(145,407,2)
+(8,58,2)
+(454,57,2)
+(27,1,2)
+(13,246,2)
+(213,10,2)
+(452,78,2)
+(399,375,2)
+(410,145,2)
+(213,319,2)
+(476,10,2)
+(471,10,2)
+(262,387,2)
+(502,246,2)
+(228,302,2)
+(263,459,2)
+(327,464,2)
+(212,185,2)
+(432,66,2)
+(10,232,2)
+(358,503,2)
+(178,459,2)
+(39,359,2)
+(149,286,2)
+(187,359,2)
+(302,459,2)
+(20,89,2)
+(176,381,2)
+(78,362,2)
+(185,293,2)
+(369,60,2)
+(367,218,2)
+(67,286,2)
+(279,382,2)
+(219,375,2)
+(381,216,2)
+(297,10,2)
+(482,211,2)
+(6,293,2)
+(459,385,2)
+(208,340,2)
+(293,155,2)
+(243,375,2)
+(374,464,2)
+(206,387,2)
+(506,387,2)
+(236,162,2)
+(321,10,2)
+(253,89,2)
+(70,418,2)
+(414,110,2)
+(502,10,2)
+(9,10,2)
+(381,402,2)
+(268,387,2)
+(503,158,2)
+(416,362,2)
+(158,246,2)
+(42,392,2)
+(264,375,2)
+(94,246,2)
+(278,162,2)
+(5,286,2)
+(244,1,2)
+(172,462,2)
+(10,462,2)
+(354,199,2)
+(192,242,2)
+(452,391,2)
+(349,293,2)
+(31,57,2)
+(374,246,2)
+(79,293,2)
+(36,162,2)
+(169,375,2)
+(380,10,2)
+(60,89,2)
+(37,62,2)
+(512,46,2)
+(39,279,2)
+(295,42,2)
+(183,10,2)
+(419,162,2)
+(371,375,2)
+(7,375,2)
+(356,462,2)
+(421,57,2)
+(15,218,2)
+(21,279,2)
+(510,418,2)
+(94,464,2)
+(167,89,2)
+(61,375,2)
+(418,455,2)
+(190,462,2)
+(408,375,2)
+(357,459,2)
+(416,359,2)
+(215,246,2)
+(431,293,2)
+(447,246,2)
+(348,375,2)
+(267,375,2)
+(321,246,2)
+(286,459,2)
+(438,232,2)
+(110,462,2)
+(42,388,2)
+(365,89,2)
+(39,57,2)
+(515,293,2)
+(100,418,2)
+(427,387,2)
+(94,10,2)
+(325,89,2)
+(114,218,2)
+(505,62,2)
+(332,387,2)
+(418,303,2)
+(213,391,2)
+(156,286,2)
+(475,89,2)
+(1,406,2)
+(265,279,2)
+(514,293,2)
+(495,286,2)
+(2,89,2)
+(416,57,2)
+(82,213,2)
+(351,339,2)
+(206,279,2)
+(87,362,2)
+(201,46,2)
+(374,10,2)
+(318,464,2)
+(90,162,2)
+(510,257,2)
+(356,414,2)
+(452,319,2)
+(10,416,2)
+(436,46,2)
+(39,232,2)
+(17,211,2)
+(301,57,2)
+(3,349,2)
+(407,375,2)
+(280,211,2)
+(379,362,2)
+(392,388,2)
+(426,354,2)
+(342,387,2)
+(471,162,2)
+(451,10,2)
+(291,57,2)
+(344,375,2)
+(161,459,2)
+(213,53,2)
+(360,62,2)
+(195,89,2)
+(183,177,2)
+(39,261,2)
+(315,89,2)
+-----------------------------------
+(0,tHalHandle)
+(1,pHddCtx->cfg_ini->wlanLoggingEnable)
+(2,ptt_pid)
+(3,sme_EXTScanRegisterCallback(pHddCtx->hHal,\n\\n            wlan_hdd_cfg80211_extscan_callback,\n\\n                           pHddCtx)
+(4,pHddCtx)
+(5,__func__)
+(6,pHddCtx->hHal)
+(7,hdd_start_all_adapters(pHddCtx)
+(8,vosStatus = WLANBAP_Start(pVosContext)
+(9,vos_mem_exit()
+(10,!isSsrPanicOnFailure()
+(11,btAmpConfig.ucPreferredChannel = pConfig->preferredChannel)
+(12,0)
+(13,__func__)
+(14,vos_preStart( pHddCtx->pvosContext )
+(15,pHddCtx)
+(16,)
+(17,__func__)
+(18,hHal)
+(19,"%s: Failed hdd_set_sme_config")
+(20,wiphy)
+(21,vosStatus)
+(22,)
+(23,"%s: vos_start failed")
+(24,if ( NULL == pHddCtx->hHal )
+(25,vosStatus)
+(26,pHddCtx->cfg_ini)
+(27,pHddCtx)
+(28,"%s: hdd_post_voss_start_config failed")
+(29,cfg_ini)
+(30,btAmpConfig)
+(31,hHal)
+(32,vosStatus)
+(33,enableContFWLogging)
+(34,hddRegisterPmOps(pHddCtx)
+(35,pHddCtx->cfg_ini->intfMacAddr[0])
+(36,"%s: WCNSS driver not ready")
+(37,__func__)
+(38,VOS_TRACE_LEVEL_FATAL)
+(39,vos_stop(pVosContext)
+(40,vos_get_context(VOS_MODULE_ID_HDD, pVosContext)
+(41,WLAN_MODULE_DOWN_IND)
+(42,20 >= ++max_cbc_retries)
+(43,"%s: wlan_hdd_init_channels_for_cc failed")
+(44,if(!VOS_IS_STATUS_SUCCESS(vosStatus)
+(45,FALSE)
+(46,VOS_STATUS_SUCCESS != vosStatus)
+(47,if (!VOS_IS_STATUS_SUCCESS(vosStatus)
+(48,VOS_TRACE_LEVEL_FATAL)
+(49,pHddCtx)
+(50,pVosContext)
+(51,pHddCtx)
+(52,0)
+(53,pHddCtx->hdd_mcastbcast_filter_set)
+(54,vosStatus)
+(55,pHddCtx)
+(56,&pHddCtx->cfg_ini->intfMacAddr[0])
+(57,req_riva_power_on_lock("wlan")
+(58,WLANBAP_Start(pVosContext)
+(59,max_cbc_retries)
+(60,pHddCtx->cfg_ini)
+(61,pHddCtx->con_scan_abort_cnt = 0)
+(62,NULL == pHddCtx->hHal)
+(63,wlan_hdd_tdls_init(pHddCtx)
+(64,if ( !VOS_IS_STATUS_SUCCESS( vosStatus )
+(65,wlan_hdd_cfg80211_extscan_callback)
+(66,max_cbc_retries >= 20)
+(67,goto err_vosclose;)
+(68,vosStatus)
+(69,)
+(70,max_retries)
+(71,VOS_MODULE_ID_HDD)
+(72,20)
+(73,)
+(74,"%s: Failed to set MAC Address. "\n\\n            "HALStatus is %08d [x%08x]")
+(75,pHddCtx)
+(76,vos_close(pVosContext)
+(77,NULL)
+(78,pHddCtx->hHal)
+(79,hdd_exchange_version_and_caps(pHddCtx)
+(80,goto err_vosstop;)
+(81,btAmpConfig)
+(82,RET)
+(83,pHddCtx->hHal)
+(84,hdd_init_frame_logging(pHddCtx)
+(85,pHddCtx)
+(86,pHddCtx)
+(87,VOS_MODULE_ID_SME)
+(88,*pHddCtx = NULL)
+(89,pHddCtx)
+(90,0)
+(91,pHddCtx)
+(92,hdd_context_t *)
+(93,pHddCtx)
+(94,VOS_BUG(0)
+(95,vos_preClose(&pVosContext)
+(96,wlan_hdd_init_channels_for_cc(pHddCtx, REINIT)
+(97,pHddCtx)
+(98,goto err_vosstop;)
+(99,FALSE)
+(100,10)
+(101,)
+(102,pHddCtx)
+(103,goto err_vosclose;)
+(104,VOS_TRACE_LEVEL_FATAL)
+(105,pConfig)
+(106,pConfig)
+(107,"%s: vos_open failed")
+(108,VOS_MODULE_ID_VOSS)
+(109,pVosContext)
+(110,hdd_post_voss_start_config( pHddCtx )
+(111,__func__)
+(112,pHddCtx->cfg_ini->intfMacAddr)
+(113,dev)
+(114,FALSE)
+(115,pHddCtx->cfg_ini)
+(116,vos_sched_close(pVosContext)
+(117,goto err_re_init;)
+(118,sizeof(pHddCtx->cfg_ini->intfMacAddr[0])
+(119,pVosContext)
+(120,goto err_bap_close;)
+(121,VOS_TRACE_LEVEL_ERROR)
+(122,max_cbc_retries)
+(123,REINIT)
+(124,halStatus)
+(125,pHddCtx->cfg_ini= NULL)
+(126,TRUE)
+(127,hHal)
+(128,__func__)
+(129,max_retries)
+(130,dev)
+(131,"%s: config update failed")
+(132,*dev = NULL)
+(133,goto err_bap_stop;)
+(134,pVosContext)
+(135,"%s:CBC not completed")
+(136,0)
+(137,sme_register_mgmt_frame_ind_callback(pHddCtx->hHal,hdd_indicate_mgmt_frame)
+(138,if (req_riva_power_on_lock("wlan")
+(139,dev)
+(140,VOS_TRACE_LEVEL_FATAL)
+(141,dev)
+(142,)
+(143,hHal)
+(144,)
+(145,WLANBAP_SetConfig(&btAmpConfig)
+(146,pHddCtx)
+(147,preferredChannel)
+(148,vosStatus)
+(149,vosStatus)
+(150,vosStatus)
+(151,vosStatus)
+(152,vosStatus = BSL_Init(pVosContext)
+(153,pHddCtx)
+(154,if (pHddCtx->cfg_ini->wlanLoggingEnable &&\n\\n               (pHddCtx->cfg_ini->enableFWLogging ||\n\\n                pHddCtx->cfg_ini->enableMgmtLogging ||\n\\n                pHddCtx->cfg_ini->enableContFWLogging)
+(155,(hdd_context_t *)
+(156,pVosContext)
+(157,halStatus)
+(158,&pVosContext)
+(159,pVosContext)
+(160,cfg_ini)
+(161,halStatus)
+(162,max_retries >= 10)
+(163,0)
+(164,__func__)
+(165,hdd_mcastbcast_filter_set)
+(166,err_re_init:)
+(167,wiphy)
+(168,vosStatus = WLANBAP_Open(pVosContext)
+(169,pHddCtx)
+(170,VOS_TRACE_LEVEL_FATAL)
+(171,pHddCtx->cfg_ini)
+(172,pHddCtx)
+(173,pHddCtx)
+(174,pHddCtx)
+(175,err_vosstop:)
+(176,pHddCtx->cfg_ini->wlanLoggingEnable &&\n\\n               (pHddCtx->cfg_ini->enableFWLogging ||\n\\n                pHddCtx->cfg_ini->enableMgmtLogging ||\n\\n                pHddCtx->cfg_ini->enableContFWLogging)
+(177,pHddCtx->con_scan_abort_cnt)
+(178,pHddCtx)
+(179,VOS_TRACE_LEVEL_ERROR)
+(180,)
+(181,hHal)
+(182,hdd_prevent_suspend(WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT)
+(183,return VOS_STATUS_E_FAILURE;)
+(184,pHddCtx)
+(185,pHddCtx->wiphy)
+(186,vos_start( pVosContext )
+(187,BSL_Init(pVosContext)
+(188,success:)
+(189,VOS_TRACE( VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,\n\\n        "%s: Failed to Init BSL",__func__)
+(190,vosStatus)
+(191,btAmpConfig)
+(192,pHddCtx->cfg_ini->intfMacAddr)
+(193,VOS_MODULE_ID_VOSS)
+(194,)
+(195,&hdd_netdev_notifier)
+(196,pVosContext)
+(197,hddLog(VOS_TRACE_LEVEL_FATAL,"%s: hdd_post_voss_start_config failed",\n\\n         __func__)
+(198,goto err_vosclose;)
+(199,pHddCtx->cfg_ini)
+(200,VOS_IS_STATUS_SUCCESS(vosStatus)
+(201,vosStatus)
+(202,VOS_TRACE_LEVEL_FATAL)
+(203,max_retries)
+(204,pVosContext)
+(205,0)
+(206,pVosContext)
+(207,hddLog(VOS_TRACE_LEVEL_ERROR,"%s: Failed to set MAC Address. "\n\\n            "HALStatus is %08d [x%08x]",__func__, halStatus, halStatus)
+(208,pHddCtx->cfg_ini)
+(209,VOS_IS_STATUS_SUCCESS(vosStatus)
+(210,pVosContext)
+(211,!VOS_IS_STATUS_SUCCESS( vosStatus )
+(212,wiphy_unregister(pHddCtx->wiphy)
+(213,return -EPERM;)
+(214,hddLog(VOS_TRACE_LEVEL_FATAL,"%s: WCNSS driver not ready", __func__)
+(215,hddLog(VOS_TRACE_LEVEL_FATAL,"%s: wcnss dev is NULL",__func__)
+(216,pHddCtx->cfg_ini->enableMgmtLogging ||\n\\n                pHddCtx->cfg_ini->enableContFWLogging)
+(217,)
+(218,!VOS_IS_STATUS_SUCCESS( vosStatus )
+(219,btCoexModeSet)
+(220,nl_srv_exit(pHddCtx->ptt_pid)
+(221,)
+(222,if (!HAL_STATUS_SUCCESS(halStatus)
+(223,hddLog(VOS_TRACE_LEVEL_FATAL,"%s: vos_start failed",__func__)
+(224,pConfig)
+(225,dev)
+(226,hddLog(VOS_TRACE_LEVEL_FATAL,"%s: HDD context is Null",__func__)
+(227,hddDeregisterPmOps(pHddCtx)
+(228,halStatus = cfgSetStr(pHddCtx->hHal, WNI_CFG_STA_ID,\n\\n         (v_U8_t *)
+(229,pHddCtx)
+(230,v_U8_t *)
+(231,VOS_TRACE_LEVEL_FATAL)
+(232,!VOS_IS_STATUS_SUCCESS( vosStatus )
+(233,vosStatus)
+(234,if ( !VOS_IS_STATUS_SUCCESS( vosStatus )
+(235,NULL)
+(236,vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, TRUE)
+(237,pVosContext)
+(238,pHddCtx->cfg_ini->intfMacAddr[0])
+(239,VOS_MODULE_ID_VOSS)
+(240,pHddCtx)
+(241,isSsrPanicOnFailure()
+(242,pHddCtx->cfg_ini)
+(243,pHddCtx->btCoexModeSet = FALSE)
+(244,cfg_ini)
+(245,goto err_bap_close;)
+(246,NULL == dev)
+(247,vosStatus = vos_start( pVosContext )
+(248,HAL_STATUS_SUCCESS(halStatus)
+(249,cfg_ini)
+(250,"%s: HAL context is null")
+(251,if ( !VOS_IS_STATUS_SUCCESS( vosStatus )
+(252,"%s: Failed to Init BSL")
+(253,pHddCtx->wiphy)
+(254,VOS_TRACE_LEVEL_FATAL)
+(255,VOS_TRACE_LEVEL_FATAL)
+(256,pHddCtx)
+(257,++max_retries)
+(258,*pConfig = NULL)
+(259,VOS_STATUS_SUCCESS)
+(260,VOS_TRACE( VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,\n\\n        "%s: Failed to open BAP",__func__)
+(261,pVosContext = NULL)
+(262,cfg_ini)
+(263,pHddCtx)
+(264,vosStatus)
+(265,vosStatus)
+(266,send_btc_nlink_msg(WLAN_MODULE_DOWN_IND, 0)
+(267,VOS_IS_STATUS_SUCCESS( vosStatus )
+(268,wlanLoggingEnable)
+(269,pHddCtx)
+(270,vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, FALSE)
+(271,if (NULL == dev)
+(272,while (!wcnss_cbc_complete()
+(273,wiphy_free(pHddCtx->wiphy)
+(274,NULL)
+(275,)
+(276,wcnss_wlan_get_device()
+(277,WLANBAP_Close(pVosContext)
+(278,NULL)
+(279,!VOS_IS_STATUS_SUCCESS(vosStatus)
+(280,hddLog(VOS_TRACE_LEVEL_FATAL, "%s: wlan_hdd_init_channels_for_cc failed",\n\\n             __func__)
+(281,__func__)
+(282,if (pHddCtx)
+(283,goto err_vosstop;)
+(284,)
+(285,if ( !VOS_IS_STATUS_SUCCESS( vosStatus )
+(286,!HAL_STATUS_SUCCESS(halStatus)
+(287,pHddCtx)
+(288,pHddCtx->hHal = (tHalHandle)
+(289,vosStatus)
+(290,goto err_re_init;)
+(291,pHddCtx)
+(292,VOS_MODULE_ID_VOSS)
+(293,pHddCtx = (hdd_context_t *)
+(294,unregister_netdevice_notifier(&hdd_netdev_notifier)
+(295,!wcnss_cbc_complete()
+(296,hdd_wlan_free_wiphy_channels(pHddCtx->wiphy)
+(297,pVosContext)
+(298,pHddCtx->hHal)
+(299,WLANBAP_Stop(pVosContext)
+(300,)
+(301,FALSE)
+(302,cfgSetStr(pHddCtx->hHal, WNI_CFG_STA_ID,\n\\n         (v_U8_t *)
+(303,wcnss_device_ready()
+(304,enableMgmtLogging)
+(305,if(!VOS_IS_STATUS_SUCCESS(vosStatus)
+(306,1000)
+(307,VOS_MODULE_ID_VOSS)
+(308,hddLog(VOS_TRACE_LEVEL_FATAL,"%s: hddRegisterPmOps failed",__func__)
+(309,__func__)
+(310,pHddCtx)
+(311,goto err_vosclose;)
+(312,20)
+(313,vosStatus)
+(314,0)
+(315,WLAN_MODULE_DOWN_IND)
+(316,"%s: Failed to start TL")
+(317,hdd_ssr_timer_del()
+(318,goto err_re_init;)
+(319,pHddCtx->btCoexModeSet)
+(320,1000)
+(321,vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, FALSE)
+(322,pHddCtx)
+(323,if (isSsrPanicOnFailure()
+(324,while (!wcnss_device_ready()
+(325,pHddCtx->ptt_pid)
+(326,)
+(327,hddLog(VOS_TRACE_LEVEL_FATAL,"%s: vos_open failed",__func__)
+(328,err_unregister_pmops:)
+(329,hdd_close_all_adapters(pHddCtx)
+(330,err_bap_stop:)
+(331,WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT)
+(332,__func__)
+(333,)
+(334,__func__)
+(335,)
+(336,WNI_CFG_STA_ID)
+(337,VOS_BUG(0)
+(338,)
+(339,vos_get_context( VOS_MODULE_ID_SME, pVosContext )
+(340,pHddCtx->cfg_ini->enableMgmtLogging)
+(341,err_vosclose:)
+(342,"wlan")
+(343,hHal)
+(344,VOS_TRACE( VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,\n\\n               "%s: Failed to start TL",__func__)
+(345,vosStatus = hddRegisterPmOps(pHddCtx)
+(346,hHal)
+(347,wcnss_cbc_complete()
+(348,pHddCtx)
+(349,pHddCtx->hHal)
+(350,vosStatus)
+(351,(tHalHandle)
+(352,msleep(1000)
+(353,pHddCtx)
+(354,pConfig = pHddCtx->cfg_ini)
+(355,hdd_allow_suspend(WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT)
+(356,VOS_IS_STATUS_SUCCESS( vosStatus )
+(357,hddLog(VOS_TRACE_LEVEL_FATAL,"%s: config update failed",__func__ )
+(358,vosStatus = vos_open(&pVosContext, dev)
+(359,!VOS_IS_STATUS_SUCCESS(vosStatus)
+(360,VOS_STATUS_SUCCESS)
+(361,hdd_indicate_mgmt_frame)
+(362,!pHddCtx)
+(363,if (max_cbc_retries >= 20)
+(364,vosStatus = vos_preStart( pHddCtx->pvosContext )
+(365,wiphy)
+(366,VOS_STATUS_E_FAILURE)
+(367,goto err_vosclose;)
+(368,VOS_TRACE_LEVEL_FATAL)
+(369,kfree(pHddCtx->cfg_ini)
+(370,sme_OemDataRegisterCallback(pHddCtx->hHal,\n\\n             wlan_hdd_cfg80211_oemdata_callback,\n\\n                          pHddCtx)
+(371,pHddCtx)
+(372,pHddCtx)
+(373,VOS_IS_STATUS_SUCCESS( vosStatus )
+(374,WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT)
+(375,!VOS_IS_STATUS_SUCCESS(vosStatus)
+(376,cfg_ini)
+(377,if (max_retries >= 10)
+(378,max_cbc_retries)
+(379,goto err_vosclose;)
+(380,&pVosContext)
+(381,pHddCtx->cfg_ini->enableFWLogging ||\n\\n                pHddCtx->cfg_ini->enableMgmtLogging ||\n\\n                pHddCtx->cfg_ini->enableContFWLogging)
+(382,VOS_IS_STATUS_SUCCESS(vosStatus)
+(383,pHddCtx)
+(384,cfg_ini)
+(385,hdd_update_config_dat(pHddCtx)
+(386,"%s: req riva power on lock failed")
+(387,!VOS_IS_STATUS_SUCCESS( vosStatus )
+(388,!wcnss_cbc_complete()
+(389,)
+(390,pHddCtx->cfg_ini)
+(391,btAmpConfig.ucPreferredChannel)
+(392,++max_cbc_retries)
+(393,intfMacAddr)
+(394,enableFWLogging)
+(395,pHddCtx)
+(396,hddLog(VOS_TRACE_LEVEL_FATAL,"%s: HAL context is null",__func__)
+(397,hdd_rssi_threshold_breached_cb)
+(398,0)
+(399,vosStatus)
+(400,"%s: wcnss dev is NULL")
+(401,pHddCtx)
+(402,pHddCtx->cfg_ini->enableFWLogging)
+(403,VOS_TRACE_LEVEL_FATAL)
+(404,0)
+(405,if(!pHddCtx)
+(406,pHddCtx->cfg_ini)
+(407,&btAmpConfig)
+(408,pHddCtx)
+(409,__func__)
+(410,vosStatus = WLANBAP_SetConfig(&btAmpConfig)
+(411,halStatus)
+(412,hddLog(VOS_TRACE_LEVEL_FATAL,"%s: vos_preStart failed",__func__)
+(413,NULL)
+(414,vosStatus = hdd_post_voss_start_config( pHddCtx )
+(415,pConfig)
+(416,isSsrPanicOnFailure()
+(417,pHddCtx->hHal)
+(418,!wcnss_device_ready()
+(419,max_cbc_retries)
+(420,cfg_ini)
+(421,VOS_MODULE_ID_VOSS)
+(422,)
+(423,vos_set_reinit_in_progress(VOS_MODULE_ID_VOSS, FALSE)
+(424,VOS_IS_STATUS_SUCCESS( vosStatus )
+(425,hdd_allow_suspend(WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT)
+(426,pConfig->preferredChannel)
+(427,hdd_unregister_mcast_bcast_filter(pHddCtx)
+(428,VOS_IS_STATUS_SUCCESS( vosStatus )
+(429,"%s: Failed to open BAP")
+(430,WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT)
+(431,hdd_set_sme_config(pHddCtx)
+(432,__func__)
+(433,wlan_hdd_cfg80211_oemdata_callback)
+(434,intfMacAddr)
+(435,err_bap_close:)
+(436,pvosContext)
+(437,if (FALSE == hdd_update_config_dat(pHddCtx)
+(438,vosStatus = wlan_hdd_init_channels_for_cc(pHddCtx, REINIT)
+(439,max_cbc_retries = 0)
+(440,hddLog(VOS_TRACE_LEVEL_FATAL,"%s: req riva power on lock failed",\n\\n                                        __func__)
+(441,EPERM)
+(442,hdd_netdev_notifier)
+(443,pHddCtx)
+(444,pHddCtx->cfg_ini->enableContFWLogging)
+(445,pHddCtx)
+(446,__func__)
+(447,pVosContext)
+(448,pVosContext)
+(449,cfg_ini)
+(450,hddLog(VOS_TRACE_LEVEL_FATAL, "%s:CBC not completed", __func__)
+(451,FALSE)
+(452,return VOS_STATUS_SUCCESS;)
+(453,msleep(1000)
+(454,send_btc_nlink_msg(WLAN_MODULE_DOWN_IND, 0)
+(455,!wcnss_device_ready()
+(456,goto err_vosclose;)
+(457,max_retries)
+(458,if (!VOS_IS_STATUS_SUCCESS(vosStatus)
+(459,FALSE == hdd_update_config_dat(pHddCtx)
+(460,NULL)
+(461,__func__)
+(462,!VOS_IS_STATUS_SUCCESS( vosStatus )
+(463,ucPreferredChannel)
+(464,!VOS_IS_STATUS_SUCCESS(vosStatus)
+(465,__func__)
+(466,NULL)
+(467,if ( !VOS_IS_STATUS_SUCCESS( vosStatus )
+(468,if(!isSsrPanicOnFailure()
+(469,)
+(470,pHddCtx)
+(471,0)
+(472,__func__)
+(473,vosStatus)
+(474,VOS_TRACE_LEVEL_ERROR)
+(475,pHddCtx)
+(476,FALSE)
+(477,max_retries = 0)
+(478,goto err_unregister_pmops;)
+(479,hdd_set_conparam(0)
+(480,)
+(481,"%s: vos_preStart failed")
+(482,VOS_TRACE_LEVEL_FATAL)
+(483,VOS_TRACE_LEVEL_FATAL)
+(484,__func__)
+(485,VOS_TRACE_LEVEL_FATAL)
+(486,con_scan_abort_cnt)
+(487,sme_set_rssi_threshold_breached_cb(pHddCtx->hHal, hdd_rssi_threshold_breached_cb)
+(488,dev = wcnss_wlan_get_device()
+(489,"%s: hddRegisterPmOps failed")
+(490,pHddCtx->pvosContext)
+(491,if ( VOS_STATUS_SUCCESS != vosStatus )
+(492,10)
+(493,hdd_register_mcast_bcast_filter(pHddCtx)
+(494,vosStatus)
+(495,halStatus)
+(496,VOS_IS_STATUS_SUCCESS(vosStatus)
+(497,"%s: HDD context is Null")
+(498,VOS_MODULE_ID_VOSS)
+(499,pVosContext)
+(500,WLANBAP_Open(pVosContext)
+(501,vosStatus = hdd_set_sme_config(pHddCtx)
+(502,-EPERM)
+(503,vos_open(&pVosContext, dev)
+(504,VOS_TRACE_LEVEL_ERROR)
+(505,vosStatus)
+(506,pHddCtx)
+(507,pHddCtx->hdd_mcastbcast_filter_set = FALSE)
+(508,)
+(509,(v_U8_t *)
+(510,10 >= ++max_retries)
+(511,vosStatus)
+(512,hddLog(VOS_TRACE_LEVEL_FATAL,"%s: Failed hdd_set_sme_config",__func__)
+(513,)
+(514,pHddCtx->hHal)
+(515,pHddCtx->wiphy)
+(516,goto success;)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

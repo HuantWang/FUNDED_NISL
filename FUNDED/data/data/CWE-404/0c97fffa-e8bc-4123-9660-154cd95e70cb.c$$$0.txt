@@ -1,0 +1,1537 @@
+-----label-----
+0
+-----code-----
+static void mlx4_ib_disassociate_ucontext(struct ib_ucontext *ibcontext)
+{
+	int i;
+	int ret = 0;
+	struct vm_area_struct *vma;
+	struct mlx4_ib_ucontext *context = to_mucontext(ibcontext);
+	struct task_struct *owning_process  = NULL;
+	struct mm_struct   *owning_mm       = NULL;
+
+	owning_process = get_pid_task(ibcontext->tgid, PIDTYPE_PID);
+	if (!owning_process)
+		return;
+
+	owning_mm = get_task_mm(owning_process);
+	if (!owning_mm) {
+		pr_info("no mm, disassociate ucontext is pending task termination\n");
+		while (1) {
+			/* make sure that task is dead before returning, it may
+			 * prevent a rare case of module down in parallel to a
+			 * call to mlx4_ib_vma_close.
+			 */
+			put_task_struct(owning_process);
+			msleep(1);
+			owning_process = get_pid_task(ibcontext->tgid,
+						      PIDTYPE_PID);
+			if (!owning_process ||
+			    owning_process->state == TASK_DEAD) {
+				pr_info("disassociate ucontext done, task was terminated\n");
+				/* in case task was dead need to release the task struct */
+				if (owning_process)
+					put_task_struct(owning_process);
+				return;
+			}
+		}
+	}
+
+	/* need to protect from a race on closing the vma as part of
+	 * mlx4_ib_vma_close().
+	 */
+	down_write(&owning_mm->mmap_sem);
+	if (!mmget_still_valid(owning_mm))
+		goto skip_mm;
+	for (i = 0; i < HW_BAR_COUNT; i++) {
+		vma = context->hw_bar_info[i].vma;
+		if (!vma)
+			continue;
+
+		ret = zap_vma_ptes(context->hw_bar_info[i].vma,
+				   context->hw_bar_info[i].vma->vm_start,
+				   PAGE_SIZE);
+		if (ret) {
+			pr_err("Error: zap_vma_ptes failed for index=%d, ret=%d\n", i, ret);
+			BUG_ON(1);
+		}
+
+		context->hw_bar_info[i].vma->vm_flags &=
+			~(VM_SHARED | VM_MAYSHARE);
+		/* context going to be destroyed, should not access ops any more */
+		context->hw_bar_info[i].vma->vm_ops = NULL;
+	}
+skip_mm:
+	up_write(&owning_mm->mmap_sem);
+	mmput(owning_mm);
+	put_task_struct(owning_process);
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+11,14
+11,15
+11,16
+11,17
+11,18
+11,19
+11,20
+11,21
+11,22
+11,23
+11,24
+11,25
+11,26
+11,27
+12,13
+13,14
+13,15
+15,16
+17,18
+18,19
+18,20
+20,21
+20,22
+22,23
+24,25
+25,26
+25,27
+26,27
+28,29
+28,30
+31,32
+32,33
+32,34
+33,34
+35,36
+35,37
+35,38
+38,39
+39,40
+39,41
+40,41
+42,43
+44,45
+45,46
+45,47
+46,47
+48,49
+48,50
+48,51
+51,52
+52,53
+54,55
+55,56
+55,57
+56,57
+58,59
+58,60
+58,61
+61,62
+62,63
+64,65
+65,66
+65,67
+66,67
+68,69
+68,70
+68,71
+69,70
+71,72
+71,73
+72,73
+75,76
+77,78
+77,79
+78,79
+79,80
+82,83
+83,84
+83,85
+84,85
+86,87
+86,88
+87,88
+89,90
+91,92
+91,93
+92,93
+93,94
+95,96
+95,97
+96,97
+97,98
+97,99
+98,99
+101,102
+101,103
+103,104
+103,105
+103,106
+103,107
+104,105
+105,106
+105,107
+106,107
+108,109
+110,111
+111,112
+111,113
+112,113
+115,116
+116,117
+116,118
+117,118
+119,120
+119,121
+119,122
+120,121
+122,123
+122,124
+123,124
+126,127
+128,129
+128,130
+129,130
+129,131
+130,131
+131,132
+133,134
+133,135
+134,135
+134,136
+135,136
+138,139
+140,141
+140,142
+140,143
+141,142
+142,143
+142,144
+143,144
+146,147
+146,148
+147,148
+149,150
+150,151
+150,152
+151,152
+153,154
+156,157
+157,158
+157,159
+158,159
+160,161
+161,162
+161,163
+162,163
+165,166
+165,167
+166,167
+167,168
+167,169
+168,169
+170,171
+172,173
+174,175
+174,176
+174,177
+174,178
+175,176
+176,177
+176,178
+177,178
+180,181
+180,182
+181,182
+183,184
+185,186
+186,187
+188,189
+188,190
+188,191
+188,192
+188,193
+188,194
+189,190
+190,191
+190,192
+191,192
+193,194
+193,195
+194,195
+194,196
+195,196
+195,197
+196,197
+199,200
+202,203
+202,204
+203,204
+204,205
+207,208
+208,209
+208,210
+209,210
+211,212
+211,213
+211,214
+211,215
+212,213
+214,215
+214,216
+215,216
+215,217
+216,217
+216,218
+217,218
+220,221
+223,224
+223,225
+224,225
+224,226
+225,226
+225,227
+226,227
+226,228
+227,228
+230,231
+234,235
+236,237
+236,238
+237,238
+239,240
+239,241
+240,241
+241,242
+241,243
+241,244
+241,245
+242,243
+245,246
+247,248
+249,250
+250,251
+250,252
+251,252
+254,255
+255,256
+255,257
+256,257
+256,258
+257,258
+257,259
+258,259
+258,260
+259,260
+259,261
+260,261
+263,264
+267,268
+268,269
+269,270
+269,271
+270,271
+272,273
+274,275
+275,276
+275,277
+276,277
+276,278
+277,278
+277,279
+278,279
+278,280
+279,280
+279,281
+280,281
+283,284
+287,288
+289,290
+289,291
+291,292
+292,293
+292,294
+293,294
+295,296
+296,297
+296,298
+297,298
+300,301
+301,302
+301,303
+302,303
+304,305
+306,307
+307,308
+307,309
+308,309
+310,311
+-----nextToken-----
+2,4,7,9,10,14,16,19,21,23,27,29,30,34,36,37,41,43,47,49,50,53,57,59,60,63,67,70,73,74,76,80,81,85,88,90,94,99,100,102,107,109,113,114,118,121,124,125,127,132,136,137,139,144,145,148,152,154,155,159,163,164,169,171,173,178,179,182,184,187,192,197,198,200,201,205,206,210,213,218,219,221,222,228,229,231,232,233,235,238,243,244,246,248,252,253,261,262,264,265,266,271,273,281,282,284,285,286,288,290,294,298,299,303,305,309,311
+-----computeFrom-----
+65,66
+65,67
+83,84
+83,85
+116,117
+116,118
+129,130
+129,131
+133,134
+133,135
+176,177
+176,178
+180,181
+180,182
+190,191
+190,192
+208,209
+208,210
+255,256
+255,257
+269,270
+269,271
+275,276
+275,277
+-----guardedBy-----
+136,154
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;UnaryExpression;IdExpression;Name;ReturnStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;WhileStatement;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;BinaryExpression;UnaryExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IfStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;GotoStatement;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;Name;IfStatement;UnaryExpression;IdExpression;Name;ContinueStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;Name;FieldReference;FieldReference;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;Name;Name;IdExpression;Name;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;Name;Name;UnaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;Name;Name;IdExpression;Name;LabelStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;
+-----ast_node-----
+static void mlx4_ib_disassociate_ucontext(struct ib_ucontext *ibcontext){	int i;	int ret = 0;	struct vm_area_struct *vma;	struct mlx4_ib_ucontext *context = to_mucontext(ibcontext);	struct task_struct *owning_process  = NULL;	struct mm_struct   *owning_mm       = NULL;	owning_process = get_pid_task(ibcontext->tgid, PIDTYPE_PID);	if (!owning_process)		return;	owning_mm = get_task_mm(owning_process);	if (!owning_mm) {		pr_info("no mm, disassociate ucontext is pending task termination\n");		while (1) {			/* make sure that task is dead before returning, it may			 * prevent a rare case of module down in parallel to a			 * call to mlx4_ib_vma_close.			 */			put_task_struct(owning_process);			msleep(1);			owning_process = get_pid_task(ibcontext->tgid,						      PIDTYPE_PID);			if (!owning_process ||			    owning_process->state == TASK_DEAD) {				pr_info("disassociate ucontext done, task was terminated\n");				/* in case task was dead need to release the task struct */				if (owning_process)					put_task_struct(owning_process);				return;			}		}	}	/* need to protect from a race on closing the vma as part of	 * mlx4_ib_vma_close().	 */	down_write(&owning_mm->mmap_sem);	if (!mmget_still_valid(owning_mm))		goto skip_mm;	for (i = 0; i < HW_BAR_COUNT; i++) {		vma = context->hw_bar_info[i].vma;		if (!vma)			continue;		ret = zap_vma_ptes(context->hw_bar_info[i].vma,				   context->hw_bar_info[i].vma->vm_start,				   PAGE_SIZE);		if (ret) {			pr_err("Error: zap_vma_ptes failed for index=%d, ret=%d\n", i, ret);			BUG_ON(1);		}		context->hw_bar_info[i].vma->vm_flags &=			~(VM_SHARED | VM_MAYSHARE);		/* context going to be destroyed, should not access ops any more */		context->hw_bar_info[i].vma->vm_ops = NULL;	}skip_mm:	up_write(&owning_mm->mmap_sem);	mmput(owning_mm);	put_task_struct(owning_process);}
+static void
+mlx4_ib_disassociate_ucontext(struct ib_ucontext *ibcontext)
+mlx4_ib_disassociate_ucontext
+struct ib_ucontext *ibcontext
+struct ib_ucontext
+ib_ucontext
+*ibcontext
+*
+ibcontext
+{	int i;	int ret = 0;	struct vm_area_struct *vma;	struct mlx4_ib_ucontext *context = to_mucontext(ibcontext);	struct task_struct *owning_process  = NULL;	struct mm_struct   *owning_mm       = NULL;	owning_process = get_pid_task(ibcontext->tgid, PIDTYPE_PID);	if (!owning_process)		return;	owning_mm = get_task_mm(owning_process);	if (!owning_mm) {		pr_info("no mm, disassociate ucontext is pending task termination\n");		while (1) {			/* make sure that task is dead before returning, it may			 * prevent a rare case of module down in parallel to a			 * call to mlx4_ib_vma_close.			 */			put_task_struct(owning_process);			msleep(1);			owning_process = get_pid_task(ibcontext->tgid,						      PIDTYPE_PID);			if (!owning_process ||			    owning_process->state == TASK_DEAD) {				pr_info("disassociate ucontext done, task was terminated\n");				/* in case task was dead need to release the task struct */				if (owning_process)					put_task_struct(owning_process);				return;			}		}	}	/* need to protect from a race on closing the vma as part of	 * mlx4_ib_vma_close().	 */	down_write(&owning_mm->mmap_sem);	if (!mmget_still_valid(owning_mm))		goto skip_mm;	for (i = 0; i < HW_BAR_COUNT; i++) {		vma = context->hw_bar_info[i].vma;		if (!vma)			continue;		ret = zap_vma_ptes(context->hw_bar_info[i].vma,				   context->hw_bar_info[i].vma->vm_start,				   PAGE_SIZE);		if (ret) {			pr_err("Error: zap_vma_ptes failed for index=%d, ret=%d\n", i, ret);			BUG_ON(1);		}		context->hw_bar_info[i].vma->vm_flags &=			~(VM_SHARED | VM_MAYSHARE);		/* context going to be destroyed, should not access ops any more */		context->hw_bar_info[i].vma->vm_ops = NULL;	}skip_mm:	up_write(&owning_mm->mmap_sem);	mmput(owning_mm);	put_task_struct(owning_process);}
+int i;
+int i;
+int
+i
+i
+int ret = 0;
+int ret = 0;
+int
+ret = 0
+ret
+= 0
+0
+struct vm_area_struct *vma;
+struct vm_area_struct *vma;
+struct vm_area_struct
+vm_area_struct
+*vma
+*
+vma
+struct mlx4_ib_ucontext *context = to_mucontext(ibcontext);
+struct mlx4_ib_ucontext *context = to_mucontext(ibcontext);
+struct mlx4_ib_ucontext
+mlx4_ib_ucontext
+*context = to_mucontext(ibcontext)
+*
+context
+= to_mucontext(ibcontext)
+to_mucontext(ibcontext)
+to_mucontext
+to_mucontext
+ibcontext
+ibcontext
+struct task_struct *owning_process  = NULL;
+struct task_struct *owning_process  = NULL;
+struct task_struct
+task_struct
+*owning_process  = NULL
+*
+owning_process
+= NULL
+NULL
+NULL
+struct mm_struct   *owning_mm       = NULL;
+struct mm_struct   *owning_mm       = NULL;
+struct mm_struct
+mm_struct
+*owning_mm       = NULL
+*
+owning_mm
+= NULL
+NULL
+NULL
+owning_process = get_pid_task(ibcontext->tgid, PIDTYPE_PID);
+owning_process = get_pid_task(ibcontext->tgid, PIDTYPE_PID)
+owning_process
+owning_process
+get_pid_task(ibcontext->tgid, PIDTYPE_PID)
+get_pid_task
+get_pid_task
+ibcontext->tgid
+ibcontext
+ibcontext
+tgid
+PIDTYPE_PID
+PIDTYPE_PID
+if (!owning_process)		return;
+!owning_process
+owning_process
+owning_process
+return;
+owning_mm = get_task_mm(owning_process);
+owning_mm = get_task_mm(owning_process)
+owning_mm
+owning_mm
+get_task_mm(owning_process)
+get_task_mm
+get_task_mm
+owning_process
+owning_process
+if (!owning_mm) {		pr_info("no mm, disassociate ucontext is pending task termination\n");		while (1) {			/* make sure that task is dead before returning, it may			 * prevent a rare case of module down in parallel to a			 * call to mlx4_ib_vma_close.			 */			put_task_struct(owning_process);			msleep(1);			owning_process = get_pid_task(ibcontext->tgid,						      PIDTYPE_PID);			if (!owning_process ||			    owning_process->state == TASK_DEAD) {				pr_info("disassociate ucontext done, task was terminated\n");				/* in case task was dead need to release the task struct */				if (owning_process)					put_task_struct(owning_process);				return;			}		}	}
+!owning_mm
+owning_mm
+owning_mm
+{		pr_info("no mm, disassociate ucontext is pending task termination\n");		while (1) {			/* make sure that task is dead before returning, it may			 * prevent a rare case of module down in parallel to a			 * call to mlx4_ib_vma_close.			 */			put_task_struct(owning_process);			msleep(1);			owning_process = get_pid_task(ibcontext->tgid,						      PIDTYPE_PID);			if (!owning_process ||			    owning_process->state == TASK_DEAD) {				pr_info("disassociate ucontext done, task was terminated\n");				/* in case task was dead need to release the task struct */				if (owning_process)					put_task_struct(owning_process);				return;			}		}	}
+pr_info("no mm, disassociate ucontext is pending task termination\n");
+pr_info("no mm, disassociate ucontext is pending task termination\n")
+pr_info
+pr_info
+"no mm, disassociate ucontext is pending task termination\n"
+while (1) {			/* make sure that task is dead before returning, it may			 * prevent a rare case of module down in parallel to a			 * call to mlx4_ib_vma_close.			 */			put_task_struct(owning_process);			msleep(1);			owning_process = get_pid_task(ibcontext->tgid,						      PIDTYPE_PID);			if (!owning_process ||			    owning_process->state == TASK_DEAD) {				pr_info("disassociate ucontext done, task was terminated\n");				/* in case task was dead need to release the task struct */				if (owning_process)					put_task_struct(owning_process);				return;			}		}
+1
+{			/* make sure that task is dead before returning, it may			 * prevent a rare case of module down in parallel to a			 * call to mlx4_ib_vma_close.			 */			put_task_struct(owning_process);			msleep(1);			owning_process = get_pid_task(ibcontext->tgid,						      PIDTYPE_PID);			if (!owning_process ||			    owning_process->state == TASK_DEAD) {				pr_info("disassociate ucontext done, task was terminated\n");				/* in case task was dead need to release the task struct */				if (owning_process)					put_task_struct(owning_process);				return;			}		}
+put_task_struct(owning_process);
+put_task_struct(owning_process)
+put_task_struct
+put_task_struct
+owning_process
+owning_process
+msleep(1);
+msleep(1)
+msleep
+msleep
+1
+owning_process = get_pid_task(ibcontext->tgid,						      PIDTYPE_PID);
+owning_process = get_pid_task(ibcontext->tgid,						      PIDTYPE_PID)
+owning_process
+owning_process
+get_pid_task(ibcontext->tgid,						      PIDTYPE_PID)
+get_pid_task
+get_pid_task
+ibcontext->tgid
+ibcontext
+ibcontext
+tgid
+PIDTYPE_PID
+PIDTYPE_PID
+if (!owning_process ||			    owning_process->state == TASK_DEAD) {				pr_info("disassociate ucontext done, task was terminated\n");				/* in case task was dead need to release the task struct */				if (owning_process)					put_task_struct(owning_process);				return;			}
+!owning_process ||			    owning_process->state == TASK_DEAD
+!owning_process
+owning_process
+owning_process
+owning_process->state == TASK_DEAD
+owning_process->state
+owning_process
+owning_process
+state
+TASK_DEAD
+TASK_DEAD
+{				pr_info("disassociate ucontext done, task was terminated\n");				/* in case task was dead need to release the task struct */				if (owning_process)					put_task_struct(owning_process);				return;			}
+pr_info("disassociate ucontext done, task was terminated\n");
+pr_info("disassociate ucontext done, task was terminated\n")
+pr_info
+pr_info
+"disassociate ucontext done, task was terminated\n"
+if (owning_process)					put_task_struct(owning_process);
+owning_process
+owning_process
+put_task_struct(owning_process);
+put_task_struct(owning_process)
+put_task_struct
+put_task_struct
+owning_process
+owning_process
+return;
+down_write(&owning_mm->mmap_sem);
+down_write(&owning_mm->mmap_sem)
+down_write
+down_write
+&owning_mm->mmap_sem
+owning_mm->mmap_sem
+owning_mm
+owning_mm
+mmap_sem
+if (!mmget_still_valid(owning_mm))		goto skip_mm;
+!mmget_still_valid(owning_mm)
+mmget_still_valid(owning_mm)
+mmget_still_valid
+mmget_still_valid
+owning_mm
+owning_mm
+goto skip_mm;
+skip_mm
+for (i = 0; i < HW_BAR_COUNT; i++) {		vma = context->hw_bar_info[i].vma;		if (!vma)			continue;		ret = zap_vma_ptes(context->hw_bar_info[i].vma,				   context->hw_bar_info[i].vma->vm_start,				   PAGE_SIZE);		if (ret) {			pr_err("Error: zap_vma_ptes failed for index=%d, ret=%d\n", i, ret);			BUG_ON(1);		}		context->hw_bar_info[i].vma->vm_flags &=			~(VM_SHARED | VM_MAYSHARE);		/* context going to be destroyed, should not access ops any more */		context->hw_bar_info[i].vma->vm_ops = NULL;	}
+i = 0;
+i = 0
+i
+i
+0
+i < HW_BAR_COUNT
+i
+i
+HW_BAR_COUNT
+HW_BAR_COUNT
+i++
+i
+i
+{		vma = context->hw_bar_info[i].vma;		if (!vma)			continue;		ret = zap_vma_ptes(context->hw_bar_info[i].vma,				   context->hw_bar_info[i].vma->vm_start,				   PAGE_SIZE);		if (ret) {			pr_err("Error: zap_vma_ptes failed for index=%d, ret=%d\n", i, ret);			BUG_ON(1);		}		context->hw_bar_info[i].vma->vm_flags &=			~(VM_SHARED | VM_MAYSHARE);		/* context going to be destroyed, should not access ops any more */		context->hw_bar_info[i].vma->vm_ops = NULL;	}
+vma = context->hw_bar_info[i].vma;
+vma = context->hw_bar_info[i].vma
+vma
+vma
+context->hw_bar_info[i].vma
+context->hw_bar_info[i]
+context->hw_bar_info
+context
+context
+hw_bar_info
+i
+i
+vma
+if (!vma)			continue;
+!vma
+vma
+vma
+continue;
+ret = zap_vma_ptes(context->hw_bar_info[i].vma,				   context->hw_bar_info[i].vma->vm_start,				   PAGE_SIZE);
+ret = zap_vma_ptes(context->hw_bar_info[i].vma,				   context->hw_bar_info[i].vma->vm_start,				   PAGE_SIZE)
+ret
+ret
+zap_vma_ptes(context->hw_bar_info[i].vma,				   context->hw_bar_info[i].vma->vm_start,				   PAGE_SIZE)
+zap_vma_ptes
+zap_vma_ptes
+context->hw_bar_info[i].vma
+context->hw_bar_info[i]
+context->hw_bar_info
+context
+context
+hw_bar_info
+i
+i
+vma
+context->hw_bar_info[i].vma->vm_start
+context->hw_bar_info[i].vma
+context->hw_bar_info[i]
+context->hw_bar_info
+context
+context
+hw_bar_info
+i
+i
+vma
+vm_start
+PAGE_SIZE
+PAGE_SIZE
+if (ret) {			pr_err("Error: zap_vma_ptes failed for index=%d, ret=%d\n", i, ret);			BUG_ON(1);		}
+ret
+ret
+{			pr_err("Error: zap_vma_ptes failed for index=%d, ret=%d\n", i, ret);			BUG_ON(1);		}
+pr_err("Error: zap_vma_ptes failed for index=%d, ret=%d\n", i, ret);
+pr_err("Error: zap_vma_ptes failed for index=%d, ret=%d\n", i, ret)
+pr_err
+pr_err
+"Error: zap_vma_ptes failed for index=%d, ret=%d\n"
+i
+i
+ret
+ret
+BUG_ON(1);
+BUG_ON(1)
+BUG_ON
+BUG_ON
+1
+context->hw_bar_info[i].vma->vm_flags &=			~(VM_SHARED | VM_MAYSHARE);
+context->hw_bar_info[i].vma->vm_flags &=			~(VM_SHARED | VM_MAYSHARE)
+context->hw_bar_info[i].vma->vm_flags
+context->hw_bar_info[i].vma
+context->hw_bar_info[i]
+context->hw_bar_info
+context
+context
+hw_bar_info
+i
+i
+vma
+vm_flags
+~(VM_SHARED | VM_MAYSHARE)
+(VM_SHARED | VM_MAYSHARE)
+VM_SHARED | VM_MAYSHARE
+VM_SHARED
+VM_SHARED
+VM_MAYSHARE
+VM_MAYSHARE
+context->hw_bar_info[i].vma->vm_ops = NULL;
+context->hw_bar_info[i].vma->vm_ops = NULL
+context->hw_bar_info[i].vma->vm_ops
+context->hw_bar_info[i].vma
+context->hw_bar_info[i]
+context->hw_bar_info
+context
+context
+hw_bar_info
+i
+i
+vma
+vm_ops
+NULL
+NULL
+skip_mm:	up_write(&owning_mm->mmap_sem);
+skip_mm
+up_write(&owning_mm->mmap_sem);
+up_write(&owning_mm->mmap_sem)
+up_write
+up_write
+&owning_mm->mmap_sem
+owning_mm->mmap_sem
+owning_mm
+owning_mm
+mmap_sem
+mmput(owning_mm);
+mmput(owning_mm)
+mmput
+mmput
+owning_mm
+owning_mm
+put_task_struct(owning_process);
+put_task_struct(owning_process)
+put_task_struct
+put_task_struct
+owning_process
+owning_process
+-----joern-----
+(125,24,0)
+(101,98,0)
+(136,32,0)
+(109,54,0)
+(45,93,0)
+(50,77,0)
+(54,38,0)
+(18,101,0)
+(102,85,0)
+(38,54,0)
+(8,28,0)
+(26,39,0)
+(110,33,0)
+(21,85,0)
+(73,45,0)
+(112,12,0)
+(56,16,0)
+(10,16,0)
+(134,110,0)
+(87,37,0)
+(90,71,0)
+(96,24,0)
+(113,29,0)
+(20,16,0)
+(61,64,0)
+(164,75,0)
+(53,0,0)
+(87,167,0)
+(137,76,0)
+(11,163,0)
+(19,16,0)
+(94,29,0)
+(42,64,0)
+(81,77,0)
+(55,76,0)
+(154,114,0)
+(150,86,0)
+(92,129,0)
+(27,25,0)
+(66,157,0)
+(82,46,0)
+(166,116,0)
+(166,28,0)
+(169,130,0)
+(106,23,0)
+(47,33,0)
+(71,133,0)
+(4,33,0)
+(27,139,0)
+(82,101,0)
+(9,100,0)
+(133,71,0)
+(85,66,0)
+(45,73,0)
+(88,64,0)
+(153,27,0)
+(140,38,0)
+(121,91,0)
+(2,132,0)
+(37,87,0)
+(3,16,0)
+(141,79,0)
+(25,27,0)
+(98,75,0)
+(70,128,0)
+(158,116,0)
+(14,39,0)
+(122,139,0)
+(66,85,0)
+(29,124,0)
+(167,85,0)
+(57,38,0)
+(131,18,0)
+(11,8,0)
+(135,140,0)
+(24,163,0)
+(51,98,0)
+(170,23,0)
+(18,117,0)
+(95,81,0)
+(7,71,0)
+(80,110,0)
+(68,54,0)
+(129,33,0)
+(120,109,0)
+(156,16,0)
+(145,167,0)
+(83,89,0)
+(62,82,0)
+(148,29,0)
+(41,163,0)
+(144,8,0)
+(155,139,0)
+(140,81,0)
+(43,36,0)
+(77,81,0)
+(23,163,0)
+(34,92,0)
+(73,75,0)
+(25,109,0)
+(98,101,0)
+(13,66,0)
+(81,33,0)
+(69,137,0)
+(84,133,0)
+(24,92,0)
+(116,139,0)
+(151,124,0)
+(63,21,0)
+(129,92,0)
+(54,124,0)
+(147,12,0)
+(28,166,0)
+(146,16,0)
+(152,163,0)
+(72,2,0)
+(123,18,0)
+(129,30,0)
+(100,76,0)
+(130,33,0)
+(149,101,0)
+(30,129,0)
+(116,166,0)
+(40,85,0)
+(126,125,0)
+(32,106,0)
+(108,16,0)
+(84,16,0)
+(89,101,0)
+(12,139,0)
+(8,11,0)
+(165,143,0)
+(159,157,0)
+(112,32,0)
+(65,87,0)
+(28,8,0)
+(115,77,0)
+(25,33,0)
+(29,33,0)
+(102,16,0)
+(22,155,0)
+(97,166,0)
+(124,54,0)
+(31,112,0)
+(9,67,0)
+(102,75,0)
+(32,112,0)
+(91,0,0)
+(46,82,0)
+(139,16,0)
+(166,33,0)
+(99,45,0)
+(48,16,0)
+(77,139,0)
+(106,32,0)
+(139,155,0)
+(161,16,0)
+(108,117,0)
+(142,143,0)
+(60,27,0)
+(128,36,0)
+(53,85,0)
+(15,53,0)
+(39,16,0)
+(107,28,0)
+(133,84,0)
+(104,114,0)
+(38,140,0)
+(64,42,0)
+(155,93,0)
+(71,101,0)
+(5,45,0)
+(103,106,0)
+(119,16,0)
+(168,129,0)
+(112,33,0)
+(79,85,0)
+(85,0,0)
+(12,112,0)
+(44,164,0)
+(74,157,0)
+(75,16,0)
+(117,108,0)
+(127,30,0)
+(92,24,0)
+(89,16,0)
+(124,163,0)
+(138,116,0)
+(1,12,0)
+(101,16,0)
+(11,42,0)
+(37,79,0)
+(30,139,0)
+(118,167,0)
+(53,75,0)
+(105,25,0)
+(117,18,0)
+(114,16,0)
+(42,11,0)
+(58,73,0)
+(86,101,0)
+(157,93,0)
+(78,102,0)
+(29,132,0)
+(167,87,0)
+(52,16,0)
+(160,75,0)
+(157,66,0)
+(109,25,0)
+(75,73,0)
+(49,0,0)
+(35,30,0)
+(79,37,0)
+(143,16,0)
+(54,109,0)
+(81,140,0)
+(86,150,1)
+(82,62,1)
+(157,74,1)
+(7,86,1)
+(129,168,1)
+(91,121,1)
+(9,100,1)
+(100,21,1)
+(110,134,1)
+(53,85,1)
+(155,93,1)
+(162,128,1)
+(37,87,1)
+(144,28,1)
+(127,35,1)
+(11,8,1)
+(87,65,1)
+(133,71,1)
+(68,38,1)
+(167,145,1)
+(165,114,1)
+(25,27,1)
+(13,157,1)
+(123,131,1)
+(98,51,1)
+(131,110,1)
+(79,141,1)
+(128,70,1)
+(89,83,1)
+(157,93,1)
+(140,135,1)
+(71,101,1)
+(54,68,1)
+(32,112,1)
+(167,85,1)
+(111,137,1)
+(130,33,1)
+(124,54,1)
+(63,111,1)
+(53,75,1)
+(150,101,1)
+(95,77,1)
+(9,102,1)
+(121,53,1)
+(147,11,1)
+(73,45,1)
+(140,81,1)
+(112,31,1)
+(75,73,1)
+(130,169,1)
+(126,24,1)
+(14,26,1)
+(77,115,1)
+(158,17,1)
+(166,116,1)
+(44,75,1)
+(136,112,1)
+(50,109,1)
+(106,103,1)
+(81,33,1)
+(46,82,1)
+(85,66,1)
+(112,12,1)
+(9,67,1)
+(22,122,1)
+(125,126,1)
+(29,94,1)
+(64,61,1)
+(87,167,1)
+(114,154,1)
+(72,29,1)
+(65,167,1)
+(96,110,1)
+(27,60,1)
+(102,78,1)
+(129,30,1)
+(148,17,1)
+(145,118,1)
+(18,101,1)
+(122,39,1)
+(38,140,1)
+(99,5,1)
+(115,50,1)
+(117,18,1)
+(37,79,1)
+(110,33,1)
+(137,69,1)
+(25,105,1)
+(74,159,1)
+(59,125,1)
+(2,72,1)
+(129,33,1)
+(31,12,1)
+(168,30,1)
+(116,138,1)
+(62,84,1)
+(100,111,1)
+(160,143,1)
+(106,32,1)
+(28,166,1)
+(77,139,1)
+(105,27,1)
+(84,133,1)
+(141,85,1)
+(138,158,1)
+(169,23,1)
+(116,139,1)
+(97,116,1)
+(169,59,1)
+(109,120,1)
+(61,88,1)
+(164,75,1)
+(39,14,1)
+(53,15,1)
+(170,106,1)
+(30,127,1)
+(29,33,1)
+(8,28,1)
+(8,144,1)
+(45,93,1)
+(5,160,1)
+(143,142,1)
+(57,140,1)
+(54,109,1)
+(88,8,1)
+(73,58,1)
+(101,98,1)
+(34,129,1)
+(90,7,1)
+(15,162,1)
+(120,25,1)
+(80,130,1)
+(164,44,1)
+(7,162,1)
+(54,38,1)
+(67,164,1)
+(131,6,1)
+(104,139,1)
+(154,104,1)
+(155,22,1)
+(21,85,1)
+(92,34,1)
+(66,13,1)
+(102,85,1)
+(58,45,1)
+(12,139,1)
+(98,75,1)
+(21,63,1)
+(125,24,1)
+(153,151,1)
+(86,101,1)
+(29,124,1)
+(118,79,1)
+(82,101,1)
+(6,46,1)
+(151,125,1)
+(27,139,1)
+(45,99,1)
+(107,166,1)
+(30,139,1)
+(70,86,1)
+(18,123,1)
+(89,101,1)
+(11,42,1)
+(35,96,1)
+(142,165,1)
+(69,37,1)
+(149,164,1)
+(4,47,1)
+(112,33,1)
+(28,107,1)
+(51,149,1)
+(38,57,1)
+(158,2,1)
+(25,33,1)
+(12,1,1)
+(134,80,1)
+(1,147,1)
+(109,25,1)
+(23,170,1)
+(83,108,1)
+(159,40,1)
+(24,92,1)
+(135,81,1)
+(113,148,1)
+(47,46,1)
+(108,117,1)
+(94,113,1)
+(32,136,1)
+(71,90,1)
+(139,155,1)
+(166,33,1)
+(166,97,1)
+(78,89,1)
+(92,129,1)
+(80,33,1)
+(42,64,1)
+(60,153,1)
+(102,75,1)
+(103,32,1)
+(17,124,1)
+(79,85,1)
+(33,4,1)
+(40,91,1)
+(81,77,1)
+(66,157,1)
+(81,95,1)
+(162,37,1)
+(45,93,2)
+(167,79,2)
+(129,110,2)
+(30,139,2)
+(129,33,2)
+(140,125,2)
+(27,139,2)
+(27,125,2)
+(92,129,2)
+(86,101,2)
+(169,110,2)
+(117,18,2)
+(72,17,2)
+(102,86,2)
+(89,86,2)
+(25,33,2)
+(139,155,2)
+(86,164,2)
+(107,125,2)
+(12,139,2)
+(57,125,2)
+(129,30,2)
+(75,73,2)
+(101,98,2)
+(92,110,2)
+(8,125,2)
+(50,125,2)
+(105,125,2)
+(78,162,2)
+(140,81,2)
+(126,110,2)
+(29,33,2)
+(112,12,2)
+(54,125,2)
+(9,67,2)
+(98,164,2)
+(155,93,2)
+(29,124,2)
+(69,37,2)
+(84,162,2)
+(38,125,2)
+(7,162,2)
+(31,125,2)
+(74,162,2)
+(34,110,2)
+(89,162,2)
+(108,86,2)
+(89,101,2)
+(54,109,2)
+(42,125,2)
+(21,85,2)
+(133,86,2)
+(162,86,2)
+(64,125,2)
+(157,162,2)
+(65,79,2)
+(2,17,2)
+(130,110,2)
+(85,66,2)
+(46,162,2)
+(131,86,2)
+(40,162,2)
+(128,86,2)
+(53,85,2)
+(162,37,2)
+(61,125,2)
+(46,86,2)
+(18,101,2)
+(133,162,2)
+(79,162,2)
+(101,164,2)
+(136,125,2)
+(82,162,2)
+(32,125,2)
+(85,162,2)
+(116,125,2)
+(80,46,2)
+(170,125,2)
+(103,125,2)
+(60,125,2)
+(24,92,2)
+(130,33,2)
+(25,27,2)
+(135,125,2)
+(70,86,2)
+(71,86,2)
+(109,25,2)
+(123,162,2)
+(29,17,2)
+(35,110,2)
+(30,110,2)
+(63,111,2)
+(166,125,2)
+(134,110,2)
+(141,162,2)
+(78,86,2)
+(53,75,2)
+(144,125,2)
+(28,166,2)
+(54,38,2)
+(51,164,2)
+(131,162,2)
+(148,17,2)
+(73,45,2)
+(137,37,2)
+(112,125,2)
+(91,162,2)
+(18,162,2)
+(67,164,2)
+(66,162,2)
+(108,117,2)
+(95,125,2)
+(102,75,2)
+(46,82,2)
+(17,125,2)
+(47,46,2)
+(147,125,2)
+(97,125,2)
+(108,162,2)
+(18,86,2)
+(138,125,2)
+(100,37,2)
+(94,17,2)
+(66,157,2)
+(82,86,2)
+(12,125,2)
+(81,77,2)
+(83,162,2)
+(157,93,2)
+(159,162,2)
+(164,75,2)
+(71,162,2)
+(98,75,2)
+(134,46,2)
+(59,125,2)
+(167,85,2)
+(145,79,2)
+(106,125,2)
+(117,162,2)
+(21,111,2)
+(81,125,2)
+(90,162,2)
+(11,125,2)
+(110,110,2)
+(24,110,2)
+(117,86,2)
+(125,24,2)
+(71,101,2)
+(153,125,2)
+(118,79,2)
+(68,125,2)
+(42,64,2)
+(33,46,2)
+(82,101,2)
+(106,32,2)
+(13,162,2)
+(81,33,2)
+(37,79,2)
+(8,28,2)
+(88,125,2)
+(6,46,2)
+(38,140,2)
+(62,162,2)
+(120,125,2)
+(77,125,2)
+(115,125,2)
+(15,162,2)
+(112,33,2)
+(168,110,2)
+(110,46,2)
+(110,33,2)
+(23,125,2)
+(11,8,2)
+(28,125,2)
+(125,110,2)
+(96,110,2)
+(116,139,2)
+(151,125,2)
+(133,71,2)
+(127,110,2)
+(83,86,2)
+(62,86,2)
+(84,86,2)
+(4,46,2)
+(111,37,2)
+(149,164,2)
+(102,162,2)
+(158,125,2)
+(102,85,2)
+(32,112,2)
+(121,162,2)
+(79,85,2)
+(25,125,2)
+(37,87,2)
+(166,33,2)
+(77,139,2)
+(124,54,2)
+(11,42,2)
+(1,125,2)
+(90,86,2)
+(123,86,2)
+(109,125,2)
+(124,125,2)
+(7,86,2)
+(113,17,2)
+(84,133,2)
+(80,110,2)
+(150,164,2)
+(37,162,2)
+(9,100,2)
+(53,162,2)
+(87,79,2)
+(87,167,2)
+(166,116,2)
+-----------------------------------
+(0,)
+(1,hw_bar_info)
+(2,BUG_ON(1)
+(3,i)
+(4,0)
+(5,ibcontext)
+(6,goto skip_mm;)
+(7,owning_mm)
+(8,context->hw_bar_info[i].vma->vm_flags)
+(9,RET)
+(10,if (!owning_process)
+(11,context->hw_bar_info[i].vma->vm_flags &=\n\\n\\t\\t\\t~(VM_SHARED | VM_MAYSHARE)
+(12,context->hw_bar_info)
+(13,PIDTYPE_PID)
+(14,0)
+(15,owning_process)
+(16,)
+(17,ret)
+(18,owning_mm->mmap_sem)
+(19,skip_mm:)
+(20,vma)
+(21,put_task_struct(owning_process)
+(22,ibcontext)
+(23,context->hw_bar_info[i].vma->vm_ops = NULL)
+(24,vma = context->hw_bar_info[i].vma)
+(25,context->hw_bar_info[i])
+(26,ret)
+(27,context->hw_bar_info)
+(28,context->hw_bar_info[i].vma)
+(29,pr_err("Error: zap_vma_ptes failed for index=%d, ret=%d\\n", i, ret)
+(30,context->hw_bar_info)
+(31,i)
+(32,context->hw_bar_info[i].vma)
+(33,i = 0)
+(34,vma)
+(35,context)
+(36,)
+(37,!owning_process ||\n\\n\\t\\t\\t    owning_process->state == TASK_DEAD)
+(38,context->hw_bar_info[i].vma->vm_start)
+(39,ret = 0)
+(40,owning_process)
+(41,if (!vma)
+(42,~(VM_SHARED | VM_MAYSHARE)
+(43,while (1)
+(44,owning_process)
+(45,ibcontext->tgid)
+(46,!mmget_still_valid(owning_mm)
+(47,i)
+(48,for (i = 0; i < HW_BAR_COUNT; i++)
+(49,if (!owning_process ||\n\\n\\t\\t\\t    owning_process->state == TASK_DEAD)
+(50,context)
+(51,owning_process)
+(52,ret)
+(53,put_task_struct(owning_process)
+(54,zap_vma_ptes(context->hw_bar_info[i].vma,\n\\n\\t\\t\\t\\t   context->hw_bar_info[i].vma->vm_start,\n\\n\\t\\t\\t\\t   PAGE_SIZE)
+(55,if (owning_process)
+(56,if (!mmget_still_valid(owning_mm)
+(57,vm_start)
+(58,PIDTYPE_PID)
+(59,continue;)
+(60,hw_bar_info)
+(61,VM_MAYSHARE)
+(62,owning_mm)
+(63,owning_process)
+(64,VM_SHARED | VM_MAYSHARE)
+(65,TASK_DEAD)
+(66,get_pid_task(ibcontext->tgid,\n\\n\\t\\t\\t\\t\\t\\t      PIDTYPE_PID)
+(67,return;)
+(68,PAGE_SIZE)
+(69,"disassociate ucontext done, task was terminated\\n")
+(70,"no mm, disassociate ucontext is pending task termination\\n")
+(71,owning_mm->mmap_sem)
+(72,1)
+(73,get_pid_task(ibcontext->tgid, PIDTYPE_PID)
+(74,tgid)
+(75,owning_process = get_pid_task(ibcontext->tgid, PIDTYPE_PID)
+(76,)
+(77,context->hw_bar_info)
+(78,owning_process)
+(79,!owning_process)
+(80,i)
+(81,context->hw_bar_info[i])
+(82,mmget_still_valid(owning_mm)
+(83,owning_mm)
+(84,down_write(&owning_mm->mmap_sem)
+(85,owning_process = get_pid_task(ibcontext->tgid,\n\\n\\t\\t\\t\\t\\t\\t      PIDTYPE_PID)
+(86,!owning_mm)
+(87,owning_process->state == TASK_DEAD)
+(88,VM_SHARED)
+(89,mmput(owning_mm)
+(90,mmap_sem)
+(91,msleep(1)
+(92,context->hw_bar_info[i].vma)
+(93,struct ib_ucontext *ibcontext)
+(94,ret)
+(95,i)
+(96,vma)
+(97,i)
+(98,get_task_mm(owning_process)
+(99,tgid)
+(100,return;)
+(101,owning_mm = get_task_mm(owning_process)
+(102,put_task_struct(owning_process)
+(103,vm_ops)
+(104,owning_process)
+(105,i)
+(106,context->hw_bar_info[i].vma->vm_ops)
+(107,vma)
+(108,up_write(&owning_mm->mmap_sem)
+(109,context->hw_bar_info[i].vma)
+(110,i < HW_BAR_COUNT)
+(111,owning_process)
+(112,context->hw_bar_info[i])
+(113,i)
+(114,*owning_process  = NULL)
+(115,hw_bar_info)
+(116,context->hw_bar_info)
+(117,&owning_mm->mmap_sem)
+(118,owning_process)
+(119,if (!owning_mm)
+(120,vma)
+(121,1)
+(122,context)
+(123,mmap_sem)
+(124,ret = zap_vma_ptes(context->hw_bar_info[i].vma,\n\\n\\t\\t\\t\\t   context->hw_bar_info[i].vma->vm_start,\n\\n\\t\\t\\t\\t   PAGE_SIZE)
+(125,!vma)
+(126,vma)
+(127,hw_bar_info)
+(128,pr_info("no mm, disassociate ucontext is pending task termination\\n")
+(129,context->hw_bar_info[i])
+(130,i++)
+(131,owning_mm)
+(132,)
+(133,&owning_mm->mmap_sem)
+(134,HW_BAR_COUNT)
+(135,vma)
+(136,vma)
+(137,pr_info("disassociate ucontext done, task was terminated\\n")
+(138,hw_bar_info)
+(139,*context = to_mucontext(ibcontext)
+(140,context->hw_bar_info[i].vma)
+(141,owning_process)
+(142,NULL)
+(143,*owning_mm       = NULL)
+(144,vm_flags)
+(145,state)
+(146,owning_mm)
+(147,context)
+(148,"Error: zap_vma_ptes failed for index=%d, ret=%d\\n")
+(149,owning_mm)
+(150,owning_mm)
+(151,ret)
+(152,if (ret)
+(153,context)
+(154,NULL)
+(155,to_mucontext(ibcontext)
+(156,context)
+(157,ibcontext->tgid)
+(158,context)
+(159,ibcontext)
+(160,owning_process)
+(161,owning_process)
+(162,1)
+(163,)
+(164,!owning_process)
+(165,owning_mm)
+(166,context->hw_bar_info[i])
+(167,owning_process->state)
+(168,i)
+(169,i)
+(170,NULL)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

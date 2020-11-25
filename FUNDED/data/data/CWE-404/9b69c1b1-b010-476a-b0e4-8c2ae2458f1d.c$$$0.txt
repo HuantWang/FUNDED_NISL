@@ -1,0 +1,1482 @@
+-----label-----
+0
+-----code-----
+static int as102_firmware_upload(struct as10x_bus_adapter_t *bus_adap,
+				 unsigned char *cmd,
+				 const struct firmware *firmware) {
+
+	struct as10x_fw_pkt_t fw_pkt;
+	int total_read_bytes = 0, errno = 0;
+	unsigned char addr_has_changed = 0;
+
+	for (total_read_bytes = 0; total_read_bytes < firmware->size; ) {
+		int read_bytes = 0, data_len = 0;
+
+		/* parse intel hex line */
+		read_bytes = parse_hex_line(
+				(u8 *) (firmware->data + total_read_bytes),
+				fw_pkt.raw.address,
+				fw_pkt.raw.data,
+				&data_len,
+				&addr_has_changed);
+
+		if (read_bytes <= 0)
+			goto error;
+
+		/* detect the end of file */
+		total_read_bytes += read_bytes;
+		if (total_read_bytes == firmware->size) {
+			fw_pkt.u.request[0] = 0x00;
+			fw_pkt.u.request[1] = 0x03;
+
+			/* send EOF command */
+			errno = bus_adap->ops->upload_fw_pkt(bus_adap,
+							     (uint8_t *)
+							     &fw_pkt, 2, 0);
+			if (errno < 0)
+				goto error;
+		} else {
+			if (!addr_has_changed) {
+				/* prepare command to send */
+				fw_pkt.u.request[0] = 0x00;
+				fw_pkt.u.request[1] = 0x01;
+
+				data_len += sizeof(fw_pkt.u.request);
+				data_len += sizeof(fw_pkt.raw.address);
+
+				/* send cmd to device */
+				errno = bus_adap->ops->upload_fw_pkt(bus_adap,
+								     (uint8_t *)
+								     &fw_pkt,
+								     data_len,
+								     0);
+				if (errno < 0)
+					goto error;
+			}
+		}
+	}
+error:
+	return (errno == 0) ? total_read_bytes : errno;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+13,14
+13,15
+16,17
+16,18
+17,18
+19,20
+19,21
+22,23
+22,24
+22,25
+22,26
+22,27
+23,24
+24,25
+24,26
+25,26
+27,28
+29,30
+30,31
+30,32
+30,33
+32,33
+32,34
+34,35
+36,37
+36,38
+38,39
+40,41
+41,42
+41,43
+43,44
+43,45
+45,46
+47,48
+47,49
+47,50
+48,49
+49,50
+49,51
+50,51
+53,54
+53,55
+54,55
+56,57
+56,58
+57,58
+60,61
+60,62
+60,63
+60,64
+60,65
+61,62
+62,63
+62,64
+62,65
+64,65
+64,66
+66,67
+68,69
+68,70
+70,71
+72,73
+73,74
+73,75
+74,75
+76,77
+76,78
+76,79
+76,80
+76,81
+76,82
+77,78
+79,80
+79,81
+80,81
+80,82
+81,82
+83,84
+85,86
+86,87
+86,88
+87,88
+87,89
+88,89
+91,92
+93,94
+93,95
+94,95
+94,96
+95,96
+99,100
+99,101
+100,101
+100,102
+101,102
+105,106
+106,107
+108,109
+109,110
+111,112
+111,113
+112,113
+112,114
+113,114
+116,117
+118,119
+119,120
+119,121
+120,121
+122,123
+124,125
+124,126
+124,127
+125,126
+125,127
+126,127
+128,129
+128,130
+129,130
+132,133
+132,134
+132,135
+132,136
+133,134
+134,135
+134,136
+135,136
+135,137
+136,137
+136,138
+137,138
+137,139
+138,139
+144,145
+145,146
+145,147
+146,147
+146,148
+147,148
+147,149
+148,149
+148,150
+149,150
+155,156
+156,157
+156,158
+157,158
+159,160
+159,161
+159,162
+159,163
+159,164
+160,161
+160,162
+161,162
+161,163
+162,163
+166,167
+168,169
+168,170
+169,170
+169,171
+170,171
+172,173
+174,175
+175,176
+179,180
+179,181
+180,181
+180,182
+181,182
+184,185
+186,187
+187,188
+187,189
+188,189
+189,190
+191,192
+191,193
+191,194
+191,195
+191,196
+191,197
+192,193
+193,194
+193,195
+194,195
+194,196
+195,196
+195,197
+196,197
+196,198
+197,198
+203,204
+204,205
+204,206
+205,206
+205,207
+206,207
+206,208
+207,208
+207,209
+208,209
+214,215
+215,216
+215,217
+216,217
+218,219
+219,220
+220,221
+220,222
+221,222
+221,223
+222,223
+226,227
+227,228
+227,229
+228,229
+230,231
+231,232
+232,233
+232,234
+233,234
+233,235
+234,235
+238,239
+239,240
+239,241
+240,241
+242,243
+242,244
+242,245
+242,246
+242,247
+243,244
+243,245
+244,245
+244,246
+245,246
+249,250
+251,252
+251,253
+252,253
+252,254
+253,254
+255,256
+257,258
+258,259
+260,261
+263,264
+263,265
+264,265
+264,266
+265,266
+268,269
+270,271
+270,272
+272,273
+273,274
+273,275
+273,276
+274,275
+275,276
+275,277
+276,277
+279,280
+281,282
+-----nextToken-----
+2,4,7,9,10,12,14,15,18,20,21,26,28,31,33,35,37,39,42,44,46,51,52,55,58,59,63,65,67,69,71,75,78,82,84,89,90,92,96,97,98,102,103,104,107,110,114,115,117,121,123,127,130,131,139,140,141,142,143,150,151,152,153,154,158,163,164,165,167,171,173,176,177,178,182,183,185,190,198,199,200,201,202,209,210,211,212,213,217,223,224,225,229,235,236,237,241,246,247,248,250,254,256,259,261,262,266,267,269,271,277,278,280,282
+-----computeFrom-----
+49,50
+49,51
+53,54
+53,55
+73,74
+73,75
+86,87
+86,88
+112,113
+112,114
+119,120
+119,121
+125,126
+125,127
+134,135
+134,136
+145,146
+145,147
+156,157
+156,158
+180,181
+180,182
+193,194
+193,195
+204,205
+204,206
+215,216
+215,217
+227,228
+227,229
+239,240
+239,241
+264,265
+264,266
+275,276
+275,277
+-----guardedBy-----
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;Declarator;Name;EqualsInitializer;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;Pointer;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;GotoStatement;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;LiteralExpression;LiteralExpression;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;LiteralExpression;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;Pointer;UnaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;GotoStatement;Name;CompoundStatement;IfStatement;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;LiteralExpression;LiteralExpression;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;LiteralExpression;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;UnaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;UnaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;Pointer;UnaryExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;GotoStatement;Name;LabelStatement;Name;ReturnStatement;ConditionalExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;
+-----ast_node-----
+static int as102_firmware_upload(struct as10x_bus_adapter_t *bus_adap,				 unsigned char *cmd,				 const struct firmware *firmware) {	struct as10x_fw_pkt_t fw_pkt;	int total_read_bytes = 0, errno = 0;	unsigned char addr_has_changed = 0;	for (total_read_bytes = 0; total_read_bytes < firmware->size; ) {		int read_bytes = 0, data_len = 0;		/* parse intel hex line */		read_bytes = parse_hex_line(				(u8 *) (firmware->data + total_read_bytes),				fw_pkt.raw.address,				fw_pkt.raw.data,				&data_len,				&addr_has_changed);		if (read_bytes <= 0)			goto error;		/* detect the end of file */		total_read_bytes += read_bytes;		if (total_read_bytes == firmware->size) {			fw_pkt.u.request[0] = 0x00;			fw_pkt.u.request[1] = 0x03;			/* send EOF command */			errno = bus_adap->ops->upload_fw_pkt(bus_adap,							     (uint8_t *)							     &fw_pkt, 2, 0);			if (errno < 0)				goto error;		} else {			if (!addr_has_changed) {				/* prepare command to send */				fw_pkt.u.request[0] = 0x00;				fw_pkt.u.request[1] = 0x01;				data_len += sizeof(fw_pkt.u.request);				data_len += sizeof(fw_pkt.raw.address);				/* send cmd to device */				errno = bus_adap->ops->upload_fw_pkt(bus_adap,								     (uint8_t *)								     &fw_pkt,								     data_len,								     0);				if (errno < 0)					goto error;			}		}	}error:	return (errno == 0) ? total_read_bytes : errno;}
+static int
+as102_firmware_upload(struct as10x_bus_adapter_t *bus_adap,				 unsigned char *cmd,				 const struct firmware *firmware)
+as102_firmware_upload
+struct as10x_bus_adapter_t *bus_adap
+struct as10x_bus_adapter_t
+as10x_bus_adapter_t
+*bus_adap
+*
+bus_adap
+unsigned char *cmd
+unsigned char
+*cmd
+*
+cmd
+const struct firmware *firmware
+const struct firmware
+firmware
+*firmware
+*
+firmware
+{	struct as10x_fw_pkt_t fw_pkt;	int total_read_bytes = 0, errno = 0;	unsigned char addr_has_changed = 0;	for (total_read_bytes = 0; total_read_bytes < firmware->size; ) {		int read_bytes = 0, data_len = 0;		/* parse intel hex line */		read_bytes = parse_hex_line(				(u8 *) (firmware->data + total_read_bytes),				fw_pkt.raw.address,				fw_pkt.raw.data,				&data_len,				&addr_has_changed);		if (read_bytes <= 0)			goto error;		/* detect the end of file */		total_read_bytes += read_bytes;		if (total_read_bytes == firmware->size) {			fw_pkt.u.request[0] = 0x00;			fw_pkt.u.request[1] = 0x03;			/* send EOF command */			errno = bus_adap->ops->upload_fw_pkt(bus_adap,							     (uint8_t *)							     &fw_pkt, 2, 0);			if (errno < 0)				goto error;		} else {			if (!addr_has_changed) {				/* prepare command to send */				fw_pkt.u.request[0] = 0x00;				fw_pkt.u.request[1] = 0x01;				data_len += sizeof(fw_pkt.u.request);				data_len += sizeof(fw_pkt.raw.address);				/* send cmd to device */				errno = bus_adap->ops->upload_fw_pkt(bus_adap,								     (uint8_t *)								     &fw_pkt,								     data_len,								     0);				if (errno < 0)					goto error;			}		}	}error:	return (errno == 0) ? total_read_bytes : errno;}
+struct as10x_fw_pkt_t fw_pkt;
+struct as10x_fw_pkt_t fw_pkt;
+struct as10x_fw_pkt_t
+as10x_fw_pkt_t
+fw_pkt
+fw_pkt
+int total_read_bytes = 0, errno = 0;
+int total_read_bytes = 0, errno = 0;
+int
+total_read_bytes = 0
+total_read_bytes
+= 0
+0
+errno = 0
+errno
+= 0
+0
+unsigned char addr_has_changed = 0;
+unsigned char addr_has_changed = 0;
+unsigned char
+addr_has_changed = 0
+addr_has_changed
+= 0
+0
+for (total_read_bytes = 0; total_read_bytes < firmware->size; ) {		int read_bytes = 0, data_len = 0;		/* parse intel hex line */		read_bytes = parse_hex_line(				(u8 *) (firmware->data + total_read_bytes),				fw_pkt.raw.address,				fw_pkt.raw.data,				&data_len,				&addr_has_changed);		if (read_bytes <= 0)			goto error;		/* detect the end of file */		total_read_bytes += read_bytes;		if (total_read_bytes == firmware->size) {			fw_pkt.u.request[0] = 0x00;			fw_pkt.u.request[1] = 0x03;			/* send EOF command */			errno = bus_adap->ops->upload_fw_pkt(bus_adap,							     (uint8_t *)							     &fw_pkt, 2, 0);			if (errno < 0)				goto error;		} else {			if (!addr_has_changed) {				/* prepare command to send */				fw_pkt.u.request[0] = 0x00;				fw_pkt.u.request[1] = 0x01;				data_len += sizeof(fw_pkt.u.request);				data_len += sizeof(fw_pkt.raw.address);				/* send cmd to device */				errno = bus_adap->ops->upload_fw_pkt(bus_adap,								     (uint8_t *)								     &fw_pkt,								     data_len,								     0);				if (errno < 0)					goto error;			}		}	}
+total_read_bytes = 0;
+total_read_bytes = 0
+total_read_bytes
+total_read_bytes
+0
+total_read_bytes < firmware->size
+total_read_bytes
+total_read_bytes
+firmware->size
+firmware
+firmware
+size
+{		int read_bytes = 0, data_len = 0;		/* parse intel hex line */		read_bytes = parse_hex_line(				(u8 *) (firmware->data + total_read_bytes),				fw_pkt.raw.address,				fw_pkt.raw.data,				&data_len,				&addr_has_changed);		if (read_bytes <= 0)			goto error;		/* detect the end of file */		total_read_bytes += read_bytes;		if (total_read_bytes == firmware->size) {			fw_pkt.u.request[0] = 0x00;			fw_pkt.u.request[1] = 0x03;			/* send EOF command */			errno = bus_adap->ops->upload_fw_pkt(bus_adap,							     (uint8_t *)							     &fw_pkt, 2, 0);			if (errno < 0)				goto error;		} else {			if (!addr_has_changed) {				/* prepare command to send */				fw_pkt.u.request[0] = 0x00;				fw_pkt.u.request[1] = 0x01;				data_len += sizeof(fw_pkt.u.request);				data_len += sizeof(fw_pkt.raw.address);				/* send cmd to device */				errno = bus_adap->ops->upload_fw_pkt(bus_adap,								     (uint8_t *)								     &fw_pkt,								     data_len,								     0);				if (errno < 0)					goto error;			}		}	}
+int read_bytes = 0, data_len = 0;
+int read_bytes = 0, data_len = 0;
+int
+read_bytes = 0
+read_bytes
+= 0
+0
+data_len = 0
+data_len
+= 0
+0
+read_bytes = parse_hex_line(				(u8 *) (firmware->data + total_read_bytes),				fw_pkt.raw.address,				fw_pkt.raw.data,				&data_len,				&addr_has_changed);
+read_bytes = parse_hex_line(				(u8 *) (firmware->data + total_read_bytes),				fw_pkt.raw.address,				fw_pkt.raw.data,				&data_len,				&addr_has_changed)
+read_bytes
+read_bytes
+parse_hex_line(				(u8 *) (firmware->data + total_read_bytes),				fw_pkt.raw.address,				fw_pkt.raw.data,				&data_len,				&addr_has_changed)
+parse_hex_line
+parse_hex_line
+(u8 *) (firmware->data + total_read_bytes)
+u8 *
+u8
+u8
+*
+*
+(firmware->data + total_read_bytes)
+firmware->data + total_read_bytes
+firmware->data
+firmware
+firmware
+data
+total_read_bytes
+total_read_bytes
+fw_pkt.raw.address
+fw_pkt.raw
+fw_pkt
+fw_pkt
+raw
+address
+fw_pkt.raw.data
+fw_pkt.raw
+fw_pkt
+fw_pkt
+raw
+data
+&data_len
+data_len
+data_len
+&addr_has_changed
+addr_has_changed
+addr_has_changed
+if (read_bytes <= 0)			goto error;
+read_bytes <= 0
+read_bytes
+read_bytes
+0
+goto error;
+error
+total_read_bytes += read_bytes;
+total_read_bytes += read_bytes
+total_read_bytes
+total_read_bytes
+read_bytes
+read_bytes
+if (total_read_bytes == firmware->size) {			fw_pkt.u.request[0] = 0x00;			fw_pkt.u.request[1] = 0x03;			/* send EOF command */			errno = bus_adap->ops->upload_fw_pkt(bus_adap,							     (uint8_t *)							     &fw_pkt, 2, 0);			if (errno < 0)				goto error;		} else {			if (!addr_has_changed) {				/* prepare command to send */				fw_pkt.u.request[0] = 0x00;				fw_pkt.u.request[1] = 0x01;				data_len += sizeof(fw_pkt.u.request);				data_len += sizeof(fw_pkt.raw.address);				/* send cmd to device */				errno = bus_adap->ops->upload_fw_pkt(bus_adap,								     (uint8_t *)								     &fw_pkt,								     data_len,								     0);				if (errno < 0)					goto error;			}		}
+total_read_bytes == firmware->size
+total_read_bytes
+total_read_bytes
+firmware->size
+firmware
+firmware
+size
+{			fw_pkt.u.request[0] = 0x00;			fw_pkt.u.request[1] = 0x03;			/* send EOF command */			errno = bus_adap->ops->upload_fw_pkt(bus_adap,							     (uint8_t *)							     &fw_pkt, 2, 0);			if (errno < 0)				goto error;		}
+fw_pkt.u.request[0] = 0x00;
+fw_pkt.u.request[0] = 0x00
+fw_pkt.u.request[0]
+fw_pkt.u.request
+fw_pkt.u
+fw_pkt
+fw_pkt
+u
+request
+0
+0x00
+fw_pkt.u.request[1] = 0x03;
+fw_pkt.u.request[1] = 0x03
+fw_pkt.u.request[1]
+fw_pkt.u.request
+fw_pkt.u
+fw_pkt
+fw_pkt
+u
+request
+1
+0x03
+errno = bus_adap->ops->upload_fw_pkt(bus_adap,							     (uint8_t *)							     &fw_pkt, 2, 0);
+errno = bus_adap->ops->upload_fw_pkt(bus_adap,							     (uint8_t *)							     &fw_pkt, 2, 0)
+errno
+errno
+bus_adap->ops->upload_fw_pkt(bus_adap,							     (uint8_t *)							     &fw_pkt, 2, 0)
+bus_adap->ops->upload_fw_pkt
+bus_adap->ops
+bus_adap
+bus_adap
+ops
+upload_fw_pkt
+bus_adap
+bus_adap
+(uint8_t *)							     &fw_pkt
+uint8_t *
+uint8_t
+uint8_t
+*
+*
+&fw_pkt
+fw_pkt
+fw_pkt
+2
+0
+if (errno < 0)				goto error;
+errno < 0
+errno
+errno
+0
+goto error;
+error
+{			if (!addr_has_changed) {				/* prepare command to send */				fw_pkt.u.request[0] = 0x00;				fw_pkt.u.request[1] = 0x01;				data_len += sizeof(fw_pkt.u.request);				data_len += sizeof(fw_pkt.raw.address);				/* send cmd to device */				errno = bus_adap->ops->upload_fw_pkt(bus_adap,								     (uint8_t *)								     &fw_pkt,								     data_len,								     0);				if (errno < 0)					goto error;			}		}
+if (!addr_has_changed) {				/* prepare command to send */				fw_pkt.u.request[0] = 0x00;				fw_pkt.u.request[1] = 0x01;				data_len += sizeof(fw_pkt.u.request);				data_len += sizeof(fw_pkt.raw.address);				/* send cmd to device */				errno = bus_adap->ops->upload_fw_pkt(bus_adap,								     (uint8_t *)								     &fw_pkt,								     data_len,								     0);				if (errno < 0)					goto error;			}
+!addr_has_changed
+addr_has_changed
+addr_has_changed
+{				/* prepare command to send */				fw_pkt.u.request[0] = 0x00;				fw_pkt.u.request[1] = 0x01;				data_len += sizeof(fw_pkt.u.request);				data_len += sizeof(fw_pkt.raw.address);				/* send cmd to device */				errno = bus_adap->ops->upload_fw_pkt(bus_adap,								     (uint8_t *)								     &fw_pkt,								     data_len,								     0);				if (errno < 0)					goto error;			}
+fw_pkt.u.request[0] = 0x00;
+fw_pkt.u.request[0] = 0x00
+fw_pkt.u.request[0]
+fw_pkt.u.request
+fw_pkt.u
+fw_pkt
+fw_pkt
+u
+request
+0
+0x00
+fw_pkt.u.request[1] = 0x01;
+fw_pkt.u.request[1] = 0x01
+fw_pkt.u.request[1]
+fw_pkt.u.request
+fw_pkt.u
+fw_pkt
+fw_pkt
+u
+request
+1
+0x01
+data_len += sizeof(fw_pkt.u.request);
+data_len += sizeof(fw_pkt.u.request)
+data_len
+data_len
+sizeof(fw_pkt.u.request)
+(fw_pkt.u.request)
+fw_pkt.u.request
+fw_pkt.u
+fw_pkt
+fw_pkt
+u
+request
+data_len += sizeof(fw_pkt.raw.address);
+data_len += sizeof(fw_pkt.raw.address)
+data_len
+data_len
+sizeof(fw_pkt.raw.address)
+(fw_pkt.raw.address)
+fw_pkt.raw.address
+fw_pkt.raw
+fw_pkt
+fw_pkt
+raw
+address
+errno = bus_adap->ops->upload_fw_pkt(bus_adap,								     (uint8_t *)								     &fw_pkt,								     data_len,								     0);
+errno = bus_adap->ops->upload_fw_pkt(bus_adap,								     (uint8_t *)								     &fw_pkt,								     data_len,								     0)
+errno
+errno
+bus_adap->ops->upload_fw_pkt(bus_adap,								     (uint8_t *)								     &fw_pkt,								     data_len,								     0)
+bus_adap->ops->upload_fw_pkt
+bus_adap->ops
+bus_adap
+bus_adap
+ops
+upload_fw_pkt
+bus_adap
+bus_adap
+(uint8_t *)								     &fw_pkt
+uint8_t *
+uint8_t
+uint8_t
+*
+*
+&fw_pkt
+fw_pkt
+fw_pkt
+data_len
+data_len
+0
+if (errno < 0)					goto error;
+errno < 0
+errno
+errno
+0
+goto error;
+error
+error:	return (errno == 0) ? total_read_bytes : errno;
+error
+return (errno == 0) ? total_read_bytes : errno;
+(errno == 0) ? total_read_bytes : errno
+(errno == 0)
+errno == 0
+errno
+errno
+0
+total_read_bytes
+total_read_bytes
+errno
+errno
+-----joern-----
+(29,54,0)
+(42,99,0)
+(100,42,0)
+(77,122,0)
+(20,72,0)
+(101,66,0)
+(87,32,0)
+(115,76,0)
+(110,119,0)
+(126,130,0)
+(120,112,0)
+(106,154,0)
+(88,30,0)
+(73,150,0)
+(138,146,0)
+(132,154,0)
+(130,67,0)
+(30,49,0)
+(156,49,0)
+(45,134,0)
+(33,65,0)
+(160,104,0)
+(100,152,0)
+(103,107,0)
+(142,111,0)
+(32,152,0)
+(108,137,0)
+(49,130,0)
+(70,131,0)
+(154,122,0)
+(163,111,0)
+(56,139,0)
+(108,128,0)
+(17,135,0)
+(153,9,0)
+(27,130,0)
+(146,21,0)
+(135,54,0)
+(78,137,0)
+(89,65,0)
+(161,73,0)
+(47,85,0)
+(66,112,0)
+(37,42,0)
+(52,78,0)
+(151,126,0)
+(104,159,0)
+(102,68,0)
+(145,78,0)
+(55,36,0)
+(68,130,0)
+(163,12,0)
+(5,42,0)
+(113,32,0)
+(135,17,0)
+(20,38,0)
+(122,80,0)
+(128,108,0)
+(51,19,0)
+(95,146,0)
+(71,57,0)
+(119,150,0)
+(137,108,0)
+(57,134,0)
+(106,85,0)
+(96,161,0)
+(94,38,0)
+(114,85,0)
+(1,67,0)
+(97,110,0)
+(3,152,0)
+(146,138,0)
+(144,150,0)
+(82,45,0)
+(137,78,0)
+(6,20,0)
+(49,30,0)
+(63,134,0)
+(19,152,0)
+(11,85,0)
+(8,85,0)
+(79,36,0)
+(162,86,0)
+(64,159,0)
+(81,163,0)
+(93,116,0)
+(109,45,0)
+(38,94,0)
+(32,113,0)
+(113,99,0)
+(98,73,0)
+(40,95,0)
+(107,85,0)
+(46,67,0)
+(92,113,0)
+(18,155,0)
+(139,85,0)
+(148,111,0)
+(26,45,0)
+(158,86,0)
+(124,68,0)
+(161,67,0)
+(138,100,0)
+(167,137,0)
+(106,4,0)
+(111,163,0)
+(147,1,0)
+(42,100,0)
+(49,152,0)
+(48,119,0)
+(4,112,0)
+(152,152,0)
+(100,166,0)
+(60,72,0)
+(161,141,0)
+(44,152,0)
+(146,95,0)
+(146,9,0)
+(9,107,0)
+(61,150,0)
+(126,15,0)
+(128,67,0)
+(159,141,0)
+(31,126,0)
+(72,80,0)
+(45,15,0)
+(12,1,0)
+(136,95,0)
+(146,119,0)
+(25,128,0)
+(41,89,0)
+(105,166,0)
+(91,94,0)
+(157,70,0)
+(59,129,0)
+(21,73,0)
+(165,138,0)
+(126,135,0)
+(164,139,0)
+(116,150,0)
+(83,34,0)
+(24,150,0)
+(141,161,0)
+(106,12,0)
+(134,63,0)
+(154,70,0)
+(149,12,0)
+(168,38,0)
+(141,159,0)
+(12,163,0)
+(14,45,0)
+(49,139,0)
+(152,150,0)
+(138,165,0)
+(128,161,0)
+(22,155,0)
+(36,99,0)
+(69,14,0)
+(49,166,0)
+(130,126,0)
+(35,66,0)
+(30,14,0)
+(127,104,0)
+(119,146,0)
+(30,130,0)
+(70,154,0)
+(43,107,0)
+(30,139,0)
+(100,138,0)
+(95,136,0)
+(74,94,0)
+(50,89,0)
+(152,119,0)
+(123,116,0)
+(58,21,0)
+(125,126,0)
+(53,136,0)
+(106,20,0)
+(152,166,0)
+(23,4,0)
+(49,106,0)
+(86,85,0)
+(0,30,0)
+(134,45,0)
+(4,76,0)
+(126,128,0)
+(76,67,0)
+(117,73,0)
+(19,36,0)
+(36,19,0)
+(159,104,0)
+(143,85,0)
+(134,57,0)
+(121,110,0)
+(131,70,0)
+(45,14,0)
+(65,89,0)
+(135,126,0)
+(129,107,0)
+(112,66,0)
+(155,14,0)
+(140,85,0)
+(14,80,0)
+(112,4,0)
+(54,135,0)
+(118,49,0)
+(65,146,0)
+(13,80,0)
+(133,106,0)
+(90,100,0)
+(49,14,0)
+(28,113,0)
+(9,146,0)
+(75,166,0)
+(7,136,0)
+(38,20,0)
+(16,150,0)
+(32,166,0)
+(21,146,0)
+(2,131,0)
+(146,65,0)
+(10,131,0)
+(39,110,1)
+(141,159,1)
+(82,134,1)
+(166,105,1)
+(20,6,1)
+(49,139,1)
+(107,103,1)
+(128,108,1)
+(106,20,1)
+(152,152,1)
+(108,137,1)
+(88,39,1)
+(41,50,1)
+(32,113,1)
+(101,35,1)
+(52,145,1)
+(49,130,1)
+(77,154,1)
+(49,166,1)
+(134,63,1)
+(28,87,1)
+(106,154,1)
+(42,5,1)
+(154,132,1)
+(167,78,1)
+(20,38,1)
+(160,127,1)
+(126,135,1)
+(123,93,1)
+(155,14,1)
+(163,81,1)
+(135,54,1)
+(51,152,1)
+(70,131,1)
+(146,95,1)
+(130,126,1)
+(21,73,1)
+(12,163,1)
+(100,90,1)
+(146,9,1)
+(92,28,1)
+(106,12,1)
+(44,110,1)
+(68,124,1)
+(36,99,1)
+(98,117,1)
+(59,19,1)
+(129,59,1)
+(0,88,1)
+(25,161,1)
+(146,21,1)
+(32,166,1)
+(95,40,1)
+(7,138,1)
+(100,42,1)
+(38,94,1)
+(105,75,1)
+(137,167,1)
+(129,107,1)
+(156,30,1)
+(14,45,1)
+(138,100,1)
+(74,19,1)
+(49,156,1)
+(88,84,1)
+(30,139,1)
+(113,99,1)
+(45,26,1)
+(19,152,1)
+(26,82,1)
+(3,44,1)
+(126,31,1)
+(151,135,1)
+(56,164,1)
+(161,73,1)
+(49,14,1)
+(6,38,1)
+(84,155,1)
+(100,166,1)
+(55,51,1)
+(137,78,1)
+(136,53,1)
+(81,111,1)
+(49,30,1)
+(155,18,1)
+(9,153,1)
+(87,166,1)
+(87,155,1)
+(121,119,1)
+(73,98,1)
+(71,109,1)
+(117,116,1)
+(112,120,1)
+(93,32,1)
+(116,123,1)
+(88,62,1)
+(2,72,1)
+(30,14,1)
+(139,56,1)
+(153,21,1)
+(65,89,1)
+(66,101,1)
+(104,160,1)
+(21,58,1)
+(119,146,1)
+(100,152,1)
+(86,162,1)
+(72,60,1)
+(124,102,1)
+(94,91,1)
+(4,112,1)
+(29,125,1)
+(109,69,1)
+(159,64,1)
+(19,36,1)
+(68,130,1)
+(148,76,1)
+(45,134,1)
+(50,95,1)
+(145,25,1)
+(40,136,1)
+(1,147,1)
+(89,41,1)
+(122,77,1)
+(5,37,1)
+(57,71,1)
+(23,112,1)
+(60,20,1)
+(152,3,1)
+(135,17,1)
+(33,89,1)
+(120,66,1)
+(138,165,1)
+(103,43,1)
+(132,70,1)
+(10,2,1)
+(4,23,1)
+(161,141,1)
+(75,107,1)
+(22,14,1)
+(18,22,1)
+(95,136,1)
+(79,55,1)
+(12,149,1)
+(88,32,1)
+(134,57,1)
+(110,97,1)
+(128,161,1)
+(49,152,1)
+(164,86,1)
+(133,106,1)
+(146,138,1)
+(112,66,1)
+(38,168,1)
+(30,130,1)
+(110,119,1)
+(49,118,1)
+(111,142,1)
+(152,119,1)
+(32,152,1)
+(157,131,1)
+(78,52,1)
+(76,115,1)
+(149,163,1)
+(102,130,1)
+(113,92,1)
+(36,79,1)
+(127,96,1)
+(162,158,1)
+(9,107,1)
+(58,65,1)
+(96,1,1)
+(35,129,1)
+(30,0,1)
+(43,139,1)
+(87,68,1)
+(146,65,1)
+(126,15,1)
+(64,104,1)
+(62,68,1)
+(106,4,1)
+(163,111,1)
+(118,30,1)
+(70,157,1)
+(37,48,1)
+(131,10,1)
+(87,129,1)
+(48,73,1)
+(106,49,1)
+(168,94,1)
+(147,12,1)
+(90,42,1)
+(45,15,1)
+(154,70,1)
+(126,128,1)
+(53,7,1)
+(65,33,1)
+(159,104,1)
+(115,4,1)
+(152,166,1)
+(125,27,1)
+(31,151,1)
+(27,128,1)
+(69,122,1)
+(54,29,1)
+(91,74,1)
+(97,121,1)
+(142,148,1)
+(42,99,1)
+(149,129,2)
+(121,32,2)
+(89,32,2)
+(125,129,2)
+(26,19,2)
+(159,104,2)
+(53,32,2)
+(146,138,2)
+(18,19,2)
+(6,19,2)
+(66,129,2)
+(30,14,2)
+(25,129,2)
+(54,129,2)
+(92,155,2)
+(146,21,2)
+(128,161,2)
+(141,129,2)
+(159,129,2)
+(45,19,2)
+(106,154,2)
+(145,129,2)
+(152,119,2)
+(123,32,2)
+(126,135,2)
+(39,110,2)
+(64,129,2)
+(19,152,2)
+(77,19,2)
+(134,57,2)
+(134,19,2)
+(72,19,2)
+(28,68,2)
+(131,19,2)
+(136,32,2)
+(32,152,2)
+(70,19,2)
+(154,19,2)
+(152,152,2)
+(96,129,2)
+(74,19,2)
+(133,106,2)
+(120,129,2)
+(32,129,2)
+(167,129,2)
+(155,19,2)
+(87,129,2)
+(138,32,2)
+(36,110,2)
+(156,30,2)
+(122,19,2)
+(106,20,2)
+(161,73,2)
+(147,129,2)
+(161,141,2)
+(148,129,2)
+(92,129,2)
+(95,32,2)
+(19,36,2)
+(163,111,2)
+(22,19,2)
+(155,14,2)
+(116,32,2)
+(92,68,2)
+(95,136,2)
+(41,32,2)
+(29,129,2)
+(124,129,2)
+(119,146,2)
+(157,19,2)
+(111,129,2)
+(112,129,2)
+(65,32,2)
+(69,19,2)
+(71,19,2)
+(81,129,2)
+(76,129,2)
+(19,110,2)
+(28,129,2)
+(32,113,2)
+(84,155,2)
+(59,19,2)
+(9,32,2)
+(49,130,2)
+(49,14,2)
+(132,19,2)
+(152,166,2)
+(168,19,2)
+(126,15,2)
+(93,32,2)
+(146,32,2)
+(20,38,2)
+(70,131,2)
+(55,110,2)
+(31,129,2)
+(127,129,2)
+(3,110,2)
+(90,32,2)
+(73,32,2)
+(87,155,2)
+(141,159,2)
+(115,129,2)
+(129,107,2)
+(5,32,2)
+(129,19,2)
+(113,129,2)
+(50,32,2)
+(9,107,2)
+(38,94,2)
+(153,32,2)
+(82,19,2)
+(100,166,2)
+(36,99,2)
+(102,129,2)
+(20,19,2)
+(87,68,2)
+(4,112,2)
+(134,63,2)
+(27,129,2)
+(152,110,2)
+(108,129,2)
+(49,30,2)
+(62,68,2)
+(30,139,2)
+(42,99,2)
+(12,129,2)
+(37,32,2)
+(130,126,2)
+(21,32,2)
+(33,32,2)
+(32,155,2)
+(128,108,2)
+(49,152,2)
+(137,129,2)
+(118,30,2)
+(146,65,2)
+(23,129,2)
+(163,129,2)
+(14,19,2)
+(30,130,2)
+(109,19,2)
+(57,19,2)
+(154,70,2)
+(110,119,2)
+(104,129,2)
+(48,32,2)
+(108,137,2)
+(142,129,2)
+(28,155,2)
+(100,32,2)
+(130,129,2)
+(160,129,2)
+(100,42,2)
+(119,32,2)
+(110,32,2)
+(106,4,2)
+(78,129,2)
+(32,68,2)
+(94,19,2)
+(138,165,2)
+(1,129,2)
+(2,19,2)
+(45,134,2)
+(98,32,2)
+(49,166,2)
+(137,78,2)
+(101,129,2)
+(7,32,2)
+(49,139,2)
+(146,9,2)
+(40,32,2)
+(151,129,2)
+(14,45,2)
+(117,32,2)
+(138,100,2)
+(126,128,2)
+(52,129,2)
+(128,129,2)
+(113,155,2)
+(35,129,2)
+(97,32,2)
+(146,95,2)
+(68,130,2)
+(45,15,2)
+(112,66,2)
+(42,32,2)
+(38,19,2)
+(113,68,2)
+(44,110,2)
+(106,12,2)
+(10,19,2)
+(58,32,2)
+(100,152,2)
+(51,110,2)
+(135,17,2)
+(135,129,2)
+(126,129,2)
+(4,129,2)
+(91,19,2)
+(60,19,2)
+(68,129,2)
+(12,163,2)
+(32,166,2)
+(135,54,2)
+(113,99,2)
+(65,89,2)
+(79,110,2)
+(161,129,2)
+(21,73,2)
+-----------------------------------
+(0,0)
+(1,fw_pkt.u.request[1] = 0x01)
+(2,fw_pkt)
+(3,read_bytes)
+(4,fw_pkt.u.request[0])
+(5,data)
+(6,0)
+(7,fw_pkt)
+(8,error:)
+(9,&addr_has_changed)
+(10,u)
+(11,for (total_read_bytes = 0; total_read_bytes < firmware->size; )
+(12,fw_pkt.u.request[1])
+(13,if (errno < 0)
+(14,errno = bus_adap->ops->upload_fw_pkt(bus_adap,\n\\n\\t\\t\\t\\t\\t\\t\\t     (uint8_t *)
+(15,struct as10x_bus_adapter_t *bus_adap)
+(16,data_len)
+(17,uint8_t *)
+(18,0)
+(19,total_read_bytes == firmware->size)
+(20,fw_pkt.u.request[0])
+(21,&data_len)
+(22,errno)
+(23,0)
+(24,read_bytes)
+(25,data_len)
+(26,0)
+(27,errno)
+(28,firmware)
+(29,fw_pkt)
+(30,errno == 0)
+(31,0)
+(32,total_read_bytes < firmware->size)
+(33,data)
+(34,)
+(35,fw_pkt)
+(36,firmware->size)
+(37,firmware)
+(38,fw_pkt.u.request)
+(39,goto error;)
+(40,address)
+(41,raw)
+(42,firmware->data)
+(43,addr_has_changed)
+(44,total_read_bytes)
+(45,bus_adap->ops->upload_fw_pkt(bus_adap,\n\\n\\t\\t\\t\\t\\t\\t\\t     (uint8_t *)
+(46,if (errno < 0)
+(47,addr_has_changed)
+(48,read_bytes)
+(49,(errno == 0)
+(50,fw_pkt)
+(51,total_read_bytes)
+(52,raw)
+(53,raw)
+(54,&fw_pkt)
+(55,firmware)
+(56,0)
+(57,&fw_pkt)
+(58,data_len)
+(59,addr_has_changed)
+(60,0x00)
+(61,if (total_read_bytes == firmware->size)
+(62,goto error;)
+(63,uint8_t *)
+(64,request)
+(65,fw_pkt.raw.data)
+(66,fw_pkt.u)
+(67,)
+(68,errno < 0)
+(69,errno)
+(70,fw_pkt.u.request)
+(71,fw_pkt)
+(72,fw_pkt.u.request[0] = 0x00)
+(73,data_len = 0)
+(74,fw_pkt)
+(75,total_read_bytes)
+(76,fw_pkt.u.request[0] = 0x00)
+(77,0x03)
+(78,fw_pkt.raw)
+(79,size)
+(80,)
+(81,request)
+(82,2)
+(83,if (!addr_has_changed)
+(84,goto error;)
+(85,)
+(86,total_read_bytes = 0)
+(87,total_read_bytes)
+(88,errno)
+(89,fw_pkt.raw)
+(90,total_read_bytes)
+(91,u)
+(92,size)
+(93,read_bytes)
+(94,fw_pkt.u)
+(95,fw_pkt.raw.address)
+(96,data_len)
+(97,0)
+(98,0)
+(99,const struct firmware *firmware)
+(100,firmware->data + total_read_bytes)
+(101,u)
+(102,errno)
+(103,0)
+(104,fw_pkt.u)
+(105,0)
+(106,return (errno == 0)
+(107,addr_has_changed = 0)
+(108,sizeof(fw_pkt.raw.address)
+(109,bus_adap)
+(110,read_bytes <= 0)
+(111,fw_pkt.u)
+(112,fw_pkt.u.request)
+(113,firmware->size)
+(114,errno)
+(115,0x00)
+(116,read_bytes = 0)
+(117,data_len)
+(118,total_read_bytes)
+(119,read_bytes = parse_hex_line(\n\\n\\t\\t\\t\\t(u8 *)
+(120,request)
+(121,read_bytes)
+(122,fw_pkt.u.request[1] = 0x03)
+(123,0)
+(124,0)
+(125,bus_adap)
+(126,bus_adap->ops->upload_fw_pkt(bus_adap,\n\\n\\t\\t\\t\\t\\t\\t\\t\\t     (uint8_t *)
+(127,fw_pkt)
+(128,data_len += sizeof(fw_pkt.raw.address)
+(129,!addr_has_changed)
+(130,errno = bus_adap->ops->upload_fw_pkt(bus_adap,\n\\n\\t\\t\\t\\t\\t\\t\\t\\t     (uint8_t *)
+(131,fw_pkt.u)
+(132,1)
+(133,RET)
+(134,(uint8_t *)
+(135,(uint8_t *)
+(136,fw_pkt.raw)
+(137,fw_pkt.raw.address)
+(138,(u8 *)
+(139,errno = 0)
+(140,total_read_bytes)
+(141,sizeof(fw_pkt.u.request)
+(142,u)
+(143,fw_pkt)
+(144,if (read_bytes <= 0)
+(145,fw_pkt)
+(146,parse_hex_line(\n\\n\\t\\t\\t\\t(u8 *)
+(147,0x01)
+(148,fw_pkt)
+(149,1)
+(150,)
+(151,data_len)
+(152,total_read_bytes += read_bytes)
+(153,addr_has_changed)
+(154,fw_pkt.u.request[1])
+(155,errno < 0)
+(156,errno)
+(157,request)
+(158,total_read_bytes)
+(159,fw_pkt.u.request)
+(160,u)
+(161,data_len += sizeof(fw_pkt.u.request)
+(162,0)
+(163,fw_pkt.u.request)
+(164,errno)
+(165,u8 *)
+(166,total_read_bytes = 0)
+(167,address)
+(168,request)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

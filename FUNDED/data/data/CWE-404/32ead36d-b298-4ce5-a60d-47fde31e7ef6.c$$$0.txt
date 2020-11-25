@@ -1,0 +1,3408 @@
+-----label-----
+0
+-----code-----
+static void binder_transaction_buffer_release(struct binder_proc *proc,
+					      struct binder_buffer *buffer,
+					      binder_size_t *failed_at)
+{
+	binder_size_t *offp, *off_start, *off_end;
+	int debug_id = buffer->debug_id;
+
+	binder_debug(BINDER_DEBUG_TRANSACTION,
+		     "%d buffer release %d, size %zd-%zd, failed at %p\n",
+		     proc->pid, buffer->debug_id,
+		     buffer->data_size, buffer->offsets_size, failed_at);
+
+	if (buffer->target_node)
+		binder_dec_node(buffer->target_node, 1, 0);
+
+	off_start = (binder_size_t *)(buffer->data +
+				      ALIGN(buffer->data_size, sizeof(void *)));
+	if (failed_at)
+		off_end = failed_at;
+	else
+		off_end = (void *)off_start + buffer->offsets_size;
+	for (offp = off_start; offp < off_end; offp++) {
+		struct binder_object_header *hdr;
+		size_t object_size = binder_validate_object(buffer, *offp);
+
+		if (object_size == 0) {
+			pr_err("transaction release %d bad object at offset %lld, size %zd\n",
+			       debug_id, (u64)*offp, buffer->data_size);
+			continue;
+		}
+		hdr = (struct binder_object_header *)(buffer->data + *offp);
+		switch (hdr->type) {
+		case BINDER_TYPE_BINDER:
+		case BINDER_TYPE_WEAK_BINDER: {
+			struct flat_binder_object *fp;
+			struct binder_node *node;
+
+			fp = to_flat_binder_object(hdr);
+			node = binder_get_node(proc, fp->binder);
+			if (node == NULL) {
+				pr_err("transaction release %d bad node %016llx\n",
+				       debug_id, (u64)fp->binder);
+				break;
+			}
+			binder_debug(BINDER_DEBUG_TRANSACTION,
+				     "        node %d u%016llx\n",
+				     node->debug_id, (u64)node->ptr);
+			binder_dec_node(node, hdr->type == BINDER_TYPE_BINDER,
+					0);
+			binder_put_node(node);
+		} break;
+		case BINDER_TYPE_HANDLE:
+		case BINDER_TYPE_WEAK_HANDLE: {
+			struct flat_binder_object *fp;
+			struct binder_ref_data rdata;
+			int ret;
+
+			fp = to_flat_binder_object(hdr);
+			ret = binder_dec_ref_for_handle(proc, fp->handle,
+				hdr->type == BINDER_TYPE_HANDLE, &rdata);
+
+			if (ret) {
+				pr_err("transaction release %d bad handle %d, ret = %d\n",
+				 debug_id, fp->handle, ret);
+				break;
+			}
+			binder_debug(BINDER_DEBUG_TRANSACTION,
+				     "        ref %d desc %d\n",
+				     rdata.debug_id, rdata.desc);
+		} break;
+
+		case BINDER_TYPE_FD: {
+			struct binder_fd_object *fp = to_binder_fd_object(hdr);
+
+			binder_debug(BINDER_DEBUG_TRANSACTION,
+				     "        fd %d\n", fp->fd);
+			if (failed_at)
+				task_close_fd(proc, fp->fd);
+		} break;
+		case BINDER_TYPE_PTR:
+			/*
+			 * Nothing to do here, this will get cleaned up when the
+			 * transaction buffer gets freed
+			 */
+			break;
+		case BINDER_TYPE_FDA: {
+			struct binder_fd_array_object *fda;
+			struct binder_buffer_object *parent;
+			uintptr_t parent_buffer;
+			u32 *fd_array;
+			size_t fd_index;
+			binder_size_t fd_buf_size;
+
+			fda = to_binder_fd_array_object(hdr);
+			parent = binder_validate_ptr(buffer, fda->parent,
+						     off_start,
+						     offp - off_start);
+			if (!parent) {
+				pr_err("transaction release %d bad parent offset",
+				       debug_id);
+				continue;
+			}
+			/*
+			 * Since the parent was already fixed up, convert it
+			 * back to kernel address space to access it
+			 */
+			parent_buffer = parent->buffer -
+				binder_alloc_get_user_buffer_offset(
+						&proc->alloc);
+
+			fd_buf_size = sizeof(u32) * fda->num_fds;
+			if (fda->num_fds >= SIZE_MAX / sizeof(u32)) {
+				pr_err("transaction release %d invalid number of fds (%lld)\n",
+				       debug_id, (u64)fda->num_fds);
+				continue;
+			}
+			if (fd_buf_size > parent->length ||
+			    fda->parent_offset > parent->length - fd_buf_size) {
+				/* No space for all file descriptors here. */
+				pr_err("transaction release %d not enough space for %lld fds in buffer\n",
+				       debug_id, (u64)fda->num_fds);
+				continue;
+			}
+			fd_array = (u32 *)(parent_buffer + (uintptr_t)fda->parent_offset);
+			for (fd_index = 0; fd_index < fda->num_fds; fd_index++)
+				task_close_fd(proc, fd_array[fd_index]);
+		} break;
+		default:
+			pr_err("transaction release %d bad object type %x\n",
+				debug_id, hdr->type);
+			break;
+		}
+	}
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+17,19
+18,19
+20,21
+20,22
+23,24
+23,25
+23,26
+23,27
+23,28
+23,29
+23,30
+24,25
+25,26
+25,27
+25,28
+25,29
+26,27
+28,29
+28,30
+31,32
+31,33
+34,35
+34,36
+37,38
+38,39
+38,40
+40,41
+40,42
+42,43
+43,44
+43,45
+44,45
+47,48
+48,49
+48,50
+48,51
+48,52
+48,53
+48,54
+48,55
+48,56
+49,50
+51,52
+54,55
+54,56
+55,56
+58,59
+58,60
+59,60
+62,63
+62,64
+63,64
+66,67
+66,68
+67,68
+70,71
+72,73
+72,74
+73,74
+73,75
+74,75
+77,78
+78,79
+78,80
+78,81
+78,82
+79,80
+81,82
+81,83
+82,83
+87,88
+88,89
+88,90
+89,90
+91,92
+91,93
+92,93
+92,94
+93,94
+95,96
+97,98
+98,99
+98,100
+99,100
+99,101
+100,101
+103,104
+103,105
+103,106
+104,105
+106,107
+106,108
+107,108
+110,111
+111,112
+111,113
+113,114
+115,116
+115,117
+115,118
+116,117
+118,119
+119,120
+119,121
+120,121
+122,123
+124,125
+125,126
+125,127
+126,127
+128,129
+128,130
+129,130
+129,131
+130,131
+130,132
+132,133
+134,135
+136,137
+136,138
+137,138
+140,141
+140,142
+140,143
+140,144
+141,142
+142,143
+142,144
+143,144
+145,146
+147,148
+147,149
+148,149
+150,151
+152,153
+153,154
+155,156
+155,157
+155,158
+155,159
+155,160
+156,157
+157,158
+157,159
+158,159
+160,161
+160,162
+163,164
+164,165
+164,166
+165,166
+167,168
+167,169
+169,170
+170,171
+170,172
+170,173
+171,172
+173,174
+175,176
+176,177
+178,179
+178,180
+179,180
+179,181
+180,181
+183,184
+183,185
+184,185
+185,186
+185,187
+185,188
+185,189
+185,190
+186,187
+189,190
+191,192
+191,193
+192,193
+193,194
+195,196
+197,198
+197,199
+198,199
+202,203
+203,204
+203,205
+204,205
+206,207
+206,208
+207,208
+207,209
+208,209
+210,211
+212,213
+213,214
+213,215
+214,215
+214,216
+215,216
+218,219
+219,220
+221,222
+221,223
+222,223
+222,224
+223,224
+226,227
+226,228
+226,229
+226,230
+226,231
+226,232
+226,233
+226,234
+226,235
+226,236
+226,237
+226,238
+226,239
+226,240
+226,241
+226,242
+226,243
+226,244
+226,245
+227,228
+228,229
+230,231
+231,232
+233,234
+233,235
+233,236
+233,237
+233,238
+233,239
+233,240
+233,241
+234,235
+235,236
+235,237
+236,237
+238,239
+238,240
+241,242
+242,243
+242,244
+243,244
+245,246
+245,247
+248,249
+249,250
+249,251
+250,251
+252,253
+252,254
+253,254
+255,256
+257,258
+258,259
+258,260
+259,260
+261,262
+261,263
+261,264
+262,263
+264,265
+266,267
+266,268
+267,268
+270,271
+270,272
+271,272
+271,273
+272,273
+274,275
+276,277
+276,278
+277,278
+278,279
+278,280
+278,281
+278,282
+279,280
+282,283
+284,285
+284,286
+285,286
+285,287
+286,287
+289,290
+289,291
+290,291
+294,295
+295,296
+295,297
+295,298
+295,299
+295,300
+296,297
+298,299
+301,302
+301,303
+302,303
+305,306
+305,307
+306,307
+306,308
+307,308
+310,311
+310,312
+311,312
+314,315
+315,316
+315,317
+315,318
+315,319
+316,317
+318,319
+320,321
+320,322
+321,322
+321,323
+322,323
+325,326
+328,329
+329,330
+329,331
+330,331
+332,333
+335,336
+336,337
+338,339
+339,340
+341,342
+341,343
+341,344
+341,345
+341,346
+341,347
+341,348
+342,343
+343,344
+343,345
+344,345
+346,347
+346,348
+349,350
+350,351
+350,352
+351,352
+353,354
+355,356
+356,357
+356,358
+358,359
+360,361
+361,362
+361,363
+362,363
+364,365
+364,366
+365,366
+367,368
+369,370
+370,371
+370,372
+371,372
+373,374
+373,375
+373,376
+373,377
+373,378
+374,375
+376,377
+378,379
+378,380
+379,380
+382,383
+382,384
+383,384
+383,385
+384,385
+387,388
+389,390
+390,391
+392,393
+392,394
+393,394
+395,396
+395,397
+396,397
+397,398
+397,399
+397,400
+397,401
+397,402
+398,399
+401,402
+403,404
+403,405
+404,405
+407,408
+410,411
+411,412
+411,413
+411,414
+411,415
+411,416
+412,413
+414,415
+417,418
+417,419
+418,419
+421,422
+421,423
+422,423
+426,427
+427,428
+429,430
+429,431
+429,432
+430,431
+431,432
+431,433
+432,433
+434,435
+434,436
+434,437
+437,438
+438,439
+438,440
+439,440
+441,442
+443,444
+444,445
+444,446
+444,447
+444,448
+445,446
+447,448
+450,451
+450,452
+451,452
+454,455
+454,456
+455,456
+457,458
+458,459
+458,460
+458,461
+459,460
+461,462
+463,464
+463,465
+464,465
+468,469
+469,470
+472,473
+473,474
+475,476
+475,477
+475,478
+475,479
+475,480
+475,481
+475,482
+475,483
+475,484
+475,485
+475,486
+475,487
+475,488
+475,489
+475,490
+476,477
+477,478
+477,479
+478,479
+480,481
+480,482
+483,484
+484,485
+484,486
+485,486
+487,488
+487,489
+490,491
+491,492
+491,493
+492,493
+494,495
+496,497
+497,498
+497,499
+498,499
+500,501
+500,502
+503,504
+504,505
+504,506
+505,506
+507,508
+509,510
+510,511
+510,512
+511,512
+513,514
+515,516
+516,517
+516,518
+517,518
+519,520
+519,521
+520,521
+522,523
+524,525
+525,526
+525,527
+526,527
+528,529
+528,530
+528,531
+528,532
+528,533
+529,530
+531,532
+533,534
+533,535
+534,535
+537,538
+539,540
+539,541
+540,541
+542,543
+544,545
+544,546
+545,546
+546,547
+548,549
+548,550
+549,550
+550,551
+550,552
+550,553
+551,552
+554,555
+557,558
+558,559
+558,560
+559,560
+561,562
+561,563
+562,563
+562,564
+563,564
+566,567
+566,568
+567,568
+569,570
+570,571
+570,572
+571,572
+574,575
+575,576
+575,577
+576,577
+578,579
+578,580
+579,580
+580,581
+580,582
+581,582
+584,585
+584,586
+585,586
+588,589
+588,590
+589,590
+589,591
+590,591
+590,592
+591,592
+594,595
+594,596
+595,596
+597,598
+598,599
+598,600
+599,600
+602,603
+602,604
+603,604
+604,605
+604,606
+604,607
+604,608
+605,606
+608,609
+610,611
+610,612
+611,612
+611,613
+612,613
+615,616
+615,617
+616,617
+620,621
+620,622
+621,622
+621,623
+622,623
+622,624
+623,624
+625,626
+625,627
+626,627
+629,630
+629,631
+630,631
+630,632
+631,632
+634,635
+634,636
+635,636
+635,637
+636,637
+639,640
+641,642
+641,643
+642,643
+643,644
+643,645
+643,646
+643,647
+644,645
+647,648
+649,650
+649,651
+650,651
+650,652
+651,652
+654,655
+654,656
+655,656
+659,660
+660,661
+660,662
+661,662
+663,664
+663,665
+664,665
+664,666
+665,666
+667,668
+669,670
+670,671
+670,672
+671,672
+673,674
+673,675
+674,675
+674,676
+675,676
+678,679
+678,680
+679,680
+682,683
+682,684
+682,685
+682,686
+683,684
+684,685
+684,686
+685,686
+688,689
+688,690
+689,690
+691,692
+691,693
+692,693
+695,696
+696,697
+698,699
+699,700
+699,701
+699,702
+700,701
+702,703
+704,705
+704,706
+705,706
+707,708
+711,712
+712,713
+712,714
+712,715
+712,716
+713,714
+716,717
+718,719
+718,720
+719,720
+-----nextToken-----
+2,4,7,9,10,13,15,16,19,21,22,27,29,30,32,33,35,36,39,41,45,46,50,52,53,56,57,60,61,64,65,68,69,71,75,76,80,83,84,85,86,90,94,96,101,102,105,108,109,112,114,117,121,123,127,131,133,135,138,139,144,146,149,151,154,159,161,162,166,168,172,174,177,181,182,187,188,190,194,196,199,200,201,205,209,211,216,217,220,224,225,229,232,237,239,240,244,246,247,251,254,256,260,263,265,268,269,273,275,280,281,283,287,288,291,292,293,297,299,300,303,304,308,309,312,313,317,319,323,324,326,327,331,333,334,337,340,345,347,348,352,354,357,359,363,366,368,372,375,377,380,381,385,386,388,391,394,399,400,402,405,406,408,409,413,415,416,419,420,423,424,425,428,433,435,436,440,442,446,448,449,452,453,456,460,462,465,466,467,470,471,474,479,481,482,486,488,489,493,495,499,501,502,506,508,512,514,518,521,523,527,530,532,535,536,538,541,543,547,552,553,555,556,560,564,565,568,572,573,577,582,583,586,587,592,593,596,600,601,606,607,609,613,614,617,618,619,624,627,628,632,633,637,638,640,645,646,648,652,653,656,657,658,662,666,668,672,676,677,680,681,686,687,690,693,694,697,701,703,706,708,709,710,714,715,717,720,721,722
+-----computeFrom-----
+88,89
+88,90
+98,99
+98,100
+119,120
+119,121
+125,126
+125,127
+128,129
+128,130
+142,143
+142,144
+147,148
+147,149
+179,180
+179,181
+191,192
+191,193
+203,204
+203,205
+213,214
+213,215
+249,250
+249,251
+258,259
+258,260
+271,272
+271,273
+320,321
+320,322
+361,362
+361,363
+370,371
+370,372
+382,383
+382,384
+516,517
+516,518
+525,526
+525,527
+539,540
+539,541
+558,559
+558,560
+561,562
+561,563
+575,576
+575,577
+578,579
+578,580
+589,590
+589,591
+594,595
+594,596
+621,622
+621,623
+622,623
+622,624
+629,630
+629,631
+634,635
+634,636
+660,661
+660,662
+670,671
+670,672
+684,685
+684,686
+688,689
+688,690
+-----guardedBy-----
+592,617
+593,618
+632,656
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;Declarator;Pointer;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;Pointer;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;TypeIdExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;IfStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;IdExpression;Name;FieldReference;IdExpression;Name;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;BinaryExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;ContinueStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;Pointer;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;SwitchStatement;FieldReference;IdExpression;Name;Name;CompoundStatement;CaseStatement;IdExpression;Name;CaseStatement;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;FieldReference;IdExpression;Name;Name;BreakStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;CaseStatement;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;BreakStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;BreakStatement;CaseStatement;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;IfStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;BreakStatement;CaseStatement;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;ContinueStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;TypeIdExpression;TypeId;NamedTypeSpecifier;Name;Declarator;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;TypeIdExpression;TypeId;NamedTypeSpecifier;Name;Declarator;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;FieldReference;IdExpression;Name;Name;ContinueStatement;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;FieldReference;IdExpression;Name;Name;ContinueStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;Pointer;UnaryExpression;BinaryExpression;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;FieldReference;IdExpression;Name;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;BreakStatement;DefaultStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BreakStatement;
+-----ast_node-----
+static void binder_transaction_buffer_release(struct binder_proc *proc,					      struct binder_buffer *buffer,					      binder_size_t *failed_at){	binder_size_t *offp, *off_start, *off_end;	int debug_id = buffer->debug_id;	binder_debug(BINDER_DEBUG_TRANSACTION,		     "%d buffer release %d, size %zd-%zd, failed at %p\n",		     proc->pid, buffer->debug_id,		     buffer->data_size, buffer->offsets_size, failed_at);	if (buffer->target_node)		binder_dec_node(buffer->target_node, 1, 0);	off_start = (binder_size_t *)(buffer->data +				      ALIGN(buffer->data_size, sizeof(void *)));	if (failed_at)		off_end = failed_at;	else		off_end = (void *)off_start + buffer->offsets_size;	for (offp = off_start; offp < off_end; offp++) {		struct binder_object_header *hdr;		size_t object_size = binder_validate_object(buffer, *offp);		if (object_size == 0) {			pr_err("transaction release %d bad object at offset %lld, size %zd\n",			       debug_id, (u64)*offp, buffer->data_size);			continue;		}		hdr = (struct binder_object_header *)(buffer->data + *offp);		switch (hdr->type) {		case BINDER_TYPE_BINDER:		case BINDER_TYPE_WEAK_BINDER: {			struct flat_binder_object *fp;			struct binder_node *node;			fp = to_flat_binder_object(hdr);			node = binder_get_node(proc, fp->binder);			if (node == NULL) {				pr_err("transaction release %d bad node %016llx\n",				       debug_id, (u64)fp->binder);				break;			}			binder_debug(BINDER_DEBUG_TRANSACTION,				     "        node %d u%016llx\n",				     node->debug_id, (u64)node->ptr);			binder_dec_node(node, hdr->type == BINDER_TYPE_BINDER,					0);			binder_put_node(node);		} break;		case BINDER_TYPE_HANDLE:		case BINDER_TYPE_WEAK_HANDLE: {			struct flat_binder_object *fp;			struct binder_ref_data rdata;			int ret;			fp = to_flat_binder_object(hdr);			ret = binder_dec_ref_for_handle(proc, fp->handle,				hdr->type == BINDER_TYPE_HANDLE, &rdata);			if (ret) {				pr_err("transaction release %d bad handle %d, ret = %d\n",				 debug_id, fp->handle, ret);				break;			}			binder_debug(BINDER_DEBUG_TRANSACTION,				     "        ref %d desc %d\n",				     rdata.debug_id, rdata.desc);		} break;		case BINDER_TYPE_FD: {			struct binder_fd_object *fp = to_binder_fd_object(hdr);			binder_debug(BINDER_DEBUG_TRANSACTION,				     "        fd %d\n", fp->fd);			if (failed_at)				task_close_fd(proc, fp->fd);		} break;		case BINDER_TYPE_PTR:			/*			 * Nothing to do here, this will get cleaned up when the			 * transaction buffer gets freed			 */			break;		case BINDER_TYPE_FDA: {			struct binder_fd_array_object *fda;			struct binder_buffer_object *parent;			uintptr_t parent_buffer;			u32 *fd_array;			size_t fd_index;			binder_size_t fd_buf_size;			fda = to_binder_fd_array_object(hdr);			parent = binder_validate_ptr(buffer, fda->parent,						     off_start,						     offp - off_start);			if (!parent) {				pr_err("transaction release %d bad parent offset",				       debug_id);				continue;			}			/*			 * Since the parent was already fixed up, convert it			 * back to kernel address space to access it			 */			parent_buffer = parent->buffer -				binder_alloc_get_user_buffer_offset(						&proc->alloc);			fd_buf_size = sizeof(u32) * fda->num_fds;			if (fda->num_fds >= SIZE_MAX / sizeof(u32)) {				pr_err("transaction release %d invalid number of fds (%lld)\n",				       debug_id, (u64)fda->num_fds);				continue;			}			if (fd_buf_size > parent->length ||			    fda->parent_offset > parent->length - fd_buf_size) {				/* No space for all file descriptors here. */				pr_err("transaction release %d not enough space for %lld fds in buffer\n",				       debug_id, (u64)fda->num_fds);				continue;			}			fd_array = (u32 *)(parent_buffer + (uintptr_t)fda->parent_offset);			for (fd_index = 0; fd_index < fda->num_fds; fd_index++)				task_close_fd(proc, fd_array[fd_index]);		} break;		default:			pr_err("transaction release %d bad object type %x\n",				debug_id, hdr->type);			break;		}	}}
+static void
+binder_transaction_buffer_release(struct binder_proc *proc,					      struct binder_buffer *buffer,					      binder_size_t *failed_at)
+binder_transaction_buffer_release
+struct binder_proc *proc
+struct binder_proc
+binder_proc
+*proc
+*
+proc
+struct binder_buffer *buffer
+struct binder_buffer
+binder_buffer
+*buffer
+*
+buffer
+binder_size_t *failed_at
+binder_size_t
+binder_size_t
+*failed_at
+*
+failed_at
+{	binder_size_t *offp, *off_start, *off_end;	int debug_id = buffer->debug_id;	binder_debug(BINDER_DEBUG_TRANSACTION,		     "%d buffer release %d, size %zd-%zd, failed at %p\n",		     proc->pid, buffer->debug_id,		     buffer->data_size, buffer->offsets_size, failed_at);	if (buffer->target_node)		binder_dec_node(buffer->target_node, 1, 0);	off_start = (binder_size_t *)(buffer->data +				      ALIGN(buffer->data_size, sizeof(void *)));	if (failed_at)		off_end = failed_at;	else		off_end = (void *)off_start + buffer->offsets_size;	for (offp = off_start; offp < off_end; offp++) {		struct binder_object_header *hdr;		size_t object_size = binder_validate_object(buffer, *offp);		if (object_size == 0) {			pr_err("transaction release %d bad object at offset %lld, size %zd\n",			       debug_id, (u64)*offp, buffer->data_size);			continue;		}		hdr = (struct binder_object_header *)(buffer->data + *offp);		switch (hdr->type) {		case BINDER_TYPE_BINDER:		case BINDER_TYPE_WEAK_BINDER: {			struct flat_binder_object *fp;			struct binder_node *node;			fp = to_flat_binder_object(hdr);			node = binder_get_node(proc, fp->binder);			if (node == NULL) {				pr_err("transaction release %d bad node %016llx\n",				       debug_id, (u64)fp->binder);				break;			}			binder_debug(BINDER_DEBUG_TRANSACTION,				     "        node %d u%016llx\n",				     node->debug_id, (u64)node->ptr);			binder_dec_node(node, hdr->type == BINDER_TYPE_BINDER,					0);			binder_put_node(node);		} break;		case BINDER_TYPE_HANDLE:		case BINDER_TYPE_WEAK_HANDLE: {			struct flat_binder_object *fp;			struct binder_ref_data rdata;			int ret;			fp = to_flat_binder_object(hdr);			ret = binder_dec_ref_for_handle(proc, fp->handle,				hdr->type == BINDER_TYPE_HANDLE, &rdata);			if (ret) {				pr_err("transaction release %d bad handle %d, ret = %d\n",				 debug_id, fp->handle, ret);				break;			}			binder_debug(BINDER_DEBUG_TRANSACTION,				     "        ref %d desc %d\n",				     rdata.debug_id, rdata.desc);		} break;		case BINDER_TYPE_FD: {			struct binder_fd_object *fp = to_binder_fd_object(hdr);			binder_debug(BINDER_DEBUG_TRANSACTION,				     "        fd %d\n", fp->fd);			if (failed_at)				task_close_fd(proc, fp->fd);		} break;		case BINDER_TYPE_PTR:			/*			 * Nothing to do here, this will get cleaned up when the			 * transaction buffer gets freed			 */			break;		case BINDER_TYPE_FDA: {			struct binder_fd_array_object *fda;			struct binder_buffer_object *parent;			uintptr_t parent_buffer;			u32 *fd_array;			size_t fd_index;			binder_size_t fd_buf_size;			fda = to_binder_fd_array_object(hdr);			parent = binder_validate_ptr(buffer, fda->parent,						     off_start,						     offp - off_start);			if (!parent) {				pr_err("transaction release %d bad parent offset",				       debug_id);				continue;			}			/*			 * Since the parent was already fixed up, convert it			 * back to kernel address space to access it			 */			parent_buffer = parent->buffer -				binder_alloc_get_user_buffer_offset(						&proc->alloc);			fd_buf_size = sizeof(u32) * fda->num_fds;			if (fda->num_fds >= SIZE_MAX / sizeof(u32)) {				pr_err("transaction release %d invalid number of fds (%lld)\n",				       debug_id, (u64)fda->num_fds);				continue;			}			if (fd_buf_size > parent->length ||			    fda->parent_offset > parent->length - fd_buf_size) {				/* No space for all file descriptors here. */				pr_err("transaction release %d not enough space for %lld fds in buffer\n",				       debug_id, (u64)fda->num_fds);				continue;			}			fd_array = (u32 *)(parent_buffer + (uintptr_t)fda->parent_offset);			for (fd_index = 0; fd_index < fda->num_fds; fd_index++)				task_close_fd(proc, fd_array[fd_index]);		} break;		default:			pr_err("transaction release %d bad object type %x\n",				debug_id, hdr->type);			break;		}	}}
+binder_size_t *offp, *off_start, *off_end;
+binder_size_t *offp, *off_start, *off_end;
+binder_size_t
+binder_size_t
+*offp
+*
+offp
+*off_start
+*
+off_start
+*off_end
+*
+off_end
+int debug_id = buffer->debug_id;
+int debug_id = buffer->debug_id;
+int
+debug_id = buffer->debug_id
+debug_id
+= buffer->debug_id
+buffer->debug_id
+buffer
+buffer
+debug_id
+binder_debug(BINDER_DEBUG_TRANSACTION,		     "%d buffer release %d, size %zd-%zd, failed at %p\n",		     proc->pid, buffer->debug_id,		     buffer->data_size, buffer->offsets_size, failed_at);
+binder_debug(BINDER_DEBUG_TRANSACTION,		     "%d buffer release %d, size %zd-%zd, failed at %p\n",		     proc->pid, buffer->debug_id,		     buffer->data_size, buffer->offsets_size, failed_at)
+binder_debug
+binder_debug
+BINDER_DEBUG_TRANSACTION
+BINDER_DEBUG_TRANSACTION
+"%d buffer release %d, size %zd-%zd, failed at %p\n"
+proc->pid
+proc
+proc
+pid
+buffer->debug_id
+buffer
+buffer
+debug_id
+buffer->data_size
+buffer
+buffer
+data_size
+buffer->offsets_size
+buffer
+buffer
+offsets_size
+failed_at
+failed_at
+if (buffer->target_node)		binder_dec_node(buffer->target_node, 1, 0);
+buffer->target_node
+buffer
+buffer
+target_node
+binder_dec_node(buffer->target_node, 1, 0);
+binder_dec_node(buffer->target_node, 1, 0)
+binder_dec_node
+binder_dec_node
+buffer->target_node
+buffer
+buffer
+target_node
+1
+0
+off_start = (binder_size_t *)(buffer->data +				      ALIGN(buffer->data_size, sizeof(void *)));
+off_start = (binder_size_t *)(buffer->data +				      ALIGN(buffer->data_size, sizeof(void *)))
+off_start
+off_start
+(binder_size_t *)(buffer->data +				      ALIGN(buffer->data_size, sizeof(void *)))
+binder_size_t *
+binder_size_t
+binder_size_t
+*
+*
+(buffer->data +				      ALIGN(buffer->data_size, sizeof(void *)))
+buffer->data +				      ALIGN(buffer->data_size, sizeof(void *))
+buffer->data
+buffer
+buffer
+data
+ALIGN(buffer->data_size, sizeof(void *))
+ALIGN
+ALIGN
+buffer->data_size
+buffer
+buffer
+data_size
+sizeof(void *)
+void *
+void
+*
+*
+if (failed_at)		off_end = failed_at;	else		off_end = (void *)off_start + buffer->offsets_size;
+failed_at
+failed_at
+off_end = failed_at;
+off_end = failed_at
+off_end
+off_end
+failed_at
+failed_at
+off_end = (void *)off_start + buffer->offsets_size;
+off_end = (void *)off_start + buffer->offsets_size
+off_end
+off_end
+(void *)off_start + buffer->offsets_size
+(void *)off_start
+void *
+void
+*
+*
+off_start
+off_start
+buffer->offsets_size
+buffer
+buffer
+offsets_size
+for (offp = off_start; offp < off_end; offp++) {		struct binder_object_header *hdr;		size_t object_size = binder_validate_object(buffer, *offp);		if (object_size == 0) {			pr_err("transaction release %d bad object at offset %lld, size %zd\n",			       debug_id, (u64)*offp, buffer->data_size);			continue;		}		hdr = (struct binder_object_header *)(buffer->data + *offp);		switch (hdr->type) {		case BINDER_TYPE_BINDER:		case BINDER_TYPE_WEAK_BINDER: {			struct flat_binder_object *fp;			struct binder_node *node;			fp = to_flat_binder_object(hdr);			node = binder_get_node(proc, fp->binder);			if (node == NULL) {				pr_err("transaction release %d bad node %016llx\n",				       debug_id, (u64)fp->binder);				break;			}			binder_debug(BINDER_DEBUG_TRANSACTION,				     "        node %d u%016llx\n",				     node->debug_id, (u64)node->ptr);			binder_dec_node(node, hdr->type == BINDER_TYPE_BINDER,					0);			binder_put_node(node);		} break;		case BINDER_TYPE_HANDLE:		case BINDER_TYPE_WEAK_HANDLE: {			struct flat_binder_object *fp;			struct binder_ref_data rdata;			int ret;			fp = to_flat_binder_object(hdr);			ret = binder_dec_ref_for_handle(proc, fp->handle,				hdr->type == BINDER_TYPE_HANDLE, &rdata);			if (ret) {				pr_err("transaction release %d bad handle %d, ret = %d\n",				 debug_id, fp->handle, ret);				break;			}			binder_debug(BINDER_DEBUG_TRANSACTION,				     "        ref %d desc %d\n",				     rdata.debug_id, rdata.desc);		} break;		case BINDER_TYPE_FD: {			struct binder_fd_object *fp = to_binder_fd_object(hdr);			binder_debug(BINDER_DEBUG_TRANSACTION,				     "        fd %d\n", fp->fd);			if (failed_at)				task_close_fd(proc, fp->fd);		} break;		case BINDER_TYPE_PTR:			/*			 * Nothing to do here, this will get cleaned up when the			 * transaction buffer gets freed			 */			break;		case BINDER_TYPE_FDA: {			struct binder_fd_array_object *fda;			struct binder_buffer_object *parent;			uintptr_t parent_buffer;			u32 *fd_array;			size_t fd_index;			binder_size_t fd_buf_size;			fda = to_binder_fd_array_object(hdr);			parent = binder_validate_ptr(buffer, fda->parent,						     off_start,						     offp - off_start);			if (!parent) {				pr_err("transaction release %d bad parent offset",				       debug_id);				continue;			}			/*			 * Since the parent was already fixed up, convert it			 * back to kernel address space to access it			 */			parent_buffer = parent->buffer -				binder_alloc_get_user_buffer_offset(						&proc->alloc);			fd_buf_size = sizeof(u32) * fda->num_fds;			if (fda->num_fds >= SIZE_MAX / sizeof(u32)) {				pr_err("transaction release %d invalid number of fds (%lld)\n",				       debug_id, (u64)fda->num_fds);				continue;			}			if (fd_buf_size > parent->length ||			    fda->parent_offset > parent->length - fd_buf_size) {				/* No space for all file descriptors here. */				pr_err("transaction release %d not enough space for %lld fds in buffer\n",				       debug_id, (u64)fda->num_fds);				continue;			}			fd_array = (u32 *)(parent_buffer + (uintptr_t)fda->parent_offset);			for (fd_index = 0; fd_index < fda->num_fds; fd_index++)				task_close_fd(proc, fd_array[fd_index]);		} break;		default:			pr_err("transaction release %d bad object type %x\n",				debug_id, hdr->type);			break;		}	}
+offp = off_start;
+offp = off_start
+offp
+offp
+off_start
+off_start
+offp < off_end
+offp
+offp
+off_end
+off_end
+offp++
+offp
+offp
+{		struct binder_object_header *hdr;		size_t object_size = binder_validate_object(buffer, *offp);		if (object_size == 0) {			pr_err("transaction release %d bad object at offset %lld, size %zd\n",			       debug_id, (u64)*offp, buffer->data_size);			continue;		}		hdr = (struct binder_object_header *)(buffer->data + *offp);		switch (hdr->type) {		case BINDER_TYPE_BINDER:		case BINDER_TYPE_WEAK_BINDER: {			struct flat_binder_object *fp;			struct binder_node *node;			fp = to_flat_binder_object(hdr);			node = binder_get_node(proc, fp->binder);			if (node == NULL) {				pr_err("transaction release %d bad node %016llx\n",				       debug_id, (u64)fp->binder);				break;			}			binder_debug(BINDER_DEBUG_TRANSACTION,				     "        node %d u%016llx\n",				     node->debug_id, (u64)node->ptr);			binder_dec_node(node, hdr->type == BINDER_TYPE_BINDER,					0);			binder_put_node(node);		} break;		case BINDER_TYPE_HANDLE:		case BINDER_TYPE_WEAK_HANDLE: {			struct flat_binder_object *fp;			struct binder_ref_data rdata;			int ret;			fp = to_flat_binder_object(hdr);			ret = binder_dec_ref_for_handle(proc, fp->handle,				hdr->type == BINDER_TYPE_HANDLE, &rdata);			if (ret) {				pr_err("transaction release %d bad handle %d, ret = %d\n",				 debug_id, fp->handle, ret);				break;			}			binder_debug(BINDER_DEBUG_TRANSACTION,				     "        ref %d desc %d\n",				     rdata.debug_id, rdata.desc);		} break;		case BINDER_TYPE_FD: {			struct binder_fd_object *fp = to_binder_fd_object(hdr);			binder_debug(BINDER_DEBUG_TRANSACTION,				     "        fd %d\n", fp->fd);			if (failed_at)				task_close_fd(proc, fp->fd);		} break;		case BINDER_TYPE_PTR:			/*			 * Nothing to do here, this will get cleaned up when the			 * transaction buffer gets freed			 */			break;		case BINDER_TYPE_FDA: {			struct binder_fd_array_object *fda;			struct binder_buffer_object *parent;			uintptr_t parent_buffer;			u32 *fd_array;			size_t fd_index;			binder_size_t fd_buf_size;			fda = to_binder_fd_array_object(hdr);			parent = binder_validate_ptr(buffer, fda->parent,						     off_start,						     offp - off_start);			if (!parent) {				pr_err("transaction release %d bad parent offset",				       debug_id);				continue;			}			/*			 * Since the parent was already fixed up, convert it			 * back to kernel address space to access it			 */			parent_buffer = parent->buffer -				binder_alloc_get_user_buffer_offset(						&proc->alloc);			fd_buf_size = sizeof(u32) * fda->num_fds;			if (fda->num_fds >= SIZE_MAX / sizeof(u32)) {				pr_err("transaction release %d invalid number of fds (%lld)\n",				       debug_id, (u64)fda->num_fds);				continue;			}			if (fd_buf_size > parent->length ||			    fda->parent_offset > parent->length - fd_buf_size) {				/* No space for all file descriptors here. */				pr_err("transaction release %d not enough space for %lld fds in buffer\n",				       debug_id, (u64)fda->num_fds);				continue;			}			fd_array = (u32 *)(parent_buffer + (uintptr_t)fda->parent_offset);			for (fd_index = 0; fd_index < fda->num_fds; fd_index++)				task_close_fd(proc, fd_array[fd_index]);		} break;		default:			pr_err("transaction release %d bad object type %x\n",				debug_id, hdr->type);			break;		}	}
+struct binder_object_header *hdr;
+struct binder_object_header *hdr;
+struct binder_object_header
+binder_object_header
+*hdr
+*
+hdr
+size_t object_size = binder_validate_object(buffer, *offp);
+size_t object_size = binder_validate_object(buffer, *offp);
+size_t
+size_t
+object_size = binder_validate_object(buffer, *offp)
+object_size
+= binder_validate_object(buffer, *offp)
+binder_validate_object(buffer, *offp)
+binder_validate_object
+binder_validate_object
+buffer
+buffer
+*offp
+offp
+offp
+if (object_size == 0) {			pr_err("transaction release %d bad object at offset %lld, size %zd\n",			       debug_id, (u64)*offp, buffer->data_size);			continue;		}
+object_size == 0
+object_size
+object_size
+0
+{			pr_err("transaction release %d bad object at offset %lld, size %zd\n",			       debug_id, (u64)*offp, buffer->data_size);			continue;		}
+pr_err("transaction release %d bad object at offset %lld, size %zd\n",			       debug_id, (u64)*offp, buffer->data_size);
+pr_err("transaction release %d bad object at offset %lld, size %zd\n",			       debug_id, (u64)*offp, buffer->data_size)
+pr_err
+pr_err
+"transaction release %d bad object at offset %lld, size %zd\n"
+debug_id
+debug_id
+(u64)*offp
+(u64)
+u64
+u64
+offp
+offp
+buffer->data_size
+buffer
+buffer
+data_size
+continue;
+hdr = (struct binder_object_header *)(buffer->data + *offp);
+hdr = (struct binder_object_header *)(buffer->data + *offp)
+hdr
+hdr
+(struct binder_object_header *)(buffer->data + *offp)
+struct binder_object_header *
+struct binder_object_header
+binder_object_header
+*
+*
+(buffer->data + *offp)
+buffer->data + *offp
+buffer->data
+buffer
+buffer
+data
+*offp
+offp
+offp
+switch (hdr->type) {		case BINDER_TYPE_BINDER:		case BINDER_TYPE_WEAK_BINDER: {			struct flat_binder_object *fp;			struct binder_node *node;			fp = to_flat_binder_object(hdr);			node = binder_get_node(proc, fp->binder);			if (node == NULL) {				pr_err("transaction release %d bad node %016llx\n",				       debug_id, (u64)fp->binder);				break;			}			binder_debug(BINDER_DEBUG_TRANSACTION,				     "        node %d u%016llx\n",				     node->debug_id, (u64)node->ptr);			binder_dec_node(node, hdr->type == BINDER_TYPE_BINDER,					0);			binder_put_node(node);		} break;		case BINDER_TYPE_HANDLE:		case BINDER_TYPE_WEAK_HANDLE: {			struct flat_binder_object *fp;			struct binder_ref_data rdata;			int ret;			fp = to_flat_binder_object(hdr);			ret = binder_dec_ref_for_handle(proc, fp->handle,				hdr->type == BINDER_TYPE_HANDLE, &rdata);			if (ret) {				pr_err("transaction release %d bad handle %d, ret = %d\n",				 debug_id, fp->handle, ret);				break;			}			binder_debug(BINDER_DEBUG_TRANSACTION,				     "        ref %d desc %d\n",				     rdata.debug_id, rdata.desc);		} break;		case BINDER_TYPE_FD: {			struct binder_fd_object *fp = to_binder_fd_object(hdr);			binder_debug(BINDER_DEBUG_TRANSACTION,				     "        fd %d\n", fp->fd);			if (failed_at)				task_close_fd(proc, fp->fd);		} break;		case BINDER_TYPE_PTR:			/*			 * Nothing to do here, this will get cleaned up when the			 * transaction buffer gets freed			 */			break;		case BINDER_TYPE_FDA: {			struct binder_fd_array_object *fda;			struct binder_buffer_object *parent;			uintptr_t parent_buffer;			u32 *fd_array;			size_t fd_index;			binder_size_t fd_buf_size;			fda = to_binder_fd_array_object(hdr);			parent = binder_validate_ptr(buffer, fda->parent,						     off_start,						     offp - off_start);			if (!parent) {				pr_err("transaction release %d bad parent offset",				       debug_id);				continue;			}			/*			 * Since the parent was already fixed up, convert it			 * back to kernel address space to access it			 */			parent_buffer = parent->buffer -				binder_alloc_get_user_buffer_offset(						&proc->alloc);			fd_buf_size = sizeof(u32) * fda->num_fds;			if (fda->num_fds >= SIZE_MAX / sizeof(u32)) {				pr_err("transaction release %d invalid number of fds (%lld)\n",				       debug_id, (u64)fda->num_fds);				continue;			}			if (fd_buf_size > parent->length ||			    fda->parent_offset > parent->length - fd_buf_size) {				/* No space for all file descriptors here. */				pr_err("transaction release %d not enough space for %lld fds in buffer\n",				       debug_id, (u64)fda->num_fds);				continue;			}			fd_array = (u32 *)(parent_buffer + (uintptr_t)fda->parent_offset);			for (fd_index = 0; fd_index < fda->num_fds; fd_index++)				task_close_fd(proc, fd_array[fd_index]);		} break;		default:			pr_err("transaction release %d bad object type %x\n",				debug_id, hdr->type);			break;		}
+hdr->type
+hdr
+hdr
+type
+{		case BINDER_TYPE_BINDER:		case BINDER_TYPE_WEAK_BINDER: {			struct flat_binder_object *fp;			struct binder_node *node;			fp = to_flat_binder_object(hdr);			node = binder_get_node(proc, fp->binder);			if (node == NULL) {				pr_err("transaction release %d bad node %016llx\n",				       debug_id, (u64)fp->binder);				break;			}			binder_debug(BINDER_DEBUG_TRANSACTION,				     "        node %d u%016llx\n",				     node->debug_id, (u64)node->ptr);			binder_dec_node(node, hdr->type == BINDER_TYPE_BINDER,					0);			binder_put_node(node);		} break;		case BINDER_TYPE_HANDLE:		case BINDER_TYPE_WEAK_HANDLE: {			struct flat_binder_object *fp;			struct binder_ref_data rdata;			int ret;			fp = to_flat_binder_object(hdr);			ret = binder_dec_ref_for_handle(proc, fp->handle,				hdr->type == BINDER_TYPE_HANDLE, &rdata);			if (ret) {				pr_err("transaction release %d bad handle %d, ret = %d\n",				 debug_id, fp->handle, ret);				break;			}			binder_debug(BINDER_DEBUG_TRANSACTION,				     "        ref %d desc %d\n",				     rdata.debug_id, rdata.desc);		} break;		case BINDER_TYPE_FD: {			struct binder_fd_object *fp = to_binder_fd_object(hdr);			binder_debug(BINDER_DEBUG_TRANSACTION,				     "        fd %d\n", fp->fd);			if (failed_at)				task_close_fd(proc, fp->fd);		} break;		case BINDER_TYPE_PTR:			/*			 * Nothing to do here, this will get cleaned up when the			 * transaction buffer gets freed			 */			break;		case BINDER_TYPE_FDA: {			struct binder_fd_array_object *fda;			struct binder_buffer_object *parent;			uintptr_t parent_buffer;			u32 *fd_array;			size_t fd_index;			binder_size_t fd_buf_size;			fda = to_binder_fd_array_object(hdr);			parent = binder_validate_ptr(buffer, fda->parent,						     off_start,						     offp - off_start);			if (!parent) {				pr_err("transaction release %d bad parent offset",				       debug_id);				continue;			}			/*			 * Since the parent was already fixed up, convert it			 * back to kernel address space to access it			 */			parent_buffer = parent->buffer -				binder_alloc_get_user_buffer_offset(						&proc->alloc);			fd_buf_size = sizeof(u32) * fda->num_fds;			if (fda->num_fds >= SIZE_MAX / sizeof(u32)) {				pr_err("transaction release %d invalid number of fds (%lld)\n",				       debug_id, (u64)fda->num_fds);				continue;			}			if (fd_buf_size > parent->length ||			    fda->parent_offset > parent->length - fd_buf_size) {				/* No space for all file descriptors here. */				pr_err("transaction release %d not enough space for %lld fds in buffer\n",				       debug_id, (u64)fda->num_fds);				continue;			}			fd_array = (u32 *)(parent_buffer + (uintptr_t)fda->parent_offset);			for (fd_index = 0; fd_index < fda->num_fds; fd_index++)				task_close_fd(proc, fd_array[fd_index]);		} break;		default:			pr_err("transaction release %d bad object type %x\n",				debug_id, hdr->type);			break;		}
+case BINDER_TYPE_BINDER:
+BINDER_TYPE_BINDER
+BINDER_TYPE_BINDER
+case BINDER_TYPE_WEAK_BINDER:
+BINDER_TYPE_WEAK_BINDER
+BINDER_TYPE_WEAK_BINDER
+{			struct flat_binder_object *fp;			struct binder_node *node;			fp = to_flat_binder_object(hdr);			node = binder_get_node(proc, fp->binder);			if (node == NULL) {				pr_err("transaction release %d bad node %016llx\n",				       debug_id, (u64)fp->binder);				break;			}			binder_debug(BINDER_DEBUG_TRANSACTION,				     "        node %d u%016llx\n",				     node->debug_id, (u64)node->ptr);			binder_dec_node(node, hdr->type == BINDER_TYPE_BINDER,					0);			binder_put_node(node);		}
+struct flat_binder_object *fp;
+struct flat_binder_object *fp;
+struct flat_binder_object
+flat_binder_object
+*fp
+*
+fp
+struct binder_node *node;
+struct binder_node *node;
+struct binder_node
+binder_node
+*node
+*
+node
+fp = to_flat_binder_object(hdr);
+fp = to_flat_binder_object(hdr)
+fp
+fp
+to_flat_binder_object(hdr)
+to_flat_binder_object
+to_flat_binder_object
+hdr
+hdr
+node = binder_get_node(proc, fp->binder);
+node = binder_get_node(proc, fp->binder)
+node
+node
+binder_get_node(proc, fp->binder)
+binder_get_node
+binder_get_node
+proc
+proc
+fp->binder
+fp
+fp
+binder
+if (node == NULL) {				pr_err("transaction release %d bad node %016llx\n",				       debug_id, (u64)fp->binder);				break;			}
+node == NULL
+node
+node
+NULL
+NULL
+{				pr_err("transaction release %d bad node %016llx\n",				       debug_id, (u64)fp->binder);				break;			}
+pr_err("transaction release %d bad node %016llx\n",				       debug_id, (u64)fp->binder);
+pr_err("transaction release %d bad node %016llx\n",				       debug_id, (u64)fp->binder)
+pr_err
+pr_err
+"transaction release %d bad node %016llx\n"
+debug_id
+debug_id
+(u64)fp->binder
+u64
+u64
+u64
+
+fp->binder
+fp
+fp
+binder
+break;
+binder_debug(BINDER_DEBUG_TRANSACTION,				     "        node %d u%016llx\n",				     node->debug_id, (u64)node->ptr);
+binder_debug(BINDER_DEBUG_TRANSACTION,				     "        node %d u%016llx\n",				     node->debug_id, (u64)node->ptr)
+binder_debug
+binder_debug
+BINDER_DEBUG_TRANSACTION
+BINDER_DEBUG_TRANSACTION
+"        node %d u%016llx\n"
+node->debug_id
+node
+node
+debug_id
+(u64)node->ptr
+u64
+u64
+u64
+
+node->ptr
+node
+node
+ptr
+binder_dec_node(node, hdr->type == BINDER_TYPE_BINDER,					0);
+binder_dec_node(node, hdr->type == BINDER_TYPE_BINDER,					0)
+binder_dec_node
+binder_dec_node
+node
+node
+hdr->type == BINDER_TYPE_BINDER
+hdr->type
+hdr
+hdr
+type
+BINDER_TYPE_BINDER
+BINDER_TYPE_BINDER
+0
+binder_put_node(node);
+binder_put_node(node)
+binder_put_node
+binder_put_node
+node
+node
+break;
+case BINDER_TYPE_HANDLE:
+BINDER_TYPE_HANDLE
+BINDER_TYPE_HANDLE
+case BINDER_TYPE_WEAK_HANDLE:
+BINDER_TYPE_WEAK_HANDLE
+BINDER_TYPE_WEAK_HANDLE
+{			struct flat_binder_object *fp;			struct binder_ref_data rdata;			int ret;			fp = to_flat_binder_object(hdr);			ret = binder_dec_ref_for_handle(proc, fp->handle,				hdr->type == BINDER_TYPE_HANDLE, &rdata);			if (ret) {				pr_err("transaction release %d bad handle %d, ret = %d\n",				 debug_id, fp->handle, ret);				break;			}			binder_debug(BINDER_DEBUG_TRANSACTION,				     "        ref %d desc %d\n",				     rdata.debug_id, rdata.desc);		}
+struct flat_binder_object *fp;
+struct flat_binder_object *fp;
+struct flat_binder_object
+flat_binder_object
+*fp
+*
+fp
+struct binder_ref_data rdata;
+struct binder_ref_data rdata;
+struct binder_ref_data
+binder_ref_data
+rdata
+rdata
+int ret;
+int ret;
+int
+ret
+ret
+fp = to_flat_binder_object(hdr);
+fp = to_flat_binder_object(hdr)
+fp
+fp
+to_flat_binder_object(hdr)
+to_flat_binder_object
+to_flat_binder_object
+hdr
+hdr
+ret = binder_dec_ref_for_handle(proc, fp->handle,				hdr->type == BINDER_TYPE_HANDLE, &rdata);
+ret = binder_dec_ref_for_handle(proc, fp->handle,				hdr->type == BINDER_TYPE_HANDLE, &rdata)
+ret
+ret
+binder_dec_ref_for_handle(proc, fp->handle,				hdr->type == BINDER_TYPE_HANDLE, &rdata)
+binder_dec_ref_for_handle
+binder_dec_ref_for_handle
+proc
+proc
+fp->handle
+fp
+fp
+handle
+hdr->type == BINDER_TYPE_HANDLE
+hdr->type
+hdr
+hdr
+type
+BINDER_TYPE_HANDLE
+BINDER_TYPE_HANDLE
+&rdata
+rdata
+rdata
+if (ret) {				pr_err("transaction release %d bad handle %d, ret = %d\n",				 debug_id, fp->handle, ret);				break;			}
+ret
+ret
+{				pr_err("transaction release %d bad handle %d, ret = %d\n",				 debug_id, fp->handle, ret);				break;			}
+pr_err("transaction release %d bad handle %d, ret = %d\n",				 debug_id, fp->handle, ret);
+pr_err("transaction release %d bad handle %d, ret = %d\n",				 debug_id, fp->handle, ret)
+pr_err
+pr_err
+"transaction release %d bad handle %d, ret = %d\n"
+debug_id
+debug_id
+fp->handle
+fp
+fp
+handle
+ret
+ret
+break;
+binder_debug(BINDER_DEBUG_TRANSACTION,				     "        ref %d desc %d\n",				     rdata.debug_id, rdata.desc);
+binder_debug(BINDER_DEBUG_TRANSACTION,				     "        ref %d desc %d\n",				     rdata.debug_id, rdata.desc)
+binder_debug
+binder_debug
+BINDER_DEBUG_TRANSACTION
+BINDER_DEBUG_TRANSACTION
+"        ref %d desc %d\n"
+rdata.debug_id
+rdata
+rdata
+debug_id
+rdata.desc
+rdata
+rdata
+desc
+break;
+case BINDER_TYPE_FD:
+BINDER_TYPE_FD
+BINDER_TYPE_FD
+{			struct binder_fd_object *fp = to_binder_fd_object(hdr);			binder_debug(BINDER_DEBUG_TRANSACTION,				     "        fd %d\n", fp->fd);			if (failed_at)				task_close_fd(proc, fp->fd);		}
+struct binder_fd_object *fp = to_binder_fd_object(hdr);
+struct binder_fd_object *fp = to_binder_fd_object(hdr);
+struct binder_fd_object
+binder_fd_object
+*fp = to_binder_fd_object(hdr)
+*
+fp
+= to_binder_fd_object(hdr)
+to_binder_fd_object(hdr)
+to_binder_fd_object
+to_binder_fd_object
+hdr
+hdr
+binder_debug(BINDER_DEBUG_TRANSACTION,				     "        fd %d\n", fp->fd);
+binder_debug(BINDER_DEBUG_TRANSACTION,				     "        fd %d\n", fp->fd)
+binder_debug
+binder_debug
+BINDER_DEBUG_TRANSACTION
+BINDER_DEBUG_TRANSACTION
+"        fd %d\n"
+fp->fd
+fp
+fp
+fd
+if (failed_at)				task_close_fd(proc, fp->fd);
+failed_at
+failed_at
+task_close_fd(proc, fp->fd);
+task_close_fd(proc, fp->fd)
+task_close_fd
+task_close_fd
+proc
+proc
+fp->fd
+fp
+fp
+fd
+break;
+case BINDER_TYPE_PTR:
+BINDER_TYPE_PTR
+BINDER_TYPE_PTR
+break;
+case BINDER_TYPE_FDA:
+BINDER_TYPE_FDA
+BINDER_TYPE_FDA
+{			struct binder_fd_array_object *fda;			struct binder_buffer_object *parent;			uintptr_t parent_buffer;			u32 *fd_array;			size_t fd_index;			binder_size_t fd_buf_size;			fda = to_binder_fd_array_object(hdr);			parent = binder_validate_ptr(buffer, fda->parent,						     off_start,						     offp - off_start);			if (!parent) {				pr_err("transaction release %d bad parent offset",				       debug_id);				continue;			}			/*			 * Since the parent was already fixed up, convert it			 * back to kernel address space to access it			 */			parent_buffer = parent->buffer -				binder_alloc_get_user_buffer_offset(						&proc->alloc);			fd_buf_size = sizeof(u32) * fda->num_fds;			if (fda->num_fds >= SIZE_MAX / sizeof(u32)) {				pr_err("transaction release %d invalid number of fds (%lld)\n",				       debug_id, (u64)fda->num_fds);				continue;			}			if (fd_buf_size > parent->length ||			    fda->parent_offset > parent->length - fd_buf_size) {				/* No space for all file descriptors here. */				pr_err("transaction release %d not enough space for %lld fds in buffer\n",				       debug_id, (u64)fda->num_fds);				continue;			}			fd_array = (u32 *)(parent_buffer + (uintptr_t)fda->parent_offset);			for (fd_index = 0; fd_index < fda->num_fds; fd_index++)				task_close_fd(proc, fd_array[fd_index]);		}
+struct binder_fd_array_object *fda;
+struct binder_fd_array_object *fda;
+struct binder_fd_array_object
+binder_fd_array_object
+*fda
+*
+fda
+struct binder_buffer_object *parent;
+struct binder_buffer_object *parent;
+struct binder_buffer_object
+binder_buffer_object
+*parent
+*
+parent
+uintptr_t parent_buffer;
+uintptr_t parent_buffer;
+uintptr_t
+uintptr_t
+parent_buffer
+parent_buffer
+u32 *fd_array;
+u32 *fd_array;
+u32
+u32
+*fd_array
+*
+fd_array
+size_t fd_index;
+size_t fd_index;
+size_t
+size_t
+fd_index
+fd_index
+binder_size_t fd_buf_size;
+binder_size_t fd_buf_size;
+binder_size_t
+binder_size_t
+fd_buf_size
+fd_buf_size
+fda = to_binder_fd_array_object(hdr);
+fda = to_binder_fd_array_object(hdr)
+fda
+fda
+to_binder_fd_array_object(hdr)
+to_binder_fd_array_object
+to_binder_fd_array_object
+hdr
+hdr
+parent = binder_validate_ptr(buffer, fda->parent,						     off_start,						     offp - off_start);
+parent = binder_validate_ptr(buffer, fda->parent,						     off_start,						     offp - off_start)
+parent
+parent
+binder_validate_ptr(buffer, fda->parent,						     off_start,						     offp - off_start)
+binder_validate_ptr
+binder_validate_ptr
+buffer
+buffer
+fda->parent
+fda
+fda
+parent
+off_start
+off_start
+offp - off_start
+offp
+offp
+off_start
+off_start
+if (!parent) {				pr_err("transaction release %d bad parent offset",				       debug_id);				continue;			}
+!parent
+parent
+parent
+{				pr_err("transaction release %d bad parent offset",				       debug_id);				continue;			}
+pr_err("transaction release %d bad parent offset",				       debug_id);
+pr_err("transaction release %d bad parent offset",				       debug_id)
+pr_err
+pr_err
+"transaction release %d bad parent offset"
+debug_id
+debug_id
+continue;
+parent_buffer = parent->buffer -				binder_alloc_get_user_buffer_offset(						&proc->alloc);
+parent_buffer = parent->buffer -				binder_alloc_get_user_buffer_offset(						&proc->alloc)
+parent_buffer
+parent_buffer
+parent->buffer -				binder_alloc_get_user_buffer_offset(						&proc->alloc)
+parent->buffer
+parent
+parent
+buffer
+binder_alloc_get_user_buffer_offset(						&proc->alloc)
+binder_alloc_get_user_buffer_offset
+binder_alloc_get_user_buffer_offset
+&proc->alloc
+proc->alloc
+proc
+proc
+alloc
+fd_buf_size = sizeof(u32) * fda->num_fds;
+fd_buf_size = sizeof(u32) * fda->num_fds
+fd_buf_size
+fd_buf_size
+sizeof(u32) * fda->num_fds
+sizeof(u32)
+u32
+u32
+u32
+
+fda->num_fds
+fda
+fda
+num_fds
+if (fda->num_fds >= SIZE_MAX / sizeof(u32)) {				pr_err("transaction release %d invalid number of fds (%lld)\n",				       debug_id, (u64)fda->num_fds);				continue;			}
+fda->num_fds >= SIZE_MAX / sizeof(u32)
+fda->num_fds
+fda
+fda
+num_fds
+SIZE_MAX / sizeof(u32)
+SIZE_MAX
+SIZE_MAX
+sizeof(u32)
+u32
+u32
+u32
+
+{				pr_err("transaction release %d invalid number of fds (%lld)\n",				       debug_id, (u64)fda->num_fds);				continue;			}
+pr_err("transaction release %d invalid number of fds (%lld)\n",				       debug_id, (u64)fda->num_fds);
+pr_err("transaction release %d invalid number of fds (%lld)\n",				       debug_id, (u64)fda->num_fds)
+pr_err
+pr_err
+"transaction release %d invalid number of fds (%lld)\n"
+debug_id
+debug_id
+(u64)fda->num_fds
+u64
+u64
+u64
+
+fda->num_fds
+fda
+fda
+num_fds
+continue;
+if (fd_buf_size > parent->length ||			    fda->parent_offset > parent->length - fd_buf_size) {				/* No space for all file descriptors here. */				pr_err("transaction release %d not enough space for %lld fds in buffer\n",				       debug_id, (u64)fda->num_fds);				continue;			}
+fd_buf_size > parent->length ||			    fda->parent_offset > parent->length - fd_buf_size
+fd_buf_size > parent->length
+fd_buf_size
+fd_buf_size
+parent->length
+parent
+parent
+length
+fda->parent_offset > parent->length - fd_buf_size
+fda->parent_offset
+fda
+fda
+parent_offset
+parent->length - fd_buf_size
+parent->length
+parent
+parent
+length
+fd_buf_size
+fd_buf_size
+{				/* No space for all file descriptors here. */				pr_err("transaction release %d not enough space for %lld fds in buffer\n",				       debug_id, (u64)fda->num_fds);				continue;			}
+pr_err("transaction release %d not enough space for %lld fds in buffer\n",				       debug_id, (u64)fda->num_fds);
+pr_err("transaction release %d not enough space for %lld fds in buffer\n",				       debug_id, (u64)fda->num_fds)
+pr_err
+pr_err
+"transaction release %d not enough space for %lld fds in buffer\n"
+debug_id
+debug_id
+(u64)fda->num_fds
+u64
+u64
+u64
+
+fda->num_fds
+fda
+fda
+num_fds
+continue;
+fd_array = (u32 *)(parent_buffer + (uintptr_t)fda->parent_offset);
+fd_array = (u32 *)(parent_buffer + (uintptr_t)fda->parent_offset)
+fd_array
+fd_array
+(u32 *)(parent_buffer + (uintptr_t)fda->parent_offset)
+u32 *
+u32
+u32
+*
+*
+(parent_buffer + (uintptr_t)fda->parent_offset)
+parent_buffer + (uintptr_t)fda->parent_offset
+parent_buffer
+parent_buffer
+(uintptr_t)fda->parent_offset
+uintptr_t
+uintptr_t
+uintptr_t
+
+fda->parent_offset
+fda
+fda
+parent_offset
+for (fd_index = 0; fd_index < fda->num_fds; fd_index++)				task_close_fd(proc, fd_array[fd_index]);
+fd_index = 0;
+fd_index = 0
+fd_index
+fd_index
+0
+fd_index < fda->num_fds
+fd_index
+fd_index
+fda->num_fds
+fda
+fda
+num_fds
+fd_index++
+fd_index
+fd_index
+task_close_fd(proc, fd_array[fd_index]);
+task_close_fd(proc, fd_array[fd_index])
+task_close_fd
+task_close_fd
+proc
+proc
+fd_array[fd_index]
+fd_array
+fd_array
+fd_index
+fd_index
+break;
+default:
+pr_err("transaction release %d bad object type %x\n",				debug_id, hdr->type);
+pr_err("transaction release %d bad object type %x\n",				debug_id, hdr->type)
+pr_err
+pr_err
+"transaction release %d bad object type %x\n"
+debug_id
+debug_id
+hdr->type
+hdr
+hdr
+type
+break;
+-----joern-----
+(127,185,0)
+(75,283,0)
+(214,11,0)
+(362,207,0)
+(89,59,0)
+(234,70,0)
+(133,289,0)
+(6,297,0)
+(255,140,0)
+(183,337,0)
+(189,39,0)
+(189,250,0)
+(204,39,0)
+(291,340,0)
+(363,336,0)
+(352,143,0)
+(140,247,0)
+(251,255,0)
+(364,268,0)
+(350,248,0)
+(315,329,0)
+(247,248,0)
+(108,302,0)
+(241,29,0)
+(335,314,0)
+(241,274,0)
+(356,147,0)
+(135,56,0)
+(39,233,0)
+(85,242,0)
+(99,302,0)
+(113,244,0)
+(311,333,0)
+(298,326,0)
+(100,289,0)
+(120,2,0)
+(80,176,0)
+(349,314,0)
+(163,292,0)
+(261,152,0)
+(198,152,0)
+(351,292,0)
+(264,121,0)
+(60,323,0)
+(218,157,0)
+(55,259,0)
+(340,325,0)
+(175,296,0)
+(164,50,0)
+(330,53,0)
+(321,207,0)
+(7,297,0)
+(305,355,0)
+(351,94,0)
+(98,4,0)
+(223,233,0)
+(66,116,0)
+(232,294,0)
+(216,135,0)
+(11,292,0)
+(152,213,0)
+(288,103,0)
+(294,103,0)
+(212,268,0)
+(299,49,0)
+(188,147,0)
+(192,245,0)
+(279,302,0)
+(116,314,0)
+(340,257,0)
+(305,341,0)
+(295,197,0)
+(38,257,0)
+(273,143,0)
+(229,4,0)
+(95,355,0)
+(71,103,0)
+(260,193,0)
+(339,176,0)
+(0,133,0)
+(193,163,0)
+(288,239,0)
+(4,175,0)
+(21,75,0)
+(208,302,0)
+(343,255,0)
+(98,104,0)
+(263,339,0)
+(99,207,0)
+(226,81,0)
+(170,121,0)
+(11,189,0)
+(270,37,0)
+(50,147,0)
+(344,289,0)
+(337,21,0)
+(2,179,0)
+(243,127,0)
+(230,355,0)
+(85,240,0)
+(117,297,0)
+(34,71,0)
+(213,133,0)
+(238,81,0)
+(205,354,0)
+(167,305,0)
+(98,10,0)
+(296,76,0)
+(48,54,0)
+(24,356,0)
+(190,196,0)
+(257,289,0)
+(146,104,0)
+(254,289,0)
+(242,106,0)
+(302,212,0)
+(334,116,0)
+(157,111,0)
+(143,352,0)
+(51,215,0)
+(324,356,0)
+(65,131,0)
+(94,351,0)
+(297,7,0)
+(139,116,0)
+(169,245,0)
+(225,165,0)
+(104,111,0)
+(76,296,0)
+(313,351,0)
+(17,329,0)
+(121,320,0)
+(149,262,0)
+(136,207,0)
+(236,153,0)
+(306,305,0)
+(321,233,0)
+(302,333,0)
+(334,91,0)
+(231,257,0)
+(151,2,0)
+(199,314,0)
+(244,248,0)
+(179,2,0)
+(356,341,0)
+(346,1,0)
+(292,44,0)
+(361,151,0)
+(354,268,0)
+(56,241,0)
+(193,160,0)
+(178,139,0)
+(255,343,0)
+(185,148,0)
+(185,207,0)
+(75,192,0)
+(348,289,0)
+(239,107,0)
+(51,180,0)
+(309,245,0)
+(192,222,0)
+(279,207,0)
+(49,340,0)
+(244,131,0)
+(296,175,0)
+(333,207,0)
+(290,139,0)
+(1,160,0)
+(7,268,0)
+(50,164,0)
+(67,176,0)
+(302,99,0)
+(129,103,0)
+(125,175,0)
+(344,350,0)
+(317,50,0)
+(312,342,0)
+(274,15,0)
+(320,352,0)
+(267,289,0)
+(28,246,0)
+(69,165,0)
+(52,127,0)
+(165,334,0)
+(213,246,0)
+(122,351,0)
+(259,148,0)
+(300,245,0)
+(158,233,0)
+(142,323,0)
+(71,358,0)
+(43,164,0)
+(303,262,0)
+(308,255,0)
+(195,91,0)
+(56,222,0)
+(242,139,0)
+(111,314,0)
+(29,241,0)
+(31,140,0)
+(294,232,0)
+(211,24,0)
+(277,325,0)
+(110,245,0)
+(56,135,0)
+(270,232,0)
+(57,337,0)
+(342,10,0)
+(81,248,0)
+(74,158,0)
+(64,185,0)
+(206,340,0)
+(41,292,0)
+(158,336,0)
+(64,192,0)
+(26,302,0)
+(350,344,0)
+(215,356,0)
+(285,362,0)
+(227,147,0)
+(262,239,0)
+(302,115,0)
+(73,212,0)
+(59,356,0)
+(263,328,0)
+(203,44,0)
+(253,107,0)
+(23,314,0)
+(159,333,0)
+(158,231,0)
+(222,56,0)
+(141,270,0)
+(90,259,0)
+(352,207,0)
+(281,356,0)
+(360,343,0)
+(135,207,0)
+(307,24,0)
+(76,354,0)
+(139,242,0)
+(145,10,0)
+(106,292,0)
+(347,164,0)
+(143,103,0)
+(35,352,0)
+(118,314,0)
+(174,289,0)
+(310,160,0)
+(84,354,0)
+(130,111,0)
+(365,222,0)
+(2,120,0)
+(320,70,0)
+(138,223,0)
+(232,270,0)
+(124,257,0)
+(366,37,0)
+(220,238,0)
+(314,289,0)
+(148,185,0)
+(91,334,0)
+(336,158,0)
+(134,314,0)
+(262,207,0)
+(275,231,0)
+(103,192,0)
+(120,355,0)
+(239,288,0)
+(45,153,0)
+(329,248,0)
+(3,70,0)
+(282,81,0)
+(25,223,0)
+(341,356,0)
+(353,257,0)
+(355,147,0)
+(154,290,0)
+(39,235,0)
+(325,340,0)
+(248,107,0)
+(339,263,0)
+(269,53,0)
+(59,147,0)
+(59,131,0)
+(40,136,0)
+(106,242,0)
+(161,289,0)
+(165,292,0)
+(266,289,0)
+(175,4,0)
+(367,158,0)
+(261,133,0)
+(322,103,0)
+(93,71,0)
+(16,247,0)
+(228,342,0)
+(107,239,0)
+(238,343,0)
+(168,257,0)
+(116,334,0)
+(22,289,0)
+(131,244,0)
+(157,364,0)
+(104,146,0)
+(127,292,0)
+(175,125,0)
+(284,64,0)
+(292,314,0)
+(21,358,0)
+(5,330,0)
+(123,133,0)
+(290,148,0)
+(342,292,0)
+(319,98,0)
+(222,192,0)
+(19,29,0)
+(209,331,0)
+(354,76,0)
+(107,253,0)
+(172,215,0)
+(217,364,0)
+(111,104,0)
+(293,344,0)
+(95,248,0)
+(63,64,0)
+(153,136,0)
+(242,85,0)
+(357,289,0)
+(139,290,0)
+(197,343,0)
+(77,125,0)
+(200,294,0)
+(18,336,0)
+(201,270,0)
+(46,279,0)
+(128,321,0)
+(112,11,0)
+(270,233,0)
+(33,185,0)
+(147,289,0)
+(270,141,0)
+(241,56,0)
+(210,245,0)
+(42,136,0)
+(157,160,0)
+(162,350,0)
+(297,213,0)
+(132,289,0)
+(280,70,0)
+(212,302,0)
+(237,39,0)
+(44,292,0)
+(221,245,0)
+(39,189,0)
+(9,135,0)
+(47,125,0)
+(72,50,0)
+(94,223,0)
+(176,292,0)
+(274,241,0)
+(184,314,0)
+(301,245,0)
+(215,51,0)
+(231,343,0)
+(12,314,0)
+(109,358,0)
+(51,50,0)
+(137,152,0)
+(150,288,0)
+(166,120,0)
+(148,314,0)
+(96,281,0)
+(334,165,0)
+(250,189,0)
+(27,160,0)
+(10,145,0)
+(126,314,0)
+(180,51,0)
+(107,248,0)
+(318,279,0)
+(13,261,0)
+(32,314,0)
+(355,95,0)
+(302,245,0)
+(176,339,0)
+(4,314,0)
+(29,207,0)
+(119,215,0)
+(125,148,0)
+(246,248,0)
+(191,212,0)
+(151,331,0)
+(330,233,0)
+(102,330,0)
+(341,305,0)
+(2,151,0)
+(185,127,0)
+(10,98,0)
+(136,153,0)
+(323,115,0)
+(316,321,0)
+(94,97,0)
+(283,75,0)
+(352,320,0)
+(272,233,0)
+(105,99,0)
+(344,233,0)
+(185,64,0)
+(341,268,0)
+(163,193,0)
+(302,279,0)
+(68,328,0)
+(36,103,0)
+(78,99,0)
+(104,98,0)
+(343,238,0)
+(343,231,0)
+(144,263,0)
+(233,321,0)
+(256,261,0)
+(158,196,0)
+(164,356,0)
+(58,120,0)
+(151,233,0)
+(246,213,0)
+(337,207,0)
+(75,21,0)
+(233,245,0)
+(343,197,0)
+(247,140,0)
+(281,147,0)
+(87,289,0)
+(286,290,0)
+(187,289,0)
+(21,337,0)
+(64,103,0)
+(140,257,0)
+(332,341,0)
+(336,140,0)
+(364,157,0)
+(189,11,0)
+(86,362,0)
+(328,263,0)
+(223,94,0)
+(358,21,0)
+(240,116,0)
+(114,151,0)
+(173,157,0)
+(340,49,0)
+(82,106,0)
+(287,49,0)
+(81,238,0)
+(141,207,0)
+(248,70,0)
+(185,192,0)
+(259,240,0)
+(240,259,0)
+(54,148,0)
+(15,274,0)
+(101,7,0)
+(202,289,0)
+(171,270,0)
+(50,51,0)
+(97,94,0)
+(265,240,0)
+(152,261,0)
+(181,213,0)
+(83,350,0)
+(20,148,0)
+(240,85,0)
+(177,244,0)
+(359,325,0)
+(223,326,0)
+(44,248,0)
+(239,262,0)
+(343,268,0)
+(304,322,0)
+(219,75,0)
+(131,59,0)
+(8,185,0)
+(30,141,0)
+(92,163,0)
+(156,320,0)
+(71,323,0)
+(186,147,0)
+(10,342,0)
+(249,192,0)
+(252,29,0)
+(61,232,0)
+(224,141,0)
+(194,344,0)
+(222,365,0)
+(79,163,0)
+(271,95,0)
+(155,289,0)
+(278,158,0)
+(232,61,0)
+(182,70,0)
+(338,106,0)
+(88,235,0)
+(258,59,0)
+(62,248,0)
+(333,302,0)
+(109,345,1)
+(125,47,1)
+(99,105,1)
+(176,67,1)
+(171,201,1)
+(244,248,1)
+(120,355,1)
+(322,304,1)
+(264,320,1)
+(292,44,1)
+(29,19,1)
+(129,36,1)
+(194,293,1)
+(316,128,1)
+(204,237,1)
+(185,192,1)
+(139,116,1)
+(193,160,1)
+(185,127,1)
+(238,81,1)
+(183,75,1)
+(208,99,1)
+(125,148,1)
+(337,207,1)
+(127,292,1)
+(66,4,1)
+(197,295,1)
+(215,119,1)
+(216,249,1)
+(243,52,1)
+(164,356,1)
+(79,92,1)
+(59,258,1)
+(337,57,1)
+(120,58,1)
+(159,279,1)
+(153,236,1)
+(258,131,1)
+(177,113,1)
+(228,319,1)
+(304,187,1)
+(338,240,1)
+(39,189,1)
+(148,185,1)
+(187,281,1)
+(54,148,1)
+(366,270,1)
+(354,205,1)
+(94,351,1)
+(211,356,1)
+(16,31,1)
+(67,80,1)
+(330,102,1)
+(30,232,1)
+(212,73,1)
+(163,79,1)
+(259,148,1)
+(85,242,1)
+(251,308,1)
+(229,54,1)
+(344,350,1)
+(328,68,1)
+(201,121,1)
+(181,329,1)
+(333,207,1)
+(237,85,1)
+(285,302,1)
+(10,342,1)
+(151,2,1)
+(247,248,1)
+(341,268,1)
+(50,51,1)
+(143,273,1)
+(185,64,1)
+(89,50,1)
+(135,9,1)
+(291,327,1)
+(45,136,1)
+(68,144,1)
+(31,329,1)
+(239,262,1)
+(367,278,1)
+(165,292,1)
+(308,360,1)
+(138,339,1)
+(192,222,1)
+(305,355,1)
+(158,233,1)
+(11,112,1)
+(351,122,1)
+(58,166,1)
+(333,311,1)
+(87,276,1)
+(92,260,1)
+(223,233,1)
+(10,145,1)
+(127,243,1)
+(274,29,1)
+(175,296,1)
+(5,54,1)
+(78,333,1)
+(157,111,1)
+(304,190,1)
+(195,66,1)
+(150,262,1)
+(90,265,1)
+(304,348,1)
+(141,224,1)
+(7,297,1)
+(151,233,1)
+(191,26,1)
+(81,248,1)
+(189,11,1)
+(137,198,1)
+(82,338,1)
+(26,108,1)
+(63,284,1)
+(305,167,1)
+(57,183,1)
+(355,95,1)
+(153,136,1)
+(209,151,1)
+(215,356,1)
+(87,7,1)
+(172,164,1)
+(121,320,1)
+(28,181,1)
+(317,24,1)
+(246,28,1)
+(310,27,1)
+(52,33,1)
+(329,248,1)
+(344,233,1)
+(262,207,1)
+(173,218,1)
+(304,366,1)
+(232,294,1)
+(343,268,1)
+(64,63,1)
+(108,233,1)
+(55,90,1)
+(206,291,1)
+(281,96,1)
+(261,152,1)
+(343,238,1)
+(319,130,1)
+(259,55,1)
+(302,115,1)
+(11,292,1)
+(242,139,1)
+(255,140,1)
+(341,305,1)
+(240,259,1)
+(322,103,1)
+(248,107,1)
+(56,241,1)
+(271,230,1)
+(29,207,1)
+(313,25,1)
+(332,324,1)
+(263,328,1)
+(306,332,1)
+(185,207,1)
+(8,127,1)
+(50,164,1)
+(287,299,1)
+(352,207,1)
+(99,207,1)
+(162,83,1)
+(6,101,1)
+(142,345,1)
+(302,279,1)
+(75,283,1)
+(244,177,1)
+(104,98,1)
+(114,24,1)
+(51,180,1)
+(294,200,1)
+(95,248,1)
+(311,159,1)
+(226,282,1)
+(103,192,1)
+(222,56,1)
+(69,91,1)
+(24,307,1)
+(91,195,1)
+(98,10,1)
+(74,336,1)
+(2,179,1)
+(343,197,1)
+(242,106,1)
+(111,104,1)
+(104,146,1)
+(34,103,1)
+(75,192,1)
+(119,172,1)
+(224,30,1)
+(152,213,1)
+(59,356,1)
+(174,329,1)
+(81,226,1)
+(106,82,1)
+(270,232,1)
+(56,135,1)
+(130,85,1)
+(157,173,1)
+(144,176,1)
+(318,46,1)
+(330,233,1)
+(178,290,1)
+(34,322,1)
+(340,49,1)
+(240,116,1)
+(360,275,1)
+(112,214,1)
+(249,362,1)
+(44,203,1)
+(299,206,1)
+(71,358,1)
+(157,160,1)
+(163,292,1)
+(202,193,1)
+(106,292,1)
+(7,268,1)
+(323,60,1)
+(139,290,1)
+(51,215,1)
+(354,268,1)
+(36,358,1)
+(27,111,1)
+(334,91,1)
+(233,321,1)
+(46,212,1)
+(247,16,1)
+(262,303,1)
+(359,49,1)
+(279,207,1)
+(200,171,1)
+(269,330,1)
+(315,17,1)
+(35,156,1)
+(336,140,1)
+(154,286,1)
+(346,364,1)
+(212,268,1)
+(325,277,1)
+(21,75,1)
+(85,240,1)
+(342,312,1)
+(350,248,1)
+(304,88,1)
+(17,248,1)
+(13,213,1)
+(270,233,1)
+(222,365,1)
+(302,99,1)
+(214,204,1)
+(336,18,1)
+(270,141,1)
+(84,125,1)
+(190,158,1)
+(342,292,1)
+(246,248,1)
+(40,362,1)
+(94,97,1)
+(340,325,1)
+(161,344,1)
+(362,86,1)
+(166,361,1)
+(86,285,1)
+(329,315,1)
+(21,337,1)
+(327,231,1)
+(65,244,1)
+(72,317,1)
+(352,143,1)
+(324,355,1)
+(265,339,1)
+(113,89,1)
+(141,207,1)
+(304,209,1)
+(290,148,1)
+(121,170,1)
+(302,333,1)
+(213,246,1)
+(64,192,1)
+(351,292,1)
+(220,81,1)
+(219,109,1)
+(80,116,1)
+(64,103,1)
+(107,253,1)
+(278,327,1)
+(348,340,1)
+(62,121,1)
+(281,356,1)
+(73,191,1)
+(71,323,1)
+(321,316,1)
+(122,313,1)
+(275,140,1)
+(93,34,1)
+(273,35,1)
+(60,142,1)
+(117,6,1)
+(95,271,1)
+(143,103,1)
+(164,347,1)
+(102,5,1)
+(364,268,1)
+(241,274,1)
+(44,248,1)
+(1,346,1)
+(160,310,1)
+(290,154,1)
+(347,43,1)
+(320,352,1)
+(156,71,1)
+(217,193,1)
+(140,247,1)
+(158,231,1)
+(255,251,1)
+(260,160,1)
+(345,192,1)
+(152,137,1)
+(1,160,1)
+(307,211,1)
+(298,223,1)
+(288,150,1)
+(41,329,1)
+(205,84,1)
+(223,94,1)
+(293,329,1)
+(230,329,1)
+(176,292,1)
+(54,48,1)
+(105,78,1)
+(304,174,1)
+(96,59,1)
+(218,217,1)
+(131,65,1)
+(304,202,1)
+(198,256,1)
+(203,41,1)
+(43,72,1)
+(362,207,1)
+(294,103,1)
+(282,255,1)
+(135,207,1)
+(47,77,1)
+(339,263,1)
+(361,114,1)
+(241,29,1)
+(25,138,1)
+(167,306,1)
+(4,175,1)
+(71,93,1)
+(297,213,1)
+(225,69,1)
+(277,359,1)
+(284,8,1)
+(312,228,1)
+(136,207,1)
+(131,244,1)
+(296,76,1)
+(274,15,1)
+(98,4,1)
+(232,61,1)
+(18,363,1)
+(231,343,1)
+(321,207,1)
+(42,40,1)
+(189,250,1)
+(76,354,1)
+(339,176,1)
+(128,272,1)
+(256,13,1)
+(49,287,1)
+(24,356,1)
+(170,264,1)
+(36,323,1)
+(238,220,1)
+(356,341,1)
+(249,153,1)
+(59,131,1)
+(364,157,1)
+(101,276,1)
+(286,106,1)
+(279,318,1)
+(77,229,1)
+(19,252,1)
+(260,1,1)
+(363,367,1)
+(288,103,1)
+(276,261,1)
+(304,298,1)
+(75,219,1)
+(334,165,1)
+(343,255,1)
+(295,238,1)
+(2,120,1)
+(239,288,1)
+(136,42,1)
+(149,62,1)
+(103,129,1)
+(48,148,1)
+(20,292,1)
+(139,178,1)
+(158,74,1)
+(304,87,1)
+(302,212,1)
+(116,334,1)
+(302,208,1)
+(158,336,1)
+(252,135,1)
+(71,103,1)
+(33,20,1)
+(303,149,1)
+(39,233,1)
+(304,269,1)
+(358,21,1)
+(165,225,1)
+(193,163,1)
+(350,162,1)
+(323,115,1)
+(107,239,1)
+(9,216,1)
+(236,45,1)
+(304,161,1)
+(83,194,1)
+(297,117,1)
+(14,71,1)
+(175,125,1)
+(88,39,1)
+(219,345,2)
+(75,192,2)
+(164,24,2)
+(302,99,2)
+(95,329,2)
+(120,24,2)
+(350,248,2)
+(144,54,2)
+(247,248,2)
+(64,192,2)
+(333,207,2)
+(66,54,2)
+(74,327,2)
+(21,345,2)
+(2,120,2)
+(297,276,2)
+(11,292,2)
+(223,94,2)
+(111,85,2)
+(130,85,2)
+(193,193,2)
+(242,139,2)
+(329,248,2)
+(150,121,2)
+(34,71,2)
+(323,115,2)
+(33,329,2)
+(330,233,2)
+(65,24,2)
+(270,233,2)
+(76,54,2)
+(240,339,2)
+(259,148,2)
+(232,61,2)
+(131,244,2)
+(189,85,2)
+(64,103,2)
+(299,327,2)
+(262,121,2)
+(60,345,2)
+(44,329,2)
+(356,341,2)
+(71,71,2)
+(67,54,2)
+(275,329,2)
+(71,358,2)
+(92,85,2)
+(337,345,2)
+(141,121,2)
+(352,207,2)
+(351,292,2)
+(305,329,2)
+(218,193,2)
+(79,193,2)
+(229,54,2)
+(45,362,2)
+(91,54,2)
+(336,327,2)
+(85,240,2)
+(50,164,2)
+(142,345,2)
+(90,339,2)
+(315,121,2)
+(161,329,2)
+(343,197,2)
+(288,121,2)
+(163,292,2)
+(241,274,2)
+(206,327,2)
+(20,329,2)
+(81,248,2)
+(157,160,2)
+(239,121,2)
+(358,345,2)
+(158,233,2)
+(321,207,2)
+(307,329,2)
+(276,329,2)
+(232,294,2)
+(304,71,2)
+(260,85,2)
+(264,71,2)
+(27,85,2)
+(319,85,2)
+(39,189,2)
+(174,329,2)
+(302,279,2)
+(58,24,2)
+(355,329,2)
+(8,329,2)
+(50,51,2)
+(222,56,2)
+(153,136,2)
+(54,329,2)
+(308,329,2)
+(213,246,2)
+(44,248,2)
+(320,71,2)
+(176,292,2)
+(352,71,2)
+(18,327,2)
+(164,356,2)
+(154,240,2)
+(101,276,2)
+(41,329,2)
+(339,54,2)
+(81,329,2)
+(298,339,2)
+(106,240,2)
+(288,103,2)
+(21,337,2)
+(230,329,2)
+(5,54,2)
+(211,329,2)
+(286,240,2)
+(85,242,2)
+(1,160,2)
+(205,54,2)
+(302,212,2)
+(364,268,2)
+(312,85,2)
+(107,253,2)
+(332,329,2)
+(4,54,2)
+(162,329,2)
+(125,148,2)
+(261,329,2)
+(341,329,2)
+(72,24,2)
+(152,329,2)
+(243,329,2)
+(96,24,2)
+(10,145,2)
+(175,125,2)
+(248,107,2)
+(242,240,2)
+(47,54,2)
+(198,329,2)
+(24,329,2)
+(342,85,2)
+(157,111,2)
+(225,54,2)
+(341,305,2)
+(193,85,2)
+(340,325,2)
+(296,76,2)
+(292,329,2)
+(76,354,2)
+(343,329,2)
+(239,262,2)
+(21,75,2)
+(287,327,2)
+(114,24,2)
+(167,329,2)
+(141,207,2)
+(98,4,2)
+(116,334,2)
+(260,193,2)
+(170,71,2)
+(246,329,2)
+(181,329,2)
+(322,71,2)
+(278,327,2)
+(364,193,2)
+(35,71,2)
+(75,283,2)
+(223,233,2)
+(25,339,2)
+(217,193,2)
+(89,24,2)
+(317,24,2)
+(43,24,2)
+(63,329,2)
+(139,290,2)
+(122,339,2)
+(355,95,2)
+(313,339,2)
+(56,241,2)
+(212,268,2)
+(151,2,2)
+(238,81,2)
+(340,327,2)
+(320,352,2)
+(256,329,2)
+(143,103,2)
+(87,329,2)
+(7,297,2)
+(95,248,2)
+(223,339,2)
+(310,85,2)
+(251,329,2)
+(222,365,2)
+(16,329,2)
+(281,356,2)
+(322,103,2)
+(231,343,2)
+(31,329,2)
+(302,333,2)
+(71,103,2)
+(185,64,2)
+(104,146,2)
+(151,24,2)
+(24,356,2)
+(99,207,2)
+(294,103,2)
+(248,121,2)
+(240,259,2)
+(77,54,2)
+(165,292,2)
+(112,85,2)
+(64,329,2)
+(255,329,2)
+(294,121,2)
+(171,121,2)
+(107,239,2)
+(175,54,2)
+(343,255,2)
+(246,248,2)
+(351,339,2)
+(138,339,2)
+(232,121,2)
+(39,233,2)
+(103,192,2)
+(152,213,2)
+(342,292,2)
+(255,140,2)
+(270,121,2)
+(282,329,2)
+(92,193,2)
+(189,250,2)
+(82,240,2)
+(194,329,2)
+(204,85,2)
+(293,329,2)
+(6,276,2)
+(98,10,2)
+(153,362,2)
+(157,193,2)
+(185,329,2)
+(358,21,2)
+(270,232,2)
+(352,143,2)
+(125,54,2)
+(281,24,2)
+(265,339,2)
+(360,329,2)
+(238,329,2)
+(131,24,2)
+(339,176,2)
+(117,276,2)
+(17,121,2)
+(339,263,2)
+(330,54,2)
+(137,329,2)
+(366,121,2)
+(190,327,2)
+(49,327,2)
+(79,85,2)
+(40,362,2)
+(177,24,2)
+(54,148,2)
+(290,240,2)
+(148,329,2)
+(39,85,2)
+(51,180,2)
+(343,268,2)
+(241,29,2)
+(363,327,2)
+(323,345,2)
+(306,329,2)
+(269,54,2)
+(336,140,2)
+(361,24,2)
+(94,351,2)
+(203,329,2)
+(233,321,2)
+(2,179,2)
+(291,327,2)
+(263,328,2)
+(119,24,2)
+(344,233,2)
+(1,193,2)
+(59,131,2)
+(240,116,2)
+(231,329,2)
+(104,85,2)
+(80,54,2)
+(197,329,2)
+(109,345,2)
+(193,163,2)
+(303,121,2)
+(102,54,2)
+(57,345,2)
+(247,329,2)
+(52,329,2)
+(183,345,2)
+(51,24,2)
+(215,356,2)
+(185,207,2)
+(93,71,2)
+(148,185,2)
+(341,268,2)
+(106,292,2)
+(185,127,2)
+(356,329,2)
+(202,85,2)
+(59,24,2)
+(209,24,2)
+(140,247,2)
+(302,115,2)
+(158,231,2)
+(344,329,2)
+(104,98,2)
+(200,121,2)
+(340,49,2)
+(83,329,2)
+(346,193,2)
+(185,192,2)
+(28,329,2)
+(224,121,2)
+(244,248,2)
+(151,233,2)
+(160,85,2)
+(69,54,2)
+(158,327,2)
+(277,327,2)
+(10,342,2)
+(195,54,2)
+(158,336,2)
+(334,165,2)
+(113,24,2)
+(85,339,2)
+(334,91,2)
+(228,85,2)
+(55,339,2)
+(116,54,2)
+(348,327,2)
+(344,350,2)
+(259,339,2)
+(237,85,2)
+(334,54,2)
+(297,213,2)
+(121,71,2)
+(271,329,2)
+(263,54,2)
+(7,276,2)
+(135,207,2)
+(354,54,2)
+(175,296,2)
+(239,288,2)
+(139,240,2)
+(29,207,2)
+(84,54,2)
+(121,320,2)
+(220,329,2)
+(166,24,2)
+(292,44,2)
+(140,329,2)
+(172,24,2)
+(11,85,2)
+(258,24,2)
+(343,238,2)
+(127,292,2)
+(111,104,2)
+(296,54,2)
+(262,207,2)
+(261,152,2)
+(215,24,2)
+(107,121,2)
+(193,160,2)
+(7,268,2)
+(136,362,2)
+(163,85,2)
+(295,329,2)
+(226,329,2)
+(13,329,2)
+(273,71,2)
+(327,329,2)
+(139,116,2)
+(201,121,2)
+(192,222,2)
+(364,157,2)
+(156,71,2)
+(2,24,2)
+(214,85,2)
+(88,85,2)
+(354,268,2)
+(338,240,2)
+(59,356,2)
+(120,355,2)
+(94,97,2)
+(329,121,2)
+(165,54,2)
+(173,193,2)
+(127,329,2)
+(56,135,2)
+(98,85,2)
+(347,24,2)
+(187,24,2)
+(236,362,2)
+(94,339,2)
+(337,207,2)
+(136,207,2)
+(163,193,2)
+(42,362,2)
+(284,329,2)
+(362,207,2)
+(270,141,2)
+(48,329,2)
+(325,327,2)
+(367,327,2)
+(143,71,2)
+(30,121,2)
+(213,329,2)
+(274,15,2)
+(178,240,2)
+(176,54,2)
+(4,175,2)
+(305,355,2)
+(350,329,2)
+(242,106,2)
+(244,24,2)
+(10,85,2)
+(328,54,2)
+(68,54,2)
+(71,323,2)
+(51,215,2)
+(279,207,2)
+(189,11,2)
+(324,329,2)
+(62,121,2)
+(359,327,2)
+(290,148,2)
+(149,121,2)
+(50,24,2)
+(75,345,2)
+-----------------------------------
+(0,fp)
+(1,fd_index++)
+(2,(u64)
+(3,if (object_size == 0)
+(4,parent_buffer = parent->buffer -\n\\n\\t\\t\\t\\tbinder_alloc_get_user_buffer_offset(\n\\n\\t\\t\\t\\t\\t\\t&proc->alloc)
+(5,"transaction release %d bad parent offset")
+(6,fp)
+(7,task_close_fd(proc, fp->fd)
+(8,off_start)
+(9,data)
+(10,(uintptr_t)
+(11,fda->num_fds)
+(12,fda)
+(13,BINDER_DEBUG_TRANSACTION)
+(14,RET)
+(15,void *)
+(16,hdr)
+(17,hdr)
+(18,handle)
+(19,data_size)
+(20,parent)
+(21,(void *)
+(22,case BINDER_TYPE_FDA:)
+(23,parent_buffer)
+(24,node == NULL)
+(25,debug_id)
+(26,"%d buffer release %d, size %zd-%zd, failed at %p\\n")
+(27,fd_index)
+(28,hdr)
+(29,buffer->data_size)
+(30,buffer)
+(31,fp)
+(32,fd_index)
+(33,buffer)
+(34,offp)
+(35,buffer)
+(36,offp)
+(37,)
+(38,ret)
+(39,pr_err("transaction release %d not enough space for %lld fds in buffer\\n",\n\\n\\t\\t\\t\\t       debug_id, (u64)
+(40,buffer)
+(41,fda)
+(42,target_node)
+(43,node)
+(44,to_binder_fd_array_object(hdr)
+(45,1)
+(46,buffer)
+(47,buffer)
+(48,parent)
+(49,rdata.debug_id)
+(50,binder_debug(BINDER_DEBUG_TRANSACTION,\n\\n\\t\\t\\t\\t     "        node %d u%016llx\\n",\n\\n\\t\\t\\t\\t     node->debug_id, (u64)
+(51,(u64)
+(52,fda)
+(53,)
+(54,!parent)
+(55,length)
+(56,buffer->data +\n\\n\\t\\t\\t\\t      ALIGN(buffer->data_size, sizeof(void *)
+(57,offsets_size)
+(58,binder)
+(59,binder_dec_node(node, hdr->type == BINDER_TYPE_BINDER,\n\\n\\t\\t\\t\\t\\t0)
+(60,failed_at)
+(61,u64)
+(62,hdr)
+(63,off_start)
+(64,offp - off_start)
+(65,BINDER_TYPE_BINDER)
+(66,fd_buf_size)
+(67,num_fds)
+(68,u32)
+(69,fda)
+(70,)
+(71,offp < off_end)
+(72,"        node %d u%016llx\\n")
+(73,pid)
+(74,ret)
+(75,(void *)
+(76,&proc->alloc)
+(77,parent)
+(78,buffer)
+(79,num_fds)
+(80,fda)
+(81,hdr->type)
+(82,parent_offset)
+(83,hdr)
+(84,proc)
+(85,fd_buf_size > parent->length ||\n\\n\\t\\t\\t    fda->parent_offset > parent->length - fd_buf_size)
+(86,target_node)
+(87,break;)
+(88,continue;)
+(89,node)
+(90,parent)
+(91,sizeof(u32)
+(92,fda)
+(93,off_end)
+(94,(u64)
+(95,to_flat_binder_object(hdr)
+(96,node)
+(97,u64)
+(98,parent_buffer + (uintptr_t)
+(99,buffer->offsets_size)
+(100,case BINDER_TYPE_PTR:)
+(101,proc)
+(102,debug_id)
+(103,offp = off_start)
+(104,(u32 *)
+(105,offsets_size)
+(106,fda->parent_offset)
+(107,(struct binder_object_header *)
+(108,BINDER_DEBUG_TRANSACTION)
+(109,off_end)
+(110,if (failed_at)
+(111,fd_array = (u32 *)
+(112,num_fds)
+(113,hdr)
+(114,"transaction release %d bad node %016llx\\n")
+(115,binder_size_t *failed_at)
+(116,fd_buf_size = sizeof(u32)
+(117,fd)
+(118,fd_array)
+(119,ptr)
+(120,fp->binder)
+(121,object_size == 0)
+(122,num_fds)
+(123,if (failed_at)
+(124,fp)
+(125,parent->buffer)
+(126,parent)
+(127,fda->parent)
+(128,buffer)
+(129,off_start)
+(130,fd_array)
+(131,hdr->type == BINDER_TYPE_BINDER)
+(132,case BINDER_TYPE_FD:)
+(133,)
+(134,for (fd_index = 0; fd_index < fda->num_fds; fd_index++)
+(135,buffer->data)
+(136,buffer->target_node)
+(137,fd)
+(138,"transaction release %d invalid number of fds (%lld)
+(139,parent->length - fd_buf_size)
+(140,fp = to_flat_binder_object(hdr)
+(141,buffer->data_size)
+(142,off_end)
+(143,*offp)
+(144,SIZE_MAX)
+(145,uintptr_t)
+(146,u32 *)
+(147,)
+(148,parent = binder_validate_ptr(buffer, fda->parent,\n\\n\\t\\t\\t\\t\\t\\t     off_start,\n\\n\\t\\t\\t\\t\\t\\t     offp - off_start)
+(149,buffer)
+(150,offp)
+(151,pr_err("transaction release %d bad node %016llx\\n",\n\\n\\t\\t\\t\\t       debug_id, (u64)
+(152,fp->fd)
+(153,binder_dec_node(buffer->target_node, 1, 0)
+(154,length)
+(155,default:)
+(156,object_size)
+(157,fd_array[fd_index])
+(158,pr_err("transaction release %d bad handle %d, ret = %d\\n",\n\\n\\t\\t\\t\\t debug_id, fp->handle, ret)
+(159,buffer)
+(160,fd_index = 0)
+(161,break;)
+(162,type)
+(163,fda->num_fds)
+(164,node->debug_id)
+(165,fda->num_fds)
+(166,fp)
+(167,binder)
+(168,rdata)
+(169,offp)
+(170,0)
+(171,debug_id)
+(172,node)
+(173,fd_index)
+(174,break;)
+(175,parent->buffer -\n\\n\\t\\t\\t\\tbinder_alloc_get_user_buffer_offset(\n\\n\\t\\t\\t\\t\\t\\t&proc->alloc)
+(176,fda->num_fds)
+(177,type)
+(178,fd_buf_size)
+(179,u64)
+(180,u64)
+(181,fp)
+(182,object_size)
+(183,buffer)
+(184,if (fda->num_fds >= SIZE_MAX / sizeof(u32)
+(185,binder_validate_ptr(buffer, fda->parent,\n\\n\\t\\t\\t\\t\\t\\t     off_start,\n\\n\\t\\t\\t\\t\\t\\t     offp - off_start)
+(186,if (node == NULL)
+(187,break;)
+(188,fp)
+(189,(u64)
+(190,break;)
+(191,proc)
+(192,off_start = (binder_size_t *)
+(193,fd_index < fda->num_fds)
+(194,debug_id)
+(195,u32)
+(196,)
+(197,&rdata)
+(198,fp)
+(199,if (fd_buf_size > parent->length ||\n\\n\\t\\t\\t    fda->parent_offset > parent->length - fd_buf_size)
+(200,offp)
+(201,"transaction release %d bad object at offset %lld, size %zd\\n")
+(202,break;)
+(203,hdr)
+(204,debug_id)
+(205,alloc)
+(206,"        ref %d desc %d\\n")
+(207,struct binder_buffer *buffer)
+(208,failed_at)
+(209,break;)
+(210,off_end)
+(211,node)
+(212,proc->pid)
+(213,*fp = to_binder_fd_object(hdr)
+(214,fda)
+(215,node->ptr)
+(216,buffer)
+(217,proc)
+(218,fd_array)
+(219,off_start)
+(220,BINDER_TYPE_HANDLE)
+(221,debug_id)
+(222,(binder_size_t *)
+(223,pr_err("transaction release %d invalid number of fds (%lld)
+(224,data_size)
+(225,num_fds)
+(226,type)
+(227,node)
+(228,fda)
+(229,parent_buffer)
+(230,fp)
+(231,ret = binder_dec_ref_for_handle(proc, fp->handle,\n\\n\\t\\t\\t\\thdr->type == BINDER_TYPE_HANDLE, &rdata)
+(232,(u64)
+(233,debug_id = buffer->debug_id)
+(234,hdr)
+(235,)
+(236,0)
+(237,"transaction release %d not enough space for %lld fds in buffer\\n")
+(238,hdr->type == BINDER_TYPE_HANDLE)
+(239,buffer->data + *offp)
+(240,fd_buf_size > parent->length)
+(241,ALIGN(buffer->data_size, sizeof(void *)
+(242,fda->parent_offset > parent->length - fd_buf_size)
+(243,parent)
+(244,hdr->type)
+(245,)
+(246,to_binder_fd_object(hdr)
+(247,to_flat_binder_object(hdr)
+(248,hdr = (struct binder_object_header *)
+(249,off_start)
+(250,u64)
+(251,handle)
+(252,buffer)
+(253,struct binder_object_header *)
+(254,case BINDER_TYPE_HANDLE:)
+(255,fp->handle)
+(256,"        fd %d\\n")
+(257,)
+(258,0)
+(259,parent->length)
+(260,fd_index)
+(261,binder_debug(BINDER_DEBUG_TRANSACTION,\n\\n\\t\\t\\t\\t     "        fd %d\\n", fp->fd)
+(262,buffer->data)
+(263,SIZE_MAX / sizeof(u32)
+(264,object_size)
+(265,fd_buf_size)
+(266,case BINDER_TYPE_WEAK_HANDLE:)
+(267,case BINDER_TYPE_WEAK_BINDER:)
+(268,struct binder_proc *proc)
+(269,continue;)
+(270,pr_err("transaction release %d bad object at offset %lld, size %zd\\n",\n\\n\\t\\t\\t       debug_id, (u64)
+(271,hdr)
+(272,debug_id)
+(273,offp)
+(274,sizeof(void *)
+(275,ret)
+(276,failed_at)
+(277,desc)
+(278,"transaction release %d bad handle %d, ret = %d\\n")
+(279,buffer->debug_id)
+(280,switch (hdr->type)
+(281,binder_put_node(node)
+(282,hdr)
+(283,void *)
+(284,offp)
+(285,buffer)
+(286,parent)
+(287,debug_id)
+(288,*offp)
+(289,)
+(290,parent->length)
+(291,BINDER_DEBUG_TRANSACTION)
+(292,fda = to_binder_fd_array_object(hdr)
+(293,"transaction release %d bad object type %x\\n")
+(294,*offp)
+(295,rdata)
+(296,binder_alloc_get_user_buffer_offset(\n\\n\\t\\t\\t\\t\\t\\t&proc->alloc)
+(297,fp->fd)
+(298,continue;)
+(299,rdata)
+(300,off_start)
+(301,if (buffer->target_node)
+(302,binder_debug(BINDER_DEBUG_TRANSACTION,\n\\n\\t\\t     "%d buffer release %d, size %zd-%zd, failed at %p\\n",\n\\n\\t\\t     proc->pid, buffer->debug_id,\n\\n\\t\\t     buffer->data_size, buffer->offsets_size, failed_at)
+(303,data)
+(304,offp)
+(305,fp->binder)
+(306,fp)
+(307,NULL)
+(308,fp)
+(309,for (offp = off_start; offp < off_end; offp++)
+(310,0)
+(311,data_size)
+(312,parent_offset)
+(313,fda)
+(314,)
+(315,type)
+(316,debug_id)
+(317,BINDER_DEBUG_TRANSACTION)
+(318,debug_id)
+(319,parent_buffer)
+(320,object_size = binder_validate_object(buffer, *offp)
+(321,buffer->debug_id)
+(322,offp++)
+(323,off_end = failed_at)
+(324,node)
+(325,rdata.desc)
+(326,)
+(327,ret)
+(328,sizeof(u32)
+(329,hdr->type)
+(330,pr_err("transaction release %d bad parent offset",\n\\n\\t\\t\\t\\t       debug_id)
+(331,)
+(332,proc)
+(333,buffer->data_size)
+(334,sizeof(u32)
+(335,fd_buf_size)
+(336,fp->handle)
+(337,buffer->offsets_size)
+(338,fda)
+(339,fda->num_fds >= SIZE_MAX / sizeof(u32)
+(340,binder_debug(BINDER_DEBUG_TRANSACTION,\n\\n\\t\\t\\t\\t     "        ref %d desc %d\\n",\n\\n\\t\\t\\t\\t     rdata.debug_id, rdata.desc)
+(341,binder_get_node(proc, fp->binder)
+(342,fda->parent_offset)
+(343,binder_dec_ref_for_handle(proc, fp->handle,\n\\n\\t\\t\\t\\thdr->type == BINDER_TYPE_HANDLE, &rdata)
+(344,pr_err("transaction release %d bad object type %x\\n",\n\\n\\t\\t\\t\\tdebug_id, hdr->type)
+(345,failed_at)
+(346,fd_index)
+(347,debug_id)
+(348,break;)
+(349,if (!parent)
+(350,hdr->type)
+(351,fda->num_fds)
+(352,binder_validate_object(buffer, *offp)
+(353,if (ret)
+(354,proc->alloc)
+(355,fp = to_flat_binder_object(hdr)
+(356,node = binder_get_node(proc, fp->binder)
+(357,case BINDER_TYPE_BINDER:)
+(358,off_end = (void *)
+(359,rdata)
+(360,proc)
+(361,debug_id)
+(362,buffer->target_node)
+(363,fp)
+(364,task_close_fd(proc, fd_array[fd_index])
+(365,binder_size_t *)
+(366,continue;)
+(367,debug_id)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

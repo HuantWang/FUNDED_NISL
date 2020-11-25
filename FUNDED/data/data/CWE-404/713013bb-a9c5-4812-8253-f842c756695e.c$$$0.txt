@@ -1,0 +1,1695 @@
+-----label-----
+0
+-----code-----
+static void parse_system_parameter_string(struct seq_file *m)
+{
+	int call_status;
+
+	unsigned char *local_buffer = kmalloc(SPLPAR_MAXLENGTH, GFP_KERNEL);
+	if (!local_buffer) {
+		printk(KERN_ERR "%s %s kmalloc failure at line %d\n",
+		       __FILE__, __func__, __LINE__);
+		return;
+	}
+
+	spin_lock(&rtas_data_buf_lock);
+	memset(rtas_data_buf, 0, SPLPAR_MAXLENGTH);
+	call_status = rtas_call(rtas_token("ibm,get-system-parameter"), 3, 1,
+				NULL,
+				SPLPAR_CHARACTERISTICS_TOKEN,
+				__pa(rtas_data_buf),
+				RTAS_DATA_BUF_SIZE);
+	memcpy(local_buffer, rtas_data_buf, SPLPAR_MAXLENGTH);
+	local_buffer[SPLPAR_MAXLENGTH - 1] = '\0';
+	spin_unlock(&rtas_data_buf_lock);
+
+	if (call_status != 0) {
+		printk(KERN_INFO
+		       "%s %s Error calling get-system-parameter (0x%x)\n",
+		       __FILE__, __func__, call_status);
+	} else {
+		int splpar_strlen;
+		int idx, w_idx;
+		char *workbuffer = kzalloc(SPLPAR_MAXLENGTH, GFP_KERNEL);
+		if (!workbuffer) {
+			printk(KERN_ERR "%s %s kmalloc failure at line %d\n",
+			       __FILE__, __func__, __LINE__);
+			kfree(local_buffer);
+			return;
+		}
+#ifdef LPARCFG_DEBUG
+		printk(KERN_INFO "success calling get-system-parameter\n");
+#endif
+		splpar_strlen = local_buffer[0] * 256 + local_buffer[1];
+		local_buffer += 2;	/* step over strlen value */
+
+		w_idx = 0;
+		idx = 0;
+		while ((*local_buffer) && (idx < splpar_strlen)) {
+			workbuffer[w_idx++] = local_buffer[idx++];
+			if ((local_buffer[idx] == ',')
+			    || (local_buffer[idx] == '\0')) {
+				workbuffer[w_idx] = '\0';
+				if (w_idx) {
+					/* avoid the empty string */
+					seq_printf(m, "%s\n", workbuffer);
+				}
+				memset(workbuffer, 0, SPLPAR_MAXLENGTH);
+				idx++;	/* skip the comma */
+				w_idx = 0;
+			} else if (local_buffer[idx] == '=') {
+				/* code here to replace workbuffer contents
+				   with different keyword strings */
+				if (0 == strcmp(workbuffer, "MaxEntCap")) {
+					strcpy(workbuffer,
+					       "partition_max_entitled_capacity");
+					w_idx = strlen(workbuffer);
+				}
+				if (0 == strcmp(workbuffer, "MaxPlatProcs")) {
+					strcpy(workbuffer,
+					       "system_potential_processors");
+					w_idx = strlen(workbuffer);
+				}
+			}
+		}
+		kfree(workbuffer);
+		local_buffer -= 2;	/* back up over strlen value */
+	}
+	kfree(local_buffer);
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+11,14
+11,15
+11,16
+11,17
+11,18
+11,19
+11,20
+11,21
+11,22
+12,13
+13,14
+13,15
+15,16
+17,18
+18,19
+18,20
+20,21
+20,22
+20,23
+23,24
+24,25
+24,26
+24,27
+25,26
+27,28
+29,30
+31,32
+31,33
+32,33
+33,34
+35,36
+35,37
+36,37
+38,39
+39,40
+39,41
+40,41
+42,43
+43,44
+43,45
+46,47
+47,48
+47,49
+47,50
+47,51
+48,49
+50,51
+53,54
+55,56
+56,57
+56,58
+57,58
+59,60
+59,61
+59,62
+59,63
+59,64
+59,65
+59,66
+59,67
+60,61
+62,63
+62,64
+63,64
+68,69
+70,71
+72,73
+72,74
+73,74
+75,76
+77,78
+79,80
+80,81
+80,82
+80,83
+80,84
+81,82
+83,84
+85,86
+87,88
+89,90
+90,91
+90,92
+91,92
+91,93
+92,93
+94,95
+94,96
+95,96
+99,100
+100,101
+100,102
+101,102
+103,104
+104,105
+106,107
+106,108
+106,109
+107,108
+107,109
+108,109
+111,112
+112,113
+113,114
+113,115
+113,116
+113,117
+113,118
+113,119
+113,120
+113,121
+113,122
+113,123
+113,124
+114,115
+115,116
+115,117
+117,118
+119,120
+120,121
+120,122
+120,123
+122,123
+124,125
+126,127
+127,128
+127,129
+129,130
+129,131
+129,132
+132,133
+133,134
+133,135
+133,136
+134,135
+136,137
+138,139
+140,141
+140,142
+141,142
+142,143
+144,145
+144,146
+144,147
+145,146
+146,147
+147,148
+147,149
+148,149
+150,151
+153,154
+154,155
+154,156
+155,156
+157,158
+157,159
+158,159
+158,160
+159,160
+159,161
+160,161
+164,165
+164,166
+165,166
+168,169
+169,170
+169,171
+170,171
+173,174
+174,175
+174,176
+175,176
+178,179
+179,180
+179,181
+180,181
+183,184
+183,185
+184,185
+184,186
+185,186
+186,187
+187,188
+189,190
+190,191
+190,192
+191,192
+193,194
+195,196
+195,197
+196,197
+197,198
+197,199
+198,199
+198,200
+199,200
+201,202
+202,203
+204,205
+204,206
+205,206
+207,208
+208,209
+210,211
+210,212
+210,213
+211,212
+211,213
+212,213
+213,214
+213,215
+214,215
+214,216
+215,216
+217,218
+220,221
+221,222
+221,223
+222,223
+222,224
+223,224
+225,226
+228,229
+228,230
+228,231
+228,232
+228,233
+229,230
+230,231
+230,232
+231,232
+231,233
+232,233
+234,235
+237,238
+237,239
+238,239
+240,241
+241,242
+242,243
+242,244
+242,245
+242,246
+243,244
+245,246
+248,249
+250,251
+251,252
+251,253
+251,254
+251,255
+252,253
+254,255
+257,258
+259,260
+260,261
+261,262
+263,264
+264,265
+264,266
+265,266
+268,269
+268,270
+269,270
+269,271
+270,271
+270,272
+271,272
+273,274
+276,277
+276,278
+277,278
+277,279
+278,279
+278,280
+280,281
+280,282
+280,283
+281,282
+283,284
+286,287
+286,288
+287,288
+288,289
+288,290
+288,291
+289,290
+291,292
+294,295
+295,296
+295,297
+296,297
+298,299
+298,300
+299,300
+301,302
+303,304
+303,305
+304,305
+304,306
+306,307
+306,308
+306,309
+307,308
+309,310
+312,313
+312,314
+313,314
+314,315
+314,316
+314,317
+315,316
+317,318
+320,321
+321,322
+321,323
+322,323
+324,325
+324,326
+325,326
+327,328
+329,330
+330,331
+330,332
+331,332
+333,334
+335,336
+336,337
+336,338
+337,338
+340,341
+341,342
+341,343
+342,343
+344,345
+-----nextToken-----
+2,4,7,9,10,14,16,19,21,22,26,28,30,34,37,41,44,45,49,51,52,54,58,61,64,65,66,67,69,71,74,76,78,82,84,86,88,93,96,97,98,102,105,109,110,116,118,121,123,125,128,130,131,135,137,139,143,149,151,152,156,161,162,163,166,167,171,172,176,177,181,182,188,192,194,200,203,206,209,216,218,219,224,226,227,233,235,236,239,244,246,247,249,253,255,256,258,262,266,267,272,274,275,279,282,284,285,290,292,293,297,300,302,305,308,310,311,316,318,319,323,326,328,332,334,338,339,343,345
+-----computeFrom-----
+56,57
+56,58
+90,91
+90,92
+94,95
+94,96
+107,108
+107,109
+154,155
+154,156
+157,158
+157,159
+158,159
+158,160
+169,170
+169,171
+174,175
+174,176
+179,180
+179,181
+184,185
+184,186
+190,191
+190,192
+197,198
+197,199
+211,212
+211,213
+213,214
+213,215
+221,222
+221,223
+230,231
+230,232
+264,265
+264,266
+269,270
+269,271
+278,279
+278,280
+295,296
+295,297
+304,305
+304,306
+321,322
+321,323
+336,337
+336,338
+-----guardedBy-----
+226,262
+284,302
+310,328
+-----guardedByNegation-----
+226,274
+224,272
+-----lastLexicalUse-----
+226,274
+-----jump-----
+226,274
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;IdExpression;Name;CompoundStatement;ProblemStatement;ReturnStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;ReferenceOperator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;LiteralExpression;LiteralExpression;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ProblemStatement;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;IdExpression;Name;CompoundStatement;ProblemStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;WhileStatement;BinaryExpression;UnaryExpression;UnaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;UnaryExpression;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;ExpressionStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;CompoundStatement;IfStatement;BinaryExpression;LiteralExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;LiteralExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;
+-----ast_node-----
+static void parse_system_parameter_string(struct seq_file *m){	int call_status;	unsigned char *local_buffer = kmalloc(SPLPAR_MAXLENGTH, GFP_KERNEL);	if (!local_buffer) {		printk(KERN_ERR "%s %s kmalloc failure at line %d\n",		       __FILE__, __func__, __LINE__);		return;	}	spin_lock(&rtas_data_buf_lock);	memset(rtas_data_buf, 0, SPLPAR_MAXLENGTH);	call_status = rtas_call(rtas_token("ibm,get-system-parameter"), 3, 1,				NULL,				SPLPAR_CHARACTERISTICS_TOKEN,				__pa(rtas_data_buf),				RTAS_DATA_BUF_SIZE);	memcpy(local_buffer, rtas_data_buf, SPLPAR_MAXLENGTH);	local_buffer[SPLPAR_MAXLENGTH - 1] = '\0';	spin_unlock(&rtas_data_buf_lock);	if (call_status != 0) {		printk(KERN_INFO		       "%s %s Error calling get-system-parameter (0x%x)\n",		       __FILE__, __func__, call_status);	} else {		int splpar_strlen;		int idx, w_idx;		char *workbuffer = kzalloc(SPLPAR_MAXLENGTH, GFP_KERNEL);		if (!workbuffer) {			printk(KERN_ERR "%s %s kmalloc failure at line %d\n",			       __FILE__, __func__, __LINE__);			kfree(local_buffer);			return;		}#ifdef LPARCFG_DEBUG		printk(KERN_INFO "success calling get-system-parameter\n");#endif		splpar_strlen = local_buffer[0] * 256 + local_buffer[1];		local_buffer += 2;	/* step over strlen value */		w_idx = 0;		idx = 0;		while ((*local_buffer) && (idx < splpar_strlen)) {			workbuffer[w_idx++] = local_buffer[idx++];			if ((local_buffer[idx] == ',')			    || (local_buffer[idx] == '\0')) {				workbuffer[w_idx] = '\0';				if (w_idx) {					/* avoid the empty string */					seq_printf(m, "%s\n", workbuffer);				}				memset(workbuffer, 0, SPLPAR_MAXLENGTH);				idx++;	/* skip the comma */				w_idx = 0;			} else if (local_buffer[idx] == '=') {				/* code here to replace workbuffer contents				   with different keyword strings */				if (0 == strcmp(workbuffer, "MaxEntCap")) {					strcpy(workbuffer,					       "partition_max_entitled_capacity");					w_idx = strlen(workbuffer);				}				if (0 == strcmp(workbuffer, "MaxPlatProcs")) {					strcpy(workbuffer,					       "system_potential_processors");					w_idx = strlen(workbuffer);				}			}		}		kfree(workbuffer);		local_buffer -= 2;	/* back up over strlen value */	}	kfree(local_buffer);}
+static void
+parse_system_parameter_string(struct seq_file *m)
+parse_system_parameter_string
+struct seq_file *m
+struct seq_file
+seq_file
+*m
+*
+m
+{	int call_status;	unsigned char *local_buffer = kmalloc(SPLPAR_MAXLENGTH, GFP_KERNEL);	if (!local_buffer) {		printk(KERN_ERR "%s %s kmalloc failure at line %d\n",		       __FILE__, __func__, __LINE__);		return;	}	spin_lock(&rtas_data_buf_lock);	memset(rtas_data_buf, 0, SPLPAR_MAXLENGTH);	call_status = rtas_call(rtas_token("ibm,get-system-parameter"), 3, 1,				NULL,				SPLPAR_CHARACTERISTICS_TOKEN,				__pa(rtas_data_buf),				RTAS_DATA_BUF_SIZE);	memcpy(local_buffer, rtas_data_buf, SPLPAR_MAXLENGTH);	local_buffer[SPLPAR_MAXLENGTH - 1] = '\0';	spin_unlock(&rtas_data_buf_lock);	if (call_status != 0) {		printk(KERN_INFO		       "%s %s Error calling get-system-parameter (0x%x)\n",		       __FILE__, __func__, call_status);	} else {		int splpar_strlen;		int idx, w_idx;		char *workbuffer = kzalloc(SPLPAR_MAXLENGTH, GFP_KERNEL);		if (!workbuffer) {			printk(KERN_ERR "%s %s kmalloc failure at line %d\n",			       __FILE__, __func__, __LINE__);			kfree(local_buffer);			return;		}#ifdef LPARCFG_DEBUG		printk(KERN_INFO "success calling get-system-parameter\n");#endif		splpar_strlen = local_buffer[0] * 256 + local_buffer[1];		local_buffer += 2;	/* step over strlen value */		w_idx = 0;		idx = 0;		while ((*local_buffer) && (idx < splpar_strlen)) {			workbuffer[w_idx++] = local_buffer[idx++];			if ((local_buffer[idx] == ',')			    || (local_buffer[idx] == '\0')) {				workbuffer[w_idx] = '\0';				if (w_idx) {					/* avoid the empty string */					seq_printf(m, "%s\n", workbuffer);				}				memset(workbuffer, 0, SPLPAR_MAXLENGTH);				idx++;	/* skip the comma */				w_idx = 0;			} else if (local_buffer[idx] == '=') {				/* code here to replace workbuffer contents				   with different keyword strings */				if (0 == strcmp(workbuffer, "MaxEntCap")) {					strcpy(workbuffer,					       "partition_max_entitled_capacity");					w_idx = strlen(workbuffer);				}				if (0 == strcmp(workbuffer, "MaxPlatProcs")) {					strcpy(workbuffer,					       "system_potential_processors");					w_idx = strlen(workbuffer);				}			}		}		kfree(workbuffer);		local_buffer -= 2;	/* back up over strlen value */	}	kfree(local_buffer);}
+int call_status;
+int call_status;
+int
+call_status
+call_status
+unsigned char *local_buffer = kmalloc(SPLPAR_MAXLENGTH, GFP_KERNEL);
+unsigned char *local_buffer = kmalloc(SPLPAR_MAXLENGTH, GFP_KERNEL);
+unsigned char
+*local_buffer = kmalloc(SPLPAR_MAXLENGTH, GFP_KERNEL)
+*
+local_buffer
+= kmalloc(SPLPAR_MAXLENGTH, GFP_KERNEL)
+kmalloc(SPLPAR_MAXLENGTH, GFP_KERNEL)
+kmalloc
+kmalloc
+SPLPAR_MAXLENGTH
+SPLPAR_MAXLENGTH
+GFP_KERNEL
+GFP_KERNEL
+if (!local_buffer) {		printk(KERN_ERR "%s %s kmalloc failure at line %d\n",		       __FILE__, __func__, __LINE__);		return;	}
+!local_buffer
+local_buffer
+local_buffer
+{		printk(KERN_ERR "%s %s kmalloc failure at line %d\n",		       __FILE__, __func__, __LINE__);		return;	}
+printk(KERN_ERR "%s %s kmalloc failure at line %d\n",		       __FILE__, __func__, __LINE__);
+return;
+spin_lock(&rtas_data_buf_lock);
+spin_lock(&rtas_data_buf_lock);
+spin_lock
+spin_lock
+(&rtas_data_buf_lock)
+&rtas_data_buf_lock
+&
+rtas_data_buf_lock
+memset(rtas_data_buf, 0, SPLPAR_MAXLENGTH);
+memset(rtas_data_buf, 0, SPLPAR_MAXLENGTH)
+memset
+memset
+rtas_data_buf
+rtas_data_buf
+0
+SPLPAR_MAXLENGTH
+SPLPAR_MAXLENGTH
+call_status = rtas_call(rtas_token("ibm,get-system-parameter"), 3, 1,				NULL,				SPLPAR_CHARACTERISTICS_TOKEN,				__pa(rtas_data_buf),				RTAS_DATA_BUF_SIZE);
+call_status = rtas_call(rtas_token("ibm,get-system-parameter"), 3, 1,				NULL,				SPLPAR_CHARACTERISTICS_TOKEN,				__pa(rtas_data_buf),				RTAS_DATA_BUF_SIZE)
+call_status
+call_status
+rtas_call(rtas_token("ibm,get-system-parameter"), 3, 1,				NULL,				SPLPAR_CHARACTERISTICS_TOKEN,				__pa(rtas_data_buf),				RTAS_DATA_BUF_SIZE)
+rtas_call
+rtas_call
+rtas_token("ibm,get-system-parameter")
+rtas_token
+rtas_token
+"ibm,get-system-parameter"
+3
+1
+NULL
+NULL
+SPLPAR_CHARACTERISTICS_TOKEN
+SPLPAR_CHARACTERISTICS_TOKEN
+__pa(rtas_data_buf)
+__pa
+__pa
+rtas_data_buf
+rtas_data_buf
+RTAS_DATA_BUF_SIZE
+RTAS_DATA_BUF_SIZE
+memcpy(local_buffer, rtas_data_buf, SPLPAR_MAXLENGTH);
+memcpy(local_buffer, rtas_data_buf, SPLPAR_MAXLENGTH)
+memcpy
+memcpy
+local_buffer
+local_buffer
+rtas_data_buf
+rtas_data_buf
+SPLPAR_MAXLENGTH
+SPLPAR_MAXLENGTH
+local_buffer[SPLPAR_MAXLENGTH - 1] = '\0';
+local_buffer[SPLPAR_MAXLENGTH - 1] = '\0'
+local_buffer[SPLPAR_MAXLENGTH - 1]
+local_buffer
+local_buffer
+SPLPAR_MAXLENGTH - 1
+SPLPAR_MAXLENGTH
+SPLPAR_MAXLENGTH
+1
+'\0'
+spin_unlock(&rtas_data_buf_lock);
+spin_unlock(&rtas_data_buf_lock)
+spin_unlock
+spin_unlock
+&rtas_data_buf_lock
+rtas_data_buf_lock
+rtas_data_buf_lock
+if (call_status != 0) {		printk(KERN_INFO		       "%s %s Error calling get-system-parameter (0x%x)\n",		       __FILE__, __func__, call_status);	} else {		int splpar_strlen;		int idx, w_idx;		char *workbuffer = kzalloc(SPLPAR_MAXLENGTH, GFP_KERNEL);		if (!workbuffer) {			printk(KERN_ERR "%s %s kmalloc failure at line %d\n",			       __FILE__, __func__, __LINE__);			kfree(local_buffer);			return;		}#ifdef LPARCFG_DEBUG		printk(KERN_INFO "success calling get-system-parameter\n");#endif		splpar_strlen = local_buffer[0] * 256 + local_buffer[1];		local_buffer += 2;	/* step over strlen value */		w_idx = 0;		idx = 0;		while ((*local_buffer) && (idx < splpar_strlen)) {			workbuffer[w_idx++] = local_buffer[idx++];			if ((local_buffer[idx] == ',')			    || (local_buffer[idx] == '\0')) {				workbuffer[w_idx] = '\0';				if (w_idx) {					/* avoid the empty string */					seq_printf(m, "%s\n", workbuffer);				}				memset(workbuffer, 0, SPLPAR_MAXLENGTH);				idx++;	/* skip the comma */				w_idx = 0;			} else if (local_buffer[idx] == '=') {				/* code here to replace workbuffer contents				   with different keyword strings */				if (0 == strcmp(workbuffer, "MaxEntCap")) {					strcpy(workbuffer,					       "partition_max_entitled_capacity");					w_idx = strlen(workbuffer);				}				if (0 == strcmp(workbuffer, "MaxPlatProcs")) {					strcpy(workbuffer,					       "system_potential_processors");					w_idx = strlen(workbuffer);				}			}		}		kfree(workbuffer);		local_buffer -= 2;	/* back up over strlen value */	}
+call_status != 0
+call_status
+call_status
+0
+{		printk(KERN_INFO		       "%s %s Error calling get-system-parameter (0x%x)\n",		       __FILE__, __func__, call_status);	}
+printk(KERN_INFO		       "%s %s Error calling get-system-parameter (0x%x)\n",		       __FILE__, __func__, call_status);
+{		int splpar_strlen;		int idx, w_idx;		char *workbuffer = kzalloc(SPLPAR_MAXLENGTH, GFP_KERNEL);		if (!workbuffer) {			printk(KERN_ERR "%s %s kmalloc failure at line %d\n",			       __FILE__, __func__, __LINE__);			kfree(local_buffer);			return;		}#ifdef LPARCFG_DEBUG		printk(KERN_INFO "success calling get-system-parameter\n");#endif		splpar_strlen = local_buffer[0] * 256 + local_buffer[1];		local_buffer += 2;	/* step over strlen value */		w_idx = 0;		idx = 0;		while ((*local_buffer) && (idx < splpar_strlen)) {			workbuffer[w_idx++] = local_buffer[idx++];			if ((local_buffer[idx] == ',')			    || (local_buffer[idx] == '\0')) {				workbuffer[w_idx] = '\0';				if (w_idx) {					/* avoid the empty string */					seq_printf(m, "%s\n", workbuffer);				}				memset(workbuffer, 0, SPLPAR_MAXLENGTH);				idx++;	/* skip the comma */				w_idx = 0;			} else if (local_buffer[idx] == '=') {				/* code here to replace workbuffer contents				   with different keyword strings */				if (0 == strcmp(workbuffer, "MaxEntCap")) {					strcpy(workbuffer,					       "partition_max_entitled_capacity");					w_idx = strlen(workbuffer);				}				if (0 == strcmp(workbuffer, "MaxPlatProcs")) {					strcpy(workbuffer,					       "system_potential_processors");					w_idx = strlen(workbuffer);				}			}		}		kfree(workbuffer);		local_buffer -= 2;	/* back up over strlen value */	}
+int splpar_strlen;
+int splpar_strlen;
+int
+splpar_strlen
+splpar_strlen
+int idx, w_idx;
+int idx, w_idx;
+int
+idx
+idx
+w_idx
+w_idx
+char *workbuffer = kzalloc(SPLPAR_MAXLENGTH, GFP_KERNEL);
+char *workbuffer = kzalloc(SPLPAR_MAXLENGTH, GFP_KERNEL);
+char
+*workbuffer = kzalloc(SPLPAR_MAXLENGTH, GFP_KERNEL)
+*
+workbuffer
+= kzalloc(SPLPAR_MAXLENGTH, GFP_KERNEL)
+kzalloc(SPLPAR_MAXLENGTH, GFP_KERNEL)
+kzalloc
+kzalloc
+SPLPAR_MAXLENGTH
+SPLPAR_MAXLENGTH
+GFP_KERNEL
+GFP_KERNEL
+if (!workbuffer) {			printk(KERN_ERR "%s %s kmalloc failure at line %d\n",			       __FILE__, __func__, __LINE__);			kfree(local_buffer);			return;		}
+!workbuffer
+workbuffer
+workbuffer
+{			printk(KERN_ERR "%s %s kmalloc failure at line %d\n",			       __FILE__, __func__, __LINE__);			kfree(local_buffer);			return;		}
+printk(KERN_ERR "%s %s kmalloc failure at line %d\n",			       __FILE__, __func__, __LINE__);
+kfree(local_buffer);
+kfree(local_buffer)
+kfree
+kfree
+local_buffer
+local_buffer
+return;
+splpar_strlen = local_buffer[0] * 256 + local_buffer[1];
+splpar_strlen = local_buffer[0] * 256 + local_buffer[1]
+splpar_strlen
+splpar_strlen
+local_buffer[0] * 256 + local_buffer[1]
+local_buffer[0] * 256
+local_buffer[0]
+local_buffer
+local_buffer
+0
+256
+local_buffer[1]
+local_buffer
+local_buffer
+1
+local_buffer += 2;
+local_buffer += 2
+local_buffer
+local_buffer
+2
+w_idx = 0;
+w_idx = 0
+w_idx
+w_idx
+0
+idx = 0;
+idx = 0
+idx
+idx
+0
+while ((*local_buffer) && (idx < splpar_strlen)) {			workbuffer[w_idx++] = local_buffer[idx++];			if ((local_buffer[idx] == ',')			    || (local_buffer[idx] == '\0')) {				workbuffer[w_idx] = '\0';				if (w_idx) {					/* avoid the empty string */					seq_printf(m, "%s\n", workbuffer);				}				memset(workbuffer, 0, SPLPAR_MAXLENGTH);				idx++;	/* skip the comma */				w_idx = 0;			} else if (local_buffer[idx] == '=') {				/* code here to replace workbuffer contents				   with different keyword strings */				if (0 == strcmp(workbuffer, "MaxEntCap")) {					strcpy(workbuffer,					       "partition_max_entitled_capacity");					w_idx = strlen(workbuffer);				}				if (0 == strcmp(workbuffer, "MaxPlatProcs")) {					strcpy(workbuffer,					       "system_potential_processors");					w_idx = strlen(workbuffer);				}			}		}
+(*local_buffer) && (idx < splpar_strlen)
+(*local_buffer)
+*local_buffer
+local_buffer
+local_buffer
+(idx < splpar_strlen)
+idx < splpar_strlen
+idx
+idx
+splpar_strlen
+splpar_strlen
+{			workbuffer[w_idx++] = local_buffer[idx++];			if ((local_buffer[idx] == ',')			    || (local_buffer[idx] == '\0')) {				workbuffer[w_idx] = '\0';				if (w_idx) {					/* avoid the empty string */					seq_printf(m, "%s\n", workbuffer);				}				memset(workbuffer, 0, SPLPAR_MAXLENGTH);				idx++;	/* skip the comma */				w_idx = 0;			} else if (local_buffer[idx] == '=') {				/* code here to replace workbuffer contents				   with different keyword strings */				if (0 == strcmp(workbuffer, "MaxEntCap")) {					strcpy(workbuffer,					       "partition_max_entitled_capacity");					w_idx = strlen(workbuffer);				}				if (0 == strcmp(workbuffer, "MaxPlatProcs")) {					strcpy(workbuffer,					       "system_potential_processors");					w_idx = strlen(workbuffer);				}			}		}
+workbuffer[w_idx++] = local_buffer[idx++];
+workbuffer[w_idx++] = local_buffer[idx++]
+workbuffer[w_idx++]
+workbuffer
+workbuffer
+w_idx++
+w_idx
+w_idx
+local_buffer[idx++]
+local_buffer
+local_buffer
+idx++
+idx
+idx
+if ((local_buffer[idx] == ',')			    || (local_buffer[idx] == '\0')) {				workbuffer[w_idx] = '\0';				if (w_idx) {					/* avoid the empty string */					seq_printf(m, "%s\n", workbuffer);				}				memset(workbuffer, 0, SPLPAR_MAXLENGTH);				idx++;	/* skip the comma */				w_idx = 0;			} else if (local_buffer[idx] == '=') {				/* code here to replace workbuffer contents				   with different keyword strings */				if (0 == strcmp(workbuffer, "MaxEntCap")) {					strcpy(workbuffer,					       "partition_max_entitled_capacity");					w_idx = strlen(workbuffer);				}				if (0 == strcmp(workbuffer, "MaxPlatProcs")) {					strcpy(workbuffer,					       "system_potential_processors");					w_idx = strlen(workbuffer);				}			}
+(local_buffer[idx] == ',')			    || (local_buffer[idx] == '\0')
+(local_buffer[idx] == ',')
+local_buffer[idx] == ','
+local_buffer[idx]
+local_buffer
+local_buffer
+idx
+idx
+','
+(local_buffer[idx] == '\0')
+local_buffer[idx] == '\0'
+local_buffer[idx]
+local_buffer
+local_buffer
+idx
+idx
+'\0'
+{				workbuffer[w_idx] = '\0';				if (w_idx) {					/* avoid the empty string */					seq_printf(m, "%s\n", workbuffer);				}				memset(workbuffer, 0, SPLPAR_MAXLENGTH);				idx++;	/* skip the comma */				w_idx = 0;			}
+workbuffer[w_idx] = '\0';
+workbuffer[w_idx] = '\0'
+workbuffer[w_idx]
+workbuffer
+workbuffer
+w_idx
+w_idx
+'\0'
+if (w_idx) {					/* avoid the empty string */					seq_printf(m, "%s\n", workbuffer);				}
+w_idx
+w_idx
+{					/* avoid the empty string */					seq_printf(m, "%s\n", workbuffer);				}
+seq_printf(m, "%s\n", workbuffer);
+seq_printf(m, "%s\n", workbuffer)
+seq_printf
+seq_printf
+m
+m
+"%s\n"
+workbuffer
+workbuffer
+memset(workbuffer, 0, SPLPAR_MAXLENGTH);
+memset(workbuffer, 0, SPLPAR_MAXLENGTH)
+memset
+memset
+workbuffer
+workbuffer
+0
+SPLPAR_MAXLENGTH
+SPLPAR_MAXLENGTH
+idx++;
+idx++
+idx
+idx
+w_idx = 0;
+w_idx = 0
+w_idx
+w_idx
+0
+if (local_buffer[idx] == '=') {				/* code here to replace workbuffer contents				   with different keyword strings */				if (0 == strcmp(workbuffer, "MaxEntCap")) {					strcpy(workbuffer,					       "partition_max_entitled_capacity");					w_idx = strlen(workbuffer);				}				if (0 == strcmp(workbuffer, "MaxPlatProcs")) {					strcpy(workbuffer,					       "system_potential_processors");					w_idx = strlen(workbuffer);				}			}
+local_buffer[idx] == '='
+local_buffer[idx]
+local_buffer
+local_buffer
+idx
+idx
+'='
+{				/* code here to replace workbuffer contents				   with different keyword strings */				if (0 == strcmp(workbuffer, "MaxEntCap")) {					strcpy(workbuffer,					       "partition_max_entitled_capacity");					w_idx = strlen(workbuffer);				}				if (0 == strcmp(workbuffer, "MaxPlatProcs")) {					strcpy(workbuffer,					       "system_potential_processors");					w_idx = strlen(workbuffer);				}			}
+if (0 == strcmp(workbuffer, "MaxEntCap")) {					strcpy(workbuffer,					       "partition_max_entitled_capacity");					w_idx = strlen(workbuffer);				}
+0 == strcmp(workbuffer, "MaxEntCap")
+0
+strcmp(workbuffer, "MaxEntCap")
+strcmp
+strcmp
+workbuffer
+workbuffer
+"MaxEntCap"
+{					strcpy(workbuffer,					       "partition_max_entitled_capacity");					w_idx = strlen(workbuffer);				}
+strcpy(workbuffer,					       "partition_max_entitled_capacity");
+strcpy(workbuffer,					       "partition_max_entitled_capacity")
+strcpy
+strcpy
+workbuffer
+workbuffer
+"partition_max_entitled_capacity"
+w_idx = strlen(workbuffer);
+w_idx = strlen(workbuffer)
+w_idx
+w_idx
+strlen(workbuffer)
+strlen
+strlen
+workbuffer
+workbuffer
+if (0 == strcmp(workbuffer, "MaxPlatProcs")) {					strcpy(workbuffer,					       "system_potential_processors");					w_idx = strlen(workbuffer);				}
+0 == strcmp(workbuffer, "MaxPlatProcs")
+0
+strcmp(workbuffer, "MaxPlatProcs")
+strcmp
+strcmp
+workbuffer
+workbuffer
+"MaxPlatProcs"
+{					strcpy(workbuffer,					       "system_potential_processors");					w_idx = strlen(workbuffer);				}
+strcpy(workbuffer,					       "system_potential_processors");
+strcpy(workbuffer,					       "system_potential_processors")
+strcpy
+strcpy
+workbuffer
+workbuffer
+"system_potential_processors"
+w_idx = strlen(workbuffer);
+w_idx = strlen(workbuffer)
+w_idx
+w_idx
+strlen(workbuffer)
+strlen
+strlen
+workbuffer
+workbuffer
+kfree(workbuffer);
+kfree(workbuffer)
+kfree
+kfree
+workbuffer
+workbuffer
+local_buffer -= 2;
+local_buffer -= 2
+local_buffer
+local_buffer
+2
+kfree(local_buffer);
+kfree(local_buffer)
+kfree
+kfree
+local_buffer
+local_buffer
+-----joern-----
+(13,171,0)
+(141,174,0)
+(69,50,0)
+(95,127,0)
+(44,129,0)
+(120,51,0)
+(64,178,0)
+(155,115,0)
+(89,34,0)
+(100,109,0)
+(45,68,0)
+(66,32,0)
+(2,134,0)
+(93,26,0)
+(164,96,0)
+(68,34,0)
+(100,20,0)
+(99,130,0)
+(129,48,0)
+(72,13,0)
+(57,27,0)
+(85,104,0)
+(148,16,0)
+(149,108,0)
+(99,25,0)
+(100,36,0)
+(8,100,0)
+(7,71,0)
+(91,162,0)
+(80,42,0)
+(4,100,0)
+(81,27,0)
+(71,27,0)
+(78,22,0)
+(36,100,0)
+(94,166,0)
+(40,100,0)
+(3,178,0)
+(140,178,0)
+(63,34,0)
+(153,20,0)
+(128,153,0)
+(19,112,0)
+(76,71,0)
+(87,22,0)
+(141,131,0)
+(129,66,0)
+(90,155,0)
+(74,149,0)
+(66,64,0)
+(30,159,0)
+(178,34,0)
+(1,153,0)
+(107,10,0)
+(57,65,0)
+(119,158,0)
+(142,54,0)
+(26,93,0)
+(73,81,0)
+(41,93,0)
+(97,34,0)
+(156,68,0)
+(50,161,0)
+(53,100,0)
+(99,178,0)
+(33,22,0)
+(84,140,0)
+(168,131,0)
+(175,65,0)
+(163,48,0)
+(166,45,0)
+(65,57,0)
+(82,2,0)
+(70,131,0)
+(58,64,0)
+(137,127,0)
+(125,162,0)
+(6,87,0)
+(81,34,0)
+(96,22,0)
+(151,21,0)
+(157,2,0)
+(138,57,0)
+(166,138,0)
+(177,27,0)
+(109,100,0)
+(13,27,0)
+(161,171,0)
+(150,118,0)
+(112,19,0)
+(105,178,0)
+(167,30,0)
+(21,47,0)
+(20,22,0)
+(37,96,0)
+(27,2,0)
+(131,141,0)
+(87,2,0)
+(146,34,0)
+(71,171,0)
+(123,161,0)
+(14,22,0)
+(48,42,0)
+(161,27,0)
+(45,66,0)
+(29,169,0)
+(82,78,0)
+(169,56,0)
+(135,51,0)
+(79,36,0)
+(47,50,0)
+(133,129,0)
+(147,145,0)
+(101,71,0)
+(158,178,0)
+(118,150,0)
+(114,95,0)
+(73,2,0)
+(176,81,0)
+(83,66,0)
+(112,178,0)
+(21,13,0)
+(28,178,0)
+(14,104,0)
+(122,42,0)
+(54,42,0)
+(10,34,0)
+(113,87,0)
+(139,161,0)
+(103,3,0)
+(46,178,0)
+(45,26,0)
+(95,178,0)
+(45,166,0)
+(169,2,0)
+(106,82,0)
+(141,10,0)
+(127,95,0)
+(65,171,0)
+(38,150,0)
+(26,159,0)
+(124,80,0)
+(174,162,0)
+(55,171,0)
+(73,22,0)
+(86,99,0)
+(82,16,0)
+(158,42,0)
+(9,27,0)
+(161,50,0)
+(138,145,0)
+(60,22,0)
+(54,171,0)
+(52,26,0)
+(171,34,0)
+(111,112,0)
+(162,174,0)
+(160,100,0)
+(59,108,0)
+(170,78,0)
+(43,158,0)
+(129,80,0)
+(149,27,0)
+(178,3,0)
+(35,45,0)
+(129,178,0)
+(179,171,0)
+(39,22,0)
+(152,95,0)
+(18,16,0)
+(23,96,0)
+(0,7,0)
+(98,73,0)
+(110,3,0)
+(64,66,0)
+(61,2,0)
+(50,47,0)
+(75,109,0)
+(105,32,0)
+(102,56,0)
+(90,102,0)
+(129,26,0)
+(24,81,0)
+(11,105,0)
+(77,87,0)
+(165,68,0)
+(88,34,0)
+(173,112,0)
+(118,22,0)
+(15,134,0)
+(5,57,0)
+(108,59,0)
+(172,48,0)
+(59,171,0)
+(136,59,0)
+(57,138,0)
+(93,178,0)
+(31,46,0)
+(27,34,0)
+(16,82,0)
+(104,14,0)
+(59,10,0)
+(13,21,0)
+(12,134,0)
+(20,100,0)
+(62,19,0)
+(154,20,0)
+(2,22,0)
+(108,149,0)
+(45,48,0)
+(10,141,0)
+(174,141,0)
+(134,2,0)
+(131,2,0)
+(121,99,0)
+(67,61,0)
+(126,22,0)
+(166,178,0)
+(162,2,0)
+(143,13,0)
+(30,178,0)
+(144,99,0)
+(71,7,0)
+(129,68,0)
+(17,59,0)
+(92,34,0)
+(132,158,0)
+(47,21,0)
+(117,105,0)
+(116,174,0)
+(49,30,0)
+(140,34,0)
+(49,127,1)
+(141,131,1)
+(78,170,1)
+(73,98,1)
+(46,31,1)
+(149,74,1)
+(83,105,1)
+(99,178,1)
+(87,113,1)
+(131,2,1)
+(17,149,1)
+(143,72,1)
+(45,68,1)
+(72,138,1)
+(7,71,1)
+(175,5,1)
+(90,155,1)
+(53,8,1)
+(70,168,1)
+(96,37,1)
+(52,30,1)
+(137,19,1)
+(87,2,1)
+(77,6,1)
+(111,173,1)
+(128,118,1)
+(110,28,1)
+(80,124,1)
+(167,49,1)
+(18,148,1)
+(112,178,1)
+(112,111,1)
+(61,2,1)
+(23,14,1)
+(134,12,1)
+(170,82,1)
+(109,75,1)
+(150,38,1)
+(119,132,1)
+(31,178,1)
+(16,18,1)
+(156,165,1)
+(93,178,1)
+(67,2,1)
+(37,164,1)
+(40,53,1)
+(141,174,1)
+(129,68,1)
+(62,7,1)
+(180,80,1)
+(74,171,1)
+(59,171,1)
+(36,79,1)
+(69,161,1)
+(152,137,1)
+(73,81,1)
+(176,140,1)
+(138,57,1)
+(28,153,1)
+(100,109,1)
+(132,180,1)
+(148,106,1)
+(45,35,1)
+(13,27,1)
+(129,44,1)
+(127,95,1)
+(20,100,1)
+(155,61,1)
+(29,46,1)
+(47,21,1)
+(158,178,1)
+(21,13,1)
+(26,93,1)
+(118,150,1)
+(74,48,1)
+(90,73,1)
+(121,144,1)
+(54,171,1)
+(153,1,1)
+(108,59,1)
+(172,54,1)
+(61,67,1)
+(131,70,1)
+(12,15,1)
+(82,16,1)
+(174,162,1)
+(5,166,1)
+(41,52,1)
+(84,108,1)
+(59,10,1)
+(68,156,1)
+(95,178,1)
+(4,40,1)
+(140,178,1)
+(50,161,1)
+(54,142,1)
+(100,36,1)
+(116,162,1)
+(163,172,1)
+(94,108,1)
+(27,2,1)
+(108,149,1)
+(73,2,1)
+(105,117,1)
+(124,129,1)
+(139,21,1)
+(133,47,1)
+(2,134,1)
+(162,91,1)
+(30,178,1)
+(114,152,1)
+(106,87,1)
+(43,119,1)
+(107,46,1)
+(65,171,1)
+(103,110,1)
+(101,76,1)
+(74,26,1)
+(86,121,1)
+(161,171,1)
+(15,157,1)
+(1,128,1)
+(27,177,1)
+(117,11,1)
+(50,69,1)
+(79,154,1)
+(71,101,1)
+(169,2,1)
+(85,61,1)
+(66,64,1)
+(93,41,1)
+(45,26,1)
+(55,179,1)
+(3,103,1)
+(76,47,1)
+(57,65,1)
+(47,50,1)
+(171,55,1)
+(177,9,1)
+(140,84,1)
+(165,27,1)
+(169,29,1)
+(123,139,1)
+(173,62,1)
+(129,26,1)
+(153,20,1)
+(158,43,1)
+(129,48,1)
+(160,109,1)
+(59,136,1)
+(8,36,1)
+(45,48,1)
+(142,158,1)
+(164,23,1)
+(14,104,1)
+(64,178,1)
+(45,66,1)
+(95,114,1)
+(7,0,1)
+(137,66,1)
+(161,123,1)
+(13,143,1)
+(6,20,1)
+(10,141,1)
+(75,4,1)
+(168,174,1)
+(149,27,1)
+(57,27,1)
+(161,27,1)
+(144,180,1)
+(136,17,1)
+(91,125,1)
+(81,27,1)
+(71,27,1)
+(174,116,1)
+(9,10,1)
+(113,77,1)
+(132,99,1)
+(104,85,1)
+(179,68,1)
+(38,78,1)
+(98,153,1)
+(98,81,1)
+(11,19,1)
+(46,178,1)
+(21,151,1)
+(129,178,1)
+(99,86,1)
+(90,102,1)
+(102,169,1)
+(30,167,1)
+(151,13,1)
+(99,130,1)
+(44,133,1)
+(82,2,1)
+(81,24,1)
+(58,83,1)
+(24,176,1)
+(35,94,1)
+(162,2,1)
+(125,107,1)
+(105,178,1)
+(13,171,1)
+(71,171,1)
+(129,66,1)
+(65,175,1)
+(0,71,1)
+(19,112,1)
+(154,96,1)
+(48,163,1)
+(74,7,1)
+(166,45,1)
+(100,160,1)
+(64,58,1)
+(166,178,1)
+(74,127,1)
+(178,3,1)
+(45,108,2)
+(55,46,2)
+(161,21,2)
+(138,57,2)
+(13,27,2)
+(128,61,2)
+(0,47,2)
+(153,61,2)
+(38,61,2)
+(108,46,2)
+(45,68,2)
+(99,178,2)
+(46,178,2)
+(129,178,2)
+(174,162,2)
+(174,46,2)
+(149,46,2)
+(66,19,2)
+(169,46,2)
+(11,19,2)
+(144,180,2)
+(72,108,2)
+(2,134,2)
+(163,47,2)
+(108,59,2)
+(65,108,2)
+(82,61,2)
+(106,61,2)
+(125,46,2)
+(27,46,2)
+(28,153,2)
+(20,61,2)
+(105,178,2)
+(45,48,2)
+(155,61,2)
+(108,108,2)
+(123,21,2)
+(53,61,2)
+(10,46,2)
+(82,2,2)
+(108,149,2)
+(21,108,2)
+(172,47,2)
+(129,66,2)
+(66,64,2)
+(16,61,2)
+(180,47,2)
+(54,47,2)
+(71,47,2)
+(73,2,2)
+(26,127,2)
+(40,61,2)
+(47,21,2)
+(50,161,2)
+(102,46,2)
+(149,108,2)
+(148,61,2)
+(23,61,2)
+(114,7,2)
+(131,2,2)
+(85,61,2)
+(71,171,2)
+(175,108,2)
+(87,2,2)
+(68,46,2)
+(93,127,2)
+(151,108,2)
+(95,178,2)
+(99,130,2)
+(152,7,2)
+(48,47,2)
+(70,46,2)
+(98,153,2)
+(13,171,2)
+(160,61,2)
+(132,47,2)
+(140,178,2)
+(58,19,2)
+(171,46,2)
+(43,47,2)
+(137,7,2)
+(166,178,2)
+(99,180,2)
+(136,149,2)
+(141,131,2)
+(73,81,2)
+(73,46,2)
+(18,61,2)
+(46,153,2)
+(162,46,2)
+(47,50,2)
+(129,47,2)
+(59,171,2)
+(80,47,2)
+(74,46,2)
+(74,108,2)
+(168,46,2)
+(86,180,2)
+(90,155,2)
+(24,46,2)
+(150,61,2)
+(90,102,2)
+(113,61,2)
+(129,26,2)
+(69,21,2)
+(101,47,2)
+(116,46,2)
+(95,7,2)
+(9,46,2)
+(81,27,2)
+(166,108,2)
+(61,2,2)
+(13,108,2)
+(57,27,2)
+(59,149,2)
+(100,61,2)
+(178,153,2)
+(78,61,2)
+(19,112,2)
+(45,66,2)
+(154,61,2)
+(73,153,2)
+(57,108,2)
+(87,61,2)
+(71,27,2)
+(176,46,2)
+(50,21,2)
+(5,108,2)
+(117,19,2)
+(164,61,2)
+(141,174,2)
+(91,46,2)
+(140,46,2)
+(127,95,2)
+(121,180,2)
+(26,93,2)
+(119,47,2)
+(118,150,2)
+(105,19,2)
+(17,149,2)
+(49,127,2)
+(59,10,2)
+(6,61,2)
+(170,61,2)
+(45,26,2)
+(65,171,2)
+(178,3,2)
+(93,178,2)
+(10,141,2)
+(47,108,2)
+(161,27,2)
+(7,47,2)
+(81,46,2)
+(8,61,2)
+(107,46,2)
+(129,48,2)
+(111,7,2)
+(104,61,2)
+(162,2,2)
+(98,46,2)
+(142,47,2)
+(31,153,2)
+(169,2,2)
+(139,21,2)
+(143,108,2)
+(167,127,2)
+(133,47,2)
+(84,46,2)
+(7,71,2)
+(44,47,2)
+(100,36,2)
+(109,61,2)
+(83,19,2)
+(76,47,2)
+(131,46,2)
+(77,61,2)
+(14,61,2)
+(3,153,2)
+(35,108,2)
+(166,45,2)
+(153,20,2)
+(158,47,2)
+(158,178,2)
+(75,61,2)
+(127,7,2)
+(82,16,2)
+(29,46,2)
+(30,178,2)
+(112,7,2)
+(118,61,2)
+(94,108,2)
+(64,178,2)
+(62,7,2)
+(177,46,2)
+(103,153,2)
+(37,61,2)
+(4,61,2)
+(141,46,2)
+(36,61,2)
+(96,61,2)
+(129,68,2)
+(179,46,2)
+(156,46,2)
+(1,61,2)
+(112,178,2)
+(110,153,2)
+(138,108,2)
+(20,100,2)
+(149,27,2)
+(27,2,2)
+(19,7,2)
+(14,104,2)
+(52,127,2)
+(161,171,2)
+(64,19,2)
+(54,171,2)
+(165,46,2)
+(57,65,2)
+(173,7,2)
+(30,127,2)
+(100,109,2)
+(21,13,2)
+(41,127,2)
+(124,47,2)
+(79,61,2)
+-----------------------------------
+(0,\'=\')
+(1,0)
+(2,*local_buffer = kmalloc(SPLPAR_MAXLENGTH, GFP_KERNEL)
+(3,kzalloc(SPLPAR_MAXLENGTH, GFP_KERNEL)
+(4,SPLPAR_CHARACTERISTICS_TOKEN)
+(5,local_buffer)
+(6,local_buffer)
+(7,local_buffer[idx] == \'=\')
+(8,3)
+(9,local_buffer)
+(10,splpar_strlen = local_buffer[0] * 256 + local_buffer[1])
+(11,workbuffer)
+(12,GFP_KERNEL)
+(13,local_buffer[idx])
+(14,spin_lock(&rtas_data_buf_lock)
+(15,SPLPAR_MAXLENGTH)
+(16,SPLPAR_MAXLENGTH - 1)
+(17,idx)
+(18,1)
+(19,0 == strcmp(workbuffer, "MaxEntCap")
+(20,call_status = rtas_call(rtas_token("ibm,get-system-parameter")
+(21,local_buffer[idx] == \',\')
+(22,)
+(23,rtas_data_buf)
+(24,2)
+(25,)
+(26,w_idx = strlen(workbuffer)
+(27,local_buffer += 2)
+(28,workbuffer)
+(29,local_buffer)
+(30,strcpy(workbuffer,\n\\n\\t\\t\\t\\t\\t       "system_potential_processors")
+(31,workbuffer)
+(32,)
+(33,call_status)
+(34,)
+(35,w_idx)
+(36,rtas_token("ibm,get-system-parameter")
+(37,SPLPAR_MAXLENGTH)
+(38,rtas_data_buf_lock)
+(39,if (call_status != 0)
+(40,NULL)
+(41,workbuffer)
+(42,)
+(43,SPLPAR_MAXLENGTH)
+(44,w_idx)
+(45,w_idx++)
+(46,!workbuffer)
+(47,(local_buffer[idx] == \',\')
+(48,w_idx = 0)
+(49,workbuffer)
+(50,local_buffer[idx] == \'\\0\')
+(51,)
+(52,w_idx)
+(53,1)
+(54,idx++)
+(55,0)
+(56,)
+(57,local_buffer[idx++])
+(58,workbuffer)
+(59,idx < splpar_strlen)
+(60,local_buffer)
+(61,!local_buffer)
+(62,0)
+(63,splpar_strlen)
+(64,strlen(workbuffer)
+(65,idx++)
+(66,w_idx = strlen(workbuffer)
+(67,local_buffer)
+(68,w_idx = 0)
+(69,\'\\0\')
+(70,1)
+(71,local_buffer[idx])
+(72,local_buffer)
+(73,kfree(local_buffer)
+(74,local_buffer)
+(75,rtas_data_buf)
+(76,local_buffer)
+(77,rtas_data_buf)
+(78,local_buffer[SPLPAR_MAXLENGTH - 1] = \'\\0\')
+(79,"ibm,get-system-parameter")
+(80,workbuffer[w_idx] = \'\\0\')
+(81,local_buffer -= 2)
+(82,local_buffer[SPLPAR_MAXLENGTH - 1])
+(83,w_idx)
+(84,workbuffer)
+(85,rtas_data_buf_lock)
+(86,workbuffer)
+(87,memcpy(local_buffer, rtas_data_buf, SPLPAR_MAXLENGTH)
+(88,idx)
+(89,if (!workbuffer)
+(90,RET)
+(91,0)
+(92,w_idx)
+(93,strlen(workbuffer)
+(94,workbuffer)
+(95,strcmp(workbuffer, "MaxPlatProcs")
+(96,memset(rtas_data_buf, 0, SPLPAR_MAXLENGTH)
+(97,workbuffer)
+(98,local_buffer)
+(99,seq_printf(m, "%s\\n", workbuffer)
+(100,rtas_call(rtas_token("ibm,get-system-parameter")
+(101,idx)
+(102,return;)
+(103,GFP_KERNEL)
+(104,&rtas_data_buf_lock)
+(105,strcpy(workbuffer,\n\\n\\t\\t\\t\\t\\t       "partition_max_entitled_capacity")
+(106,local_buffer)
+(107,splpar_strlen)
+(108,(*local_buffer)
+(109,__pa(rtas_data_buf)
+(110,SPLPAR_MAXLENGTH)
+(111,"MaxEntCap")
+(112,strcmp(workbuffer, "MaxEntCap")
+(113,SPLPAR_MAXLENGTH)
+(114,"MaxPlatProcs")
+(115,)
+(116,256)
+(117,"partition_max_entitled_capacity")
+(118,spin_unlock(&rtas_data_buf_lock)
+(119,0)
+(120,if (0 == strcmp(workbuffer, "MaxPlatProcs")
+(121,"%s\\n")
+(122,if (w_idx)
+(123,idx)
+(124,\'\\0\')
+(125,local_buffer)
+(126,if (!local_buffer)
+(127,0 == strcmp(workbuffer, "MaxPlatProcs")
+(128,call_status)
+(129,workbuffer[w_idx])
+(130,struct seq_file *m)
+(131,local_buffer[1])
+(132,workbuffer)
+(133,workbuffer)
+(134,kmalloc(SPLPAR_MAXLENGTH, GFP_KERNEL)
+(135,if (0 == strcmp(workbuffer, "MaxEntCap")
+(136,splpar_strlen)
+(137,0)
+(138,workbuffer[w_idx++] = local_buffer[idx++])
+(139,local_buffer)
+(140,kfree(workbuffer)
+(141,local_buffer[0] * 256 + local_buffer[1])
+(142,idx)
+(143,idx)
+(144,m)
+(145,)
+(146,while ((*local_buffer)
+(147,if ((local_buffer[idx] == \',\')
+(148,SPLPAR_MAXLENGTH)
+(149,*local_buffer)
+(150,&rtas_data_buf_lock)
+(151,\',\')
+(152,workbuffer)
+(153,call_status != 0)
+(154,call_status)
+(155,return;)
+(156,0)
+(157,local_buffer)
+(158,memset(workbuffer, 0, SPLPAR_MAXLENGTH)
+(159,)
+(160,RTAS_DATA_BUF_SIZE)
+(161,local_buffer[idx])
+(162,local_buffer[0])
+(163,0)
+(164,0)
+(165,w_idx)
+(166,workbuffer[w_idx++])
+(167,"system_potential_processors")
+(168,local_buffer)
+(169,kfree(local_buffer)
+(170,\'\\0\')
+(171,idx = 0)
+(172,w_idx)
+(173,workbuffer)
+(174,local_buffer[0] * 256)
+(175,idx)
+(176,local_buffer)
+(177,2)
+(178,*workbuffer = kzalloc(SPLPAR_MAXLENGTH, GFP_KERNEL)
+(179,idx)
+(180,w_idx)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

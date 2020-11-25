@@ -1,0 +1,4544 @@
+-----label-----
+1
+-----code-----
+int apply_relocate_add(Elf32_Shdr *sechdrs, const char *strtab,
+		       unsigned int symindex, unsigned int relindex,
+		       struct module *module)
+{
+	Elf32_Shdr *symsec = sechdrs + symindex;
+	Elf32_Shdr *relsec = sechdrs + relindex;
+	Elf32_Shdr *dstsec = sechdrs + relsec->sh_info;
+	Elf32_Rela *rel = (void *)relsec->sh_addr;
+	unsigned int i;
+	int ret = 0;
+
+	for (i = 0; i < relsec->sh_size / sizeof(Elf32_Rela); i++, rel++) {
+		struct mod_arch_syminfo *info;
+		Elf32_Sym *sym;
+		Elf32_Addr relocation;
+		uint32_t *location;
+		uint32_t value;
+
+		location = (void *)dstsec->sh_addr + rel->r_offset;
+		sym = (Elf32_Sym *)symsec->sh_addr + ELF32_R_SYM(rel->r_info);
+		relocation = sym->st_value + rel->r_addend;
+
+		info = module->arch.syminfo + ELF32_R_SYM(rel->r_info);
+
+		/* Initialize GOT entry if necessary */
+		switch (ELF32_R_TYPE(rel->r_info)) {
+		case R_AVR32_GOT32:
+		case R_AVR32_GOT16:
+		case R_AVR32_GOT8:
+		case R_AVR32_GOT21S:
+		case R_AVR32_GOT18SW:
+		case R_AVR32_GOT16S:
+			if (!info->got_initialized) {
+				Elf32_Addr *gotent;
+
+				gotent = (module->module_core
+					  + module->arch.got_offset
+					  + info->got_offset);
+				*gotent = relocation;
+				info->got_initialized = 1;
+			}
+
+			relocation = info->got_offset;
+			break;
+		}
+
+		switch (ELF32_R_TYPE(rel->r_info)) {
+		case R_AVR32_32:
+		case R_AVR32_32_CPENT:
+			*location = relocation;
+			break;
+		case R_AVR32_22H_PCREL:
+			relocation -= (Elf32_Addr)location;
+			if ((relocation & 0xffe00001) != 0
+			    && (relocation & 0xffc00001) != 0xffc00000)
+				return reloc_overflow(module,
+						      "R_AVR32_22H_PCREL",
+						      relocation);
+			relocation >>= 1;
+
+			value = *location;
+			value = ((value & 0xe1ef0000)
+				 | (relocation & 0xffff)
+				 | ((relocation & 0x10000) << 4)
+				 | ((relocation & 0x1e0000) << 8));
+			*location = value;
+			break;
+		case R_AVR32_11H_PCREL:
+			relocation -= (Elf32_Addr)location;
+			if ((relocation & 0xfffffc01) != 0
+			    && (relocation & 0xfffff801) != 0xfffff800)
+				return reloc_overflow(module,
+						      "R_AVR32_11H_PCREL",
+						      relocation);
+			value = get_u16(location);
+			value = ((value & 0xf00c)
+				 | ((relocation & 0x1fe) << 3)
+				 | ((relocation & 0x600) >> 9));
+			put_u16(location, value);
+			break;
+		case R_AVR32_9H_PCREL:
+			relocation -= (Elf32_Addr)location;
+			if ((relocation & 0xffffff01) != 0
+			    && (relocation & 0xfffffe01) != 0xfffffe00)
+				return reloc_overflow(module,
+						      "R_AVR32_9H_PCREL",
+						      relocation);
+			value = get_u16(location);
+			value = ((value & 0xf00f)
+				 | ((relocation & 0x1fe) << 3));
+			put_u16(location, value);
+			break;
+		case R_AVR32_9UW_PCREL:
+			relocation -= ((Elf32_Addr)location) & 0xfffffffc;
+			if ((relocation & 0xfffffc03) != 0)
+				return reloc_overflow(module,
+						      "R_AVR32_9UW_PCREL",
+						      relocation);
+			value = get_u16(location);
+			value = ((value & 0xf80f)
+				 | ((relocation & 0x1fc) << 2));
+			put_u16(location, value);
+			break;
+		case R_AVR32_GOTPC:
+			/*
+			 * R6 = PC - (PC - GOT)
+			 *
+			 * At this point, relocation contains the
+			 * value of PC.  Just subtract the value of
+			 * GOT, and we're done.
+			 */
+			pr_debug("GOTPC: PC=0x%x, got_offset=0x%lx, core=0x%p\n",
+				 relocation, module->arch.got_offset,
+				 module->module_core);
+			relocation -= ((unsigned long)module->module_core
+				       + module->arch.got_offset);
+			*location = relocation;
+			break;
+		case R_AVR32_GOT18SW:
+			if ((relocation & 0xfffe0003) != 0
+			    && (relocation & 0xfffc0003) != 0xffff0000)
+				return reloc_overflow(module, "R_AVR32_GOT18SW",
+						     relocation);
+			relocation >>= 2;
+			/* fall through */
+		case R_AVR32_GOT16S:
+			if ((relocation & 0xffff8000) != 0
+			    && (relocation & 0xffff0000) != 0xffff0000)
+				return reloc_overflow(module, "R_AVR32_GOT16S",
+						      relocation);
+			pr_debug("GOT reloc @ 0x%x -> %u\n",
+				 rel->r_offset, relocation);
+			value = *location;
+			value = ((value & 0xffff0000)
+				 | (relocation & 0xffff));
+			*location = value;
+			break;
+
+		default:
+			printk(KERN_ERR "module %s: Unknown relocation: %u\n",
+			       module->name, ELF32_R_TYPE(rel->r_info));
+			return -ENOEXEC;
+		}
+	}
+
+	return ret;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+3,8
+3,9
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+13,14
+13,15
+16,17
+16,18
+18,19
+20,21
+20,22
+22,23
+24,25
+24,26
+25,26
+27,28
+27,29
+30,31
+30,32
+30,33
+30,34
+30,35
+30,36
+30,37
+30,38
+31,32
+32,33
+32,34
+33,34
+35,36
+35,37
+35,38
+38,39
+39,40
+39,41
+40,41
+42,43
+44,45
+45,46
+45,47
+46,47
+48,49
+48,50
+48,51
+51,52
+52,53
+52,54
+53,54
+55,56
+57,58
+58,59
+58,60
+59,60
+61,62
+61,63
+61,64
+64,65
+65,66
+65,67
+66,67
+68,69
+68,70
+69,70
+72,73
+73,74
+73,75
+74,75
+76,77
+76,78
+76,79
+79,80
+80,81
+80,82
+81,82
+81,83
+83,84
+85,86
+85,87
+86,87
+89,90
+90,91
+90,92
+92,93
+94,95
+95,96
+95,97
+97,98
+97,99
+99,100
+101,102
+101,103
+101,104
+101,105
+102,103
+103,104
+103,105
+104,105
+107,108
+107,109
+108,109
+110,111
+110,112
+111,112
+111,113
+112,113
+115,116
+116,117
+116,118
+117,118
+120,121
+120,122
+121,122
+122,123
+124,125
+125,126
+127,128
+127,129
+127,130
+127,131
+127,132
+127,133
+127,134
+127,135
+127,136
+127,137
+127,138
+128,129
+129,130
+129,131
+130,131
+132,133
+132,134
+135,136
+136,137
+136,138
+137,138
+139,140
+139,141
+142,143
+143,144
+143,145
+144,145
+146,147
+148,149
+149,150
+149,151
+150,151
+152,153
+152,154
+155,156
+156,157
+156,158
+157,158
+159,160
+161,162
+162,163
+162,164
+163,164
+165,166
+165,167
+166,167
+166,168
+167,168
+167,169
+169,170
+171,172
+171,173
+172,173
+175,176
+175,177
+176,177
+179,180
+180,181
+180,182
+181,182
+183,184
+183,185
+184,185
+184,186
+185,186
+185,187
+186,187
+188,189
+190,191
+190,192
+191,192
+194,195
+194,196
+195,196
+197,198
+197,199
+198,199
+201,202
+202,203
+202,204
+203,204
+205,206
+205,207
+206,207
+206,208
+207,208
+210,211
+210,212
+211,212
+214,215
+215,216
+215,217
+216,217
+218,219
+218,220
+219,220
+219,221
+220,221
+220,222
+221,222
+225,226
+225,227
+226,227
+228,229
+228,230
+229,230
+232,233
+232,234
+233,234
+233,235
+234,235
+236,237
+236,238
+237,238
+240,241
+240,242
+240,243
+240,244
+240,245
+240,246
+240,247
+240,248
+240,249
+241,242
+242,243
+244,245
+245,246
+247,248
+248,249
+250,251
+251,252
+253,254
+254,255
+256,257
+257,258
+259,260
+259,261
+260,261
+261,262
+261,263
+262,263
+265,266
+265,267
+265,268
+265,269
+266,267
+267,268
+267,269
+268,269
+270,271
+270,272
+273,274
+274,275
+274,276
+275,276
+277,278
+278,279
+278,280
+279,280
+279,281
+280,281
+280,282
+281,282
+284,285
+284,286
+285,286
+285,287
+286,287
+290,291
+290,292
+291,292
+294,295
+295,296
+295,297
+296,297
+297,298
+299,300
+301,302
+302,303
+302,304
+303,304
+303,305
+304,305
+308,309
+309,310
+309,311
+310,311
+312,313
+312,314
+313,314
+317,318
+317,319
+318,319
+318,320
+319,320
+321,322
+321,323
+322,323
+325,326
+325,327
+325,328
+325,329
+325,330
+325,331
+325,332
+325,333
+325,334
+325,335
+325,336
+325,337
+325,338
+325,339
+325,340
+325,341
+325,342
+325,343
+325,344
+325,345
+325,346
+325,347
+325,348
+325,349
+325,350
+325,351
+325,352
+325,353
+325,354
+325,355
+325,356
+325,357
+325,358
+325,359
+325,360
+325,361
+325,362
+325,363
+325,364
+325,365
+325,366
+325,367
+325,368
+325,369
+325,370
+325,371
+325,372
+325,373
+325,374
+325,375
+325,376
+326,327
+327,328
+329,330
+330,331
+332,333
+333,334
+333,335
+334,335
+335,336
+337,338
+340,341
+341,342
+343,344
+344,345
+344,346
+345,346
+347,348
+347,349
+348,349
+348,350
+349,350
+352,353
+354,355
+354,356
+355,356
+355,357
+356,357
+356,358
+357,358
+358,359
+358,360
+359,360
+363,364
+363,365
+364,365
+365,366
+365,367
+366,367
+370,371
+371,372
+371,373
+371,374
+371,375
+372,373
+374,375
+377,378
+379,380
+380,381
+380,382
+381,382
+384,385
+385,386
+385,387
+386,387
+388,389
+389,390
+391,392
+392,393
+392,394
+393,394
+395,396
+396,397
+396,398
+397,398
+397,399
+398,399
+398,400
+399,400
+400,401
+400,402
+401,402
+404,405
+405,406
+405,407
+406,407
+409,410
+410,411
+410,412
+411,412
+412,413
+412,414
+413,414
+417,418
+418,419
+418,420
+419,420
+420,421
+420,422
+421,422
+425,426
+426,427
+426,428
+427,428
+428,429
+430,431
+433,434
+434,435
+436,437
+437,438
+437,439
+438,439
+440,441
+440,442
+441,442
+441,443
+442,443
+445,446
+447,448
+447,449
+448,449
+448,450
+449,450
+449,451
+450,451
+451,452
+451,453
+452,453
+456,457
+456,458
+457,458
+458,459
+458,460
+459,460
+463,464
+464,465
+464,466
+464,467
+464,468
+465,466
+467,468
+470,471
+472,473
+473,474
+473,475
+474,475
+476,477
+476,478
+477,478
+479,480
+481,482
+482,483
+482,484
+483,484
+485,486
+486,487
+486,488
+487,488
+487,489
+488,489
+489,490
+489,491
+490,491
+493,494
+494,495
+494,496
+495,496
+496,497
+496,498
+497,498
+501,502
+502,503
+502,504
+503,504
+504,505
+504,506
+505,506
+509,510
+510,511
+510,512
+510,513
+511,512
+513,514
+515,516
+518,519
+519,520
+521,522
+522,523
+522,524
+523,524
+525,526
+525,527
+526,527
+526,528
+527,528
+530,531
+532,533
+532,534
+533,534
+533,535
+534,535
+534,536
+535,536
+536,537
+536,538
+537,538
+541,542
+541,543
+542,543
+543,544
+543,545
+544,545
+548,549
+549,550
+549,551
+549,552
+549,553
+550,551
+552,553
+555,556
+557,558
+558,559
+558,560
+559,560
+561,562
+561,563
+562,563
+564,565
+566,567
+567,568
+567,569
+568,569
+570,571
+571,572
+571,573
+572,573
+573,574
+573,575
+574,575
+577,578
+578,579
+578,580
+579,580
+580,581
+580,582
+581,582
+585,586
+586,587
+586,588
+586,589
+587,588
+589,590
+591,592
+594,595
+595,596
+597,598
+598,599
+598,600
+599,600
+601,602
+601,603
+602,603
+603,604
+603,605
+604,605
+604,606
+605,606
+608,609
+611,612
+611,613
+612,613
+612,614
+613,614
+614,615
+614,616
+615,616
+619,620
+620,621
+620,622
+620,623
+620,624
+621,622
+623,624
+626,627
+628,629
+629,630
+629,631
+630,631
+632,633
+632,634
+633,634
+635,636
+637,638
+638,639
+638,640
+639,640
+641,642
+642,643
+642,644
+643,644
+644,645
+644,646
+645,646
+648,649
+649,650
+649,651
+650,651
+651,652
+651,653
+652,653
+656,657
+657,658
+657,659
+657,660
+658,659
+660,661
+662,663
+665,666
+666,667
+668,669
+669,670
+669,671
+669,672
+669,673
+669,674
+670,671
+673,674
+675,676
+675,677
+676,677
+676,678
+677,678
+681,682
+681,683
+682,683
+685,686
+686,687
+686,688
+687,688
+689,690
+690,691
+690,692
+691,692
+691,693
+692,693
+692,694
+695,696
+695,697
+696,697
+699,700
+699,701
+700,701
+700,702
+701,702
+705,706
+706,707
+706,708
+707,708
+708,709
+710,711
+713,714
+714,715
+716,717
+716,718
+717,718
+717,719
+718,719
+718,720
+719,720
+720,721
+720,722
+721,722
+725,726
+725,727
+726,727
+727,728
+727,729
+728,729
+732,733
+733,734
+733,735
+733,736
+733,737
+734,735
+736,737
+739,740
+741,742
+742,743
+742,744
+743,744
+746,747
+747,748
+749,750
+749,751
+750,751
+750,752
+751,752
+751,753
+752,753
+753,754
+753,755
+754,755
+758,759
+758,760
+759,760
+760,761
+760,762
+761,762
+765,766
+766,767
+766,768
+766,769
+766,770
+767,768
+769,770
+772,773
+774,775
+775,776
+775,777
+775,778
+775,779
+776,777
+779,780
+779,781
+780,781
+783,784
+785,786
+786,787
+786,788
+787,788
+789,790
+790,791
+792,793
+793,794
+793,795
+794,795
+796,797
+797,798
+797,799
+798,799
+799,800
+799,801
+800,801
+803,804
+804,805
+804,806
+805,806
+808,809
+809,810
+809,811
+810,811
+811,812
+813,814
+817,818
+818,819
+819,820
+820,821
+822,823
+823,824
+-----nextToken-----
+2,4,7,9,10,12,14,15,17,19,21,23,26,28,29,34,36,37,41,43,47,49,50,54,56,60,62,63,67,70,71,75,77,78,82,84,87,88,91,93,96,98,100,105,106,109,113,114,118,119,123,126,131,133,134,138,140,141,145,147,151,153,154,158,160,164,168,170,173,174,177,178,182,187,189,192,193,196,199,200,204,208,209,212,213,217,222,223,224,227,230,231,235,238,239,243,246,249,252,255,258,263,264,269,271,272,276,282,283,287,288,289,292,293,298,300,305,306,307,311,314,315,316,320,323,324,328,331,336,338,339,342,346,350,351,353,360,361,362,367,368,369,373,375,376,378,382,383,387,390,394,402,403,407,408,414,415,416,422,423,424,429,431,432,435,439,443,444,446,453,454,455,460,461,462,466,468,469,471,475,478,480,484,491,492,498,499,500,506,507,508,512,514,516,517,520,524,528,529,531,538,539,540,545,546,547,551,553,554,556,560,563,565,569,575,576,582,583,584,588,590,592,593,596,600,606,607,609,610,616,617,618,622,624,625,627,631,634,636,640,646,647,653,654,655,659,661,663,664,667,671,672,674,678,679,680,683,684,688,693,694,697,698,702,703,704,709,711,712,715,722,723,724,729,730,731,735,737,738,740,744,745,748,755,756,757,762,763,764,768,770,771,773,777,778,781,782,784,788,791,795,801,802,806,807,812,814,815,816,821,824
+-----computeFrom-----
+39,40
+39,41
+52,53
+52,54
+65,66
+65,67
+103,104
+103,105
+107,108
+107,109
+110,111
+110,112
+162,163
+162,164
+165,166
+165,167
+180,181
+180,182
+183,184
+183,185
+202,203
+202,204
+205,206
+205,207
+215,216
+215,217
+218,219
+218,220
+274,275
+274,276
+278,279
+278,280
+279,280
+279,281
+295,296
+295,297
+302,303
+302,304
+309,310
+309,311
+333,334
+333,335
+344,345
+344,346
+355,356
+355,357
+356,357
+356,358
+358,359
+358,360
+363,364
+363,365
+365,366
+365,367
+380,381
+380,382
+385,386
+385,387
+392,393
+392,394
+396,397
+396,398
+397,398
+397,399
+398,399
+398,400
+400,401
+400,402
+405,406
+405,407
+410,411
+410,412
+412,413
+412,414
+418,419
+418,420
+420,421
+420,422
+426,427
+426,428
+437,438
+437,439
+448,449
+448,450
+449,450
+449,451
+451,452
+451,453
+456,457
+456,458
+458,459
+458,460
+473,474
+473,475
+482,483
+482,484
+486,487
+486,488
+487,488
+487,489
+489,490
+489,491
+494,495
+494,496
+496,497
+496,498
+502,503
+502,504
+504,505
+504,506
+522,523
+522,524
+533,534
+533,535
+534,535
+534,536
+536,537
+536,538
+541,542
+541,543
+543,544
+543,545
+558,559
+558,560
+567,568
+567,569
+571,572
+571,573
+573,574
+573,575
+578,579
+578,580
+580,581
+580,582
+598,599
+598,600
+601,602
+601,603
+612,613
+612,614
+614,615
+614,616
+629,630
+629,631
+638,639
+638,640
+642,643
+642,644
+644,645
+644,646
+649,650
+649,651
+651,652
+651,653
+686,687
+686,688
+690,691
+690,692
+706,707
+706,708
+717,718
+717,719
+718,719
+718,720
+720,721
+720,722
+725,726
+725,727
+727,728
+727,729
+742,743
+742,744
+750,751
+750,752
+751,752
+751,753
+753,754
+753,755
+758,759
+758,760
+760,761
+760,762
+786,787
+786,788
+793,794
+793,795
+797,798
+797,799
+799,800
+799,801
+804,805
+804,806
+809,810
+809,811
+-----guardedBy-----
+367,378
+460,471
+545,556
+616,627
+729,740
+762,773
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;BinaryExpression;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;BinaryExpression;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;TypeIdExpression;TypeId;NamedTypeSpecifier;Name;Declarator;ExpressionList;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;Pointer;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;SwitchStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;CaseStatement;IdExpression;Name;CaseStatement;IdExpression;Name;CaseStatement;IdExpression;Name;CaseStatement;IdExpression;Name;CaseStatement;IdExpression;Name;CaseStatement;IdExpression;Name;IfStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BreakStatement;SwitchStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;CaseStatement;IdExpression;Name;CaseStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ReturnStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;BinaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;UnaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;UnaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;BinaryExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ReturnStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;UnaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;UnaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ReturnStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;UnaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;UnaryExpression;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ReturnStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;UnaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;FieldReference;IdExpression;Name;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;ExpressionStatement;BinaryExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ReturnStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CaseStatement;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ReturnStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;BreakStatement;DefaultStatement;ProblemStatement;ReturnStatement;UnaryExpression;IdExpression;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+int apply_relocate_add(Elf32_Shdr *sechdrs, const char *strtab,		       unsigned int symindex, unsigned int relindex,		       struct module *module){	Elf32_Shdr *symsec = sechdrs + symindex;	Elf32_Shdr *relsec = sechdrs + relindex;	Elf32_Shdr *dstsec = sechdrs + relsec->sh_info;	Elf32_Rela *rel = (void *)relsec->sh_addr;	unsigned int i;	int ret = 0;	for (i = 0; i < relsec->sh_size / sizeof(Elf32_Rela); i++, rel++) {		struct mod_arch_syminfo *info;		Elf32_Sym *sym;		Elf32_Addr relocation;		uint32_t *location;		uint32_t value;		location = (void *)dstsec->sh_addr + rel->r_offset;		sym = (Elf32_Sym *)symsec->sh_addr + ELF32_R_SYM(rel->r_info);		relocation = sym->st_value + rel->r_addend;		info = module->arch.syminfo + ELF32_R_SYM(rel->r_info);		/* Initialize GOT entry if necessary */		switch (ELF32_R_TYPE(rel->r_info)) {		case R_AVR32_GOT32:		case R_AVR32_GOT16:		case R_AVR32_GOT8:		case R_AVR32_GOT21S:		case R_AVR32_GOT18SW:		case R_AVR32_GOT16S:			if (!info->got_initialized) {				Elf32_Addr *gotent;				gotent = (module->module_core					  + module->arch.got_offset					  + info->got_offset);				*gotent = relocation;				info->got_initialized = 1;			}			relocation = info->got_offset;			break;		}		switch (ELF32_R_TYPE(rel->r_info)) {		case R_AVR32_32:		case R_AVR32_32_CPENT:			*location = relocation;			break;		case R_AVR32_22H_PCREL:			relocation -= (Elf32_Addr)location;			if ((relocation & 0xffe00001) != 0			    && (relocation & 0xffc00001) != 0xffc00000)				return reloc_overflow(module,						      "R_AVR32_22H_PCREL",						      relocation);			relocation >>= 1;			value = *location;			value = ((value & 0xe1ef0000)				 | (relocation & 0xffff)				 | ((relocation & 0x10000) << 4)				 | ((relocation & 0x1e0000) << 8));			*location = value;			break;		case R_AVR32_11H_PCREL:			relocation -= (Elf32_Addr)location;			if ((relocation & 0xfffffc01) != 0			    && (relocation & 0xfffff801) != 0xfffff800)				return reloc_overflow(module,						      "R_AVR32_11H_PCREL",						      relocation);			value = get_u16(location);			value = ((value & 0xf00c)				 | ((relocation & 0x1fe) << 3)				 | ((relocation & 0x600) >> 9));			put_u16(location, value);			break;		case R_AVR32_9H_PCREL:			relocation -= (Elf32_Addr)location;			if ((relocation & 0xffffff01) != 0			    && (relocation & 0xfffffe01) != 0xfffffe00)				return reloc_overflow(module,						      "R_AVR32_9H_PCREL",						      relocation);			value = get_u16(location);			value = ((value & 0xf00f)				 | ((relocation & 0x1fe) << 3));			put_u16(location, value);			break;		case R_AVR32_9UW_PCREL:			relocation -= ((Elf32_Addr)location) & 0xfffffffc;			if ((relocation & 0xfffffc03) != 0)				return reloc_overflow(module,						      "R_AVR32_9UW_PCREL",						      relocation);			value = get_u16(location);			value = ((value & 0xf80f)				 | ((relocation & 0x1fc) << 2));			put_u16(location, value);			break;		case R_AVR32_GOTPC:			/*			 * R6 = PC - (PC - GOT)			 *			 * At this point, relocation contains the			 * value of PC.  Just subtract the value of			 * GOT, and we're done.			 */			pr_debug("GOTPC: PC=0x%x, got_offset=0x%lx, core=0x%p\n",				 relocation, module->arch.got_offset,				 module->module_core);			relocation -= ((unsigned long)module->module_core				       + module->arch.got_offset);			*location = relocation;			break;		case R_AVR32_GOT18SW:			if ((relocation & 0xfffe0003) != 0			    && (relocation & 0xfffc0003) != 0xffff0000)				return reloc_overflow(module, "R_AVR32_GOT18SW",						     relocation);			relocation >>= 2;			/* fall through */		case R_AVR32_GOT16S:			if ((relocation & 0xffff8000) != 0			    && (relocation & 0xffff0000) != 0xffff0000)				return reloc_overflow(module, "R_AVR32_GOT16S",						      relocation);			pr_debug("GOT reloc @ 0x%x -> %u\n",				 rel->r_offset, relocation);			value = *location;			value = ((value & 0xffff0000)				 | (relocation & 0xffff));			*location = value;			break;		default:			printk(KERN_ERR "module %s: Unknown relocation: %u\n",			       module->name, ELF32_R_TYPE(rel->r_info));			return -ENOEXEC;		}	}	return ret;}
+int
+apply_relocate_add(Elf32_Shdr *sechdrs, const char *strtab,		       unsigned int symindex, unsigned int relindex,		       struct module *module)
+apply_relocate_add
+Elf32_Shdr *sechdrs
+Elf32_Shdr
+Elf32_Shdr
+*sechdrs
+*
+sechdrs
+const char *strtab
+const char
+*strtab
+*
+strtab
+unsigned int symindex
+unsigned int
+symindex
+symindex
+unsigned int relindex
+unsigned int
+relindex
+relindex
+struct module *module
+struct module
+module
+*module
+*
+module
+{	Elf32_Shdr *symsec = sechdrs + symindex;	Elf32_Shdr *relsec = sechdrs + relindex;	Elf32_Shdr *dstsec = sechdrs + relsec->sh_info;	Elf32_Rela *rel = (void *)relsec->sh_addr;	unsigned int i;	int ret = 0;	for (i = 0; i < relsec->sh_size / sizeof(Elf32_Rela); i++, rel++) {		struct mod_arch_syminfo *info;		Elf32_Sym *sym;		Elf32_Addr relocation;		uint32_t *location;		uint32_t value;		location = (void *)dstsec->sh_addr + rel->r_offset;		sym = (Elf32_Sym *)symsec->sh_addr + ELF32_R_SYM(rel->r_info);		relocation = sym->st_value + rel->r_addend;		info = module->arch.syminfo + ELF32_R_SYM(rel->r_info);		/* Initialize GOT entry if necessary */		switch (ELF32_R_TYPE(rel->r_info)) {		case R_AVR32_GOT32:		case R_AVR32_GOT16:		case R_AVR32_GOT8:		case R_AVR32_GOT21S:		case R_AVR32_GOT18SW:		case R_AVR32_GOT16S:			if (!info->got_initialized) {				Elf32_Addr *gotent;				gotent = (module->module_core					  + module->arch.got_offset					  + info->got_offset);				*gotent = relocation;				info->got_initialized = 1;			}			relocation = info->got_offset;			break;		}		switch (ELF32_R_TYPE(rel->r_info)) {		case R_AVR32_32:		case R_AVR32_32_CPENT:			*location = relocation;			break;		case R_AVR32_22H_PCREL:			relocation -= (Elf32_Addr)location;			if ((relocation & 0xffe00001) != 0			    && (relocation & 0xffc00001) != 0xffc00000)				return reloc_overflow(module,						      "R_AVR32_22H_PCREL",						      relocation);			relocation >>= 1;			value = *location;			value = ((value & 0xe1ef0000)				 | (relocation & 0xffff)				 | ((relocation & 0x10000) << 4)				 | ((relocation & 0x1e0000) << 8));			*location = value;			break;		case R_AVR32_11H_PCREL:			relocation -= (Elf32_Addr)location;			if ((relocation & 0xfffffc01) != 0			    && (relocation & 0xfffff801) != 0xfffff800)				return reloc_overflow(module,						      "R_AVR32_11H_PCREL",						      relocation);			value = get_u16(location);			value = ((value & 0xf00c)				 | ((relocation & 0x1fe) << 3)				 | ((relocation & 0x600) >> 9));			put_u16(location, value);			break;		case R_AVR32_9H_PCREL:			relocation -= (Elf32_Addr)location;			if ((relocation & 0xffffff01) != 0			    && (relocation & 0xfffffe01) != 0xfffffe00)				return reloc_overflow(module,						      "R_AVR32_9H_PCREL",						      relocation);			value = get_u16(location);			value = ((value & 0xf00f)				 | ((relocation & 0x1fe) << 3));			put_u16(location, value);			break;		case R_AVR32_9UW_PCREL:			relocation -= ((Elf32_Addr)location) & 0xfffffffc;			if ((relocation & 0xfffffc03) != 0)				return reloc_overflow(module,						      "R_AVR32_9UW_PCREL",						      relocation);			value = get_u16(location);			value = ((value & 0xf80f)				 | ((relocation & 0x1fc) << 2));			put_u16(location, value);			break;		case R_AVR32_GOTPC:			/*			 * R6 = PC - (PC - GOT)			 *			 * At this point, relocation contains the			 * value of PC.  Just subtract the value of			 * GOT, and we're done.			 */			pr_debug("GOTPC: PC=0x%x, got_offset=0x%lx, core=0x%p\n",				 relocation, module->arch.got_offset,				 module->module_core);			relocation -= ((unsigned long)module->module_core				       + module->arch.got_offset);			*location = relocation;			break;		case R_AVR32_GOT18SW:			if ((relocation & 0xfffe0003) != 0			    && (relocation & 0xfffc0003) != 0xffff0000)				return reloc_overflow(module, "R_AVR32_GOT18SW",						     relocation);			relocation >>= 2;			/* fall through */		case R_AVR32_GOT16S:			if ((relocation & 0xffff8000) != 0			    && (relocation & 0xffff0000) != 0xffff0000)				return reloc_overflow(module, "R_AVR32_GOT16S",						      relocation);			pr_debug("GOT reloc @ 0x%x -> %u\n",				 rel->r_offset, relocation);			value = *location;			value = ((value & 0xffff0000)				 | (relocation & 0xffff));			*location = value;			break;		default:			printk(KERN_ERR "module %s: Unknown relocation: %u\n",			       module->name, ELF32_R_TYPE(rel->r_info));			return -ENOEXEC;		}	}	return ret;}
+Elf32_Shdr *symsec = sechdrs + symindex;
+Elf32_Shdr *symsec = sechdrs + symindex;
+Elf32_Shdr
+Elf32_Shdr
+*symsec = sechdrs + symindex
+*
+symsec
+= sechdrs + symindex
+sechdrs + symindex
+sechdrs
+sechdrs
+symindex
+symindex
+Elf32_Shdr *relsec = sechdrs + relindex;
+Elf32_Shdr *relsec = sechdrs + relindex;
+Elf32_Shdr
+Elf32_Shdr
+*relsec = sechdrs + relindex
+*
+relsec
+= sechdrs + relindex
+sechdrs + relindex
+sechdrs
+sechdrs
+relindex
+relindex
+Elf32_Shdr *dstsec = sechdrs + relsec->sh_info;
+Elf32_Shdr *dstsec = sechdrs + relsec->sh_info;
+Elf32_Shdr
+Elf32_Shdr
+*dstsec = sechdrs + relsec->sh_info
+*
+dstsec
+= sechdrs + relsec->sh_info
+sechdrs + relsec->sh_info
+sechdrs
+sechdrs
+relsec->sh_info
+relsec
+relsec
+sh_info
+Elf32_Rela *rel = (void *)relsec->sh_addr;
+Elf32_Rela *rel = (void *)relsec->sh_addr;
+Elf32_Rela
+Elf32_Rela
+*rel = (void *)relsec->sh_addr
+*
+rel
+= (void *)relsec->sh_addr
+(void *)relsec->sh_addr
+void *
+void
+*
+*
+relsec->sh_addr
+relsec
+relsec
+sh_addr
+unsigned int i;
+unsigned int i;
+unsigned int
+i
+i
+int ret = 0;
+int ret = 0;
+int
+ret = 0
+ret
+= 0
+0
+for (i = 0; i < relsec->sh_size / sizeof(Elf32_Rela); i++, rel++) {		struct mod_arch_syminfo *info;		Elf32_Sym *sym;		Elf32_Addr relocation;		uint32_t *location;		uint32_t value;		location = (void *)dstsec->sh_addr + rel->r_offset;		sym = (Elf32_Sym *)symsec->sh_addr + ELF32_R_SYM(rel->r_info);		relocation = sym->st_value + rel->r_addend;		info = module->arch.syminfo + ELF32_R_SYM(rel->r_info);		/* Initialize GOT entry if necessary */		switch (ELF32_R_TYPE(rel->r_info)) {		case R_AVR32_GOT32:		case R_AVR32_GOT16:		case R_AVR32_GOT8:		case R_AVR32_GOT21S:		case R_AVR32_GOT18SW:		case R_AVR32_GOT16S:			if (!info->got_initialized) {				Elf32_Addr *gotent;				gotent = (module->module_core					  + module->arch.got_offset					  + info->got_offset);				*gotent = relocation;				info->got_initialized = 1;			}			relocation = info->got_offset;			break;		}		switch (ELF32_R_TYPE(rel->r_info)) {		case R_AVR32_32:		case R_AVR32_32_CPENT:			*location = relocation;			break;		case R_AVR32_22H_PCREL:			relocation -= (Elf32_Addr)location;			if ((relocation & 0xffe00001) != 0			    && (relocation & 0xffc00001) != 0xffc00000)				return reloc_overflow(module,						      "R_AVR32_22H_PCREL",						      relocation);			relocation >>= 1;			value = *location;			value = ((value & 0xe1ef0000)				 | (relocation & 0xffff)				 | ((relocation & 0x10000) << 4)				 | ((relocation & 0x1e0000) << 8));			*location = value;			break;		case R_AVR32_11H_PCREL:			relocation -= (Elf32_Addr)location;			if ((relocation & 0xfffffc01) != 0			    && (relocation & 0xfffff801) != 0xfffff800)				return reloc_overflow(module,						      "R_AVR32_11H_PCREL",						      relocation);			value = get_u16(location);			value = ((value & 0xf00c)				 | ((relocation & 0x1fe) << 3)				 | ((relocation & 0x600) >> 9));			put_u16(location, value);			break;		case R_AVR32_9H_PCREL:			relocation -= (Elf32_Addr)location;			if ((relocation & 0xffffff01) != 0			    && (relocation & 0xfffffe01) != 0xfffffe00)				return reloc_overflow(module,						      "R_AVR32_9H_PCREL",						      relocation);			value = get_u16(location);			value = ((value & 0xf00f)				 | ((relocation & 0x1fe) << 3));			put_u16(location, value);			break;		case R_AVR32_9UW_PCREL:			relocation -= ((Elf32_Addr)location) & 0xfffffffc;			if ((relocation & 0xfffffc03) != 0)				return reloc_overflow(module,						      "R_AVR32_9UW_PCREL",						      relocation);			value = get_u16(location);			value = ((value & 0xf80f)				 | ((relocation & 0x1fc) << 2));			put_u16(location, value);			break;		case R_AVR32_GOTPC:			/*			 * R6 = PC - (PC - GOT)			 *			 * At this point, relocation contains the			 * value of PC.  Just subtract the value of			 * GOT, and we're done.			 */			pr_debug("GOTPC: PC=0x%x, got_offset=0x%lx, core=0x%p\n",				 relocation, module->arch.got_offset,				 module->module_core);			relocation -= ((unsigned long)module->module_core				       + module->arch.got_offset);			*location = relocation;			break;		case R_AVR32_GOT18SW:			if ((relocation & 0xfffe0003) != 0			    && (relocation & 0xfffc0003) != 0xffff0000)				return reloc_overflow(module, "R_AVR32_GOT18SW",						     relocation);			relocation >>= 2;			/* fall through */		case R_AVR32_GOT16S:			if ((relocation & 0xffff8000) != 0			    && (relocation & 0xffff0000) != 0xffff0000)				return reloc_overflow(module, "R_AVR32_GOT16S",						      relocation);			pr_debug("GOT reloc @ 0x%x -> %u\n",				 rel->r_offset, relocation);			value = *location;			value = ((value & 0xffff0000)				 | (relocation & 0xffff));			*location = value;			break;		default:			printk(KERN_ERR "module %s: Unknown relocation: %u\n",			       module->name, ELF32_R_TYPE(rel->r_info));			return -ENOEXEC;		}	}
+i = 0;
+i = 0
+i
+i
+0
+i < relsec->sh_size / sizeof(Elf32_Rela)
+i
+i
+relsec->sh_size / sizeof(Elf32_Rela)
+relsec->sh_size
+relsec
+relsec
+sh_size
+sizeof(Elf32_Rela)
+Elf32_Rela
+Elf32_Rela
+Elf32_Rela
+
+i++, rel++
+i++
+i
+i
+rel++
+rel
+rel
+{		struct mod_arch_syminfo *info;		Elf32_Sym *sym;		Elf32_Addr relocation;		uint32_t *location;		uint32_t value;		location = (void *)dstsec->sh_addr + rel->r_offset;		sym = (Elf32_Sym *)symsec->sh_addr + ELF32_R_SYM(rel->r_info);		relocation = sym->st_value + rel->r_addend;		info = module->arch.syminfo + ELF32_R_SYM(rel->r_info);		/* Initialize GOT entry if necessary */		switch (ELF32_R_TYPE(rel->r_info)) {		case R_AVR32_GOT32:		case R_AVR32_GOT16:		case R_AVR32_GOT8:		case R_AVR32_GOT21S:		case R_AVR32_GOT18SW:		case R_AVR32_GOT16S:			if (!info->got_initialized) {				Elf32_Addr *gotent;				gotent = (module->module_core					  + module->arch.got_offset					  + info->got_offset);				*gotent = relocation;				info->got_initialized = 1;			}			relocation = info->got_offset;			break;		}		switch (ELF32_R_TYPE(rel->r_info)) {		case R_AVR32_32:		case R_AVR32_32_CPENT:			*location = relocation;			break;		case R_AVR32_22H_PCREL:			relocation -= (Elf32_Addr)location;			if ((relocation & 0xffe00001) != 0			    && (relocation & 0xffc00001) != 0xffc00000)				return reloc_overflow(module,						      "R_AVR32_22H_PCREL",						      relocation);			relocation >>= 1;			value = *location;			value = ((value & 0xe1ef0000)				 | (relocation & 0xffff)				 | ((relocation & 0x10000) << 4)				 | ((relocation & 0x1e0000) << 8));			*location = value;			break;		case R_AVR32_11H_PCREL:			relocation -= (Elf32_Addr)location;			if ((relocation & 0xfffffc01) != 0			    && (relocation & 0xfffff801) != 0xfffff800)				return reloc_overflow(module,						      "R_AVR32_11H_PCREL",						      relocation);			value = get_u16(location);			value = ((value & 0xf00c)				 | ((relocation & 0x1fe) << 3)				 | ((relocation & 0x600) >> 9));			put_u16(location, value);			break;		case R_AVR32_9H_PCREL:			relocation -= (Elf32_Addr)location;			if ((relocation & 0xffffff01) != 0			    && (relocation & 0xfffffe01) != 0xfffffe00)				return reloc_overflow(module,						      "R_AVR32_9H_PCREL",						      relocation);			value = get_u16(location);			value = ((value & 0xf00f)				 | ((relocation & 0x1fe) << 3));			put_u16(location, value);			break;		case R_AVR32_9UW_PCREL:			relocation -= ((Elf32_Addr)location) & 0xfffffffc;			if ((relocation & 0xfffffc03) != 0)				return reloc_overflow(module,						      "R_AVR32_9UW_PCREL",						      relocation);			value = get_u16(location);			value = ((value & 0xf80f)				 | ((relocation & 0x1fc) << 2));			put_u16(location, value);			break;		case R_AVR32_GOTPC:			/*			 * R6 = PC - (PC - GOT)			 *			 * At this point, relocation contains the			 * value of PC.  Just subtract the value of			 * GOT, and we're done.			 */			pr_debug("GOTPC: PC=0x%x, got_offset=0x%lx, core=0x%p\n",				 relocation, module->arch.got_offset,				 module->module_core);			relocation -= ((unsigned long)module->module_core				       + module->arch.got_offset);			*location = relocation;			break;		case R_AVR32_GOT18SW:			if ((relocation & 0xfffe0003) != 0			    && (relocation & 0xfffc0003) != 0xffff0000)				return reloc_overflow(module, "R_AVR32_GOT18SW",						     relocation);			relocation >>= 2;			/* fall through */		case R_AVR32_GOT16S:			if ((relocation & 0xffff8000) != 0			    && (relocation & 0xffff0000) != 0xffff0000)				return reloc_overflow(module, "R_AVR32_GOT16S",						      relocation);			pr_debug("GOT reloc @ 0x%x -> %u\n",				 rel->r_offset, relocation);			value = *location;			value = ((value & 0xffff0000)				 | (relocation & 0xffff));			*location = value;			break;		default:			printk(KERN_ERR "module %s: Unknown relocation: %u\n",			       module->name, ELF32_R_TYPE(rel->r_info));			return -ENOEXEC;		}	}
+struct mod_arch_syminfo *info;
+struct mod_arch_syminfo *info;
+struct mod_arch_syminfo
+mod_arch_syminfo
+*info
+*
+info
+Elf32_Sym *sym;
+Elf32_Sym *sym;
+Elf32_Sym
+Elf32_Sym
+*sym
+*
+sym
+Elf32_Addr relocation;
+Elf32_Addr relocation;
+Elf32_Addr
+Elf32_Addr
+relocation
+relocation
+uint32_t *location;
+uint32_t *location;
+uint32_t
+uint32_t
+*location
+*
+location
+uint32_t value;
+uint32_t value;
+uint32_t
+uint32_t
+value
+value
+location = (void *)dstsec->sh_addr + rel->r_offset;
+location = (void *)dstsec->sh_addr + rel->r_offset
+location
+location
+(void *)dstsec->sh_addr + rel->r_offset
+(void *)dstsec->sh_addr
+void *
+void
+*
+*
+dstsec->sh_addr
+dstsec
+dstsec
+sh_addr
+rel->r_offset
+rel
+rel
+r_offset
+sym = (Elf32_Sym *)symsec->sh_addr + ELF32_R_SYM(rel->r_info);
+sym = (Elf32_Sym *)symsec->sh_addr + ELF32_R_SYM(rel->r_info)
+sym
+sym
+(Elf32_Sym *)symsec->sh_addr + ELF32_R_SYM(rel->r_info)
+(Elf32_Sym *)symsec->sh_addr
+Elf32_Sym *
+Elf32_Sym
+Elf32_Sym
+*
+*
+symsec->sh_addr
+symsec
+symsec
+sh_addr
+ELF32_R_SYM(rel->r_info)
+ELF32_R_SYM
+ELF32_R_SYM
+rel->r_info
+rel
+rel
+r_info
+relocation = sym->st_value + rel->r_addend;
+relocation = sym->st_value + rel->r_addend
+relocation
+relocation
+sym->st_value + rel->r_addend
+sym->st_value
+sym
+sym
+st_value
+rel->r_addend
+rel
+rel
+r_addend
+info = module->arch.syminfo + ELF32_R_SYM(rel->r_info);
+info = module->arch.syminfo + ELF32_R_SYM(rel->r_info)
+info
+info
+module->arch.syminfo + ELF32_R_SYM(rel->r_info)
+module->arch.syminfo
+module->arch
+module
+module
+arch
+syminfo
+ELF32_R_SYM(rel->r_info)
+ELF32_R_SYM
+ELF32_R_SYM
+rel->r_info
+rel
+rel
+r_info
+switch (ELF32_R_TYPE(rel->r_info)) {		case R_AVR32_GOT32:		case R_AVR32_GOT16:		case R_AVR32_GOT8:		case R_AVR32_GOT21S:		case R_AVR32_GOT18SW:		case R_AVR32_GOT16S:			if (!info->got_initialized) {				Elf32_Addr *gotent;				gotent = (module->module_core					  + module->arch.got_offset					  + info->got_offset);				*gotent = relocation;				info->got_initialized = 1;			}			relocation = info->got_offset;			break;		}
+ELF32_R_TYPE(rel->r_info)
+ELF32_R_TYPE
+ELF32_R_TYPE
+rel->r_info
+rel
+rel
+r_info
+{		case R_AVR32_GOT32:		case R_AVR32_GOT16:		case R_AVR32_GOT8:		case R_AVR32_GOT21S:		case R_AVR32_GOT18SW:		case R_AVR32_GOT16S:			if (!info->got_initialized) {				Elf32_Addr *gotent;				gotent = (module->module_core					  + module->arch.got_offset					  + info->got_offset);				*gotent = relocation;				info->got_initialized = 1;			}			relocation = info->got_offset;			break;		}
+case R_AVR32_GOT32:
+R_AVR32_GOT32
+R_AVR32_GOT32
+case R_AVR32_GOT16:
+R_AVR32_GOT16
+R_AVR32_GOT16
+case R_AVR32_GOT8:
+R_AVR32_GOT8
+R_AVR32_GOT8
+case R_AVR32_GOT21S:
+R_AVR32_GOT21S
+R_AVR32_GOT21S
+case R_AVR32_GOT18SW:
+R_AVR32_GOT18SW
+R_AVR32_GOT18SW
+case R_AVR32_GOT16S:
+R_AVR32_GOT16S
+R_AVR32_GOT16S
+if (!info->got_initialized) {				Elf32_Addr *gotent;				gotent = (module->module_core					  + module->arch.got_offset					  + info->got_offset);				*gotent = relocation;				info->got_initialized = 1;			}
+!info->got_initialized
+info->got_initialized
+info
+info
+got_initialized
+{				Elf32_Addr *gotent;				gotent = (module->module_core					  + module->arch.got_offset					  + info->got_offset);				*gotent = relocation;				info->got_initialized = 1;			}
+Elf32_Addr *gotent;
+Elf32_Addr *gotent;
+Elf32_Addr
+Elf32_Addr
+*gotent
+*
+gotent
+gotent = (module->module_core					  + module->arch.got_offset					  + info->got_offset);
+gotent = (module->module_core					  + module->arch.got_offset					  + info->got_offset)
+gotent
+gotent
+(module->module_core					  + module->arch.got_offset					  + info->got_offset)
+module->module_core					  + module->arch.got_offset					  + info->got_offset
+module->module_core					  + module->arch.got_offset
+module->module_core
+module
+module
+module_core
+module->arch.got_offset
+module->arch
+module
+module
+arch
+got_offset
+info->got_offset
+info
+info
+got_offset
+*gotent = relocation;
+*gotent = relocation
+*gotent
+gotent
+gotent
+relocation
+relocation
+info->got_initialized = 1;
+info->got_initialized = 1
+info->got_initialized
+info
+info
+got_initialized
+1
+relocation = info->got_offset;
+relocation = info->got_offset
+relocation
+relocation
+info->got_offset
+info
+info
+got_offset
+break;
+switch (ELF32_R_TYPE(rel->r_info)) {		case R_AVR32_32:		case R_AVR32_32_CPENT:			*location = relocation;			break;		case R_AVR32_22H_PCREL:			relocation -= (Elf32_Addr)location;			if ((relocation & 0xffe00001) != 0			    && (relocation & 0xffc00001) != 0xffc00000)				return reloc_overflow(module,						      "R_AVR32_22H_PCREL",						      relocation);			relocation >>= 1;			value = *location;			value = ((value & 0xe1ef0000)				 | (relocation & 0xffff)				 | ((relocation & 0x10000) << 4)				 | ((relocation & 0x1e0000) << 8));			*location = value;			break;		case R_AVR32_11H_PCREL:			relocation -= (Elf32_Addr)location;			if ((relocation & 0xfffffc01) != 0			    && (relocation & 0xfffff801) != 0xfffff800)				return reloc_overflow(module,						      "R_AVR32_11H_PCREL",						      relocation);			value = get_u16(location);			value = ((value & 0xf00c)				 | ((relocation & 0x1fe) << 3)				 | ((relocation & 0x600) >> 9));			put_u16(location, value);			break;		case R_AVR32_9H_PCREL:			relocation -= (Elf32_Addr)location;			if ((relocation & 0xffffff01) != 0			    && (relocation & 0xfffffe01) != 0xfffffe00)				return reloc_overflow(module,						      "R_AVR32_9H_PCREL",						      relocation);			value = get_u16(location);			value = ((value & 0xf00f)				 | ((relocation & 0x1fe) << 3));			put_u16(location, value);			break;		case R_AVR32_9UW_PCREL:			relocation -= ((Elf32_Addr)location) & 0xfffffffc;			if ((relocation & 0xfffffc03) != 0)				return reloc_overflow(module,						      "R_AVR32_9UW_PCREL",						      relocation);			value = get_u16(location);			value = ((value & 0xf80f)				 | ((relocation & 0x1fc) << 2));			put_u16(location, value);			break;		case R_AVR32_GOTPC:			/*			 * R6 = PC - (PC - GOT)			 *			 * At this point, relocation contains the			 * value of PC.  Just subtract the value of			 * GOT, and we're done.			 */			pr_debug("GOTPC: PC=0x%x, got_offset=0x%lx, core=0x%p\n",				 relocation, module->arch.got_offset,				 module->module_core);			relocation -= ((unsigned long)module->module_core				       + module->arch.got_offset);			*location = relocation;			break;		case R_AVR32_GOT18SW:			if ((relocation & 0xfffe0003) != 0			    && (relocation & 0xfffc0003) != 0xffff0000)				return reloc_overflow(module, "R_AVR32_GOT18SW",						     relocation);			relocation >>= 2;			/* fall through */		case R_AVR32_GOT16S:			if ((relocation & 0xffff8000) != 0			    && (relocation & 0xffff0000) != 0xffff0000)				return reloc_overflow(module, "R_AVR32_GOT16S",						      relocation);			pr_debug("GOT reloc @ 0x%x -> %u\n",				 rel->r_offset, relocation);			value = *location;			value = ((value & 0xffff0000)				 | (relocation & 0xffff));			*location = value;			break;		default:			printk(KERN_ERR "module %s: Unknown relocation: %u\n",			       module->name, ELF32_R_TYPE(rel->r_info));			return -ENOEXEC;		}
+ELF32_R_TYPE(rel->r_info)
+ELF32_R_TYPE
+ELF32_R_TYPE
+rel->r_info
+rel
+rel
+r_info
+{		case R_AVR32_32:		case R_AVR32_32_CPENT:			*location = relocation;			break;		case R_AVR32_22H_PCREL:			relocation -= (Elf32_Addr)location;			if ((relocation & 0xffe00001) != 0			    && (relocation & 0xffc00001) != 0xffc00000)				return reloc_overflow(module,						      "R_AVR32_22H_PCREL",						      relocation);			relocation >>= 1;			value = *location;			value = ((value & 0xe1ef0000)				 | (relocation & 0xffff)				 | ((relocation & 0x10000) << 4)				 | ((relocation & 0x1e0000) << 8));			*location = value;			break;		case R_AVR32_11H_PCREL:			relocation -= (Elf32_Addr)location;			if ((relocation & 0xfffffc01) != 0			    && (relocation & 0xfffff801) != 0xfffff800)				return reloc_overflow(module,						      "R_AVR32_11H_PCREL",						      relocation);			value = get_u16(location);			value = ((value & 0xf00c)				 | ((relocation & 0x1fe) << 3)				 | ((relocation & 0x600) >> 9));			put_u16(location, value);			break;		case R_AVR32_9H_PCREL:			relocation -= (Elf32_Addr)location;			if ((relocation & 0xffffff01) != 0			    && (relocation & 0xfffffe01) != 0xfffffe00)				return reloc_overflow(module,						      "R_AVR32_9H_PCREL",						      relocation);			value = get_u16(location);			value = ((value & 0xf00f)				 | ((relocation & 0x1fe) << 3));			put_u16(location, value);			break;		case R_AVR32_9UW_PCREL:			relocation -= ((Elf32_Addr)location) & 0xfffffffc;			if ((relocation & 0xfffffc03) != 0)				return reloc_overflow(module,						      "R_AVR32_9UW_PCREL",						      relocation);			value = get_u16(location);			value = ((value & 0xf80f)				 | ((relocation & 0x1fc) << 2));			put_u16(location, value);			break;		case R_AVR32_GOTPC:			/*			 * R6 = PC - (PC - GOT)			 *			 * At this point, relocation contains the			 * value of PC.  Just subtract the value of			 * GOT, and we're done.			 */			pr_debug("GOTPC: PC=0x%x, got_offset=0x%lx, core=0x%p\n",				 relocation, module->arch.got_offset,				 module->module_core);			relocation -= ((unsigned long)module->module_core				       + module->arch.got_offset);			*location = relocation;			break;		case R_AVR32_GOT18SW:			if ((relocation & 0xfffe0003) != 0			    && (relocation & 0xfffc0003) != 0xffff0000)				return reloc_overflow(module, "R_AVR32_GOT18SW",						     relocation);			relocation >>= 2;			/* fall through */		case R_AVR32_GOT16S:			if ((relocation & 0xffff8000) != 0			    && (relocation & 0xffff0000) != 0xffff0000)				return reloc_overflow(module, "R_AVR32_GOT16S",						      relocation);			pr_debug("GOT reloc @ 0x%x -> %u\n",				 rel->r_offset, relocation);			value = *location;			value = ((value & 0xffff0000)				 | (relocation & 0xffff));			*location = value;			break;		default:			printk(KERN_ERR "module %s: Unknown relocation: %u\n",			       module->name, ELF32_R_TYPE(rel->r_info));			return -ENOEXEC;		}
+case R_AVR32_32:
+R_AVR32_32
+R_AVR32_32
+case R_AVR32_32_CPENT:
+R_AVR32_32_CPENT
+R_AVR32_32_CPENT
+*location = relocation;
+*location = relocation
+*location
+location
+location
+relocation
+relocation
+break;
+case R_AVR32_22H_PCREL:
+R_AVR32_22H_PCREL
+R_AVR32_22H_PCREL
+relocation -= (Elf32_Addr)location;
+relocation -= (Elf32_Addr)location
+relocation
+relocation
+(Elf32_Addr)location
+Elf32_Addr
+Elf32_Addr
+Elf32_Addr
+
+location
+location
+if ((relocation & 0xffe00001) != 0			    && (relocation & 0xffc00001) != 0xffc00000)				return reloc_overflow(module,						      "R_AVR32_22H_PCREL",						      relocation);
+(relocation & 0xffe00001) != 0			    && (relocation & 0xffc00001) != 0xffc00000
+(relocation & 0xffe00001) != 0
+(relocation & 0xffe00001)
+relocation & 0xffe00001
+relocation
+relocation
+0xffe00001
+0
+(relocation & 0xffc00001) != 0xffc00000
+(relocation & 0xffc00001)
+relocation & 0xffc00001
+relocation
+relocation
+0xffc00001
+0xffc00000
+return reloc_overflow(module,						      "R_AVR32_22H_PCREL",						      relocation);
+reloc_overflow(module,						      "R_AVR32_22H_PCREL",						      relocation)
+reloc_overflow
+reloc_overflow
+module
+module
+"R_AVR32_22H_PCREL"
+relocation
+relocation
+relocation >>= 1;
+relocation >>= 1
+relocation
+relocation
+1
+value = *location;
+value = *location
+value
+value
+*location
+location
+location
+value = ((value & 0xe1ef0000)				 | (relocation & 0xffff)				 | ((relocation & 0x10000) << 4)				 | ((relocation & 0x1e0000) << 8));
+value = ((value & 0xe1ef0000)				 | (relocation & 0xffff)				 | ((relocation & 0x10000) << 4)				 | ((relocation & 0x1e0000) << 8))
+value
+value
+((value & 0xe1ef0000)				 | (relocation & 0xffff)				 | ((relocation & 0x10000) << 4)				 | ((relocation & 0x1e0000) << 8))
+(value & 0xe1ef0000)				 | (relocation & 0xffff)				 | ((relocation & 0x10000) << 4)				 | ((relocation & 0x1e0000) << 8)
+(value & 0xe1ef0000)				 | (relocation & 0xffff)				 | ((relocation & 0x10000) << 4)
+(value & 0xe1ef0000)				 | (relocation & 0xffff)
+(value & 0xe1ef0000)
+value & 0xe1ef0000
+value
+value
+0xe1ef0000
+(relocation & 0xffff)
+relocation & 0xffff
+relocation
+relocation
+0xffff
+((relocation & 0x10000) << 4)
+(relocation & 0x10000) << 4
+(relocation & 0x10000)
+relocation & 0x10000
+relocation
+relocation
+0x10000
+4
+((relocation & 0x1e0000) << 8)
+(relocation & 0x1e0000) << 8
+(relocation & 0x1e0000)
+relocation & 0x1e0000
+relocation
+relocation
+0x1e0000
+8
+*location = value;
+*location = value
+*location
+location
+location
+value
+value
+break;
+case R_AVR32_11H_PCREL:
+R_AVR32_11H_PCREL
+R_AVR32_11H_PCREL
+relocation -= (Elf32_Addr)location;
+relocation -= (Elf32_Addr)location
+relocation
+relocation
+(Elf32_Addr)location
+Elf32_Addr
+Elf32_Addr
+Elf32_Addr
+
+location
+location
+if ((relocation & 0xfffffc01) != 0			    && (relocation & 0xfffff801) != 0xfffff800)				return reloc_overflow(module,						      "R_AVR32_11H_PCREL",						      relocation);
+(relocation & 0xfffffc01) != 0			    && (relocation & 0xfffff801) != 0xfffff800
+(relocation & 0xfffffc01) != 0
+(relocation & 0xfffffc01)
+relocation & 0xfffffc01
+relocation
+relocation
+0xfffffc01
+0
+(relocation & 0xfffff801) != 0xfffff800
+(relocation & 0xfffff801)
+relocation & 0xfffff801
+relocation
+relocation
+0xfffff801
+0xfffff800
+return reloc_overflow(module,						      "R_AVR32_11H_PCREL",						      relocation);
+reloc_overflow(module,						      "R_AVR32_11H_PCREL",						      relocation)
+reloc_overflow
+reloc_overflow
+module
+module
+"R_AVR32_11H_PCREL"
+relocation
+relocation
+value = get_u16(location);
+value = get_u16(location)
+value
+value
+get_u16(location)
+get_u16
+get_u16
+location
+location
+value = ((value & 0xf00c)				 | ((relocation & 0x1fe) << 3)				 | ((relocation & 0x600) >> 9));
+value = ((value & 0xf00c)				 | ((relocation & 0x1fe) << 3)				 | ((relocation & 0x600) >> 9))
+value
+value
+((value & 0xf00c)				 | ((relocation & 0x1fe) << 3)				 | ((relocation & 0x600) >> 9))
+(value & 0xf00c)				 | ((relocation & 0x1fe) << 3)				 | ((relocation & 0x600) >> 9)
+(value & 0xf00c)				 | ((relocation & 0x1fe) << 3)
+(value & 0xf00c)
+value & 0xf00c
+value
+value
+0xf00c
+((relocation & 0x1fe) << 3)
+(relocation & 0x1fe) << 3
+(relocation & 0x1fe)
+relocation & 0x1fe
+relocation
+relocation
+0x1fe
+3
+((relocation & 0x600) >> 9)
+(relocation & 0x600) >> 9
+(relocation & 0x600)
+relocation & 0x600
+relocation
+relocation
+0x600
+9
+put_u16(location, value);
+put_u16(location, value)
+put_u16
+put_u16
+location
+location
+value
+value
+break;
+case R_AVR32_9H_PCREL:
+R_AVR32_9H_PCREL
+R_AVR32_9H_PCREL
+relocation -= (Elf32_Addr)location;
+relocation -= (Elf32_Addr)location
+relocation
+relocation
+(Elf32_Addr)location
+Elf32_Addr
+Elf32_Addr
+Elf32_Addr
+
+location
+location
+if ((relocation & 0xffffff01) != 0			    && (relocation & 0xfffffe01) != 0xfffffe00)				return reloc_overflow(module,						      "R_AVR32_9H_PCREL",						      relocation);
+(relocation & 0xffffff01) != 0			    && (relocation & 0xfffffe01) != 0xfffffe00
+(relocation & 0xffffff01) != 0
+(relocation & 0xffffff01)
+relocation & 0xffffff01
+relocation
+relocation
+0xffffff01
+0
+(relocation & 0xfffffe01) != 0xfffffe00
+(relocation & 0xfffffe01)
+relocation & 0xfffffe01
+relocation
+relocation
+0xfffffe01
+0xfffffe00
+return reloc_overflow(module,						      "R_AVR32_9H_PCREL",						      relocation);
+reloc_overflow(module,						      "R_AVR32_9H_PCREL",						      relocation)
+reloc_overflow
+reloc_overflow
+module
+module
+"R_AVR32_9H_PCREL"
+relocation
+relocation
+value = get_u16(location);
+value = get_u16(location)
+value
+value
+get_u16(location)
+get_u16
+get_u16
+location
+location
+value = ((value & 0xf00f)				 | ((relocation & 0x1fe) << 3));
+value = ((value & 0xf00f)				 | ((relocation & 0x1fe) << 3))
+value
+value
+((value & 0xf00f)				 | ((relocation & 0x1fe) << 3))
+(value & 0xf00f)				 | ((relocation & 0x1fe) << 3)
+(value & 0xf00f)
+value & 0xf00f
+value
+value
+0xf00f
+((relocation & 0x1fe) << 3)
+(relocation & 0x1fe) << 3
+(relocation & 0x1fe)
+relocation & 0x1fe
+relocation
+relocation
+0x1fe
+3
+put_u16(location, value);
+put_u16(location, value)
+put_u16
+put_u16
+location
+location
+value
+value
+break;
+case R_AVR32_9UW_PCREL:
+R_AVR32_9UW_PCREL
+R_AVR32_9UW_PCREL
+relocation -= ((Elf32_Addr)location) & 0xfffffffc;
+relocation -= ((Elf32_Addr)location) & 0xfffffffc
+relocation
+relocation
+((Elf32_Addr)location) & 0xfffffffc
+((Elf32_Addr)location)
+(Elf32_Addr)location
+Elf32_Addr
+Elf32_Addr
+Elf32_Addr
+
+location
+location
+0xfffffffc
+if ((relocation & 0xfffffc03) != 0)				return reloc_overflow(module,						      "R_AVR32_9UW_PCREL",						      relocation);
+(relocation & 0xfffffc03) != 0
+(relocation & 0xfffffc03)
+relocation & 0xfffffc03
+relocation
+relocation
+0xfffffc03
+0
+return reloc_overflow(module,						      "R_AVR32_9UW_PCREL",						      relocation);
+reloc_overflow(module,						      "R_AVR32_9UW_PCREL",						      relocation)
+reloc_overflow
+reloc_overflow
+module
+module
+"R_AVR32_9UW_PCREL"
+relocation
+relocation
+value = get_u16(location);
+value = get_u16(location)
+value
+value
+get_u16(location)
+get_u16
+get_u16
+location
+location
+value = ((value & 0xf80f)				 | ((relocation & 0x1fc) << 2));
+value = ((value & 0xf80f)				 | ((relocation & 0x1fc) << 2))
+value
+value
+((value & 0xf80f)				 | ((relocation & 0x1fc) << 2))
+(value & 0xf80f)				 | ((relocation & 0x1fc) << 2)
+(value & 0xf80f)
+value & 0xf80f
+value
+value
+0xf80f
+((relocation & 0x1fc) << 2)
+(relocation & 0x1fc) << 2
+(relocation & 0x1fc)
+relocation & 0x1fc
+relocation
+relocation
+0x1fc
+2
+put_u16(location, value);
+put_u16(location, value)
+put_u16
+put_u16
+location
+location
+value
+value
+break;
+case R_AVR32_GOTPC:
+R_AVR32_GOTPC
+R_AVR32_GOTPC
+pr_debug("GOTPC: PC=0x%x, got_offset=0x%lx, core=0x%p\n",				 relocation, module->arch.got_offset,				 module->module_core);
+pr_debug("GOTPC: PC=0x%x, got_offset=0x%lx, core=0x%p\n",				 relocation, module->arch.got_offset,				 module->module_core)
+pr_debug
+pr_debug
+"GOTPC: PC=0x%x, got_offset=0x%lx, core=0x%p\n"
+relocation
+relocation
+module->arch.got_offset
+module->arch
+module
+module
+arch
+got_offset
+module->module_core
+module
+module
+module_core
+relocation -= ((unsigned long)module->module_core				       + module->arch.got_offset);
+relocation -= ((unsigned long)module->module_core				       + module->arch.got_offset)
+relocation
+relocation
+((unsigned long)module->module_core				       + module->arch.got_offset)
+(unsigned long)module->module_core				       + module->arch.got_offset
+(unsigned long)module->module_core
+unsigned long
+unsigned long
+
+module->module_core
+module
+module
+module_core
+module->arch.got_offset
+module->arch
+module
+module
+arch
+got_offset
+*location = relocation;
+*location = relocation
+*location
+location
+location
+relocation
+relocation
+break;
+case R_AVR32_GOT18SW:
+R_AVR32_GOT18SW
+R_AVR32_GOT18SW
+if ((relocation & 0xfffe0003) != 0			    && (relocation & 0xfffc0003) != 0xffff0000)				return reloc_overflow(module, "R_AVR32_GOT18SW",						     relocation);
+(relocation & 0xfffe0003) != 0			    && (relocation & 0xfffc0003) != 0xffff0000
+(relocation & 0xfffe0003) != 0
+(relocation & 0xfffe0003)
+relocation & 0xfffe0003
+relocation
+relocation
+0xfffe0003
+0
+(relocation & 0xfffc0003) != 0xffff0000
+(relocation & 0xfffc0003)
+relocation & 0xfffc0003
+relocation
+relocation
+0xfffc0003
+0xffff0000
+return reloc_overflow(module, "R_AVR32_GOT18SW",						     relocation);
+reloc_overflow(module, "R_AVR32_GOT18SW",						     relocation)
+reloc_overflow
+reloc_overflow
+module
+module
+"R_AVR32_GOT18SW"
+relocation
+relocation
+relocation >>= 2;
+relocation >>= 2
+relocation
+relocation
+2
+case R_AVR32_GOT16S:
+R_AVR32_GOT16S
+R_AVR32_GOT16S
+if ((relocation & 0xffff8000) != 0			    && (relocation & 0xffff0000) != 0xffff0000)				return reloc_overflow(module, "R_AVR32_GOT16S",						      relocation);
+(relocation & 0xffff8000) != 0			    && (relocation & 0xffff0000) != 0xffff0000
+(relocation & 0xffff8000) != 0
+(relocation & 0xffff8000)
+relocation & 0xffff8000
+relocation
+relocation
+0xffff8000
+0
+(relocation & 0xffff0000) != 0xffff0000
+(relocation & 0xffff0000)
+relocation & 0xffff0000
+relocation
+relocation
+0xffff0000
+0xffff0000
+return reloc_overflow(module, "R_AVR32_GOT16S",						      relocation);
+reloc_overflow(module, "R_AVR32_GOT16S",						      relocation)
+reloc_overflow
+reloc_overflow
+module
+module
+"R_AVR32_GOT16S"
+relocation
+relocation
+pr_debug("GOT reloc @ 0x%x -> %u\n",				 rel->r_offset, relocation);
+pr_debug("GOT reloc @ 0x%x -> %u\n",				 rel->r_offset, relocation)
+pr_debug
+pr_debug
+"GOT reloc @ 0x%x -> %u\n"
+rel->r_offset
+rel
+rel
+r_offset
+relocation
+relocation
+value = *location;
+value = *location
+value
+value
+*location
+location
+location
+value = ((value & 0xffff0000)				 | (relocation & 0xffff));
+value = ((value & 0xffff0000)				 | (relocation & 0xffff))
+value
+value
+((value & 0xffff0000)				 | (relocation & 0xffff))
+(value & 0xffff0000)				 | (relocation & 0xffff)
+(value & 0xffff0000)
+value & 0xffff0000
+value
+value
+0xffff0000
+(relocation & 0xffff)
+relocation & 0xffff
+relocation
+relocation
+0xffff
+*location = value;
+*location = value
+*location
+location
+location
+value
+value
+break;
+default:
+printk(KERN_ERR "module %s: Unknown relocation: %u\n",			       module->name, ELF32_R_TYPE(rel->r_info));
+return -ENOEXEC;
+-ENOEXEC
+ENOEXEC
+ENOEXEC
+return ret;
+ret
+ret
+-----joern-----
+(238,1,0)
+(171,17,0)
+(172,117,0)
+(383,450,0)
+(365,82,0)
+(35,385,0)
+(437,53,0)
+(285,11,0)
+(187,167,0)
+(160,405,0)
+(363,42,0)
+(382,19,0)
+(428,221,0)
+(214,102,0)
+(381,367,0)
+(97,296,0)
+(374,389,0)
+(319,26,0)
+(275,170,0)
+(135,229,0)
+(130,249,0)
+(10,15,0)
+(251,450,0)
+(329,217,0)
+(57,1,0)
+(179,248,0)
+(170,275,0)
+(446,348,0)
+(344,277,0)
+(433,407,0)
+(116,10,0)
+(192,18,0)
+(370,26,0)
+(223,325,0)
+(60,348,0)
+(239,108,0)
+(156,135,0)
+(60,179,0)
+(124,230,0)
+(193,325,0)
+(170,251,0)
+(354,419,0)
+(446,178,0)
+(376,26,0)
+(195,384,0)
+(265,189,0)
+(305,102,0)
+(212,53,0)
+(37,384,0)
+(223,187,0)
+(195,15,0)
+(47,269,0)
+(133,36,0)
+(246,225,0)
+(229,290,0)
+(155,45,0)
+(76,35,0)
+(185,223,0)
+(224,450,0)
+(221,319,0)
+(4,157,0)
+(178,246,0)
+(258,246,0)
+(161,327,0)
+(222,419,0)
+(17,389,0)
+(56,430,0)
+(78,385,0)
+(285,201,0)
+(305,389,0)
+(446,102,0)
+(244,407,0)
+(149,46,0)
+(52,302,0)
+(98,308,0)
+(37,429,0)
+(247,9,0)
+(301,86,0)
+(183,196,0)
+(58,53,0)
+(397,384,0)
+(149,234,0)
+(248,26,0)
+(403,49,0)
+(12,342,0)
+(398,49,0)
+(190,308,0)
+(30,409,0)
+(157,344,0)
+(210,26,0)
+(264,26,0)
+(114,265,0)
+(310,294,0)
+(299,42,0)
+(377,230,0)
+(230,124,0)
+(354,167,0)
+(274,367,0)
+(22,298,0)
+(58,5,0)
+(9,124,0)
+(324,192,0)
+(401,46,0)
+(232,321,0)
+(1,395,0)
+(325,403,0)
+(446,26,0)
+(7,361,0)
+(305,178,0)
+(60,10,0)
+(249,26,0)
+(328,121,0)
+(152,102,0)
+(250,42,0)
+(196,23,0)
+(65,115,0)
+(320,42,0)
+(11,285,0)
+(33,275,0)
+(187,450,0)
+(84,395,0)
+(93,33,0)
+(348,384,0)
+(345,178,0)
+(441,217,0)
+(39,26,0)
+(78,361,0)
+(393,205,0)
+(101,325,0)
+(87,244,0)
+(99,146,0)
+(78,290,0)
+(385,78,0)
+(203,117,0)
+(163,11,0)
+(22,325,0)
+(412,58,0)
+(105,150,0)
+(141,135,0)
+(158,26,0)
+(100,26,0)
+(355,258,0)
+(360,26,0)
+(104,285,0)
+(321,118,0)
+(187,196,0)
+(6,26,0)
+(120,85,0)
+(140,123,0)
+(217,419,0)
+(407,433,0)
+(294,45,0)
+(115,65,0)
+(423,154,0)
+(135,384,0)
+(85,444,0)
+(44,244,0)
+(368,25,0)
+(147,276,0)
+(279,224,0)
+(302,325,0)
+(294,196,0)
+(138,90,0)
+(149,148,0)
+(327,284,0)
+(68,265,0)
+(424,193,0)
+(182,367,0)
+(227,110,0)
+(426,171,0)
+(40,85,0)
+(129,288,0)
+(132,55,0)
+(359,23,0)
+(307,192,0)
+(30,246,0)
+(416,354,0)
+(386,222,0)
+(353,15,0)
+(338,380,0)
+(152,178,0)
+(399,110,0)
+(286,46,0)
+(32,251,0)
+(60,178,0)
+(277,344,0)
+(3,305,0)
+(344,157,0)
+(277,14,0)
+(33,93,0)
+(146,205,0)
+(269,196,0)
+(168,419,0)
+(325,42,0)
+(222,294,0)
+(292,11,0)
+(340,164,0)
+(195,55,0)
+(113,417,0)
+(135,26,0)
+(85,40,0)
+(28,196,0)
+(431,248,0)
+(49,403,0)
+(49,166,0)
+(81,448,0)
+(308,11,0)
+(206,166,0)
+(352,399,0)
+(80,154,0)
+(146,432,0)
+(197,278,0)
+(165,168,0)
+(62,152,0)
+(121,328,0)
+(3,417,0)
+(278,330,0)
+(273,183,0)
+(3,17,0)
+(81,191,0)
+(334,373,0)
+(269,450,0)
+(191,221,0)
+(282,137,0)
+(290,114,0)
+(88,26,0)
+(388,81,0)
+(115,395,0)
+(409,329,0)
+(86,301,0)
+(225,418,0)
+(224,328,0)
+(0,22,0)
+(36,226,0)
+(372,319,0)
+(225,246,0)
+(93,28,0)
+(176,103,0)
+(413,275,0)
+(278,123,0)
+(164,388,0)
+(11,196,0)
+(436,367,0)
+(422,449,0)
+(430,184,0)
+(344,414,0)
+(152,10,0)
+(407,244,0)
+(446,179,0)
+(440,148,0)
+(272,170,0)
+(159,184,0)
+(346,167,0)
+(90,277,0)
+(184,430,0)
+(369,117,0)
+(378,205,0)
+(448,373,0)
+(409,110,0)
+(117,450,0)
+(406,187,0)
+(55,26,0)
+(5,419,0)
+(196,335,0)
+(397,288,0)
+(17,10,0)
+(79,357,0)
+(19,327,0)
+(219,178,0)
+(308,305,0)
+(219,102,0)
+(72,301,0)
+(101,262,0)
+(287,367,0)
+(1,11,0)
+(234,26,0)
+(81,388,0)
+(283,23,0)
+(336,357,0)
+(265,26,0)
+(106,233,0)
+(294,450,0)
+(339,254,0)
+(285,384,0)
+(28,93,0)
+(290,229,0)
+(257,168,0)
+(296,160,0)
+(170,15,0)
+(19,232,0)
+(361,78,0)
+(332,243,0)
+(328,224,0)
+(362,183,0)
+(357,55,0)
+(169,101,0)
+(314,171,0)
+(117,219,0)
+(404,72,0)
+(323,233,0)
+(170,384,0)
+(97,450,0)
+(148,149,0)
+(316,187,0)
+(117,419,0)
+(38,37,0)
+(93,370,0)
+(18,284,0)
+(237,296,0)
+(253,222,0)
+(374,102,0)
+(177,226,0)
+(67,310,0)
+(303,26,0)
+(343,384,0)
+(252,26,0)
+(391,65,0)
+(233,323,0)
+(17,179,0)
+(73,308,0)
+(356,196,0)
+(218,401,0)
+(29,114,0)
+(351,25,0)
+(410,403,0)
+(348,251,0)
+(394,26,0)
+(123,278,0)
+(357,181,0)
+(102,383,0)
+(305,179,0)
+(45,294,0)
+(269,433,0)
+(258,425,0)
+(433,147,0)
+(20,5,0)
+(255,370,0)
+(181,191,0)
+(128,399,0)
+(374,179,0)
+(121,362,0)
+(13,335,0)
+(447,289,0)
+(442,85,0)
+(320,184,0)
+(308,419,0)
+(298,254,0)
+(193,330,0)
+(97,196,0)
+(260,123,0)
+(333,227,0)
+(192,232,0)
+(53,196,0)
+(437,419,0)
+(65,103,0)
+(54,23,0)
+(55,195,0)
+(170,131,0)
+(18,192,0)
+(275,26,0)
+(375,401,0)
+(109,42,0)
+(7,150,0)
+(117,196,0)
+(191,81,0)
+(167,450,0)
+(311,367,0)
+(309,225,0)
+(251,26,0)
+(145,380,0)
+(319,232,0)
+(17,102,0)
+(399,419,0)
+(254,90,0)
+(178,36,0)
+(153,151,0)
+(224,196,0)
+(216,164,0)
+(251,196,0)
+(341,446,0)
+(405,160,0)
+(415,448,0)
+(195,251,0)
+(411,62,0)
+(70,450,0)
+(427,189,0)
+(354,196,0)
+(249,82,0)
+(258,36,0)
+(358,373,0)
+(147,289,0)
+(400,294,0)
+(167,26,0)
+(150,196,0)
+(168,418,0)
+(110,409,0)
+(2,380,0)
+(248,137,0)
+(263,385,0)
+(289,419,0)
+(329,409,0)
+(27,301,0)
+(204,321,0)
+(330,278,0)
+(3,219,0)
+(91,131,0)
+(306,195,0)
+(85,220,0)
+(198,384,0)
+(17,348,0)
+(380,325,0)
+(304,302,0)
+(15,26,0)
+(234,149,0)
+(450,367,0)
+(126,193,0)
+(200,208,0)
+(17,178,0)
+(432,241,0)
+(414,344,0)
+(50,329,0)
+(25,384,0)
+(181,137,0)
+(254,298,0)
+(271,389,0)
+(153,86,0)
+(53,58,0)
+(331,28,0)
+(183,167,0)
+(360,124,0)
+(136,26,0)
+(293,33,0)
+(284,18,0)
+(183,450,0)
+(385,35,0)
+(403,410,0)
+(139,153,0)
+(61,319,0)
+(432,206,0)
+(123,320,0)
+(60,102,0)
+(166,42,0)
+(384,367,0)
+(147,433,0)
+(184,220,0)
+(408,362,0)
+(403,325,0)
+(245,229,0)
+(164,319,0)
+(233,384,0)
+(361,7,0)
+(291,320,0)
+(108,309,0)
+(443,22,0)
+(446,389,0)
+(64,26,0)
+(315,341,0)
+(150,450,0)
+(94,430,0)
+(62,150,0)
+(188,166,0)
+(9,163,0)
+(187,26,0)
+(421,367,0)
+(137,181,0)
+(122,230,0)
+(224,167,0)
+(371,332,0)
+(219,179,0)
+(430,166,0)
+(189,265,0)
+(215,148,0)
+(74,388,0)
+(301,72,0)
+(151,153,0)
+(92,217,0)
+(270,437,0)
+(446,10,0)
+(8,26,0)
+(77,221,0)
+(433,269,0)
+(154,42,0)
+(208,243,0)
+(222,374,0)
+(295,26,0)
+(288,26,0)
+(24,30,0)
+(438,97,0)
+(198,360,0)
+(219,389,0)
+(211,310,0)
+(66,5,0)
+(402,166,0)
+(114,290,0)
+(450,298,0)
+(383,226,0)
+(213,258,0)
+(417,42,0)
+(232,26,0)
+(384,330,0)
+(150,26,0)
+(256,53,0)
+(15,370,0)
+(181,357,0)
+(350,224,0)
+(60,389,0)
+(108,325,0)
+(425,258,0)
+(179,384,0)
+(392,35,0)
+(14,302,0)
+(313,246,0)
+(318,348,0)
+(266,206,0)
+(152,179,0)
+(166,188,0)
+(373,448,0)
+(199,40,0)
+(163,9,0)
+(209,437,0)
+(71,23,0)
+(59,42,0)
+(131,269,0)
+(229,26,0)
+(110,399,0)
+(3,60,0)
+(195,131,0)
+(242,151,0)
+(240,234,0)
+(280,163,0)
+(354,60,0)
+(144,178,0)
+(195,248,0)
+(418,225,0)
+(186,151,0)
+(241,432,0)
+(281,23,0)
+(124,9,0)
+(127,405,0)
+(11,26,0)
+(162,335,0)
+(420,171,0)
+(167,196,0)
+(405,342,0)
+(347,26,0)
+(246,367,0)
+(349,103,0)
+(119,26,0)
+(28,167,0)
+(288,397,0)
+(82,249,0)
+(389,384,0)
+(72,150,0)
+(208,325,0)
+(335,196,0)
+(230,288,0)
+(305,10,0)
+(201,285,0)
+(102,227,0)
+(300,49,0)
+(439,97,0)
+(395,115,0)
+(326,241,0)
+(227,226,0)
+(89,26,0)
+(277,90,0)
+(180,101,0)
+(48,18,0)
+(184,320,0)
+(125,183,0)
+(244,419,0)
+(148,249,0)
+(225,309,0)
+(233,150,0)
+(268,254,0)
+(137,26,0)
+(198,26,0)
+(289,147,0)
+(309,108,0)
+(366,62,0)
+(342,405,0)
+(330,384,0)
+(380,2,0)
+(236,383,0)
+(207,206,0)
+(112,167,0)
+(3,446,0)
+(53,437,0)
+(28,450,0)
+(183,362,0)
+(232,450,0)
+(332,205,0)
+(261,232,0)
+(14,277,0)
+(110,227,0)
+(187,223,0)
+(202,407,0)
+(157,40,0)
+(373,319,0)
+(374,348,0)
+(418,168,0)
+(449,310,0)
+(25,26,0)
+(297,42,0)
+(296,97,0)
+(41,325,0)
+(374,10,0)
+(69,26,0)
+(262,101,0)
+(150,233,0)
+(51,26,0)
+(294,26,0)
+(152,389,0)
+(337,397,0)
+(46,149,0)
+(83,198,0)
+(401,294,0)
+(342,450,0)
+(131,26,0)
+(171,419,0)
+(284,327,0)
+(335,246,0)
+(3,374,0)
+(219,348,0)
+(278,197,0)
+(298,22,0)
+(3,152,0)
+(191,181,0)
+(188,220,0)
+(298,450,0)
+(142,418,0)
+(354,450,0)
+(170,248,0)
+(103,11,0)
+(82,384,0)
+(124,360,0)
+(321,232,0)
+(95,26,0)
+(445,188,0)
+(63,223,0)
+(228,26,0)
+(364,222,0)
+(396,23,0)
+(171,232,0)
+(379,157,0)
+(5,58,0)
+(160,296,0)
+(189,384,0)
+(75,7,0)
+(232,196,0)
+(10,384,0)
+(103,65,0)
+(62,419,0)
+(305,348,0)
+(31,163,0)
+(434,188,0)
+(267,342,0)
+(409,30,0)
+(221,191,0)
+(43,19,0)
+(259,23,0)
+(448,81,0)
+(35,150,0)
+(435,72,0)
+(217,329,0)
+(342,196,0)
+(53,26,0)
+(362,121,0)
+(389,131,0)
+(235,354,0)
+(134,361,0)
+(21,30,0)
+(175,328,0)
+(53,450,0)
+(25,234,0)
+(46,401,0)
+(310,449,0)
+(34,62,0)
+(107,354,0)
+(417,154,0)
+(290,78,0)
+(387,360,0)
+(317,42,0)
+(194,289,0)
+(269,26,0)
+(151,150,0)
+(96,108,0)
+(37,45,0)
+(302,14,0)
+(16,28,0)
+(206,432,0)
+(90,367,0)
+(45,37,0)
+(231,23,0)
+(188,173,0)
+(322,179,0)
+(327,19,0)
+(40,42,0)
+(111,26,0)
+(152,348,0)
+(86,153,0)
+(143,114,0)
+(219,10,0)
+(11,450,0)
+(374,178,0)
+(388,164,0)
+(432,146,0)
+(330,193,0)
+(174,7,0)
+(390,33,0)
+(321,384,0)
+(395,1,0)
+(312,198,0)
+(276,147,0)
+(118,321,0)
+(370,93,0)
+(429,37,0)
+(204,261,1)
+(385,263,1)
+(153,139,1)
+(244,419,1)
+(395,1,1)
+(385,35,1)
+(254,90,1)
+(65,103,1)
+(330,278,1)
+(344,414,1)
+(184,430,1)
+(397,384,1)
+(129,115,1)
+(97,450,1)
+(354,196,1)
+(86,301,1)
+(357,336,1)
+(306,132,1)
+(244,44,1)
+(7,174,1)
+(76,361,1)
+(342,196,1)
+(72,150,1)
+(430,166,1)
+(53,196,1)
+(224,196,1)
+(260,343,1)
+(290,78,1)
+(108,325,1)
+(81,448,1)
+(198,384,1)
+(5,66,1)
+(192,307,1)
+(93,33,1)
+(58,412,1)
+(305,348,1)
+(267,12,1)
+(63,185,1)
+(137,181,1)
+(380,325,1)
+(289,447,1)
+(17,389,1)
+(225,418,1)
+(84,1,1)
+(68,86,1)
+(238,57,1)
+(44,87,1)
+(22,325,1)
+(110,399,1)
+(313,450,1)
+(167,346,1)
+(77,428,1)
+(1,11,1)
+(223,63,1)
+(105,2,1)
+(166,188,1)
+(446,102,1)
+(361,134,1)
+(170,251,1)
+(312,360,1)
+(195,384,1)
+(179,322,1)
+(433,147,1)
+(85,442,1)
+(341,315,1)
+(448,373,1)
+(437,209,1)
+(438,2,1)
+(269,196,1)
+(170,272,1)
+(92,399,1)
+(361,7,1)
+(104,292,1)
+(294,450,1)
+(400,2,1)
+(176,349,1)
+(380,145,1)
+(372,61,1)
+(193,424,1)
+(423,80,1)
+(354,235,1)
+(47,53,1)
+(360,124,1)
+(353,10,1)
+(435,153,1)
+(202,244,1)
+(49,166,1)
+(57,65,1)
+(146,205,1)
+(195,15,1)
+(228,15,1)
+(388,164,1)
+(334,388,1)
+(406,121,1)
+(123,320,1)
+(441,92,1)
+(150,233,1)
+(383,450,1)
+(315,2,1)
+(110,409,1)
+(86,153,1)
+(15,370,1)
+(242,186,1)
+(206,207,1)
+(374,222,1)
+(171,419,1)
+(11,450,1)
+(146,432,1)
+(178,246,1)
+(41,320,1)
+(37,38,1)
+(211,67,1)
+(449,310,1)
+(319,372,1)
+(144,345,1)
+(222,294,1)
+(416,121,1)
+(189,384,1)
+(417,113,1)
+(81,388,1)
+(213,262,1)
+(192,232,1)
+(79,282,1)
+(208,325,1)
+(149,46,1)
+(56,94,1)
+(330,193,1)
+(205,378,1)
+(17,10,1)
+(424,126,1)
+(78,385,1)
+(339,70,1)
+(135,384,1)
+(187,196,1)
+(158,198,1)
+(303,248,1)
+(305,308,1)
+(28,450,1)
+(348,318,1)
+(219,178,1)
+(374,179,1)
+(344,157,1)
+(60,354,1)
+(108,96,1)
+(94,159,1)
+(28,196,1)
+(280,230,1)
+(117,196,1)
+(348,384,1)
+(391,103,1)
+(160,296,1)
+(230,377,1)
+(258,355,1)
+(269,433,1)
+(446,178,1)
+(318,2,1)
+(148,215,1)
+(128,352,1)
+(162,356,1)
+(54,196,1)
+(241,326,1)
+(172,160,1)
+(399,128,1)
+(117,419,1)
+(135,141,1)
+(149,148,1)
+(19,232,1)
+(309,108,1)
+(449,422,1)
+(285,104,1)
+(181,357,1)
+(261,2,1)
+(224,167,1)
+(153,151,1)
+(328,175,1)
+(413,187,1)
+(237,97,1)
+(178,144,1)
+(233,384,1)
+(278,197,1)
+(305,102,1)
+(222,419,1)
+(440,240,1)
+(28,16,1)
+(374,10,1)
+(404,435,1)
+(218,375,1)
+(18,48,1)
+(53,58,1)
+(163,11,1)
+(430,56,1)
+(117,450,1)
+(190,98,1)
+(157,379,1)
+(298,22,1)
+(278,123,1)
+(403,49,1)
+(11,285,1)
+(184,220,1)
+(10,384,1)
+(310,294,1)
+(247,163,1)
+(408,183,1)
+(114,143,1)
+(194,47,1)
+(132,319,1)
+(219,10,1)
+(308,73,1)
+(154,423,1)
+(170,131,1)
+(443,0,1)
+(62,419,1)
+(447,194,1)
+(70,90,1)
+(234,149,1)
+(356,36,1)
+(305,178,1)
+(156,229,1)
+(195,248,1)
+(170,248,1)
+(382,18,1)
+(321,204,1)
+(401,218,1)
+(375,148,1)
+(409,329,1)
+(43,382,1)
+(1,238,1)
+(412,5,1)
+(180,169,1)
+(308,419,1)
+(135,229,1)
+(124,230,1)
+(214,227,1)
+(433,407,1)
+(332,371,1)
+(133,178,1)
+(164,340,1)
+(328,224,1)
+(354,419,1)
+(116,370,1)
+(151,242,1)
+(395,84,1)
+(222,364,1)
+(304,52,1)
+(179,384,1)
+(219,389,1)
+(253,449,1)
+(448,415,1)
+(371,264,1)
+(374,178,1)
+(446,10,1)
+(321,118,1)
+(407,202,1)
+(99,208,1)
+(36,133,1)
+(295,131,1)
+(19,43,1)
+(32,348,1)
+(342,267,1)
+(46,286,1)
+(209,270,1)
+(74,164,1)
+(171,426,1)
+(174,75,1)
+(262,101,1)
+(113,146,1)
+(288,397,1)
+(290,114,1)
+(99,205,1)
+(152,389,1)
+(403,410,1)
+(378,393,1)
+(293,255,1)
+(221,319,1)
+(320,184,1)
+(366,411,1)
+(187,316,1)
+(350,167,1)
+(373,358,1)
+(417,154,1)
+(371,347,1)
+(258,36,1)
+(325,403,1)
+(236,102,1)
+(386,253,1)
+(393,154,1)
+(233,323,1)
+(298,254,1)
+(343,146,1)
+(188,434,1)
+(357,55,1)
+(164,319,1)
+(219,117,1)
+(3,17,1)
+(257,313,1)
+(349,11,1)
+(188,173,1)
+(60,10,1)
+(282,55,1)
+(195,131,1)
+(98,115,1)
+(55,195,1)
+(169,246,1)
+(160,405,1)
+(52,344,1)
+(383,236,1)
+(203,369,1)
+(18,192,1)
+(195,251,1)
+(277,14,1)
+(171,232,1)
+(60,178,1)
+(346,112,1)
+(217,419,1)
+(302,325,1)
+(187,450,1)
+(34,366,1)
+(377,122,1)
+(277,344,1)
+(167,196,1)
+(188,220,1)
+(120,199,1)
+(387,288,1)
+(22,443,1)
+(371,394,1)
+(394,25,1)
+(17,179,1)
+(101,325,1)
+(80,325,1)
+(418,168,1)
+(3,219,1)
+(123,140,1)
+(48,192,1)
+(336,79,1)
+(352,333,1)
+(121,362,1)
+(170,384,1)
+(388,74,1)
+(3,305,1)
+(333,425,1)
+(183,196,1)
+(183,167,1)
+(398,41,1)
+(355,213,1)
+(350,2,1)
+(422,310,1)
+(155,37,1)
+(389,271,1)
+(224,450,1)
+(142,168,1)
+(219,179,1)
+(269,450,1)
+(296,237,1)
+(187,167,1)
+(337,129,1)
+(245,265,1)
+(332,205,1)
+(264,135,1)
+(446,348,1)
+(30,246,1)
+(265,189,1)
+(371,228,1)
+(219,348,1)
+(143,29,1)
+(208,200,1)
+(291,166,1)
+(223,325,1)
+(316,223,1)
+(13,162,1)
+(2,380,1)
+(27,72,1)
+(141,156,1)
+(67,294,1)
+(335,13,1)
+(294,45,1)
+(72,404,1)
+(60,179,1)
+(159,291,1)
+(432,206,1)
+(427,68,1)
+(401,294,1)
+(411,86,1)
+(229,290,1)
+(21,329,1)
+(49,300,1)
+(390,293,1)
+(254,268,1)
+(82,365,1)
+(151,150,1)
+(126,278,1)
+(161,19,1)
+(152,62,1)
+(362,408,1)
+(185,406,1)
+(90,277,1)
+(9,163,1)
+(183,450,1)
+(131,91,1)
+(374,348,1)
+(198,83,1)
+(3,446,1)
+(170,15,1)
+(207,266,1)
+(373,319,1)
+(5,419,1)
+(87,147,1)
+(196,335,1)
+(191,81,1)
+(168,165,1)
+(117,203,1)
+(365,130,1)
+(301,72,1)
+(415,373,1)
+(106,105,1)
+(289,419,1)
+(147,276,1)
+(248,137,1)
+(191,221,1)
+(103,11,1)
+(286,401,1)
+(268,339,1)
+(285,384,1)
+(368,234,1)
+(195,306,1)
+(405,127,1)
+(354,450,1)
+(232,196,1)
+(101,180,1)
+(175,224,1)
+(305,179,1)
+(168,419,1)
+(12,296,1)
+(37,429,1)
+(405,342,1)
+(255,275,1)
+(28,167,1)
+(235,107,1)
+(432,241,1)
+(239,418,1)
+(340,216,1)
+(392,76,1)
+(97,439,1)
+(217,441,1)
+(329,217,1)
+(227,110,1)
+(152,179,1)
+(301,27,1)
+(215,440,1)
+(221,77,1)
+(189,427,1)
+(224,279,1)
+(140,260,1)
+(53,437,1)
+(11,196,1)
+(148,249,1)
+(326,206,1)
+(371,295,1)
+(152,348,1)
+(102,214,1)
+(327,161,1)
+(370,93,1)
+(374,389,1)
+(308,11,1)
+(73,190,1)
+(272,413,1)
+(0,254,1)
+(251,32,1)
+(157,40,1)
+(3,374,1)
+(107,416,1)
+(186,150,1)
+(152,178,1)
+(127,342,1)
+(150,450,1)
+(251,450,1)
+(14,302,1)
+(296,97,1)
+(35,392,1)
+(85,444,1)
+(279,350,1)
+(60,102,1)
+(335,246,1)
+(3,417,1)
+(40,85,1)
+(114,265,1)
+(319,232,1)
+(66,20,1)
+(329,50,1)
+(369,172,1)
+(152,10,1)
+(17,178,1)
+(4,138,1)
+(256,212,1)
+(163,31,1)
+(263,35,1)
+(212,2,1)
+(347,251,1)
+(219,102,1)
+(122,387,1)
+(342,450,1)
+(409,30,1)
+(216,221,1)
+(115,65,1)
+(246,225,1)
+(232,450,1)
+(300,398,1)
+(103,176,1)
+(29,245,1)
+(102,227,1)
+(225,309,1)
+(46,401,1)
+(294,196,1)
+(321,384,1)
+(60,348,1)
+(78,361,1)
+(15,353,1)
+(233,106,1)
+(134,7,1)
+(193,325,1)
+(446,389,1)
+(374,102,1)
+(371,158,1)
+(307,324,1)
+(356,425,1)
+(249,82,1)
+(91,389,1)
+(82,384,1)
+(327,19,1)
+(284,327,1)
+(25,384,1)
+(273,125,1)
+(434,445,1)
+(25,234,1)
+(138,384,1)
+(25,351,1)
+(131,269,1)
+(16,331,1)
+(60,389,1)
+(124,9,1)
+(96,239,1)
+(258,246,1)
+(402,40,1)
+(324,232,1)
+(418,142,1)
+(285,201,1)
+(139,151,1)
+(389,384,1)
+(53,450,1)
+(232,321,1)
+(362,183,1)
+(97,196,1)
+(198,360,1)
+(38,400,1)
+(183,273,1)
+(121,328,1)
+(167,450,1)
+(314,420,1)
+(147,289,1)
+(302,304,1)
+(31,280,1)
+(271,269,1)
+(200,332,1)
+(305,10,1)
+(152,102,1)
+(130,449,1)
+(17,348,1)
+(62,34,1)
+(33,275,1)
+(446,179,1)
+(275,170,1)
+(58,5,1)
+(364,386,1)
+(10,116,1)
+(270,58,1)
+(17,171,1)
+(442,120,1)
+(371,303,1)
+(420,284,1)
+(50,217,1)
+(425,258,1)
+(7,150,1)
+(338,54,1)
+(45,37,1)
+(292,2,1)
+(354,167,1)
+(426,314,1)
+(305,389,1)
+(3,60,1)
+(181,191,1)
+(397,337,1)
+(65,391,1)
+(251,196,1)
+(445,402,1)
+(17,102,1)
+(35,150,1)
+(75,114,1)
+(266,99,1)
+(187,223,1)
+(33,390,1)
+(446,341,1)
+(331,33,1)
+(428,357,1)
+(83,312,1)
+(379,4,1)
+(407,244,1)
+(230,288,1)
+(284,18,1)
+(85,220,1)
+(439,438,1)
+(37,384,1)
+(165,257,1)
+(351,368,1)
+(125,328,1)
+(338,262,1)
+(30,24,1)
+(150,196,1)
+(20,256,1)
+(61,284,1)
+(248,431,1)
+(24,21,1)
+(115,395,1)
+(431,179,1)
+(437,419,1)
+(240,249,1)
+(399,419,1)
+(3,152,1)
+(310,211,1)
+(145,338,1)
+(322,137,1)
+(93,28,1)
+(450,298,1)
+(384,330,1)
+(62,150,1)
+(358,334,1)
+(45,155,1)
+(112,160,1)
+(206,166,1)
+(9,247,1)
+(345,383,1)
+(354,419,2)
+(322,284,2)
+(20,2,2)
+(230,115,2)
+(18,2,2)
+(401,294,2)
+(134,86,2)
+(371,121,2)
+(273,328,2)
+(193,325,2)
+(48,2,2)
+(385,86,2)
+(446,389,2)
+(333,425,2)
+(349,2,2)
+(279,160,2)
+(374,179,2)
+(28,450,2)
+(373,284,2)
+(380,146,2)
+(302,146,2)
+(450,298,2)
+(62,86,2)
+(132,284,2)
+(350,2,2)
+(248,284,2)
+(374,348,2)
+(284,18,2)
+(115,2,2)
+(240,449,2)
+(294,196,2)
+(49,166,2)
+(105,2,2)
+(447,2,2)
+(209,2,2)
+(244,419,2)
+(227,425,2)
+(207,2,2)
+(204,2,2)
+(200,121,2)
+(230,288,2)
+(388,164,2)
+(191,221,2)
+(305,389,2)
+(195,284,2)
+(235,121,2)
+(103,11,2)
+(99,449,2)
+(2,146,2)
+(368,449,2)
+(383,425,2)
+(372,284,2)
+(225,146,2)
+(53,58,2)
+(411,86,2)
+(190,115,2)
+(384,146,2)
+(9,115,2)
+(99,121,2)
+(440,449,2)
+(316,121,2)
+(399,425,2)
+(296,2,2)
+(241,449,2)
+(238,65,2)
+(327,18,2)
+(175,160,2)
+(325,403,2)
+(96,146,2)
+(435,153,2)
+(81,448,2)
+(431,284,2)
+(18,192,2)
+(225,418,2)
+(430,166,2)
+(269,450,2)
+(219,389,2)
+(33,121,2)
+(195,15,2)
+(62,150,2)
+(86,301,2)
+(55,195,2)
+(164,319,2)
+(335,262,2)
+(432,2,2)
+(107,121,2)
+(160,405,2)
+(356,262,2)
+(146,432,2)
+(294,2,2)
+(403,49,2)
+(1,11,2)
+(301,72,2)
+(61,284,2)
+(168,419,2)
+(11,196,2)
+(433,2,2)
+(328,224,2)
+(63,121,2)
+(4,146,2)
+(371,2,2)
+(277,344,2)
+(326,2,2)
+(35,86,2)
+(222,419,2)
+(257,146,2)
+(374,178,2)
+(332,86,2)
+(138,146,2)
+(35,150,2)
+(198,360,2)
+(82,384,2)
+(46,401,2)
+(242,2,2)
+(43,18,2)
+(263,86,2)
+(135,86,2)
+(310,2,2)
+(195,384,2)
+(187,167,2)
+(208,2,2)
+(266,449,2)
+(253,449,2)
+(24,425,2)
+(347,2,2)
+(153,2,2)
+(115,65,2)
+(266,115,2)
+(232,2,2)
+(110,399,2)
+(152,348,2)
+(191,284,2)
+(357,284,2)
+(143,86,2)
+(294,450,2)
+(330,193,2)
+(391,2,2)
+(217,419,2)
+(312,115,2)
+(152,86,2)
+(37,2,2)
+(2,380,2)
+(446,2,2)
+(324,2,2)
+(114,265,2)
+(90,146,2)
+(146,121,2)
+(135,229,2)
+(269,196,2)
+(30,425,2)
+(245,86,2)
+(223,121,2)
+(382,18,2)
+(99,284,2)
+(385,35,2)
+(351,449,2)
+(362,328,2)
+(267,296,2)
+(403,410,2)
+(53,196,2)
+(181,357,2)
+(28,121,2)
+(164,284,2)
+(110,409,2)
+(219,102,2)
+(5,419,2)
+(76,86,2)
+(241,86,2)
+(167,196,2)
+(310,294,2)
+(377,115,2)
+(277,14,2)
+(86,2,2)
+(433,147,2)
+(353,121,2)
+(206,115,2)
+(149,46,2)
+(286,449,2)
+(338,146,2)
+(68,86,2)
+(222,449,2)
+(60,348,2)
+(232,321,2)
+(31,115,2)
+(321,118,2)
+(84,65,2)
+(395,65,2)
+(151,2,2)
+(379,146,2)
+(271,2,2)
+(251,196,2)
+(206,86,2)
+(389,2,2)
+(234,149,2)
+(219,178,2)
+(332,449,2)
+(150,233,2)
+(37,429,2)
+(427,86,2)
+(426,284,2)
+(65,2,2)
+(413,121,2)
+(171,419,2)
+(308,419,2)
+(336,284,2)
+(152,389,2)
+(128,425,2)
+(251,2,2)
+(135,384,2)
+(12,296,2)
+(10,121,2)
+(432,241,2)
+(269,2,2)
+(178,425,2)
+(354,196,2)
+(229,290,2)
+(207,115,2)
+(446,348,2)
+(374,10,2)
+(3,374,2)
+(196,335,2)
+(194,2,2)
+(73,115,2)
+(15,121,2)
+(332,284,2)
+(332,115,2)
+(365,449,2)
+(3,219,2)
+(166,188,2)
+(224,160,2)
+(345,425,2)
+(11,450,2)
+(170,251,2)
+(254,90,2)
+(388,284,2)
+(241,121,2)
+(17,389,2)
+(124,9,2)
+(52,146,2)
+(266,284,2)
+(361,86,2)
+(196,262,2)
+(412,2,2)
+(219,10,2)
+(293,121,2)
+(169,146,2)
+(152,102,2)
+(81,388,2)
+(192,2,2)
+(146,205,2)
+(81,284,2)
+(409,425,2)
+(265,189,2)
+(279,2,2)
+(17,348,2)
+(354,167,2)
+(1,65,2)
+(187,223,2)
+(184,430,2)
+(206,2,2)
+(125,328,2)
+(239,146,2)
+(425,262,2)
+(269,433,2)
+(140,146,2)
+(232,450,2)
+(407,2,2)
+(296,97,2)
+(330,278,2)
+(38,2,2)
+(288,397,2)
+(11,285,2)
+(207,121,2)
+(407,244,2)
+(256,2,2)
+(58,5,2)
+(409,329,2)
+(247,115,2)
+(332,121,2)
+(319,232,2)
+(179,384,2)
+(97,450,2)
+(114,86,2)
+(236,425,2)
+(304,146,2)
+(270,2,2)
+(390,121,2)
+(167,450,2)
+(224,2,2)
+(17,102,2)
+(394,449,2)
+(117,419,2)
+(192,232,2)
+(161,18,2)
+(62,419,2)
+(149,449,2)
+(137,181,2)
+(28,196,2)
+(305,348,2)
+(227,110,2)
+(289,2,2)
+(53,450,2)
+(184,220,2)
+(28,167,2)
+(446,179,2)
+(187,450,2)
+(110,425,2)
+(285,2,2)
+(14,146,2)
+(46,449,2)
+(116,121,2)
+(248,137,2)
+(83,115,2)
+(329,425,2)
+(121,362,2)
+(217,425,2)
+(208,284,2)
+(264,86,2)
+(60,179,2)
+(33,275,2)
+(233,2,2)
+(294,45,2)
+(17,284,2)
+(174,86,2)
+(179,284,2)
+(101,325,2)
+(180,146,2)
+(16,121,2)
+(417,154,2)
+(418,168,2)
+(225,309,2)
+(208,449,2)
+(278,197,2)
+(156,86,2)
+(450,146,2)
+(54,262,2)
+(208,115,2)
+(432,121,2)
+(37,384,2)
+(131,269,2)
+(78,86,2)
+(187,196,2)
+(246,225,2)
+(145,146,2)
+(219,348,2)
+(152,178,2)
+(428,284,2)
+(152,179,2)
+(446,102,2)
+(268,146,2)
+(151,150,2)
+(17,179,2)
+(371,449,2)
+(85,220,2)
+(168,146,2)
+(200,86,2)
+(200,284,2)
+(401,449,2)
+(218,449,2)
+(171,232,2)
+(10,384,2)
+(397,115,2)
+(341,2,2)
+(0,146,2)
+(288,115,2)
+(45,2,2)
+(340,284,2)
+(183,196,2)
+(309,146,2)
+(99,2,2)
+(329,217,2)
+(146,284,2)
+(203,160,2)
+(181,191,2)
+(246,146,2)
+(130,449,2)
+(375,449,2)
+(146,115,2)
+(301,153,2)
+(133,425,2)
+(272,121,2)
+(387,115,2)
+(446,178,2)
+(13,262,2)
+(309,108,2)
+(148,449,2)
+(326,121,2)
+(360,124,2)
+(30,246,2)
+(290,86,2)
+(198,384,2)
+(285,384,2)
+(21,425,2)
+(374,389,2)
+(298,254,2)
+(11,2,2)
+(123,320,2)
+(163,115,2)
+(261,2,2)
+(78,385,2)
+(449,2,2)
+(223,325,2)
+(108,325,2)
+(206,284,2)
+(162,262,2)
+(307,2,2)
+(78,361,2)
+(373,319,2)
+(147,276,2)
+(386,449,2)
+(186,2,2)
+(395,1,2)
+(357,55,2)
+(221,319,2)
+(32,2,2)
+(137,284,2)
+(355,262,2)
+(321,384,2)
+(362,183,2)
+(314,284,2)
+(358,284,2)
+(328,160,2)
+(206,449,2)
+(170,384,2)
+(366,86,2)
+(163,11,2)
+(342,196,2)
+(416,121,2)
+(112,160,2)
+(344,414,2)
+(219,160,2)
+(115,395,2)
+(170,121,2)
+(241,2,2)
+(352,425,2)
+(432,86,2)
+(160,2,2)
+(189,384,2)
+(106,2,2)
+(131,2,2)
+(195,251,2)
+(305,115,2)
+(280,115,2)
+(22,325,2)
+(93,28,2)
+(258,262,2)
+(147,289,2)
+(79,284,2)
+(433,407,2)
+(432,449,2)
+(45,37,2)
+(117,450,2)
+(216,284,2)
+(3,152,2)
+(370,121,2)
+(141,86,2)
+(344,157,2)
+(399,419,2)
+(188,173,2)
+(72,153,2)
+(417,146,2)
+(98,115,2)
+(446,10,2)
+(171,284,2)
+(165,146,2)
+(207,284,2)
+(258,246,2)
+(326,86,2)
+(25,449,2)
+(420,284,2)
+(150,450,2)
+(214,425,2)
+(284,327,2)
+(44,2,2)
+(121,2,2)
+(354,450,2)
+(90,277,2)
+(160,296,2)
+(183,450,2)
+(343,146,2)
+(298,22,2)
+(422,2,2)
+(254,146,2)
+(249,449,2)
+(9,163,2)
+(191,81,2)
+(229,86,2)
+(193,146,2)
+(308,11,2)
+(374,449,2)
+(290,78,2)
+(337,115,2)
+(82,449,2)
+(75,86,2)
+(360,115,2)
+(101,146,2)
+(328,2,2)
+(234,449,2)
+(170,131,2)
+(47,2,2)
+(298,146,2)
+(251,450,2)
+(129,115,2)
+(348,2,2)
+(374,102,2)
+(60,10,2)
+(305,102,2)
+(7,150,2)
+(441,425,2)
+(425,258,2)
+(97,2,2)
+(221,284,2)
+(3,60,2)
+(127,296,2)
+(19,18,2)
+(439,2,2)
+(157,146,2)
+(319,284,2)
+(53,437,2)
+(332,205,2)
+(408,328,2)
+(244,2,2)
+(123,146,2)
+(72,150,2)
+(228,121,2)
+(70,146,2)
+(384,330,2)
+(126,146,2)
+(303,284,2)
+(167,160,2)
+(187,121,2)
+(224,167,2)
+(144,425,2)
+(449,310,2)
+(308,115,2)
+(19,232,2)
+(233,323,2)
+(383,450,2)
+(158,115,2)
+(364,449,2)
+(405,342,2)
+(102,227,2)
+(241,115,2)
+(155,2,2)
+(170,248,2)
+(15,370,2)
+(3,417,2)
+(65,103,2)
+(206,121,2)
+(53,2,2)
+(306,284,2)
+(258,36,2)
+(36,425,2)
+(5,2,2)
+(400,2,2)
+(146,2,2)
+(432,284,2)
+(152,10,2)
+(117,196,2)
+(60,178,2)
+(265,86,2)
+(392,86,2)
+(195,131,2)
+(371,86,2)
+(195,248,2)
+(278,123,2)
+(302,325,2)
+(389,384,2)
+(200,449,2)
+(208,86,2)
+(326,449,2)
+(153,151,2)
+(104,2,2)
+(92,425,2)
+(99,115,2)
+(67,2,2)
+(342,296,2)
+(262,101,2)
+(27,153,2)
+(278,146,2)
+(432,206,2)
+(315,2,2)
+(354,121,2)
+(181,284,2)
+(438,2,2)
+(122,115,2)
+(326,115,2)
+(66,2,2)
+(147,2,2)
+(157,40,2)
+(275,121,2)
+(40,85,2)
+(348,384,2)
+(91,2,2)
+(266,2,2)
+(305,178,2)
+(222,294,2)
+(34,86,2)
+(275,170,2)
+(290,114,2)
+(202,2,2)
+(305,179,2)
+(93,121,2)
+(185,121,2)
+(29,86,2)
+(380,325,2)
+(60,121,2)
+(346,160,2)
+(266,86,2)
+(437,2,2)
+(25,384,2)
+(108,146,2)
+(176,2,2)
+(99,86,2)
+(266,121,2)
+(437,419,2)
+(7,86,2)
+(448,373,2)
+(188,220,2)
+(233,384,2)
+(320,184,2)
+(327,19,2)
+(206,166,2)
+(124,115,2)
+(50,425,2)
+(262,146,2)
+(87,2,2)
+(289,419,2)
+(22,146,2)
+(418,146,2)
+(113,146,2)
+(172,160,2)
+(148,249,2)
+(330,146,2)
+(224,450,2)
+(103,2,2)
+(212,2,2)
+(409,30,2)
+(406,121,2)
+(57,65,2)
+(60,389,2)
+(25,234,2)
+(371,284,2)
+(432,115,2)
+(249,82,2)
+(117,160,2)
+(58,2,2)
+(121,160,2)
+(183,167,2)
+(260,146,2)
+(224,196,2)
+(292,2,2)
+(14,302,2)
+(208,325,2)
+(149,148,2)
+(350,160,2)
+(85,444,2)
+(282,284,2)
+(77,284,2)
+(339,146,2)
+(313,146,2)
+(17,178,2)
+(124,230,2)
+(102,425,2)
+(295,2,2)
+(3,446,2)
+(86,153,2)
+(237,2,2)
+(405,296,2)
+(232,196,2)
+(121,328,2)
+(170,15,2)
+(424,146,2)
+(332,2,2)
+(207,86,2)
+(397,384,2)
+(370,93,2)
+(139,2,2)
+(255,121,2)
+(200,115,2)
+(415,284,2)
+(150,196,2)
+(178,246,2)
+(60,102,2)
+(361,7,2)
+(284,2,2)
+(318,2,2)
+(211,2,2)
+(200,2,2)
+(3,17,2)
+(213,262,2)
+(55,284,2)
+(321,2,2)
+(208,121,2)
+(74,284,2)
+(219,179,2)
+(150,2,2)
+(344,146,2)
+(215,449,2)
+(277,146,2)
+(198,115,2)
+(17,10,2)
+(241,284,2)
+(305,10,2)
+(326,284,2)
+(285,201,2)
+(371,115,2)
+(448,284,2)
+(342,450,2)
+(146,449,2)
+(404,153,2)
+(183,328,2)
+(443,146,2)
+(369,160,2)
+(189,86,2)
+(207,449,2)
+(97,196,2)
+(334,284,2)
+(331,121,2)
+(335,246,2)
+(175,2,2)
+(146,86,2)
+(142,146,2)
+(93,33,2)
+(3,305,2)
+-----------------------------------
+(0,rel)
+(1,relocation & 0xfffffe01)
+(2,ELF32_R_TYPE(rel->r_info)
+(3,RET)
+(4,symsec)
+(5,module->arch)
+(6,case R_AVR32_GOT16S:)
+(7,relocation & 0x1fe)
+(8,case R_AVR32_32:)
+(9,(relocation & 0x1fe)
+(10,*location)
+(11,relocation -= (Elf32_Addr)
+(12,relocation)
+(13,got_offset)
+(14,ELF32_R_SYM(rel->r_info)
+(15,*location = value)
+(16,0xffff)
+(17,return reloc_overflow(module,\n\\n\\t\\t\\t\\t\\t\\t      "R_AVR32_22H_PCREL",\n\\n\\t\\t\\t\\t\\t\\t      relocation)
+(18,(relocation & 0xffe00001)
+(19,relocation & 0xffc00001)
+(20,module)
+(21,info)
+(22,rel->r_addend)
+(23,)
+(24,got_offset)
+(25,put_u16(location, value)
+(26,)
+(27,0xfffff800)
+(28,relocation & 0xffff)
+(29,value)
+(30,info->got_offset)
+(31,0x1fe)
+(32,relocation)
+(33,value & 0xffff0000)
+(34,relocation)
+(35,relocation & 0x600)
+(36,info->got_initialized = 1)
+(37,(Elf32_Addr)
+(38,location)
+(39,if ((relocation & 0xfffffc01)
+(40,*symsec = sechdrs + symindex)
+(41,rel)
+(42,)
+(43,0xffc00001)
+(44,arch)
+(45,((Elf32_Addr)
+(46,(relocation & 0x1fc)
+(47,relocation)
+(48,0)
+(49,relsec->sh_addr)
+(50,got_offset)
+(51,case R_AVR32_9UW_PCREL:)
+(52,rel)
+(53,pr_debug("GOTPC: PC=0x%x, got_offset=0x%lx, core=0x%p\\n",\n\\n\\t\\t\\t\\t relocation, module->arch.got_offset,\n\\n\\t\\t\\t\\t module->module_core)
+(54,break;)
+(55,value = *location)
+(56,sh_info)
+(57,relocation)
+(58,module->arch.got_offset)
+(59,dstsec)
+(60,return reloc_overflow(module, "R_AVR32_GOT16S",\n\\n\\t\\t\\t\\t\\t\\t      relocation)
+(61,relocation)
+(62,reloc_overflow(module,\n\\n\\t\\t\\t\\t\\t\\t      "R_AVR32_11H_PCREL",\n\\n\\t\\t\\t\\t\\t\\t      relocation)
+(63,r_offset)
+(64,if ((relocation & 0xffff8000)
+(65,(relocation & 0xffffff01)
+(66,arch)
+(67,relocation)
+(68,value)
+(69,case R_AVR32_9H_PCREL:)
+(70,relocation)
+(71,case R_AVR32_GOT16:)
+(72,relocation & 0xfffff801)
+(73,relocation)
+(74,4)
+(75,relocation)
+(76,relocation)
+(77,0xffff)
+(78,((relocation & 0x1fe)
+(79,value)
+(80,ret)
+(81,((relocation & 0x10000)
+(82,get_u16(location)
+(83,value)
+(84,0xfffffe00)
+(85,sechdrs + symindex)
+(86,(relocation & 0xfffffc01)
+(87,module)
+(88,if ((relocation & 0xfffffc03)
+(89,if ((relocation & 0xfffe0003)
+(90,sym = (Elf32_Sym *)
+(91,relocation)
+(92,module)
+(93,(value & 0xffff0000)
+(94,relsec)
+(95,if ((relocation & 0xffe00001)
+(96,r_info)
+(97,relocation & 0xfffe0003)
+(98,module)
+(99,i)
+(100,case R_AVR32_32_CPENT:)
+(101,rel->r_info)
+(102,*gotent)
+(103,relocation & 0xffffff01)
+(104,location)
+(105,relocation)
+(106,location)
+(107,"R_AVR32_GOT16S")
+(108,rel->r_info)
+(109,symsec)
+(110,module->module_core\n\\n\\t\\t\\t\\t\\t  + module->arch.got_offset\n\\n\\t\\t\\t\\t\\t  + info->got_offset)
+(111,if ((relocation & 0xffffff01)
+(112,relocation)
+(113,ret)
+(114,value & 0xf00c)
+(115,(relocation & 0xffffff01)
+(116,location)
+(117,reloc_overflow(module, "R_AVR32_GOT18SW",\n\\n\\t\\t\\t\\t\\t\\t     relocation)
+(118,Elf32_Addr)
+(119,case R_AVR32_GOT18SW:)
+(120,sechdrs)
+(121,(relocation & 0xffff8000)
+(122,value)
+(123,dstsec->sh_addr)
+(124,(value & 0xf00f)
+(125,relocation)
+(126,rel)
+(127,0xffff0000)
+(128,module_core)
+(129,value)
+(130,value)
+(131,*location = relocation)
+(132,value)
+(133,1)
+(134,3)
+(135,put_u16(location, value)
+(136,case R_AVR32_22H_PCREL:)
+(137,value = ((value & 0xe1ef0000)
+(138,sym)
+(139,0)
+(140,sh_addr)
+(141,value)
+(142,syminfo)
+(143,0xf00c)
+(144,got_initialized)
+(145,r_info)
+(146,i < relsec->sh_size / sizeof(Elf32_Rela)
+(147,(unsigned long)
+(148,value & 0xf80f)
+(149,(value & 0xf80f)
+(150,relocation -= (Elf32_Addr)
+(151,relocation & 0xfffffc01)
+(152,return reloc_overflow(module,\n\\n\\t\\t\\t\\t\\t\\t      "R_AVR32_11H_PCREL",\n\\n\\t\\t\\t\\t\\t\\t      relocation)
+(153,(relocation & 0xfffffc01)
+(154,ret = 0)
+(155,0xfffffffc)
+(156,location)
+(157,symsec->sh_addr)
+(158,break;)
+(159,sechdrs)
+(160,(relocation & 0xfffe0003)
+(161,0xffc00000)
+(162,info)
+(163,relocation & 0x1fe)
+(164,relocation & 0x10000)
+(165,arch)
+(166,*relsec = sechdrs + relindex)
+(167,relocation >>= 2)
+(168,module->arch)
+(169,rel)
+(170,*location)
+(171,reloc_overflow(module,\n\\n\\t\\t\\t\\t\\t\\t      "R_AVR32_22H_PCREL",\n\\n\\t\\t\\t\\t\\t\\t      relocation)
+(172,module)
+(173,unsigned int relindex)
+(174,0x1fe)
+(175,0)
+(176,0xffffff01)
+(177,gotent)
+(178,info->got_initialized)
+(179,*location)
+(180,r_info)
+(181,(value & 0xe1ef0000)
+(182,location)
+(183,relocation & 0xffff0000)
+(184,sechdrs + relsec->sh_info)
+(185,rel)
+(186,relocation)
+(187,pr_debug("GOT reloc @ 0x%x -> %u\\n",\n\\n\\t\\t\\t\\t rel->r_offset, relocation)
+(188,sechdrs + relindex)
+(189,get_u16(location)
+(190,"R_AVR32_9H_PCREL")
+(191,(relocation & 0xffff)
+(192,relocation & 0xffe00001)
+(193,rel->r_offset)
+(194,module)
+(195,*location)
+(196,relocation = info->got_offset)
+(197,void *)
+(198,put_u16(location, value)
+(199,symsec)
+(200,rel)
+(201,Elf32_Addr)
+(202,got_offset)
+(203,relocation)
+(204,location)
+(205,i = 0)
+(206,relsec->sh_size)
+(207,sh_size)
+(208,rel++)
+(209,module_core)
+(210,default:)
+(211,0xfffffc03)
+(212,"GOTPC: PC=0x%x, got_offset=0x%lx, core=0x%p\\n")
+(213,info)
+(214,gotent)
+(215,0xf80f)
+(216,relocation)
+(217,module->arch)
+(218,0x1fc)
+(219,return reloc_overflow(module, "R_AVR32_GOT18SW",\n\\n\\t\\t\\t\\t\\t\\t     relocation)
+(220,Elf32_Shdr *sechdrs)
+(221,relocation & 0xffff)
+(222,reloc_overflow(module,\n\\n\\t\\t\\t\\t\\t\\t      "R_AVR32_9UW_PCREL",\n\\n\\t\\t\\t\\t\\t\\t      relocation)
+(223,rel->r_offset)
+(224,relocation & 0xffff8000)
+(225,module->arch.syminfo + ELF32_R_SYM(rel->r_info)
+(226,)
+(227,gotent = (module->module_core\n\\n\\t\\t\\t\\t\\t  + module->arch.got_offset\n\\n\\t\\t\\t\\t\\t  + info->got_offset)
+(228,break;)
+(229,value = ((value & 0xf00c)
+(230,value & 0xf00f)
+(231,case R_AVR32_GOT16S:)
+(232,relocation -= (Elf32_Addr)
+(233,(Elf32_Addr)
+(234,value = ((value & 0xf80f)
+(235,relocation)
+(236,relocation)
+(237,0)
+(238,0xfffffe01)
+(239,rel)
+(240,value)
+(241,sizeof(Elf32_Rela)
+(242,0xfffffc01)
+(243,)
+(244,module->arch)
+(245,value)
+(246,info = module->arch.syminfo + ELF32_R_SYM(rel->r_info)
+(247,3)
+(248,*location = value)
+(249,value = get_u16(location)
+(250,ret)
+(251,*location = relocation)
+(252,case R_AVR32_11H_PCREL:)
+(253,module)
+(254,sym->st_value)
+(255,value)
+(256,relocation)
+(257,module)
+(258,info->got_initialized)
+(259,case R_AVR32_GOT18SW:)
+(260,dstsec)
+(261,relocation)
+(262,ELF32_R_TYPE(rel->r_info)
+(263,9)
+(264,break;)
+(265,value = get_u16(location)
+(266,relsec)
+(267,0xfffc0003)
+(268,st_value)
+(269,relocation -= ((unsigned long)
+(270,module)
+(271,location)
+(272,location)
+(273,0xffff0000)
+(274,info)
+(275,value = *location)
+(276,unsigned long)
+(277,(Elf32_Sym *)
+(278,(void *)
+(279,0xffff8000)
+(280,relocation)
+(281,if (!info->got_initialized)
+(282,value)
+(283,case R_AVR32_GOT8:)
+(284,(relocation & 0xffe00001)
+(285,(Elf32_Addr)
+(286,2)
+(287,switch (ELF32_R_TYPE(rel->r_info)
+(288,value = get_u16(location)
+(289,module->module_core)
+(290,(value & 0xf00c)
+(291,dstsec)
+(292,relocation)
+(293,value)
+(294,relocation -= ((Elf32_Addr)
+(295,break;)
+(296,(relocation & 0xfffe0003)
+(297,i)
+(298,sym->st_value + rel->r_addend)
+(299,relsec)
+(300,sh_addr)
+(301,(relocation & 0xfffff801)
+(302,rel->r_info)
+(303,break;)
+(304,r_info)
+(305,return reloc_overflow(module,\n\\n\\t\\t\\t\\t\\t\\t      "R_AVR32_9H_PCREL",\n\\n\\t\\t\\t\\t\\t\\t      relocation)
+(306,location)
+(307,0xffe00001)
+(308,reloc_overflow(module,\n\\n\\t\\t\\t\\t\\t\\t      "R_AVR32_9H_PCREL",\n\\n\\t\\t\\t\\t\\t\\t      relocation)
+(309,ELF32_R_SYM(rel->r_info)
+(310,relocation & 0xfffffc03)
+(311,sym)
+(312,location)
+(313,info)
+(314,"R_AVR32_22H_PCREL")
+(315,ENOEXEC)
+(316,relocation)
+(317,for (i = 0; i < relsec->sh_size / sizeof(Elf32_Rela)
+(318,location)
+(319,relocation >>= 1)
+(320,*dstsec = sechdrs + relsec->sh_info)
+(321,(Elf32_Addr)
+(322,location)
+(323,Elf32_Addr)
+(324,relocation)
+(325,*rel = (void *)
+(326,Elf32_Rela)
+(327,(relocation & 0xffc00001)
+(328,(relocation & 0xffff8000)
+(329,module->arch.got_offset)
+(330,(void *)
+(331,relocation)
+(332,i++)
+(333,gotent)
+(334,relocation)
+(335,info->got_offset)
+(336,0xe1ef0000)
+(337,location)
+(338,rel)
+(339,sym)
+(340,0x10000)
+(341,-ENOEXEC)
+(342,relocation & 0xfffc0003)
+(343,location)
+(344,(Elf32_Sym *)
+(345,info)
+(346,2)
+(347,break;)
+(348,*location)
+(349,relocation)
+(350,relocation)
+(351,value)
+(352,module)
+(353,value)
+(354,reloc_overflow(module, "R_AVR32_GOT16S",\n\\n\\t\\t\\t\\t\\t\\t      relocation)
+(355,got_initialized)
+(356,relocation)
+(357,value & 0xe1ef0000)
+(358,0x1e0000)
+(359,case R_AVR32_GOT21S:)
+(360,value = ((value & 0xf00f)
+(361,(relocation & 0x1fe)
+(362,(relocation & 0xffff0000)
+(363,rel)
+(364,relocation)
+(365,location)
+(366,"R_AVR32_11H_PCREL")
+(367,)
+(368,location)
+(369,"R_AVR32_GOT18SW")
+(370,value = ((value & 0xffff0000)
+(371,i)
+(372,1)
+(373,relocation & 0x1e0000)
+(374,return reloc_overflow(module,\n\\n\\t\\t\\t\\t\\t\\t      "R_AVR32_9UW_PCREL",\n\\n\\t\\t\\t\\t\\t\\t      relocation)
+(375,relocation)
+(376,case R_AVR32_GOTPC:)
+(377,0xf00f)
+(378,0)
+(379,sh_addr)
+(380,rel->r_info)
+(381,switch (ELF32_R_TYPE(rel->r_info)
+(382,relocation)
+(383,*gotent = relocation)
+(384,location = (void *)
+(385,(relocation & 0x600)
+(386,"R_AVR32_9UW_PCREL")
+(387,value)
+(388,(relocation & 0x10000)
+(389,*location)
+(390,0xffff0000)
+(391,0)
+(392,0x600)
+(393,i)
+(394,break;)
+(395,(relocation & 0xfffffe01)
+(396,case R_AVR32_GOT32:)
+(397,get_u16(location)
+(398,relsec)
+(399,module->module_core)
+(400,relocation)
+(401,relocation & 0x1fc)
+(402,relsec)
+(403,(void *)
+(404,0xfffff801)
+(405,(relocation & 0xfffc0003)
+(406,"GOT reloc @ 0x%x -> %u\\n")
+(407,module->arch.got_offset)
+(408,0xffff0000)
+(409,module->arch.got_offset\n\\n\\t\\t\\t\\t\\t  + info->got_offset)
+(410,void *)
+(411,module)
+(412,got_offset)
+(413,value)
+(414,Elf32_Sym *)
+(415,8)
+(416,module)
+(417,return ret;)
+(418,module->arch.syminfo)
+(419,struct module *module)
+(420,module)
+(421,relocation)
+(422,0)
+(423,0)
+(424,r_offset)
+(425,!info->got_initialized)
+(426,relocation)
+(427,location)
+(428,relocation)
+(429,Elf32_Addr)
+(430,relsec->sh_info)
+(431,value)
+(432,relsec->sh_size / sizeof(Elf32_Rela)
+(433,(unsigned long)
+(434,relindex)
+(435,relocation)
+(436,value)
+(437,module->module_core)
+(438,relocation)
+(439,0xfffe0003)
+(440,value)
+(441,arch)
+(442,symindex)
+(443,r_addend)
+(444,unsigned int symindex)
+(445,sechdrs)
+(446,return -ENOEXEC;)
+(447,module_core)
+(448,(relocation & 0x1e0000)
+(449,(relocation & 0xfffffc03)
+(450,relocation = sym->st_value + rel->r_addend)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

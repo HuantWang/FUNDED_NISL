@@ -1,0 +1,2743 @@
+-----label-----
+0
+-----code-----
+static void load_vmcs12_host_state(struct kvm_vcpu *vcpu,
+				   struct vmcs12 *vmcs12)
+{
+	struct kvm_segment seg;
+
+	if (vmcs12->vm_exit_controls & VM_EXIT_LOAD_IA32_EFER)
+		vcpu->arch.efer = vmcs12->host_ia32_efer;
+	else if (vmcs12->vm_exit_controls & VM_EXIT_HOST_ADDR_SPACE_SIZE)
+		vcpu->arch.efer |= (EFER_LMA | EFER_LME);
+	else
+		vcpu->arch.efer &= ~(EFER_LMA | EFER_LME);
+	vmx_set_efer(vcpu, vcpu->arch.efer);
+
+	kvm_register_write(vcpu, VCPU_REGS_RSP, vmcs12->host_rsp);
+	kvm_register_write(vcpu, VCPU_REGS_RIP, vmcs12->host_rip);
+	vmx_set_rflags(vcpu, X86_EFLAGS_FIXED);
+	/*
+	 * Note that calling vmx_set_cr0 is important, even if cr0 hasn't
+	 * actually changed, because it depends on the current state of
+	 * fpu_active (which may have changed).
+	 * Note that vmx_set_cr0 refers to efer set above.
+	 */
+	vmx_set_cr0(vcpu, vmcs12->host_cr0);
+	/*
+	 * If we did fpu_activate()/fpu_deactivate() during L2's run, we need
+	 * to apply the same changes to L1's vmcs. We just set cr0 correctly,
+	 * but we also need to update cr0_guest_host_mask and exception_bitmap.
+	 */
+	update_exception_bitmap(vcpu);
+	vcpu->arch.cr0_guest_owned_bits = (vcpu->fpu_active ? X86_CR0_TS : 0);
+	vmcs_writel(CR0_GUEST_HOST_MASK, ~vcpu->arch.cr0_guest_owned_bits);
+
+	/*
+	 * Note that CR4_GUEST_HOST_MASK is already set in the original vmcs01
+	 * (KVM doesn't change it)- no reason to call set_cr4_guest_host_mask();
+	 */
+	vcpu->arch.cr4_guest_owned_bits = ~vmcs_readl(CR4_GUEST_HOST_MASK);
+	vmx_set_cr4(vcpu, vmcs12->host_cr4);
+
+	nested_ept_uninit_mmu_context(vcpu);
+
+	kvm_set_cr3(vcpu, vmcs12->host_cr3);
+	kvm_mmu_reset_context(vcpu);
+
+	if (!enable_ept)
+		vcpu->arch.walk_mmu->inject_page_fault = kvm_inject_page_fault;
+
+	if (enable_vpid) {
+		/*
+		 * Trivially support vpid by letting L2s share their parent
+		 * L1's vpid. TODO: move to a more elaborate solution, giving
+		 * each L2 its own vpid and exposing the vpid feature to L1.
+		 */
+		vmx_flush_tlb(vcpu);
+	}
+
+
+	vmcs_write32(GUEST_SYSENTER_CS, vmcs12->host_ia32_sysenter_cs);
+	vmcs_writel(GUEST_SYSENTER_ESP, vmcs12->host_ia32_sysenter_esp);
+	vmcs_writel(GUEST_SYSENTER_EIP, vmcs12->host_ia32_sysenter_eip);
+	vmcs_writel(GUEST_IDTR_BASE, vmcs12->host_idtr_base);
+	vmcs_writel(GUEST_GDTR_BASE, vmcs12->host_gdtr_base);
+	vmcs_write32(GUEST_IDTR_LIMIT, 0xFFFF);
+	vmcs_write32(GUEST_GDTR_LIMIT, 0xFFFF);
+
+	/* If not VM_EXIT_CLEAR_BNDCFGS, the L2 value propagates to L1.  */
+	if (vmcs12->vm_exit_controls & VM_EXIT_CLEAR_BNDCFGS)
+		vmcs_write64(GUEST_BNDCFGS, 0);
+
+	if (vmcs12->vm_exit_controls & VM_EXIT_LOAD_IA32_PAT) {
+		vmcs_write64(GUEST_IA32_PAT, vmcs12->host_ia32_pat);
+		vcpu->arch.pat = vmcs12->host_ia32_pat;
+	}
+	if (vmcs12->vm_exit_controls & VM_EXIT_LOAD_IA32_PERF_GLOBAL_CTRL)
+		vmcs_write64(GUEST_IA32_PERF_GLOBAL_CTRL,
+			vmcs12->host_ia32_perf_global_ctrl);
+
+	/* Set L1 segment info according to Intel SDM
+	    27.5.2 Loading Host Segment and Descriptor-Table Registers */
+	seg = (struct kvm_segment) {
+		.base = 0,
+		.limit = 0xFFFFFFFF,
+		.selector = vmcs12->host_cs_selector,
+		.type = 11,
+		.present = 1,
+		.s = 1,
+		.g = 1
+	};
+	if (vmcs12->vm_exit_controls & VM_EXIT_HOST_ADDR_SPACE_SIZE)
+		seg.l = 1;
+	else
+		seg.db = 1;
+	vmx_set_segment(vcpu, &seg, VCPU_SREG_CS);
+	seg = (struct kvm_segment) {
+		.base = 0,
+		.limit = 0xFFFFFFFF,
+		.type = 3,
+		.present = 1,
+		.s = 1,
+		.db = 1,
+		.g = 1
+	};
+	seg.selector = vmcs12->host_ds_selector;
+	vmx_set_segment(vcpu, &seg, VCPU_SREG_DS);
+	seg.selector = vmcs12->host_es_selector;
+	vmx_set_segment(vcpu, &seg, VCPU_SREG_ES);
+	seg.selector = vmcs12->host_ss_selector;
+	vmx_set_segment(vcpu, &seg, VCPU_SREG_SS);
+	seg.selector = vmcs12->host_fs_selector;
+	seg.base = vmcs12->host_fs_base;
+	vmx_set_segment(vcpu, &seg, VCPU_SREG_FS);
+	seg.selector = vmcs12->host_gs_selector;
+	seg.base = vmcs12->host_gs_base;
+	vmx_set_segment(vcpu, &seg, VCPU_SREG_GS);
+	seg = (struct kvm_segment) {
+		.base = vmcs12->host_tr_base,
+		.limit = 0x67,
+		.selector = vmcs12->host_tr_selector,
+		.type = 11,
+		.present = 1
+	};
+	vmx_set_segment(vcpu, &seg, VCPU_SREG_TR);
+
+	kvm_set_dr(vcpu, 7, 0x400);
+	vmcs_write64(GUEST_IA32_DEBUGCTL, 0);
+
+	if (cpu_has_vmx_msr_bitmap())
+		vmx_set_msr_bitmap(vcpu);
+
+	if (nested_vmx_load_msr(vcpu, vmcs12->vm_exit_msr_load_addr,
+				vmcs12->vm_exit_msr_load_count))
+		nested_vmx_abort(vcpu, VMX_ABORT_LOAD_HOST_MSR_FAIL);
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+17,19
+17,20
+17,21
+17,22
+17,23
+17,24
+17,25
+17,26
+17,27
+17,28
+17,29
+17,30
+17,31
+17,32
+17,33
+17,34
+17,35
+17,36
+17,37
+17,38
+17,39
+17,40
+17,41
+17,42
+17,43
+17,44
+17,45
+17,46
+17,47
+17,48
+17,49
+17,50
+17,51
+17,52
+17,53
+17,54
+17,55
+17,56
+17,57
+17,58
+17,59
+17,60
+17,61
+17,62
+17,63
+17,64
+17,65
+17,66
+18,19
+19,20
+19,21
+20,21
+22,23
+24,25
+24,26
+24,27
+25,26
+25,27
+26,27
+26,28
+27,28
+30,31
+32,33
+33,34
+33,35
+34,35
+34,36
+35,36
+35,37
+36,37
+40,41
+40,42
+41,42
+44,45
+44,46
+44,47
+45,46
+45,47
+46,47
+46,48
+47,48
+50,51
+52,53
+53,54
+53,55
+54,55
+54,56
+55,56
+55,57
+56,57
+60,61
+61,62
+61,63
+62,63
+64,65
+66,67
+67,68
+67,69
+68,69
+68,70
+69,70
+69,71
+70,71
+74,75
+75,76
+76,77
+76,78
+77,78
+79,80
+81,82
+82,83
+82,84
+82,85
+83,84
+85,86
+87,88
+87,89
+88,89
+88,90
+89,90
+93,94
+94,95
+94,96
+94,97
+94,98
+95,96
+97,98
+99,100
+101,102
+101,103
+102,103
+105,106
+106,107
+106,108
+106,109
+106,110
+107,108
+109,110
+111,112
+113,114
+113,115
+114,115
+117,118
+118,119
+118,120
+118,121
+119,120
+121,122
+123,124
+125,126
+126,127
+126,128
+126,129
+127,128
+129,130
+131,132
+131,133
+132,133
+135,136
+136,137
+136,138
+137,138
+139,140
+141,142
+142,143
+142,144
+143,144
+143,145
+144,145
+144,146
+145,146
+149,150
+150,151
+150,152
+150,153
+151,152
+151,153
+152,153
+155,156
+158,159
+159,160
+159,161
+159,162
+160,161
+162,163
+164,165
+165,166
+165,167
+166,167
+166,168
+167,168
+171,172
+172,173
+172,174
+173,174
+173,175
+174,175
+174,176
+175,176
+179,180
+180,181
+180,182
+181,182
+183,184
+185,186
+186,187
+186,188
+186,189
+187,188
+189,190
+191,192
+191,193
+192,193
+195,196
+196,197
+196,198
+197,198
+199,200
+201,202
+202,203
+202,204
+202,205
+203,204
+205,206
+207,208
+207,209
+208,209
+211,212
+212,213
+212,214
+213,214
+215,216
+217,218
+217,219
+218,219
+219,220
+221,222
+222,223
+222,224
+223,224
+223,225
+224,225
+224,226
+225,226
+225,227
+226,227
+231,232
+233,234
+233,235
+234,235
+236,237
+237,238
+238,239
+238,240
+239,240
+241,242
+243,244
+244,245
+244,246
+244,247
+245,246
+247,248
+249,250
+249,251
+250,251
+253,254
+254,255
+254,256
+254,257
+255,256
+257,258
+259,260
+259,261
+260,261
+263,264
+264,265
+264,266
+264,267
+265,266
+267,268
+269,270
+269,271
+270,271
+273,274
+274,275
+274,276
+274,277
+275,276
+277,278
+279,280
+279,281
+280,281
+283,284
+284,285
+284,286
+284,287
+285,286
+287,288
+289,290
+289,291
+290,291
+293,294
+294,295
+294,296
+294,297
+295,296
+297,298
+300,301
+301,302
+301,303
+301,304
+302,303
+304,305
+307,308
+307,309
+308,309
+308,310
+309,310
+309,311
+310,311
+313,314
+315,316
+316,317
+316,318
+316,319
+317,318
+319,320
+322,323
+322,324
+323,324
+323,325
+324,325
+324,326
+325,326
+328,329
+330,331
+330,332
+331,332
+332,333
+332,334
+332,335
+333,334
+335,336
+337,338
+337,339
+338,339
+341,342
+342,343
+342,344
+343,344
+343,345
+344,345
+344,346
+345,346
+349,350
+349,351
+350,351
+353,354
+353,355
+354,355
+354,356
+355,356
+355,357
+356,357
+359,360
+361,362
+362,363
+362,364
+362,365
+363,364
+365,366
+367,368
+367,369
+368,369
+371,372
+372,373
+372,374
+372,375
+373,374
+373,375
+374,375
+374,376
+375,376
+378,379
+380,381
+381,382
+381,383
+382,383
+382,384
+383,384
+387,388
+388,389
+388,390
+389,390
+389,391
+390,391
+394,395
+395,396
+395,397
+395,398
+395,399
+396,397
+398,399
+400,401
+401,402
+403,404
+405,406
+406,407
+407,408
+407,409
+408,409
+408,410
+409,410
+412,413
+412,414
+413,414
+416,417
+417,418
+417,419
+417,420
+417,421
+418,419
+420,421
+422,423
+423,424
+425,426
+427,428
+428,429
+428,430
+429,430
+429,431
+430,431
+433,434
+433,435
+434,435
+437,438
+438,439
+438,440
+438,441
+438,442
+439,440
+441,442
+443,444
+444,445
+446,447
+448,449
+449,450
+449,451
+450,451
+450,452
+451,452
+454,455
+454,456
+455,456
+458,459
+459,460
+459,461
+459,462
+459,463
+460,461
+462,463
+464,465
+465,466
+467,468
+469,470
+470,471
+470,472
+471,472
+471,473
+472,473
+475,476
+475,477
+476,477
+479,480
+480,481
+480,482
+481,482
+481,483
+482,483
+485,486
+485,487
+486,487
+489,490
+490,491
+490,492
+490,493
+490,494
+491,492
+493,494
+495,496
+496,497
+498,499
+500,501
+501,502
+501,503
+502,503
+502,504
+503,504
+506,507
+506,508
+507,508
+510,511
+511,512
+511,513
+512,513
+512,514
+513,514
+516,517
+516,518
+517,518
+520,521
+521,522
+521,523
+521,524
+521,525
+522,523
+524,525
+526,527
+527,528
+529,530
+531,532
+532,533
+533,534
+533,535
+533,536
+533,537
+534,535
+536,537
+538,539
+539,540
+541,542
+543,544
+544,545
+544,546
+544,547
+544,548
+545,546
+547,548
+551,552
+552,553
+552,554
+552,555
+553,554
+555,556
+558,559
+558,560
+559,560
+560,561
+562,563
+563,564
+563,565
+564,565
+566,567
+568,569
+568,570
+569,570
+569,571
+569,572
+569,573
+570,571
+572,573
+574,575
+574,576
+575,576
+578,579
+578,580
+579,580
+582,583
+583,584
+583,585
+583,586
+584,585
+586,587
+588,589
+-----nextToken-----
+2,4,7,9,10,13,15,16,21,23,28,29,31,37,38,39,42,43,48,49,51,57,58,59,63,65,71,72,73,78,80,84,86,90,91,92,96,98,100,103,104,108,110,112,115,116,120,122,124,128,130,133,134,138,140,146,147,148,153,154,156,157,161,163,168,169,170,176,177,178,182,184,188,190,193,194,198,200,204,206,209,210,214,216,220,227,228,229,230,232,235,240,242,246,248,251,252,256,258,261,262,266,268,271,272,276,278,281,282,286,288,291,292,296,298,299,303,305,306,311,312,314,318,320,321,326,327,329,334,336,339,340,346,347,348,351,352,357,358,360,364,366,369,370,376,377,379,384,385,386,391,392,393,397,399,402,404,410,411,414,415,419,421,424,426,431,432,435,436,440,442,445,447,452,453,456,457,461,463,466,468,473,474,477,478,483,484,487,488,492,494,497,499,504,505,508,509,514,515,518,519,523,525,528,530,535,537,540,542,546,548,549,550,554,556,557,561,565,567,571,573,576,577,580,581,585,587,589
+-----computeFrom-----
+25,26
+25,27
+33,34
+33,35
+45,46
+45,47
+53,54
+53,55
+61,62
+61,63
+67,68
+67,69
+76,77
+76,78
+142,143
+142,144
+172,173
+172,174
+222,223
+222,224
+308,309
+308,310
+323,324
+323,325
+342,343
+342,344
+354,355
+354,356
+373,374
+373,375
+381,382
+381,383
+388,389
+388,390
+407,408
+407,409
+428,429
+428,430
+449,450
+449,451
+470,471
+470,472
+480,481
+480,482
+501,502
+501,503
+511,512
+511,513
+-----guardedBy-----
+28,42
+326,351
+357,369
+-----guardedByNegation-----
+28,48
+29,49
+-----lastLexicalUse-----
+28,48
+-----jump-----
+28,48
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;UnaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;UnaryExpression;ConditionalExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;FieldReference;IdExpression;Name;Name;Name;Name;IdExpression;Name;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;ProblemStatement;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;ProblemStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;ProblemStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IfStatement;FunctionCallExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;
+-----ast_node-----
+static void load_vmcs12_host_state(struct kvm_vcpu *vcpu,				   struct vmcs12 *vmcs12){	struct kvm_segment seg;	if (vmcs12->vm_exit_controls & VM_EXIT_LOAD_IA32_EFER)		vcpu->arch.efer = vmcs12->host_ia32_efer;	else if (vmcs12->vm_exit_controls & VM_EXIT_HOST_ADDR_SPACE_SIZE)		vcpu->arch.efer |= (EFER_LMA | EFER_LME);	else		vcpu->arch.efer &= ~(EFER_LMA | EFER_LME);	vmx_set_efer(vcpu, vcpu->arch.efer);	kvm_register_write(vcpu, VCPU_REGS_RSP, vmcs12->host_rsp);	kvm_register_write(vcpu, VCPU_REGS_RIP, vmcs12->host_rip);	vmx_set_rflags(vcpu, X86_EFLAGS_FIXED);	/*	 * Note that calling vmx_set_cr0 is important, even if cr0 hasn't	 * actually changed, because it depends on the current state of	 * fpu_active (which may have changed).	 * Note that vmx_set_cr0 refers to efer set above.	 */	vmx_set_cr0(vcpu, vmcs12->host_cr0);	/*	 * If we did fpu_activate()/fpu_deactivate() during L2's run, we need	 * to apply the same changes to L1's vmcs. We just set cr0 correctly,	 * but we also need to update cr0_guest_host_mask and exception_bitmap.	 */	update_exception_bitmap(vcpu);	vcpu->arch.cr0_guest_owned_bits = (vcpu->fpu_active ? X86_CR0_TS : 0);	vmcs_writel(CR0_GUEST_HOST_MASK, ~vcpu->arch.cr0_guest_owned_bits);	/*	 * Note that CR4_GUEST_HOST_MASK is already set in the original vmcs01	 * (KVM doesn't change it)- no reason to call set_cr4_guest_host_mask();	 */	vcpu->arch.cr4_guest_owned_bits = ~vmcs_readl(CR4_GUEST_HOST_MASK);	vmx_set_cr4(vcpu, vmcs12->host_cr4);	nested_ept_uninit_mmu_context(vcpu);	kvm_set_cr3(vcpu, vmcs12->host_cr3);	kvm_mmu_reset_context(vcpu);	if (!enable_ept)		vcpu->arch.walk_mmu->inject_page_fault = kvm_inject_page_fault;	if (enable_vpid) {		/*		 * Trivially support vpid by letting L2s share their parent		 * L1's vpid. TODO: move to a more elaborate solution, giving		 * each L2 its own vpid and exposing the vpid feature to L1.		 */		vmx_flush_tlb(vcpu);	}	vmcs_write32(GUEST_SYSENTER_CS, vmcs12->host_ia32_sysenter_cs);	vmcs_writel(GUEST_SYSENTER_ESP, vmcs12->host_ia32_sysenter_esp);	vmcs_writel(GUEST_SYSENTER_EIP, vmcs12->host_ia32_sysenter_eip);	vmcs_writel(GUEST_IDTR_BASE, vmcs12->host_idtr_base);	vmcs_writel(GUEST_GDTR_BASE, vmcs12->host_gdtr_base);	vmcs_write32(GUEST_IDTR_LIMIT, 0xFFFF);	vmcs_write32(GUEST_GDTR_LIMIT, 0xFFFF);	/* If not VM_EXIT_CLEAR_BNDCFGS, the L2 value propagates to L1.  */	if (vmcs12->vm_exit_controls & VM_EXIT_CLEAR_BNDCFGS)		vmcs_write64(GUEST_BNDCFGS, 0);	if (vmcs12->vm_exit_controls & VM_EXIT_LOAD_IA32_PAT) {		vmcs_write64(GUEST_IA32_PAT, vmcs12->host_ia32_pat);		vcpu->arch.pat = vmcs12->host_ia32_pat;	}	if (vmcs12->vm_exit_controls & VM_EXIT_LOAD_IA32_PERF_GLOBAL_CTRL)		vmcs_write64(GUEST_IA32_PERF_GLOBAL_CTRL,			vmcs12->host_ia32_perf_global_ctrl);	/* Set L1 segment info according to Intel SDM	    27.5.2 Loading Host Segment and Descriptor-Table Registers */	seg = (struct kvm_segment) {		.base = 0,		.limit = 0xFFFFFFFF,		.selector = vmcs12->host_cs_selector,		.type = 11,		.present = 1,		.s = 1,		.g = 1	};	if (vmcs12->vm_exit_controls & VM_EXIT_HOST_ADDR_SPACE_SIZE)		seg.l = 1;	else		seg.db = 1;	vmx_set_segment(vcpu, &seg, VCPU_SREG_CS);	seg = (struct kvm_segment) {		.base = 0,		.limit = 0xFFFFFFFF,		.type = 3,		.present = 1,		.s = 1,		.db = 1,		.g = 1	};	seg.selector = vmcs12->host_ds_selector;	vmx_set_segment(vcpu, &seg, VCPU_SREG_DS);	seg.selector = vmcs12->host_es_selector;	vmx_set_segment(vcpu, &seg, VCPU_SREG_ES);	seg.selector = vmcs12->host_ss_selector;	vmx_set_segment(vcpu, &seg, VCPU_SREG_SS);	seg.selector = vmcs12->host_fs_selector;	seg.base = vmcs12->host_fs_base;	vmx_set_segment(vcpu, &seg, VCPU_SREG_FS);	seg.selector = vmcs12->host_gs_selector;	seg.base = vmcs12->host_gs_base;	vmx_set_segment(vcpu, &seg, VCPU_SREG_GS);	seg = (struct kvm_segment) {		.base = vmcs12->host_tr_base,		.limit = 0x67,		.selector = vmcs12->host_tr_selector,		.type = 11,		.present = 1	};	vmx_set_segment(vcpu, &seg, VCPU_SREG_TR);	kvm_set_dr(vcpu, 7, 0x400);	vmcs_write64(GUEST_IA32_DEBUGCTL, 0);	if (cpu_has_vmx_msr_bitmap())		vmx_set_msr_bitmap(vcpu);	if (nested_vmx_load_msr(vcpu, vmcs12->vm_exit_msr_load_addr,				vmcs12->vm_exit_msr_load_count))		nested_vmx_abort(vcpu, VMX_ABORT_LOAD_HOST_MSR_FAIL);}
+static void
+load_vmcs12_host_state(struct kvm_vcpu *vcpu,				   struct vmcs12 *vmcs12)
+load_vmcs12_host_state
+struct kvm_vcpu *vcpu
+struct kvm_vcpu
+kvm_vcpu
+*vcpu
+*
+vcpu
+struct vmcs12 *vmcs12
+struct vmcs12
+vmcs12
+*vmcs12
+*
+vmcs12
+{	struct kvm_segment seg;	if (vmcs12->vm_exit_controls & VM_EXIT_LOAD_IA32_EFER)		vcpu->arch.efer = vmcs12->host_ia32_efer;	else if (vmcs12->vm_exit_controls & VM_EXIT_HOST_ADDR_SPACE_SIZE)		vcpu->arch.efer |= (EFER_LMA | EFER_LME);	else		vcpu->arch.efer &= ~(EFER_LMA | EFER_LME);	vmx_set_efer(vcpu, vcpu->arch.efer);	kvm_register_write(vcpu, VCPU_REGS_RSP, vmcs12->host_rsp);	kvm_register_write(vcpu, VCPU_REGS_RIP, vmcs12->host_rip);	vmx_set_rflags(vcpu, X86_EFLAGS_FIXED);	/*	 * Note that calling vmx_set_cr0 is important, even if cr0 hasn't	 * actually changed, because it depends on the current state of	 * fpu_active (which may have changed).	 * Note that vmx_set_cr0 refers to efer set above.	 */	vmx_set_cr0(vcpu, vmcs12->host_cr0);	/*	 * If we did fpu_activate()/fpu_deactivate() during L2's run, we need	 * to apply the same changes to L1's vmcs. We just set cr0 correctly,	 * but we also need to update cr0_guest_host_mask and exception_bitmap.	 */	update_exception_bitmap(vcpu);	vcpu->arch.cr0_guest_owned_bits = (vcpu->fpu_active ? X86_CR0_TS : 0);	vmcs_writel(CR0_GUEST_HOST_MASK, ~vcpu->arch.cr0_guest_owned_bits);	/*	 * Note that CR4_GUEST_HOST_MASK is already set in the original vmcs01	 * (KVM doesn't change it)- no reason to call set_cr4_guest_host_mask();	 */	vcpu->arch.cr4_guest_owned_bits = ~vmcs_readl(CR4_GUEST_HOST_MASK);	vmx_set_cr4(vcpu, vmcs12->host_cr4);	nested_ept_uninit_mmu_context(vcpu);	kvm_set_cr3(vcpu, vmcs12->host_cr3);	kvm_mmu_reset_context(vcpu);	if (!enable_ept)		vcpu->arch.walk_mmu->inject_page_fault = kvm_inject_page_fault;	if (enable_vpid) {		/*		 * Trivially support vpid by letting L2s share their parent		 * L1's vpid. TODO: move to a more elaborate solution, giving		 * each L2 its own vpid and exposing the vpid feature to L1.		 */		vmx_flush_tlb(vcpu);	}	vmcs_write32(GUEST_SYSENTER_CS, vmcs12->host_ia32_sysenter_cs);	vmcs_writel(GUEST_SYSENTER_ESP, vmcs12->host_ia32_sysenter_esp);	vmcs_writel(GUEST_SYSENTER_EIP, vmcs12->host_ia32_sysenter_eip);	vmcs_writel(GUEST_IDTR_BASE, vmcs12->host_idtr_base);	vmcs_writel(GUEST_GDTR_BASE, vmcs12->host_gdtr_base);	vmcs_write32(GUEST_IDTR_LIMIT, 0xFFFF);	vmcs_write32(GUEST_GDTR_LIMIT, 0xFFFF);	/* If not VM_EXIT_CLEAR_BNDCFGS, the L2 value propagates to L1.  */	if (vmcs12->vm_exit_controls & VM_EXIT_CLEAR_BNDCFGS)		vmcs_write64(GUEST_BNDCFGS, 0);	if (vmcs12->vm_exit_controls & VM_EXIT_LOAD_IA32_PAT) {		vmcs_write64(GUEST_IA32_PAT, vmcs12->host_ia32_pat);		vcpu->arch.pat = vmcs12->host_ia32_pat;	}	if (vmcs12->vm_exit_controls & VM_EXIT_LOAD_IA32_PERF_GLOBAL_CTRL)		vmcs_write64(GUEST_IA32_PERF_GLOBAL_CTRL,			vmcs12->host_ia32_perf_global_ctrl);	/* Set L1 segment info according to Intel SDM	    27.5.2 Loading Host Segment and Descriptor-Table Registers */	seg = (struct kvm_segment) {		.base = 0,		.limit = 0xFFFFFFFF,		.selector = vmcs12->host_cs_selector,		.type = 11,		.present = 1,		.s = 1,		.g = 1	};	if (vmcs12->vm_exit_controls & VM_EXIT_HOST_ADDR_SPACE_SIZE)		seg.l = 1;	else		seg.db = 1;	vmx_set_segment(vcpu, &seg, VCPU_SREG_CS);	seg = (struct kvm_segment) {		.base = 0,		.limit = 0xFFFFFFFF,		.type = 3,		.present = 1,		.s = 1,		.db = 1,		.g = 1	};	seg.selector = vmcs12->host_ds_selector;	vmx_set_segment(vcpu, &seg, VCPU_SREG_DS);	seg.selector = vmcs12->host_es_selector;	vmx_set_segment(vcpu, &seg, VCPU_SREG_ES);	seg.selector = vmcs12->host_ss_selector;	vmx_set_segment(vcpu, &seg, VCPU_SREG_SS);	seg.selector = vmcs12->host_fs_selector;	seg.base = vmcs12->host_fs_base;	vmx_set_segment(vcpu, &seg, VCPU_SREG_FS);	seg.selector = vmcs12->host_gs_selector;	seg.base = vmcs12->host_gs_base;	vmx_set_segment(vcpu, &seg, VCPU_SREG_GS);	seg = (struct kvm_segment) {		.base = vmcs12->host_tr_base,		.limit = 0x67,		.selector = vmcs12->host_tr_selector,		.type = 11,		.present = 1	};	vmx_set_segment(vcpu, &seg, VCPU_SREG_TR);	kvm_set_dr(vcpu, 7, 0x400);	vmcs_write64(GUEST_IA32_DEBUGCTL, 0);	if (cpu_has_vmx_msr_bitmap())		vmx_set_msr_bitmap(vcpu);	if (nested_vmx_load_msr(vcpu, vmcs12->vm_exit_msr_load_addr,				vmcs12->vm_exit_msr_load_count))		nested_vmx_abort(vcpu, VMX_ABORT_LOAD_HOST_MSR_FAIL);}
+struct kvm_segment seg;
+struct kvm_segment seg;
+struct kvm_segment
+kvm_segment
+seg
+seg
+if (vmcs12->vm_exit_controls & VM_EXIT_LOAD_IA32_EFER)		vcpu->arch.efer = vmcs12->host_ia32_efer;	else if (vmcs12->vm_exit_controls & VM_EXIT_HOST_ADDR_SPACE_SIZE)		vcpu->arch.efer |= (EFER_LMA | EFER_LME);	else		vcpu->arch.efer &= ~(EFER_LMA | EFER_LME);
+vmcs12->vm_exit_controls & VM_EXIT_LOAD_IA32_EFER
+vmcs12->vm_exit_controls
+vmcs12
+vmcs12
+vm_exit_controls
+VM_EXIT_LOAD_IA32_EFER
+VM_EXIT_LOAD_IA32_EFER
+vcpu->arch.efer = vmcs12->host_ia32_efer;
+vcpu->arch.efer = vmcs12->host_ia32_efer
+vcpu->arch.efer
+vcpu->arch
+vcpu
+vcpu
+arch
+efer
+vmcs12->host_ia32_efer
+vmcs12
+vmcs12
+host_ia32_efer
+if (vmcs12->vm_exit_controls & VM_EXIT_HOST_ADDR_SPACE_SIZE)		vcpu->arch.efer |= (EFER_LMA | EFER_LME);	else		vcpu->arch.efer &= ~(EFER_LMA | EFER_LME);
+vmcs12->vm_exit_controls & VM_EXIT_HOST_ADDR_SPACE_SIZE
+vmcs12->vm_exit_controls
+vmcs12
+vmcs12
+vm_exit_controls
+VM_EXIT_HOST_ADDR_SPACE_SIZE
+VM_EXIT_HOST_ADDR_SPACE_SIZE
+vcpu->arch.efer |= (EFER_LMA | EFER_LME);
+vcpu->arch.efer |= (EFER_LMA | EFER_LME)
+vcpu->arch.efer
+vcpu->arch
+vcpu
+vcpu
+arch
+efer
+(EFER_LMA | EFER_LME)
+EFER_LMA | EFER_LME
+EFER_LMA
+EFER_LMA
+EFER_LME
+EFER_LME
+vcpu->arch.efer &= ~(EFER_LMA | EFER_LME);
+vcpu->arch.efer &= ~(EFER_LMA | EFER_LME)
+vcpu->arch.efer
+vcpu->arch
+vcpu
+vcpu
+arch
+efer
+~(EFER_LMA | EFER_LME)
+(EFER_LMA | EFER_LME)
+EFER_LMA | EFER_LME
+EFER_LMA
+EFER_LMA
+EFER_LME
+EFER_LME
+vmx_set_efer(vcpu, vcpu->arch.efer);
+vmx_set_efer(vcpu, vcpu->arch.efer)
+vmx_set_efer
+vmx_set_efer
+vcpu
+vcpu
+vcpu->arch.efer
+vcpu->arch
+vcpu
+vcpu
+arch
+efer
+kvm_register_write(vcpu, VCPU_REGS_RSP, vmcs12->host_rsp);
+kvm_register_write(vcpu, VCPU_REGS_RSP, vmcs12->host_rsp)
+kvm_register_write
+kvm_register_write
+vcpu
+vcpu
+VCPU_REGS_RSP
+VCPU_REGS_RSP
+vmcs12->host_rsp
+vmcs12
+vmcs12
+host_rsp
+kvm_register_write(vcpu, VCPU_REGS_RIP, vmcs12->host_rip);
+kvm_register_write(vcpu, VCPU_REGS_RIP, vmcs12->host_rip)
+kvm_register_write
+kvm_register_write
+vcpu
+vcpu
+VCPU_REGS_RIP
+VCPU_REGS_RIP
+vmcs12->host_rip
+vmcs12
+vmcs12
+host_rip
+vmx_set_rflags(vcpu, X86_EFLAGS_FIXED);
+vmx_set_rflags(vcpu, X86_EFLAGS_FIXED)
+vmx_set_rflags
+vmx_set_rflags
+vcpu
+vcpu
+X86_EFLAGS_FIXED
+X86_EFLAGS_FIXED
+vmx_set_cr0(vcpu, vmcs12->host_cr0);
+vmx_set_cr0(vcpu, vmcs12->host_cr0)
+vmx_set_cr0
+vmx_set_cr0
+vcpu
+vcpu
+vmcs12->host_cr0
+vmcs12
+vmcs12
+host_cr0
+update_exception_bitmap(vcpu);
+update_exception_bitmap(vcpu)
+update_exception_bitmap
+update_exception_bitmap
+vcpu
+vcpu
+vcpu->arch.cr0_guest_owned_bits = (vcpu->fpu_active ? X86_CR0_TS : 0);
+vcpu->arch.cr0_guest_owned_bits = (vcpu->fpu_active ? X86_CR0_TS : 0)
+vcpu->arch.cr0_guest_owned_bits
+vcpu->arch
+vcpu
+vcpu
+arch
+cr0_guest_owned_bits
+(vcpu->fpu_active ? X86_CR0_TS : 0)
+vcpu->fpu_active ? X86_CR0_TS : 0
+vcpu->fpu_active
+vcpu
+vcpu
+fpu_active
+X86_CR0_TS
+X86_CR0_TS
+0
+vmcs_writel(CR0_GUEST_HOST_MASK, ~vcpu->arch.cr0_guest_owned_bits);
+vmcs_writel(CR0_GUEST_HOST_MASK, ~vcpu->arch.cr0_guest_owned_bits)
+vmcs_writel
+vmcs_writel
+CR0_GUEST_HOST_MASK
+CR0_GUEST_HOST_MASK
+~vcpu->arch.cr0_guest_owned_bits
+vcpu->arch.cr0_guest_owned_bits
+vcpu->arch
+vcpu
+vcpu
+arch
+cr0_guest_owned_bits
+vcpu->arch.cr4_guest_owned_bits = ~vmcs_readl(CR4_GUEST_HOST_MASK);
+vcpu->arch.cr4_guest_owned_bits = ~vmcs_readl(CR4_GUEST_HOST_MASK)
+vcpu->arch.cr4_guest_owned_bits
+vcpu->arch
+vcpu
+vcpu
+arch
+cr4_guest_owned_bits
+~vmcs_readl(CR4_GUEST_HOST_MASK)
+vmcs_readl(CR4_GUEST_HOST_MASK)
+vmcs_readl
+vmcs_readl
+CR4_GUEST_HOST_MASK
+CR4_GUEST_HOST_MASK
+vmx_set_cr4(vcpu, vmcs12->host_cr4);
+vmx_set_cr4(vcpu, vmcs12->host_cr4)
+vmx_set_cr4
+vmx_set_cr4
+vcpu
+vcpu
+vmcs12->host_cr4
+vmcs12
+vmcs12
+host_cr4
+nested_ept_uninit_mmu_context(vcpu);
+nested_ept_uninit_mmu_context(vcpu)
+nested_ept_uninit_mmu_context
+nested_ept_uninit_mmu_context
+vcpu
+vcpu
+kvm_set_cr3(vcpu, vmcs12->host_cr3);
+kvm_set_cr3(vcpu, vmcs12->host_cr3)
+kvm_set_cr3
+kvm_set_cr3
+vcpu
+vcpu
+vmcs12->host_cr3
+vmcs12
+vmcs12
+host_cr3
+kvm_mmu_reset_context(vcpu);
+kvm_mmu_reset_context(vcpu)
+kvm_mmu_reset_context
+kvm_mmu_reset_context
+vcpu
+vcpu
+if (!enable_ept)		vcpu->arch.walk_mmu->inject_page_fault = kvm_inject_page_fault;
+!enable_ept
+enable_ept
+enable_ept
+vcpu->arch.walk_mmu->inject_page_fault = kvm_inject_page_fault;
+vcpu->arch.walk_mmu->inject_page_fault = kvm_inject_page_fault
+vcpu->arch.walk_mmu->inject_page_fault
+vcpu->arch.walk_mmu
+vcpu->arch
+vcpu
+vcpu
+arch
+walk_mmu
+inject_page_fault
+kvm_inject_page_fault
+kvm_inject_page_fault
+if (enable_vpid) {		/*		 * Trivially support vpid by letting L2s share their parent		 * L1's vpid. TODO: move to a more elaborate solution, giving		 * each L2 its own vpid and exposing the vpid feature to L1.		 */		vmx_flush_tlb(vcpu);	}
+enable_vpid
+enable_vpid
+{		/*		 * Trivially support vpid by letting L2s share their parent		 * L1's vpid. TODO: move to a more elaborate solution, giving		 * each L2 its own vpid and exposing the vpid feature to L1.		 */		vmx_flush_tlb(vcpu);	}
+vmx_flush_tlb(vcpu);
+vmx_flush_tlb(vcpu)
+vmx_flush_tlb
+vmx_flush_tlb
+vcpu
+vcpu
+vmcs_write32(GUEST_SYSENTER_CS, vmcs12->host_ia32_sysenter_cs);
+vmcs_write32(GUEST_SYSENTER_CS, vmcs12->host_ia32_sysenter_cs)
+vmcs_write32
+vmcs_write32
+GUEST_SYSENTER_CS
+GUEST_SYSENTER_CS
+vmcs12->host_ia32_sysenter_cs
+vmcs12
+vmcs12
+host_ia32_sysenter_cs
+vmcs_writel(GUEST_SYSENTER_ESP, vmcs12->host_ia32_sysenter_esp);
+vmcs_writel(GUEST_SYSENTER_ESP, vmcs12->host_ia32_sysenter_esp)
+vmcs_writel
+vmcs_writel
+GUEST_SYSENTER_ESP
+GUEST_SYSENTER_ESP
+vmcs12->host_ia32_sysenter_esp
+vmcs12
+vmcs12
+host_ia32_sysenter_esp
+vmcs_writel(GUEST_SYSENTER_EIP, vmcs12->host_ia32_sysenter_eip);
+vmcs_writel(GUEST_SYSENTER_EIP, vmcs12->host_ia32_sysenter_eip)
+vmcs_writel
+vmcs_writel
+GUEST_SYSENTER_EIP
+GUEST_SYSENTER_EIP
+vmcs12->host_ia32_sysenter_eip
+vmcs12
+vmcs12
+host_ia32_sysenter_eip
+vmcs_writel(GUEST_IDTR_BASE, vmcs12->host_idtr_base);
+vmcs_writel(GUEST_IDTR_BASE, vmcs12->host_idtr_base)
+vmcs_writel
+vmcs_writel
+GUEST_IDTR_BASE
+GUEST_IDTR_BASE
+vmcs12->host_idtr_base
+vmcs12
+vmcs12
+host_idtr_base
+vmcs_writel(GUEST_GDTR_BASE, vmcs12->host_gdtr_base);
+vmcs_writel(GUEST_GDTR_BASE, vmcs12->host_gdtr_base)
+vmcs_writel
+vmcs_writel
+GUEST_GDTR_BASE
+GUEST_GDTR_BASE
+vmcs12->host_gdtr_base
+vmcs12
+vmcs12
+host_gdtr_base
+vmcs_write32(GUEST_IDTR_LIMIT, 0xFFFF);
+vmcs_write32(GUEST_IDTR_LIMIT, 0xFFFF)
+vmcs_write32
+vmcs_write32
+GUEST_IDTR_LIMIT
+GUEST_IDTR_LIMIT
+0xFFFF
+vmcs_write32(GUEST_GDTR_LIMIT, 0xFFFF);
+vmcs_write32(GUEST_GDTR_LIMIT, 0xFFFF)
+vmcs_write32
+vmcs_write32
+GUEST_GDTR_LIMIT
+GUEST_GDTR_LIMIT
+0xFFFF
+if (vmcs12->vm_exit_controls & VM_EXIT_CLEAR_BNDCFGS)		vmcs_write64(GUEST_BNDCFGS, 0);
+vmcs12->vm_exit_controls & VM_EXIT_CLEAR_BNDCFGS
+vmcs12->vm_exit_controls
+vmcs12
+vmcs12
+vm_exit_controls
+VM_EXIT_CLEAR_BNDCFGS
+VM_EXIT_CLEAR_BNDCFGS
+vmcs_write64(GUEST_BNDCFGS, 0);
+vmcs_write64(GUEST_BNDCFGS, 0)
+vmcs_write64
+vmcs_write64
+GUEST_BNDCFGS
+GUEST_BNDCFGS
+0
+if (vmcs12->vm_exit_controls & VM_EXIT_LOAD_IA32_PAT) {		vmcs_write64(GUEST_IA32_PAT, vmcs12->host_ia32_pat);		vcpu->arch.pat = vmcs12->host_ia32_pat;	}
+vmcs12->vm_exit_controls & VM_EXIT_LOAD_IA32_PAT
+vmcs12->vm_exit_controls
+vmcs12
+vmcs12
+vm_exit_controls
+VM_EXIT_LOAD_IA32_PAT
+VM_EXIT_LOAD_IA32_PAT
+{		vmcs_write64(GUEST_IA32_PAT, vmcs12->host_ia32_pat);		vcpu->arch.pat = vmcs12->host_ia32_pat;	}
+vmcs_write64(GUEST_IA32_PAT, vmcs12->host_ia32_pat);
+vmcs_write64(GUEST_IA32_PAT, vmcs12->host_ia32_pat)
+vmcs_write64
+vmcs_write64
+GUEST_IA32_PAT
+GUEST_IA32_PAT
+vmcs12->host_ia32_pat
+vmcs12
+vmcs12
+host_ia32_pat
+vcpu->arch.pat = vmcs12->host_ia32_pat;
+vcpu->arch.pat = vmcs12->host_ia32_pat
+vcpu->arch.pat
+vcpu->arch
+vcpu
+vcpu
+arch
+pat
+vmcs12->host_ia32_pat
+vmcs12
+vmcs12
+host_ia32_pat
+if (vmcs12->vm_exit_controls & VM_EXIT_LOAD_IA32_PERF_GLOBAL_CTRL)		vmcs_write64(GUEST_IA32_PERF_GLOBAL_CTRL,			vmcs12->host_ia32_perf_global_ctrl);
+vmcs12->vm_exit_controls & VM_EXIT_LOAD_IA32_PERF_GLOBAL_CTRL
+vmcs12->vm_exit_controls
+vmcs12
+vmcs12
+vm_exit_controls
+VM_EXIT_LOAD_IA32_PERF_GLOBAL_CTRL
+VM_EXIT_LOAD_IA32_PERF_GLOBAL_CTRL
+vmcs_write64(GUEST_IA32_PERF_GLOBAL_CTRL,			vmcs12->host_ia32_perf_global_ctrl);
+vmcs_write64(GUEST_IA32_PERF_GLOBAL_CTRL,			vmcs12->host_ia32_perf_global_ctrl)
+vmcs_write64
+vmcs_write64
+GUEST_IA32_PERF_GLOBAL_CTRL
+GUEST_IA32_PERF_GLOBAL_CTRL
+vmcs12->host_ia32_perf_global_ctrl
+vmcs12
+vmcs12
+host_ia32_perf_global_ctrl
+seg = (struct kvm_segment) {		.base = 0,		.limit = 0xFFFFFFFF,		.selector = vmcs12->host_cs_selector,		.type = 11,		.present = 1,		.s = 1,		.g = 1	};
+if (vmcs12->vm_exit_controls & VM_EXIT_HOST_ADDR_SPACE_SIZE)		seg.l = 1;	else		seg.db = 1;
+vmcs12->vm_exit_controls & VM_EXIT_HOST_ADDR_SPACE_SIZE
+vmcs12->vm_exit_controls
+vmcs12
+vmcs12
+vm_exit_controls
+VM_EXIT_HOST_ADDR_SPACE_SIZE
+VM_EXIT_HOST_ADDR_SPACE_SIZE
+seg.l = 1;
+seg.l = 1
+seg.l
+seg
+seg
+l
+1
+seg.db = 1;
+seg.db = 1
+seg.db
+seg
+seg
+db
+1
+vmx_set_segment(vcpu, &seg, VCPU_SREG_CS);
+vmx_set_segment(vcpu, &seg, VCPU_SREG_CS)
+vmx_set_segment
+vmx_set_segment
+vcpu
+vcpu
+&seg
+seg
+seg
+VCPU_SREG_CS
+VCPU_SREG_CS
+seg = (struct kvm_segment) {		.base = 0,		.limit = 0xFFFFFFFF,		.type = 3,		.present = 1,		.s = 1,		.db = 1,		.g = 1	};
+seg.selector = vmcs12->host_ds_selector;
+seg.selector = vmcs12->host_ds_selector
+seg.selector
+seg
+seg
+selector
+vmcs12->host_ds_selector
+vmcs12
+vmcs12
+host_ds_selector
+vmx_set_segment(vcpu, &seg, VCPU_SREG_DS);
+vmx_set_segment(vcpu, &seg, VCPU_SREG_DS)
+vmx_set_segment
+vmx_set_segment
+vcpu
+vcpu
+&seg
+seg
+seg
+VCPU_SREG_DS
+VCPU_SREG_DS
+seg.selector = vmcs12->host_es_selector;
+seg.selector = vmcs12->host_es_selector
+seg.selector
+seg
+seg
+selector
+vmcs12->host_es_selector
+vmcs12
+vmcs12
+host_es_selector
+vmx_set_segment(vcpu, &seg, VCPU_SREG_ES);
+vmx_set_segment(vcpu, &seg, VCPU_SREG_ES)
+vmx_set_segment
+vmx_set_segment
+vcpu
+vcpu
+&seg
+seg
+seg
+VCPU_SREG_ES
+VCPU_SREG_ES
+seg.selector = vmcs12->host_ss_selector;
+seg.selector = vmcs12->host_ss_selector
+seg.selector
+seg
+seg
+selector
+vmcs12->host_ss_selector
+vmcs12
+vmcs12
+host_ss_selector
+vmx_set_segment(vcpu, &seg, VCPU_SREG_SS);
+vmx_set_segment(vcpu, &seg, VCPU_SREG_SS)
+vmx_set_segment
+vmx_set_segment
+vcpu
+vcpu
+&seg
+seg
+seg
+VCPU_SREG_SS
+VCPU_SREG_SS
+seg.selector = vmcs12->host_fs_selector;
+seg.selector = vmcs12->host_fs_selector
+seg.selector
+seg
+seg
+selector
+vmcs12->host_fs_selector
+vmcs12
+vmcs12
+host_fs_selector
+seg.base = vmcs12->host_fs_base;
+seg.base = vmcs12->host_fs_base
+seg.base
+seg
+seg
+base
+vmcs12->host_fs_base
+vmcs12
+vmcs12
+host_fs_base
+vmx_set_segment(vcpu, &seg, VCPU_SREG_FS);
+vmx_set_segment(vcpu, &seg, VCPU_SREG_FS)
+vmx_set_segment
+vmx_set_segment
+vcpu
+vcpu
+&seg
+seg
+seg
+VCPU_SREG_FS
+VCPU_SREG_FS
+seg.selector = vmcs12->host_gs_selector;
+seg.selector = vmcs12->host_gs_selector
+seg.selector
+seg
+seg
+selector
+vmcs12->host_gs_selector
+vmcs12
+vmcs12
+host_gs_selector
+seg.base = vmcs12->host_gs_base;
+seg.base = vmcs12->host_gs_base
+seg.base
+seg
+seg
+base
+vmcs12->host_gs_base
+vmcs12
+vmcs12
+host_gs_base
+vmx_set_segment(vcpu, &seg, VCPU_SREG_GS);
+vmx_set_segment(vcpu, &seg, VCPU_SREG_GS)
+vmx_set_segment
+vmx_set_segment
+vcpu
+vcpu
+&seg
+seg
+seg
+VCPU_SREG_GS
+VCPU_SREG_GS
+seg = (struct kvm_segment) {		.base = vmcs12->host_tr_base,		.limit = 0x67,		.selector = vmcs12->host_tr_selector,		.type = 11,		.present = 1	};
+vmx_set_segment(vcpu, &seg, VCPU_SREG_TR);
+vmx_set_segment(vcpu, &seg, VCPU_SREG_TR)
+vmx_set_segment
+vmx_set_segment
+vcpu
+vcpu
+&seg
+seg
+seg
+VCPU_SREG_TR
+VCPU_SREG_TR
+kvm_set_dr(vcpu, 7, 0x400);
+kvm_set_dr(vcpu, 7, 0x400)
+kvm_set_dr
+kvm_set_dr
+vcpu
+vcpu
+7
+0x400
+vmcs_write64(GUEST_IA32_DEBUGCTL, 0);
+vmcs_write64(GUEST_IA32_DEBUGCTL, 0)
+vmcs_write64
+vmcs_write64
+GUEST_IA32_DEBUGCTL
+GUEST_IA32_DEBUGCTL
+0
+if (cpu_has_vmx_msr_bitmap())		vmx_set_msr_bitmap(vcpu);
+cpu_has_vmx_msr_bitmap()
+cpu_has_vmx_msr_bitmap
+cpu_has_vmx_msr_bitmap
+vmx_set_msr_bitmap(vcpu);
+vmx_set_msr_bitmap(vcpu)
+vmx_set_msr_bitmap
+vmx_set_msr_bitmap
+vcpu
+vcpu
+if (nested_vmx_load_msr(vcpu, vmcs12->vm_exit_msr_load_addr,				vmcs12->vm_exit_msr_load_count))		nested_vmx_abort(vcpu, VMX_ABORT_LOAD_HOST_MSR_FAIL);
+nested_vmx_load_msr(vcpu, vmcs12->vm_exit_msr_load_addr,				vmcs12->vm_exit_msr_load_count)
+nested_vmx_load_msr
+nested_vmx_load_msr
+vcpu
+vcpu
+vmcs12->vm_exit_msr_load_addr
+vmcs12
+vmcs12
+vm_exit_msr_load_addr
+vmcs12->vm_exit_msr_load_count
+vmcs12
+vmcs12
+vm_exit_msr_load_count
+nested_vmx_abort(vcpu, VMX_ABORT_LOAD_HOST_MSR_FAIL);
+nested_vmx_abort(vcpu, VMX_ABORT_LOAD_HOST_MSR_FAIL)
+nested_vmx_abort
+nested_vmx_abort
+vcpu
+vcpu
+VMX_ABORT_LOAD_HOST_MSR_FAIL
+VMX_ABORT_LOAD_HOST_MSR_FAIL
+-----joern-----
+(14,32,0)
+(217,121,0)
+(274,198,0)
+(227,111,0)
+(86,144,0)
+(34,318,0)
+(274,221,0)
+(219,65,0)
+(211,66,0)
+(276,111,0)
+(196,68,0)
+(259,45,0)
+(37,199,0)
+(29,45,0)
+(124,86,0)
+(99,102,0)
+(276,45,0)
+(272,280,0)
+(199,290,0)
+(188,77,0)
+(262,195,0)
+(323,121,0)
+(3,111,0)
+(39,127,0)
+(64,310,0)
+(289,251,0)
+(10,235,0)
+(48,111,0)
+(222,248,0)
+(104,248,0)
+(4,281,0)
+(222,111,0)
+(207,249,0)
+(133,68,0)
+(8,111,0)
+(91,111,0)
+(81,111,0)
+(65,111,0)
+(247,317,0)
+(88,312,0)
+(42,161,0)
+(264,243,0)
+(267,308,0)
+(96,70,0)
+(106,304,0)
+(51,257,0)
+(252,196,0)
+(234,222,0)
+(243,68,0)
+(156,110,0)
+(7,302,0)
+(257,94,0)
+(56,5,0)
+(151,265,0)
+(103,68,0)
+(200,204,0)
+(209,290,0)
+(109,196,0)
+(309,96,0)
+(223,225,0)
+(135,265,0)
+(57,114,0)
+(165,70,0)
+(64,68,0)
+(297,252,0)
+(62,111,0)
+(65,141,0)
+(15,313,0)
+(28,111,0)
+(176,111,0)
+(126,32,0)
+(189,265,0)
+(23,290,0)
+(274,82,0)
+(26,174,0)
+(281,4,0)
+(246,226,0)
+(117,120,0)
+(196,252,0)
+(110,111,0)
+(121,68,0)
+(232,170,0)
+(245,290,0)
+(164,68,0)
+(183,52,0)
+(184,28,0)
+(167,274,0)
+(304,106,0)
+(67,8,0)
+(310,64,0)
+(41,68,0)
+(170,290,0)
+(322,172,0)
+(221,225,0)
+(203,151,0)
+(1,179,0)
+(138,111,0)
+(77,238,0)
+(182,238,0)
+(121,308,0)
+(202,82,0)
+(289,94,0)
+(74,68,0)
+(264,180,0)
+(153,198,0)
+(169,55,0)
+(273,39,0)
+(88,290,0)
+(157,298,0)
+(186,7,0)
+(239,232,0)
+(74,178,0)
+(241,298,0)
+(160,106,0)
+(228,222,0)
+(31,205,0)
+(98,58,0)
+(214,111,0)
+(197,280,0)
+(229,64,0)
+(232,68,0)
+(28,290,0)
+(140,114,0)
+(73,103,0)
+(319,86,0)
+(155,185,0)
+(258,111,0)
+(307,117,0)
+(311,71,0)
+(201,190,0)
+(106,68,0)
+(173,114,0)
+(288,205,0)
+(89,225,0)
+(8,290,0)
+(216,68,0)
+(194,68,0)
+(168,178,0)
+(24,226,0)
+(38,290,0)
+(237,187,0)
+(102,48,0)
+(125,190,0)
+(78,106,0)
+(147,259,0)
+(179,68,0)
+(161,281,0)
+(151,290,0)
+(52,68,0)
+(171,179,0)
+(314,3,0)
+(63,108,0)
+(82,274,0)
+(75,68,0)
+(5,209,0)
+(247,290,0)
+(190,111,0)
+(11,74,0)
+(279,71,0)
+(177,133,0)
+(13,111,0)
+(60,247,0)
+(161,245,0)
+(76,286,0)
+(152,111,0)
+(69,110,0)
+(212,87,0)
+(41,302,0)
+(195,176,0)
+(210,83,0)
+(308,121,0)
+(129,71,0)
+(159,68,0)
+(154,75,0)
+(176,103,0)
+(274,66,0)
+(27,177,0)
+(107,310,0)
+(55,111,0)
+(3,159,0)
+(114,173,0)
+(238,77,0)
+(46,127,0)
+(178,74,0)
+(304,111,0)
+(240,218,0)
+(295,133,0)
+(23,111,0)
+(177,290,0)
+(317,117,0)
+(187,68,0)
+(318,235,0)
+(88,111,0)
+(197,111,0)
+(30,7,0)
+(71,290,0)
+(159,3,0)
+(237,111,0)
+(117,317,0)
+(75,154,0)
+(209,111,0)
+(324,142,0)
+(61,75,0)
+(83,111,0)
+(291,102,0)
+(179,172,0)
+(83,265,0)
+(132,153,0)
+(142,258,0)
+(255,318,0)
+(142,68,0)
+(12,159,0)
+(130,54,0)
+(100,64,0)
+(328,164,0)
+(177,111,0)
+(271,287,0)
+(204,298,0)
+(233,216,0)
+(2,127,0)
+(172,290,0)
+(326,110,0)
+(50,304,0)
+(9,142,0)
+(82,290,0)
+(22,197,0)
+(103,176,0)
+(54,185,0)
+(110,290,0)
+(284,74,0)
+(20,175,0)
+(190,290,0)
+(194,321,0)
+(300,173,0)
+(6,88,0)
+(87,91,0)
+(205,290,0)
+(71,129,0)
+(43,21,0)
+(38,251,0)
+(91,175,0)
+(298,68,0)
+(293,41,0)
+(258,142,0)
+(118,177,0)
+(174,172,0)
+(45,276,0)
+(44,232,0)
+(317,247,0)
+(115,190,0)
+(16,76,0)
+(96,111,0)
+(213,175,0)
+(139,111,0)
+(243,264,0)
+(302,41,0)
+(298,204,0)
+(230,88,0)
+(94,289,0)
+(141,65,0)
+(45,259,0)
+(76,290,0)
+(198,153,0)
+(265,83,0)
+(218,49,0)
+(315,312,0)
+(153,68,0)
+(172,174,0)
+(166,194,0)
+(33,216,0)
+(191,87,0)
+(206,247,0)
+(321,111,0)
+(226,68,0)
+(175,68,0)
+(21,111,0)
+(35,243,0)
+(302,111,0)
+(277,197,0)
+(72,103,0)
+(65,290,0)
+(261,138,0)
+(327,54,0)
+(301,55,0)
+(313,290,0)
+(265,151,0)
+(79,205,0)
+(48,164,0)
+(105,246,0)
+(248,222,0)
+(122,184,0)
+(144,86,0)
+(113,216,0)
+(154,111,0)
+(108,290,0)
+(294,154,0)
+(52,8,0)
+(47,317,0)
+(49,218,0)
+(280,197,0)
+(84,21,0)
+(199,111,0)
+(244,195,0)
+(205,31,0)
+(170,232,0)
+(53,69,0)
+(282,141,0)
+(59,238,0)
+(218,68,0)
+(283,251,0)
+(237,290,0)
+(253,199,0)
+(275,111,0)
+(316,170,0)
+(18,164,0)
+(8,52,0)
+(163,28,0)
+(222,290,0)
+(97,58,0)
+(254,41,0)
+(187,237,0)
+(134,131,0)
+(85,52,0)
+(225,221,0)
+(113,111,0)
+(31,221,0)
+(269,209,0)
+(312,88,0)
+(32,113,0)
+(250,65,0)
+(119,194,0)
+(149,111,0)
+(19,290,0)
+(17,108,0)
+(270,111,0)
+(116,101,0)
+(145,70,0)
+(82,111,0)
+(136,151,0)
+(197,290,0)
+(164,48,0)
+(310,111,0)
+(287,290,0)
+(92,66,0)
+(112,31,0)
+(129,198,0)
+(320,196,0)
+(305,4,0)
+(249,111,0)
+(242,111,0)
+(268,75,0)
+(256,209,0)
+(86,68,0)
+(245,161,0)
+(285,187,0)
+(36,19,0)
+(127,68,0)
+(66,290,0)
+(58,258,0)
+(260,170,0)
+(133,177,0)
+(216,113,0)
+(231,133,0)
+(110,69,0)
+(172,179,0)
+(325,218,0)
+(154,290,0)
+(224,174,0)
+(226,246,0)
+(108,210,0)
+(174,68,0)
+(296,153,0)
+(220,245,0)
+(173,264,0)
+(209,5,0)
+(128,257,0)
+(28,184,0)
+(210,108,0)
+(143,276,0)
+(321,194,0)
+(175,91,0)
+(278,111,0)
+(306,245,0)
+(162,131,0)
+(101,321,0)
+(193,187,0)
+(25,243,0)
+(93,38,0)
+(246,180,0)
+(251,289,0)
+(95,226,0)
+(66,274,0)
+(215,120,0)
+(299,146,0)
+(303,129,0)
+(123,111,0)
+(80,159,0)
+(70,68,0)
+(251,38,0)
+(158,49,0)
+(281,111,0)
+(0,23,0)
+(313,111,0)
+(192,249,0)
+(40,144,0)
+(70,96,0)
+(94,257,0)
+(137,101,0)
+(181,210,0)
+(148,237,0)
+(266,38,0)
+(90,259,0)
+(170,111,0)
+(114,290,0)
+(236,19,0)
+(39,111,0)
+(208,28,0)
+(127,39,0)
+(238,68,0)
+(138,290,0)
+(311,144,1)
+(201,125,1)
+(76,16,1)
+(66,92,1)
+(192,207,1)
+(167,66,1)
+(265,135,1)
+(207,39,1)
+(109,308,1)
+(64,68,1)
+(121,68,1)
+(69,53,1)
+(260,316,1)
+(197,290,1)
+(170,290,1)
+(104,234,1)
+(76,290,1)
+(129,71,1)
+(108,63,1)
+(299,138,1)
+(223,89,1)
+(20,87,1)
+(117,317,1)
+(5,56,1)
+(258,142,1)
+(144,40,1)
+(294,313,1)
+(199,290,1)
+(158,218,1)
+(114,290,1)
+(1,322,1)
+(15,237,1)
+(308,121,1)
+(202,198,1)
+(262,244,1)
+(114,140,1)
+(6,312,1)
+(283,38,1)
+(272,277,1)
+(47,247,1)
+(102,291,1)
+(268,294,1)
+(89,31,1)
+(28,184,1)
+(124,319,1)
+(170,232,1)
+(217,323,1)
+(75,61,1)
+(32,14,1)
+(161,42,1)
+(222,228,1)
+(19,290,1)
+(110,69,1)
+(288,79,1)
+(287,271,1)
+(289,94,1)
+(78,160,1)
+(106,68,1)
+(119,101,1)
+(143,83,1)
+(160,50,1)
+(182,55,1)
+(231,118,1)
+(215,117,1)
+(190,290,1)
+(93,266,1)
+(199,37,1)
+(117,307,1)
+(63,17,1)
+(154,75,1)
+(269,113,1)
+(52,68,1)
+(259,147,1)
+(226,24,1)
+(187,68,1)
+(216,33,1)
+(7,30,1)
+(41,293,1)
+(273,96,1)
+(70,145,1)
+(73,195,1)
+(174,68,1)
+(12,314,1)
+(165,309,1)
+(38,93,1)
+(318,34,1)
+(177,290,1)
+(234,176,1)
+(157,241,1)
+(22,280,1)
+(287,290,1)
+(316,177,1)
+(74,68,1)
+(116,137,1)
+(233,32,1)
+(228,248,1)
+(151,290,1)
+(293,254,1)
+(135,151,1)
+(55,169,1)
+(49,218,1)
+(327,130,1)
+(247,290,1)
+(127,68,1)
+(248,104,1)
+(211,202,1)
+(173,300,1)
+(292,172,1)
+(84,190,1)
+(74,284,1)
+(46,273,1)
+(48,164,1)
+(222,290,1)
+(202,289,1)
+(134,162,1)
+(151,136,1)
+(128,51,1)
+(179,171,1)
+(175,68,1)
+(147,90,1)
+(120,215,1)
+(178,74,1)
+(205,290,1)
+(86,68,1)
+(204,298,1)
+(21,43,1)
+(185,155,1)
+(183,67,1)
+(282,219,1)
+(188,238,1)
+(133,295,1)
+(236,172,1)
+(312,315,1)
+(45,29,1)
+(153,68,1)
+(57,246,1)
+(209,290,1)
+(210,181,1)
+(237,187,1)
+(0,8,1)
+(110,326,1)
+(313,15,1)
+(308,267,1)
+(26,224,1)
+(33,233,1)
+(59,182,1)
+(289,251,1)
+(265,189,1)
+(310,64,1)
+(156,185,1)
+(194,68,1)
+(276,45,1)
+(136,203,1)
+(52,85,1)
+(86,124,1)
+(162,77,1)
+(113,216,1)
+(205,288,1)
+(232,68,1)
+(150,21,1)
+(172,174,1)
+(198,153,1)
+(309,304,1)
+(72,73,1)
+(328,102,1)
+(95,105,1)
+(297,196,1)
+(253,170,1)
+(77,188,1)
+(161,245,1)
+(196,68,1)
+(250,141,1)
+(144,86,1)
+(40,86,1)
+(43,84,1)
+(105,308,1)
+(196,320,1)
+(323,131,1)
+(298,68,1)
+(274,198,1)
+(314,310,1)
+(285,148,1)
+(155,54,1)
+(3,159,1)
+(71,279,1)
+(107,263,1)
+(140,57,1)
+(99,110,1)
+(16,263,1)
+(220,276,1)
+(322,150,1)
+(175,213,1)
+(202,221,1)
+(100,107,1)
+(203,210,1)
+(8,52,1)
+(280,272,1)
+(133,68,1)
+(173,114,1)
+(313,290,1)
+(277,48,1)
+(44,239,1)
+(238,68,1)
+(245,290,1)
+(35,25,1)
+(127,2,1)
+(317,247,1)
+(25,173,1)
+(315,230,1)
+(265,151,1)
+(148,281,1)
+(229,100,1)
+(67,199,1)
+(154,290,1)
+(70,68,1)
+(9,58,1)
+(168,74,1)
+(243,35,1)
+(219,302,1)
+(30,186,1)
+(218,325,1)
+(307,317,1)
+(153,296,1)
+(130,49,1)
+(252,196,1)
+(274,167,1)
+(92,211,1)
+(291,99,1)
+(131,134,1)
+(164,18,1)
+(138,290,1)
+(164,68,1)
+(45,259,1)
+(58,97,1)
+(191,222,1)
+(274,66,1)
+(121,217,1)
+(304,106,1)
+(146,299,1)
+(109,264,1)
+(271,150,1)
+(222,248,1)
+(169,301,1)
+(194,166,1)
+(77,238,1)
+(36,236,1)
+(244,321,1)
+(251,283,1)
+(90,143,1)
+(65,250,1)
+(106,78,1)
+(19,36,1)
+(256,5,1)
+(197,22,1)
+(118,27,1)
+(224,179,1)
+(301,249,1)
+(247,206,1)
+(263,120,1)
+(101,116,1)
+(31,112,1)
+(87,212,1)
+(212,191,1)
+(61,268,1)
+(226,68,1)
+(208,258,1)
+(75,68,1)
+(209,256,1)
+(39,127,1)
+(213,20,1)
+(38,290,1)
+(159,80,1)
+(254,7,1)
+(323,77,1)
+(171,1,1)
+(56,269,1)
+(129,303,1)
+(24,95,1)
+(115,201,1)
+(325,240,1)
+(96,70,1)
+(132,129,1)
+(98,91,1)
+(18,328,1)
+(179,68,1)
+(240,204,1)
+(11,144,1)
+(305,161,1)
+(23,0,1)
+(197,280,1)
+(252,297,1)
+(200,252,1)
+(8,290,1)
+(186,197,1)
+(295,231,1)
+(88,6,1)
+(141,282,1)
+(296,132,1)
+(239,260,1)
+(122,208,1)
+(232,44,1)
+(240,252,1)
+(306,220,1)
+(317,47,1)
+(251,38,1)
+(91,175,1)
+(322,287,1)
+(303,71,1)
+(27,82,1)
+(274,221,1)
+(209,5,1)
+(88,312,1)
+(31,205,1)
+(221,225,1)
+(302,41,1)
+(172,179,1)
+(166,119,1)
+(83,265,1)
+(281,4,1)
+(37,253,1)
+(190,115,1)
+(82,274,1)
+(79,178,1)
+(65,290,1)
+(54,327,1)
+(177,133,1)
+(320,109,1)
+(218,68,1)
+(238,59,1)
+(263,146,1)
+(145,165,1)
+(142,324,1)
+(42,245,1)
+(267,121,1)
+(174,26,1)
+(137,209,1)
+(28,290,1)
+(321,194,1)
+(53,156,1)
+(80,12,1)
+(237,290,1)
+(108,290,1)
+(65,141,1)
+(50,3,1)
+(235,10,1)
+(246,226,1)
+(66,290,1)
+(107,76,1)
+(4,305,1)
+(241,200,1)
+(206,60,1)
+(82,290,1)
+(17,23,1)
+(187,193,1)
+(266,178,1)
+(298,157,1)
+(184,122,1)
+(178,168,1)
+(94,257,1)
+(176,103,1)
+(142,68,1)
+(326,69,1)
+(193,285,1)
+(112,205,1)
+(264,243,1)
+(249,192,1)
+(97,98,1)
+(225,223,1)
+(88,290,1)
+(216,68,1)
+(41,68,1)
+(243,68,1)
+(23,290,1)
+(28,163,1)
+(279,311,1)
+(292,19,1)
+(156,235,1)
+(110,290,1)
+(10,318,1)
+(34,255,1)
+(60,146,1)
+(103,68,1)
+(284,11,1)
+(138,261,1)
+(49,158,1)
+(300,114,1)
+(163,184,1)
+(103,72,1)
+(324,9,1)
+(126,65,1)
+(2,46,1)
+(71,290,1)
+(172,290,1)
+(14,126,1)
+(64,229,1)
+(181,108,1)
+(125,88,1)
+(257,128,1)
+(29,259,1)
+(261,154,1)
+(245,306,1)
+(255,49,1)
+(85,183,1)
+(159,68,1)
+(210,108,1)
+(189,151,1)
+(230,28,1)
+(51,251,1)
+(195,262,1)
+(198,144,2)
+(318,49,2)
+(76,263,2)
+(304,106,2)
+(54,49,2)
+(155,49,2)
+(153,144,2)
+(164,68,2)
+(91,175,2)
+(57,308,2)
+(218,68,2)
+(49,218,2)
+(103,68,2)
+(279,144,2)
+(34,49,2)
+(144,86,2)
+(112,178,2)
+(209,290,2)
+(321,194,2)
+(70,68,2)
+(113,216,2)
+(185,49,2)
+(196,68,2)
+(75,68,2)
+(287,290,2)
+(235,49,2)
+(226,68,2)
+(35,308,2)
+(19,172,2)
+(289,178,2)
+(47,146,2)
+(237,187,2)
+(264,308,2)
+(110,69,2)
+(36,172,2)
+(45,259,2)
+(205,290,2)
+(94,178,2)
+(243,308,2)
+(65,290,2)
+(16,263,2)
+(289,94,2)
+(23,290,2)
+(88,290,2)
+(247,290,2)
+(154,75,2)
+(289,251,2)
+(93,178,2)
+(215,146,2)
+(142,68,2)
+(238,68,2)
+(140,308,2)
+(168,144,2)
+(175,68,2)
+(265,151,2)
+(39,127,2)
+(225,178,2)
+(172,174,2)
+(121,68,2)
+(172,290,2)
+(197,290,2)
+(266,178,2)
+(8,290,2)
+(31,205,2)
+(162,77,2)
+(271,150,2)
+(287,150,2)
+(298,252,2)
+(133,68,2)
+(247,146,2)
+(251,38,2)
+(82,290,2)
+(74,144,2)
+(172,179,2)
+(197,280,2)
+(232,68,2)
+(276,45,2)
+(106,68,2)
+(274,66,2)
+(110,290,2)
+(157,252,2)
+(105,308,2)
+(117,146,2)
+(310,64,2)
+(31,178,2)
+(194,68,2)
+(204,298,2)
+(19,290,2)
+(216,68,2)
+(222,248,2)
+(71,290,2)
+(281,4,2)
+(79,178,2)
+(173,308,2)
+(138,290,2)
+(284,144,2)
+(128,178,2)
+(48,164,2)
+(60,146,2)
+(120,146,2)
+(317,146,2)
+(308,121,2)
+(189,151,2)
+(130,49,2)
+(173,114,2)
+(132,144,2)
+(210,108,2)
+(127,68,2)
+(221,225,2)
+(151,290,2)
+(179,68,2)
+(76,290,2)
+(258,142,2)
+(114,290,2)
+(159,68,2)
+(204,252,2)
+(190,290,2)
+(24,308,2)
+(153,68,2)
+(298,68,2)
+(161,245,2)
+(89,178,2)
+(28,290,2)
+(3,159,2)
+(198,153,2)
+(8,52,2)
+(71,144,2)
+(82,274,2)
+(154,290,2)
+(114,308,2)
+(177,133,2)
+(303,144,2)
+(177,290,2)
+(246,308,2)
+(94,257,2)
+(288,178,2)
+(129,71,2)
+(129,144,2)
+(237,290,2)
+(131,77,2)
+(205,178,2)
+(246,226,2)
+(66,290,2)
+(327,49,2)
+(11,144,2)
+(51,178,2)
+(223,178,2)
+(74,68,2)
+(134,77,2)
+(317,247,2)
+(206,146,2)
+(245,290,2)
+(296,144,2)
+(88,312,2)
+(170,232,2)
+(170,290,2)
+(83,265,2)
+(65,141,2)
+(283,178,2)
+(252,196,2)
+(200,252,2)
+(28,184,2)
+(199,290,2)
+(95,308,2)
+(226,308,2)
+(222,290,2)
+(300,308,2)
+(241,252,2)
+(243,68,2)
+(257,178,2)
+(176,103,2)
+(255,49,2)
+(117,317,2)
+(307,146,2)
+(135,151,2)
+(174,68,2)
+(38,290,2)
+(187,68,2)
+(108,290,2)
+(25,308,2)
+(10,49,2)
+(86,68,2)
+(41,68,2)
+(311,144,2)
+(178,74,2)
+(96,70,2)
+(77,238,2)
+(64,68,2)
+(38,178,2)
+(264,243,2)
+(302,41,2)
+(221,178,2)
+(274,198,2)
+(52,68,2)
+(236,172,2)
+(178,144,2)
+(209,5,2)
+(313,290,2)
+(251,178,2)
+(274,221,2)
+-----------------------------------
+(0,vcpu)
+(1,vmcs12)
+(2,host_gdtr_base)
+(3,vmcs_writel(GUEST_SYSENTER_ESP, vmcs12->host_ia32_sysenter_esp)
+(4,~vmcs_readl(CR4_GUEST_HOST_MASK)
+(5,&seg)
+(6,VCPU_SREG_TR)
+(7,seg.selector)
+(8,vmx_set_cr0(vcpu, vmcs12->host_cr0)
+(9,vmcs12)
+(10,1)
+(11,vmcs12)
+(12,vmcs12)
+(13,if (nested_vmx_load_msr(vcpu, vmcs12->vm_exit_msr_load_addr,\n\\n\\t\\t\\t\\tvmcs12->vm_exit_msr_load_count)
+(14,selector)
+(15,vcpu)
+(16,vcpu)
+(17,vcpu)
+(18,host_ds_selector)
+(19,nested_vmx_abort(vcpu, VMX_ABORT_LOAD_HOST_MSR_FAIL)
+(20,vmcs12)
+(21,vmcs_write64(GUEST_IA32_DEBUGCTL, 0)
+(22,VCPU_SREG_DS)
+(23,update_exception_bitmap(vcpu)
+(24,host_ia32_pat)
+(25,vmcs12)
+(26,vm_exit_msr_load_count)
+(27,vcpu)
+(28,vmx_set_segment(vcpu, &seg, VCPU_SREG_GS)
+(29,cr0_guest_owned_bits)
+(30,selector)
+(31,vcpu->arch.efer)
+(32,seg.selector)
+(33,host_ss_selector)
+(34,l)
+(35,host_ia32_pat)
+(36,VMX_ABORT_LOAD_HOST_MSR_FAIL)
+(37,X86_EFLAGS_FIXED)
+(38,vcpu->arch)
+(39,vmcs_writel(GUEST_GDTR_BASE, vmcs12->host_gdtr_base)
+(40,VM_EXIT_LOAD_IA32_EFER)
+(41,vmcs12->host_es_selector)
+(42,cr4_guest_owned_bits)
+(43,0)
+(44,host_rip)
+(45,~vcpu->arch.cr0_guest_owned_bits)
+(46,vmcs12)
+(47,walk_mmu)
+(48,seg.selector = vmcs12->host_ds_selector)
+(49,vmcs12->vm_exit_controls & VM_EXIT_HOST_ADDR_SPACE_SIZE)
+(50,GUEST_SYSENTER_EIP)
+(51,EFER_LMA)
+(52,vmcs12->host_cr0)
+(53,seg)
+(54,seg.db)
+(55,vmcs_write32(GUEST_GDTR_LIMIT, 0xFFFF)
+(56,seg)
+(57,vcpu)
+(58,seg.base)
+(59,vm_exit_controls)
+(60,vcpu)
+(61,host_cr3)
+(62,if (!enable_ept)
+(63,arch)
+(64,vmcs12->host_ia32_sysenter_cs)
+(65,vmx_set_segment(vcpu, &seg, VCPU_SREG_ES)
+(66,vcpu->arch)
+(67,vcpu)
+(68,struct vmcs12 *vmcs12)
+(69,&seg)
+(70,vmcs12->host_idtr_base)
+(71,vcpu->arch)
+(72,host_fs_base)
+(73,vmcs12)
+(74,vmcs12->vm_exit_controls)
+(75,vmcs12->host_cr3)
+(76,vmx_flush_tlb(vcpu)
+(77,vmcs12->vm_exit_controls & VM_EXIT_CLEAR_BNDCFGS)
+(78,host_ia32_sysenter_eip)
+(79,vcpu)
+(80,host_ia32_sysenter_esp)
+(81,if (vmcs12->vm_exit_controls & VM_EXIT_CLEAR_BNDCFGS)
+(82,vmx_set_efer(vcpu, vcpu->arch.efer)
+(83,vcpu->arch.cr0_guest_owned_bits = (vcpu->fpu_active ? X86_CR0_TS : 0)
+(84,GUEST_IA32_DEBUGCTL)
+(85,host_cr0)
+(86,vmcs12->vm_exit_controls)
+(87,seg.selector)
+(88,vmx_set_segment(vcpu, &seg, VCPU_SREG_TR)
+(89,EFER_LMA)
+(90,~vcpu)
+(91,seg.selector = vmcs12->host_gs_selector)
+(92,arch)
+(93,arch)
+(94,~(EFER_LMA | EFER_LME)
+(95,vmcs12)
+(96,vmcs_writel(GUEST_IDTR_BASE, vmcs12->host_idtr_base)
+(97,base)
+(98,seg)
+(99,seg)
+(100,vmcs12)
+(101,seg.selector)
+(102,seg.selector)
+(103,vmcs12->host_fs_base)
+(104,seg)
+(105,GUEST_IA32_PAT)
+(106,vmcs12->host_ia32_sysenter_eip)
+(107,GUEST_SYSENTER_CS)
+(108,vcpu->arch)
+(109,vmcs12)
+(110,vmx_set_segment(vcpu, &seg, VCPU_SREG_CS)
+(111,)
+(112,efer)
+(113,seg.selector = vmcs12->host_ss_selector)
+(114,vcpu->arch)
+(115,0x400)
+(116,selector)
+(117,vcpu->arch.walk_mmu->inject_page_fault)
+(118,VCPU_REGS_RSP)
+(119,vmcs12)
+(120,vcpu->arch.walk_mmu->inject_page_fault = kvm_inject_page_fault)
+(121,vmcs12->vm_exit_controls)
+(122,seg)
+(123,if (vmcs12->vm_exit_controls & VM_EXIT_LOAD_IA32_PERF_GLOBAL_CTRL)
+(124,vm_exit_controls)
+(125,vcpu)
+(126,seg)
+(127,vmcs12->host_gdtr_base)
+(128,EFER_LME)
+(129,vcpu->arch.efer)
+(130,seg)
+(131,vmcs_write64(GUEST_BNDCFGS, 0)
+(132,vmcs12)
+(133,vmcs12->host_rsp)
+(134,0)
+(135,X86_CR0_TS)
+(136,fpu_active)
+(137,seg)
+(138,kvm_mmu_reset_context(vcpu)
+(139,seg)
+(140,arch)
+(141,&seg)
+(142,vmcs12->host_gs_base)
+(143,CR0_GUEST_HOST_MASK)
+(144,vmcs12->vm_exit_controls & VM_EXIT_LOAD_IA32_EFER)
+(145,host_idtr_base)
+(146,!enable_ept)
+(147,arch)
+(148,vcpu)
+(149,if (enable_vpid)
+(150,cpu_has_vmx_msr_bitmap()
+(151,vcpu->fpu_active)
+(152,if (vmcs12->vm_exit_controls & VM_EXIT_LOAD_IA32_EFER)
+(153,vmcs12->host_ia32_efer)
+(154,kvm_set_cr3(vcpu, vmcs12->host_cr3)
+(155,1)
+(156,vcpu)
+(157,host_ia32_perf_global_ctrl)
+(158,VM_EXIT_HOST_ADDR_SPACE_SIZE)
+(159,vmcs12->host_ia32_sysenter_esp)
+(160,vmcs12)
+(161,vcpu->arch.cr4_guest_owned_bits)
+(162,GUEST_BNDCFGS)
+(163,VCPU_SREG_GS)
+(164,vmcs12->host_ds_selector)
+(165,vmcs12)
+(166,host_fs_selector)
+(167,efer)
+(168,VM_EXIT_HOST_ADDR_SPACE_SIZE)
+(169,0xFFFF)
+(170,kvm_register_write(vcpu, VCPU_REGS_RIP, vmcs12->host_rip)
+(171,vm_exit_msr_load_addr)
+(172,nested_vmx_load_msr(vcpu, vmcs12->vm_exit_msr_load_addr,\n\\n\\t\\t\\t\\tvmcs12->vm_exit_msr_load_count)
+(173,vcpu->arch.pat)
+(174,vmcs12->vm_exit_msr_load_count)
+(175,vmcs12->host_gs_selector)
+(176,seg.base = vmcs12->host_fs_base)
+(177,kvm_register_write(vcpu, VCPU_REGS_RSP, vmcs12->host_rsp)
+(178,vmcs12->vm_exit_controls & VM_EXIT_HOST_ADDR_SPACE_SIZE)
+(179,vmcs12->vm_exit_msr_load_addr)
+(180,)
+(181,cr0_guest_owned_bits)
+(182,vmcs12)
+(183,vmcs12)
+(184,&seg)
+(185,seg.db = 1)
+(186,seg)
+(187,vmcs12->host_cr4)
+(188,VM_EXIT_CLEAR_BNDCFGS)
+(189,0)
+(190,kvm_set_dr(vcpu, 7, 0x400)
+(191,seg)
+(192,0xFFFF)
+(193,host_cr4)
+(194,vmcs12->host_fs_selector)
+(195,seg.base)
+(196,vmcs12->vm_exit_controls)
+(197,vmx_set_segment(vcpu, &seg, VCPU_SREG_DS)
+(198,vcpu->arch.efer = vmcs12->host_ia32_efer)
+(199,vmx_set_rflags(vcpu, X86_EFLAGS_FIXED)
+(200,GUEST_IA32_PERF_GLOBAL_CTRL)
+(201,7)
+(202,vcpu)
+(203,vcpu)
+(204,vmcs_write64(GUEST_IA32_PERF_GLOBAL_CTRL,\n\\n\\t\\t\\tvmcs12->host_ia32_perf_global_ctrl)
+(205,vcpu->arch)
+(206,arch)
+(207,GUEST_IDTR_LIMIT)
+(208,vcpu)
+(209,vmx_set_segment(vcpu, &seg, VCPU_SREG_SS)
+(210,vcpu->arch.cr0_guest_owned_bits)
+(211,vcpu)
+(212,selector)
+(213,host_gs_selector)
+(214,)
+(215,kvm_inject_page_fault)
+(216,vmcs12->host_ss_selector)
+(217,vm_exit_controls)
+(218,vmcs12->vm_exit_controls)
+(219,vcpu)
+(220,vcpu)
+(221,vcpu->arch.efer |= (EFER_LMA | EFER_LME)
+(222,vmx_set_segment(vcpu, &seg, VCPU_SREG_FS)
+(223,EFER_LME)
+(224,vmcs12)
+(225,EFER_LMA | EFER_LME)
+(226,vmcs12->host_ia32_pat)
+(227,)
+(228,VCPU_SREG_FS)
+(229,host_ia32_sysenter_cs)
+(230,vcpu)
+(231,vmcs12)
+(232,vmcs12->host_rip)
+(233,vmcs12)
+(234,vcpu)
+(235,seg.l = 1)
+(236,vcpu)
+(237,vmx_set_cr4(vcpu, vmcs12->host_cr4)
+(238,vmcs12->vm_exit_controls)
+(239,vmcs12)
+(240,vmcs12)
+(241,vmcs12)
+(242,if (vmcs12->vm_exit_controls & VM_EXIT_LOAD_IA32_PAT)
+(243,vmcs12->host_ia32_pat)
+(244,seg)
+(245,vcpu->arch)
+(246,vmcs_write64(GUEST_IA32_PAT, vmcs12->host_ia32_pat)
+(247,vcpu->arch)
+(248,&seg)
+(249,vmcs_write32(GUEST_IDTR_LIMIT, 0xFFFF)
+(250,VCPU_SREG_ES)
+(251,vcpu->arch.efer)
+(252,vmcs12->vm_exit_controls & VM_EXIT_LOAD_IA32_PERF_GLOBAL_CTRL)
+(253,vcpu)
+(254,vmcs12)
+(255,seg)
+(256,VCPU_SREG_SS)
+(257,EFER_LMA | EFER_LME)
+(258,seg.base = vmcs12->host_gs_base)
+(259,~vcpu->arch)
+(260,VCPU_REGS_RIP)
+(261,vcpu)
+(262,base)
+(263,enable_vpid)
+(264,vcpu->arch.pat = vmcs12->host_ia32_pat)
+(265,vcpu->fpu_active ? X86_CR0_TS : 0)
+(266,vcpu)
+(267,VM_EXIT_LOAD_IA32_PAT)
+(268,vmcs12)
+(269,vcpu)
+(270,)
+(271,vcpu)
+(272,seg)
+(273,GUEST_GDTR_BASE)
+(274,vcpu->arch.efer)
+(275,if (vmcs12->vm_exit_controls & VM_EXIT_HOST_ADDR_SPACE_SIZE)
+(276,vmcs_writel(CR0_GUEST_HOST_MASK, ~vcpu->arch.cr0_guest_owned_bits)
+(277,vcpu)
+(278,if (cpu_has_vmx_msr_bitmap()
+(279,arch)
+(280,&seg)
+(281,vcpu->arch.cr4_guest_owned_bits = ~vmcs_readl(CR4_GUEST_HOST_MASK)
+(282,seg)
+(283,efer)
+(284,vm_exit_controls)
+(285,vmcs12)
+(286,)
+(287,vmx_set_msr_bitmap(vcpu)
+(288,arch)
+(289,vcpu->arch.efer &= ~(EFER_LMA | EFER_LME)
+(290,struct kvm_vcpu *vcpu)
+(291,selector)
+(292,RET)
+(293,host_es_selector)
+(294,vcpu)
+(295,host_rsp)
+(296,host_ia32_efer)
+(297,VM_EXIT_LOAD_IA32_PERF_GLOBAL_CTRL)
+(298,vmcs12->host_ia32_perf_global_ctrl)
+(299,enable_ept)
+(300,pat)
+(301,GUEST_GDTR_LIMIT)
+(302,seg.selector = vmcs12->host_es_selector)
+(303,efer)
+(304,vmcs_writel(GUEST_SYSENTER_EIP, vmcs12->host_ia32_sysenter_eip)
+(305,CR4_GUEST_HOST_MASK)
+(306,arch)
+(307,inject_page_fault)
+(308,vmcs12->vm_exit_controls & VM_EXIT_LOAD_IA32_PAT)
+(309,GUEST_IDTR_BASE)
+(310,vmcs_write32(GUEST_SYSENTER_CS, vmcs12->host_ia32_sysenter_cs)
+(311,vcpu)
+(312,&seg)
+(313,nested_ept_uninit_mmu_context(vcpu)
+(314,GUEST_SYSENTER_ESP)
+(315,seg)
+(316,vcpu)
+(317,vcpu->arch.walk_mmu)
+(318,seg.l)
+(319,vmcs12)
+(320,vm_exit_controls)
+(321,seg.selector = vmcs12->host_fs_selector)
+(322,vcpu)
+(323,vmcs12)
+(324,host_gs_base)
+(325,vm_exit_controls)
+(326,VCPU_SREG_CS)
+(327,db)
+(328,vmcs12)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

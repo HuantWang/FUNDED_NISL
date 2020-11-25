@@ -1,0 +1,1645 @@
+-----label-----
+0
+-----code-----
+static struct fdtable *alloc_fdtable(int nr)
+{
+	struct fdtable *fdt = NULL;
+	int nfds = 0;
+  	fd_set *new_openset = NULL, *new_execset = NULL;
+	struct file **new_fds;
+
+	fdt = kzalloc(sizeof(*fdt), GFP_KERNEL);
+	if (!fdt)
+  		goto out;
+
+	nfds = 8 * L1_CACHE_BYTES;
+  	/* Expand to the max in easy steps */
+  	while (nfds <= nr) {
+		nfds = nfds * 2;
+		if (nfds > NR_OPEN)
+			nfds = NR_OPEN;
+	}
+
+  	new_openset = alloc_fdset(nfds);
+  	new_execset = alloc_fdset(nfds);
+  	if (!new_openset || !new_execset)
+  		goto out;
+	fdt->open_fds = new_openset;
+	fdt->close_on_exec = new_execset;
+	fdt->max_fdset = nfds;
+
+	nfds = NR_OPEN_DEFAULT;
+	/*
+	 * Expand to the max in easy steps, and keep expanding it until
+	 * we have enough for the requested fd array size.
+	 */
+	do {
+#if NR_OPEN_DEFAULT < 256
+		if (nfds < 256)
+			nfds = 256;
+		else
+#endif
+		if (nfds < (PAGE_SIZE / sizeof(struct file *)))
+			nfds = PAGE_SIZE / sizeof(struct file *);
+		else {
+			nfds = nfds * 2;
+			if (nfds > NR_OPEN)
+				nfds = NR_OPEN;
+  		}
+	} while (nfds <= nr);
+	new_fds = alloc_fd_array(nfds);
+	if (!new_fds)
+		goto out;
+	fdt->fd = new_fds;
+	fdt->max_fds = nfds;
+	fdt->free_files = NULL;
+	return fdt;
+out:
+  	if (new_openset)
+  		free_fdset(new_openset, nfds);
+  	if (new_execset)
+  		free_fdset(new_execset, nfds);
+	kfree(fdt);
+	return NULL;
+}
+-----children-----
+1,2
+1,3
+1,4
+2,3
+4,5
+4,6
+4,7
+7,8
+7,9
+9,10
+11,12
+11,13
+11,14
+11,15
+11,16
+11,17
+11,18
+11,19
+11,20
+11,21
+11,22
+11,23
+11,24
+11,25
+11,26
+11,27
+11,28
+11,29
+11,30
+11,31
+11,32
+11,33
+11,34
+11,35
+11,36
+11,37
+12,13
+13,14
+13,15
+14,15
+16,17
+16,18
+16,19
+19,20
+20,21
+22,23
+23,24
+23,25
+25,26
+25,27
+27,28
+29,30
+30,31
+30,32
+30,33
+31,32
+33,34
+33,35
+33,36
+36,37
+37,38
+39,40
+39,41
+39,42
+42,43
+43,44
+45,46
+46,47
+46,48
+47,48
+49,50
+49,51
+49,52
+53,54
+54,55
+54,56
+55,56
+57,58
+57,59
+57,60
+58,59
+60,61
+61,62
+62,63
+63,64
+65,66
+67,68
+67,69
+68,69
+69,70
+71,72
+73,74
+74,75
+74,76
+75,76
+77,78
+77,79
+79,80
+81,82
+81,83
+82,83
+82,84
+83,84
+85,86
+87,88
+87,89
+88,89
+89,90
+89,91
+90,91
+92,93
+92,94
+93,94
+96,97
+96,98
+97,98
+97,99
+98,99
+100,101
+102,103
+103,104
+103,105
+104,105
+106,107
+108,109
+109,110
+109,111
+110,111
+112,113
+112,114
+113,114
+115,116
+117,118
+118,119
+118,120
+119,120
+121,122
+121,123
+122,123
+124,125
+126,127
+126,128
+127,128
+127,129
+128,129
+129,130
+131,132
+132,133
+134,135
+136,137
+137,138
+137,139
+138,139
+138,140
+139,140
+142,143
+144,145
+145,146
+145,147
+146,147
+146,148
+147,148
+150,151
+152,153
+153,154
+153,155
+154,155
+154,156
+155,156
+158,159
+160,161
+161,162
+161,163
+162,163
+164,165
+166,167
+166,168
+167,168
+168,169
+168,170
+168,171
+169,170
+169,171
+170,171
+173,174
+174,175
+174,176
+175,176
+178,179
+178,180
+178,181
+179,180
+179,181
+180,181
+182,183
+183,184
+183,185
+184,185
+186,187
+187,188
+187,189
+188,189
+190,191
+192,193
+193,194
+193,195
+194,195
+196,197
+196,198
+197,198
+199,200
+200,201
+200,202
+201,202
+203,204
+205,206
+205,207
+206,207
+207,208
+207,209
+208,209
+210,211
+210,212
+211,212
+214,215
+214,216
+215,216
+215,217
+216,217
+218,219
+220,221
+221,222
+221,223
+222,223
+224,225
+226,227
+226,228
+227,228
+229,230
+231,232
+232,233
+232,234
+233,234
+235,236
+235,237
+236,237
+238,239
+240,241
+240,242
+241,242
+242,243
+244,245
+246,247
+247,248
+247,249
+248,249
+248,250
+249,250
+252,253
+254,255
+255,256
+255,257
+256,257
+256,258
+257,258
+260,261
+262,263
+263,264
+263,265
+264,265
+264,266
+265,266
+268,269
+270,271
+271,272
+273,274
+273,275
+275,276
+275,277
+276,277
+278,279
+279,280
+279,281
+279,282
+280,281
+282,283
+284,285
+286,287
+286,288
+287,288
+289,290
+290,291
+290,292
+290,293
+291,292
+293,294
+295,296
+297,298
+298,299
+298,300
+299,300
+301,302
+303,304
+304,305
+-----nextToken-----
+3,5,6,8,10,15,17,18,21,24,26,28,32,34,35,38,40,41,44,48,50,51,52,56,59,64,66,70,72,76,78,80,84,86,91,94,95,99,101,105,107,111,114,116,120,123,125,130,133,135,140,141,143,148,149,151,156,157,159,163,165,171,172,176,177,181,185,189,191,195,198,202,204,209,212,213,217,219,223,225,228,230,234,237,239,243,245,250,251,253,258,259,261,266,267,269,272,274,277,281,283,285,288,292,294,296,300,302,305
+-----computeFrom-----
+54,55
+54,56
+74,75
+74,76
+77,78
+77,79
+82,83
+82,84
+89,90
+89,91
+92,93
+92,94
+97,98
+97,99
+103,104
+103,105
+109,110
+109,111
+118,119
+118,120
+127,128
+127,129
+137,138
+137,139
+145,146
+145,147
+153,154
+153,155
+161,162
+161,163
+169,170
+169,171
+174,175
+174,176
+179,180
+179,181
+183,184
+183,185
+193,194
+193,195
+196,197
+196,198
+207,208
+207,209
+210,211
+210,212
+215,216
+215,217
+221,222
+221,223
+226,227
+226,228
+232,233
+232,234
+247,248
+247,249
+255,256
+255,257
+263,264
+263,265
+-----guardedBy-----
+99,105
+101,107
+171,176
+189,202
+181,195
+185,198
+217,223
+219,225
+-----guardedByNegation-----
+171,223
+181,223
+-----lastLexicalUse-----
+171,223
+181,223
+-----jump-----
+171,223
+181,223
+-----attribute-----
+FunctionDefinition;ElaboratedTypeSpecifier;Name;FunctionDeclarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Pointer;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;UnaryExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;IdExpression;Name;GotoStatement;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;LiteralExpression;IdExpression;Name;WhileStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;GotoStatement;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;DoStatement;CompoundStatement;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;TypeIdExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;Pointer;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;TypeIdExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;Pointer;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;IdExpression;Name;GotoStatement;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;LabelStatement;Name;IfStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+static struct fdtable *alloc_fdtable(int nr){	struct fdtable *fdt = NULL;	int nfds = 0;  	fd_set *new_openset = NULL, *new_execset = NULL;	struct file **new_fds;	fdt = kzalloc(sizeof(*fdt), GFP_KERNEL);	if (!fdt)  		goto out;	nfds = 8 * L1_CACHE_BYTES;  	/* Expand to the max in easy steps */  	while (nfds <= nr) {		nfds = nfds * 2;		if (nfds > NR_OPEN)			nfds = NR_OPEN;	}  	new_openset = alloc_fdset(nfds);  	new_execset = alloc_fdset(nfds);  	if (!new_openset || !new_execset)  		goto out;	fdt->open_fds = new_openset;	fdt->close_on_exec = new_execset;	fdt->max_fdset = nfds;	nfds = NR_OPEN_DEFAULT;	/*	 * Expand to the max in easy steps, and keep expanding it until	 * we have enough for the requested fd array size.	 */	do {#if NR_OPEN_DEFAULT < 256		if (nfds < 256)			nfds = 256;		else#endif		if (nfds < (PAGE_SIZE / sizeof(struct file *)))			nfds = PAGE_SIZE / sizeof(struct file *);		else {			nfds = nfds * 2;			if (nfds > NR_OPEN)				nfds = NR_OPEN;  		}	} while (nfds <= nr);	new_fds = alloc_fd_array(nfds);	if (!new_fds)		goto out;	fdt->fd = new_fds;	fdt->max_fds = nfds;	fdt->free_files = NULL;	return fdt;out:  	if (new_openset)  		free_fdset(new_openset, nfds);  	if (new_execset)  		free_fdset(new_execset, nfds);	kfree(fdt);	return NULL;}
+static struct fdtable
+fdtable
+*alloc_fdtable(int nr)
+*
+alloc_fdtable
+int nr
+int
+nr
+nr
+{	struct fdtable *fdt = NULL;	int nfds = 0;  	fd_set *new_openset = NULL, *new_execset = NULL;	struct file **new_fds;	fdt = kzalloc(sizeof(*fdt), GFP_KERNEL);	if (!fdt)  		goto out;	nfds = 8 * L1_CACHE_BYTES;  	/* Expand to the max in easy steps */  	while (nfds <= nr) {		nfds = nfds * 2;		if (nfds > NR_OPEN)			nfds = NR_OPEN;	}  	new_openset = alloc_fdset(nfds);  	new_execset = alloc_fdset(nfds);  	if (!new_openset || !new_execset)  		goto out;	fdt->open_fds = new_openset;	fdt->close_on_exec = new_execset;	fdt->max_fdset = nfds;	nfds = NR_OPEN_DEFAULT;	/*	 * Expand to the max in easy steps, and keep expanding it until	 * we have enough for the requested fd array size.	 */	do {#if NR_OPEN_DEFAULT < 256		if (nfds < 256)			nfds = 256;		else#endif		if (nfds < (PAGE_SIZE / sizeof(struct file *)))			nfds = PAGE_SIZE / sizeof(struct file *);		else {			nfds = nfds * 2;			if (nfds > NR_OPEN)				nfds = NR_OPEN;  		}	} while (nfds <= nr);	new_fds = alloc_fd_array(nfds);	if (!new_fds)		goto out;	fdt->fd = new_fds;	fdt->max_fds = nfds;	fdt->free_files = NULL;	return fdt;out:  	if (new_openset)  		free_fdset(new_openset, nfds);  	if (new_execset)  		free_fdset(new_execset, nfds);	kfree(fdt);	return NULL;}
+struct fdtable *fdt = NULL;
+struct fdtable *fdt = NULL;
+struct fdtable
+fdtable
+*fdt = NULL
+*
+fdt
+= NULL
+NULL
+NULL
+int nfds = 0;
+int nfds = 0;
+int
+nfds = 0
+nfds
+= 0
+0
+fd_set *new_openset = NULL, *new_execset = NULL;
+fd_set *new_openset = NULL, *new_execset = NULL;
+fd_set
+fd_set
+*new_openset = NULL
+*
+new_openset
+= NULL
+NULL
+NULL
+*new_execset = NULL
+*
+new_execset
+= NULL
+NULL
+NULL
+struct file **new_fds;
+struct file **new_fds;
+struct file
+file
+**new_fds
+*
+*
+new_fds
+fdt = kzalloc(sizeof(*fdt), GFP_KERNEL);
+fdt = kzalloc(sizeof(*fdt), GFP_KERNEL)
+fdt
+fdt
+kzalloc(sizeof(*fdt), GFP_KERNEL)
+kzalloc
+kzalloc
+sizeof(*fdt)
+(*fdt)
+*fdt
+fdt
+fdt
+GFP_KERNEL
+GFP_KERNEL
+if (!fdt)  		goto out;
+!fdt
+fdt
+fdt
+goto out;
+out
+nfds = 8 * L1_CACHE_BYTES;
+nfds = 8 * L1_CACHE_BYTES
+nfds
+nfds
+8 * L1_CACHE_BYTES
+8
+L1_CACHE_BYTES
+L1_CACHE_BYTES
+while (nfds <= nr) {		nfds = nfds * 2;		if (nfds > NR_OPEN)			nfds = NR_OPEN;	}
+nfds <= nr
+nfds
+nfds
+nr
+nr
+{		nfds = nfds * 2;		if (nfds > NR_OPEN)			nfds = NR_OPEN;	}
+nfds = nfds * 2;
+nfds = nfds * 2
+nfds
+nfds
+nfds * 2
+nfds
+nfds
+2
+if (nfds > NR_OPEN)			nfds = NR_OPEN;
+nfds > NR_OPEN
+nfds
+nfds
+NR_OPEN
+NR_OPEN
+nfds = NR_OPEN;
+nfds = NR_OPEN
+nfds
+nfds
+NR_OPEN
+NR_OPEN
+new_openset = alloc_fdset(nfds);
+new_openset = alloc_fdset(nfds)
+new_openset
+new_openset
+alloc_fdset(nfds)
+alloc_fdset
+alloc_fdset
+nfds
+nfds
+new_execset = alloc_fdset(nfds);
+new_execset = alloc_fdset(nfds)
+new_execset
+new_execset
+alloc_fdset(nfds)
+alloc_fdset
+alloc_fdset
+nfds
+nfds
+if (!new_openset || !new_execset)  		goto out;
+!new_openset || !new_execset
+!new_openset
+new_openset
+new_openset
+!new_execset
+new_execset
+new_execset
+goto out;
+out
+fdt->open_fds = new_openset;
+fdt->open_fds = new_openset
+fdt->open_fds
+fdt
+fdt
+open_fds
+new_openset
+new_openset
+fdt->close_on_exec = new_execset;
+fdt->close_on_exec = new_execset
+fdt->close_on_exec
+fdt
+fdt
+close_on_exec
+new_execset
+new_execset
+fdt->max_fdset = nfds;
+fdt->max_fdset = nfds
+fdt->max_fdset
+fdt
+fdt
+max_fdset
+nfds
+nfds
+nfds = NR_OPEN_DEFAULT;
+nfds = NR_OPEN_DEFAULT
+nfds
+nfds
+NR_OPEN_DEFAULT
+NR_OPEN_DEFAULT
+do {#if NR_OPEN_DEFAULT < 256		if (nfds < 256)			nfds = 256;		else#endif		if (nfds < (PAGE_SIZE / sizeof(struct file *)))			nfds = PAGE_SIZE / sizeof(struct file *);		else {			nfds = nfds * 2;			if (nfds > NR_OPEN)				nfds = NR_OPEN;  		}	} while (nfds <= nr);
+{#if NR_OPEN_DEFAULT < 256		if (nfds < 256)			nfds = 256;		else#endif		if (nfds < (PAGE_SIZE / sizeof(struct file *)))			nfds = PAGE_SIZE / sizeof(struct file *);		else {			nfds = nfds * 2;			if (nfds > NR_OPEN)				nfds = NR_OPEN;  		}	}
+if (nfds < 256)			nfds = 256;		else#endif		if (nfds < (PAGE_SIZE / sizeof(struct file *)))			nfds = PAGE_SIZE / sizeof(struct file *);		else {			nfds = nfds * 2;			if (nfds > NR_OPEN)				nfds = NR_OPEN;  		}
+nfds < 256
+nfds
+nfds
+256
+nfds = 256;
+nfds = 256
+nfds
+nfds
+256
+if (nfds < (PAGE_SIZE / sizeof(struct file *)))			nfds = PAGE_SIZE / sizeof(struct file *);		else {			nfds = nfds * 2;			if (nfds > NR_OPEN)				nfds = NR_OPEN;  		}
+nfds < (PAGE_SIZE / sizeof(struct file *))
+nfds
+nfds
+(PAGE_SIZE / sizeof(struct file *))
+PAGE_SIZE / sizeof(struct file *)
+PAGE_SIZE
+PAGE_SIZE
+sizeof(struct file *)
+struct file *
+struct file
+file
+*
+*
+nfds = PAGE_SIZE / sizeof(struct file *);
+nfds = PAGE_SIZE / sizeof(struct file *)
+nfds
+nfds
+PAGE_SIZE / sizeof(struct file *)
+PAGE_SIZE
+PAGE_SIZE
+sizeof(struct file *)
+struct file *
+struct file
+file
+*
+*
+{			nfds = nfds * 2;			if (nfds > NR_OPEN)				nfds = NR_OPEN;  		}
+nfds = nfds * 2;
+nfds = nfds * 2
+nfds
+nfds
+nfds * 2
+nfds
+nfds
+2
+if (nfds > NR_OPEN)				nfds = NR_OPEN;
+nfds > NR_OPEN
+nfds
+nfds
+NR_OPEN
+NR_OPEN
+nfds = NR_OPEN;
+nfds = NR_OPEN
+nfds
+nfds
+NR_OPEN
+NR_OPEN
+nfds <= nr
+nfds
+nfds
+nr
+nr
+new_fds = alloc_fd_array(nfds);
+new_fds = alloc_fd_array(nfds)
+new_fds
+new_fds
+alloc_fd_array(nfds)
+alloc_fd_array
+alloc_fd_array
+nfds
+nfds
+if (!new_fds)		goto out;
+!new_fds
+new_fds
+new_fds
+goto out;
+out
+fdt->fd = new_fds;
+fdt->fd = new_fds
+fdt->fd
+fdt
+fdt
+fd
+new_fds
+new_fds
+fdt->max_fds = nfds;
+fdt->max_fds = nfds
+fdt->max_fds
+fdt
+fdt
+max_fds
+nfds
+nfds
+fdt->free_files = NULL;
+fdt->free_files = NULL
+fdt->free_files
+fdt
+fdt
+free_files
+NULL
+NULL
+return fdt;
+fdt
+fdt
+out:  	if (new_openset)  		free_fdset(new_openset, nfds);
+out
+if (new_openset)  		free_fdset(new_openset, nfds);
+new_openset
+new_openset
+free_fdset(new_openset, nfds);
+free_fdset(new_openset, nfds)
+free_fdset
+free_fdset
+new_openset
+new_openset
+nfds
+nfds
+if (new_execset)  		free_fdset(new_execset, nfds);
+new_execset
+new_execset
+free_fdset(new_execset, nfds);
+free_fdset(new_execset, nfds)
+free_fdset
+free_fdset
+new_execset
+new_execset
+nfds
+nfds
+kfree(fdt);
+kfree(fdt)
+kfree
+kfree
+fdt
+fdt
+return NULL;
+NULL
+NULL
+-----joern-----
+(11,107,0)
+(1,83,0)
+(117,160,0)
+(38,68,0)
+(154,90,0)
+(158,35,0)
+(111,88,0)
+(17,71,0)
+(25,152,0)
+(133,83,0)
+(99,33,0)
+(17,18,0)
+(55,134,0)
+(151,59,0)
+(92,14,0)
+(80,38,0)
+(120,152,0)
+(106,138,0)
+(161,35,0)
+(68,157,0)
+(145,161,0)
+(17,14,0)
+(18,17,0)
+(62,35,0)
+(46,129,0)
+(21,66,0)
+(63,99,0)
+(66,88,0)
+(69,103,0)
+(160,35,0)
+(141,145,0)
+(143,14,0)
+(10,35,0)
+(46,33,0)
+(20,35,0)
+(73,131,0)
+(143,81,0)
+(74,71,0)
+(74,129,0)
+(57,35,0)
+(17,90,0)
+(59,3,0)
+(77,35,0)
+(124,99,0)
+(111,160,0)
+(115,104,0)
+(143,134,0)
+(115,40,0)
+(140,129,0)
+(152,90,0)
+(135,106,0)
+(16,111,0)
+(106,75,0)
+(60,71,0)
+(103,39,0)
+(36,68,0)
+(133,160,0)
+(75,160,0)
+(38,71,0)
+(74,107,0)
+(60,14,0)
+(58,35,0)
+(97,35,0)
+(95,118,0)
+(142,39,0)
+(91,35,0)
+(152,71,0)
+(51,48,0)
+(94,161,0)
+(61,106,0)
+(26,3,0)
+(146,58,0)
+(17,134,0)
+(65,3,0)
+(26,33,0)
+(60,3,0)
+(52,71,0)
+(33,35,0)
+(96,17,0)
+(58,92,0)
+(128,35,0)
+(53,35,0)
+(18,4,0)
+(132,50,0)
+(82,138,0)
+(90,35,0)
+(72,0,0)
+(155,110,0)
+(156,134,0)
+(23,62,0)
+(75,57,0)
+(60,128,0)
+(24,157,0)
+(152,14,0)
+(66,0,0)
+(105,67,0)
+(152,134,0)
+(107,35,0)
+(127,35,0)
+(157,68,0)
+(27,35,0)
+(57,121,0)
+(74,14,0)
+(7,160,0)
+(162,128,0)
+(126,121,0)
+(92,71,0)
+(150,138,0)
+(26,121,0)
+(106,117,0)
+(145,160,0)
+(121,26,0)
+(103,35,0)
+(13,133,0)
+(108,146,0)
+(54,91,0)
+(39,103,0)
+(138,62,0)
+(137,34,0)
+(76,104,0)
+(34,129,0)
+(74,67,0)
+(15,75,0)
+(12,14,0)
+(148,58,0)
+(50,121,0)
+(147,110,0)
+(152,18,0)
+(0,35,0)
+(89,35,0)
+(59,33,0)
+(99,129,0)
+(95,50,0)
+(42,74,0)
+(74,33,0)
+(101,7,0)
+(33,110,0)
+(5,128,0)
+(92,58,0)
+(143,71,0)
+(64,34,0)
+(8,125,0)
+(84,160,0)
+(68,38,0)
+(6,57,0)
+(39,33,0)
+(135,48,0)
+(79,125,0)
+(123,26,0)
+(38,134,0)
+(153,158,0)
+(121,35,0)
+(74,134,0)
+(129,59,0)
+(19,92,0)
+(48,35,0)
+(119,18,0)
+(91,134,0)
+(38,18,0)
+(56,59,0)
+(113,35,0)
+(86,30,0)
+(93,67,0)
+(48,160,0)
+(112,0,0)
+(43,35,0)
+(109,107,0)
+(28,17,0)
+(30,18,0)
+(143,18,0)
+(91,14,0)
+(136,143,0)
+(74,121,0)
+(9,35,0)
+(125,160,0)
+(100,133,0)
+(125,91,0)
+(62,103,0)
+(74,18,0)
+(118,95,0)
+(104,115,0)
+(46,3,0)
+(14,104,0)
+(114,4,0)
+(83,35,0)
+(2,71,0)
+(117,46,0)
+(59,129,0)
+(85,3,0)
+(99,3,0)
+(78,46,0)
+(160,111,0)
+(39,129,0)
+(38,90,0)
+(38,14,0)
+(40,115,0)
+(60,134,0)
+(122,74,0)
+(88,111,0)
+(118,103,0)
+(106,35,0)
+(159,60,0)
+(31,117,0)
+(74,3,0)
+(44,118,0)
+(50,95,0)
+(129,49,0)
+(37,75,0)
+(29,35,0)
+(67,35,0)
+(87,117,0)
+(139,30,0)
+(39,3,0)
+(158,160,0)
+(104,14,0)
+(110,33,0)
+(149,90,0)
+(102,60,0)
+(83,58,0)
+(91,18,0)
+(130,49,0)
+(98,33,0)
+(92,134,0)
+(60,103,0)
+(46,35,0)
+(26,129,0)
+(99,81,0)
+(92,18,0)
+(60,33,0)
+(157,24,0)
+(60,67,0)
+(138,160,0)
+(88,66,0)
+(116,35,0)
+(60,18,0)
+(60,129,0)
+(45,145,0)
+(22,143,0)
+(91,71,0)
+(159,102,1)
+(91,134,1)
+(38,18,1)
+(60,103,1)
+(36,80,1)
+(26,3,1)
+(135,48,1)
+(99,3,1)
+(151,56,1)
+(152,14,1)
+(60,18,1)
+(139,18,1)
+(18,17,1)
+(6,75,1)
+(38,14,1)
+(103,39,1)
+(38,134,1)
+(30,18,1)
+(106,138,1)
+(57,121,1)
+(86,139,1)
+(69,121,1)
+(105,93,1)
+(74,129,1)
+(17,18,1)
+(92,134,1)
+(17,71,1)
+(46,78,1)
+(15,95,1)
+(13,146,1)
+(152,18,1)
+(17,90,1)
+(99,129,1)
+(92,71,1)
+(74,33,1)
+(70,95,1)
+(87,31,1)
+(145,141,1)
+(50,121,1)
+(133,160,1)
+(55,152,1)
+(71,2,1)
+(14,104,1)
+(100,13,1)
+(91,14,1)
+(117,160,1)
+(74,18,1)
+(30,86,1)
+(1,133,1)
+(102,47,1)
+(99,81,1)
+(38,90,1)
+(76,12,1)
+(32,70,1)
+(64,137,1)
+(60,128,1)
+(58,92,1)
+(79,83,1)
+(60,3,1)
+(157,36,1)
+(120,143,1)
+(157,24,1)
+(146,108,1)
+(91,71,1)
+(26,129,1)
+(60,71,1)
+(152,134,1)
+(28,119,1)
+(75,160,1)
+(156,55,1)
+(11,109,1)
+(78,117,1)
+(90,149,1)
+(133,100,1)
+(150,82,1)
+(108,58,1)
+(125,160,1)
+(155,98,1)
+(5,107,1)
+(57,6,1)
+(152,71,1)
+(111,16,1)
+(120,90,1)
+(143,71,1)
+(38,68,1)
+(112,72,1)
+(26,123,1)
+(124,63,1)
+(92,19,1)
+(143,14,1)
+(0,112,1)
+(2,52,1)
+(104,115,1)
+(63,3,1)
+(39,129,1)
+(8,79,1)
+(136,71,1)
+(136,14,1)
+(128,162,1)
+(96,28,1)
+(7,160,1)
+(126,99,1)
+(160,111,1)
+(60,33,1)
+(135,106,1)
+(42,32,1)
+(99,124,1)
+(62,103,1)
+(21,84,1)
+(47,32,1)
+(115,76,1)
+(12,38,1)
+(162,5,1)
+(74,107,1)
+(153,47,1)
+(19,148,1)
+(74,71,1)
+(152,25,1)
+(38,71,1)
+(46,33,1)
+(41,146,1)
+(44,50,1)
+(22,136,1)
+(25,120,1)
+(142,69,1)
+(45,91,1)
+(143,81,1)
+(94,145,1)
+(83,1,1)
+(46,3,1)
+(39,3,1)
+(48,51,1)
+(119,38,1)
+(50,132,1)
+(48,160,1)
+(17,134,1)
+(158,160,1)
+(66,0,1)
+(134,156,1)
+(75,37,1)
+(148,143,1)
+(39,33,1)
+(161,94,1)
+(93,0,1)
+(140,99,1)
+(92,18,1)
+(95,50,1)
+(61,158,1)
+(110,147,1)
+(106,117,1)
+(34,129,1)
+(33,110,1)
+(74,14,1)
+(145,160,1)
+(32,41,1)
+(3,65,1)
+(83,58,1)
+(60,159,1)
+(59,33,1)
+(146,58,1)
+(88,66,1)
+(65,85,1)
+(16,88,1)
+(59,151,1)
+(98,7,1)
+(143,18,1)
+(129,59,1)
+(147,155,1)
+(66,21,1)
+(74,122,1)
+(59,3,1)
+(31,62,1)
+(68,157,1)
+(52,30,1)
+(60,129,1)
+(39,142,1)
+(154,46,1)
+(141,45,1)
+(60,14,1)
+(74,121,1)
+(136,30,1)
+(106,75,1)
+(51,161,1)
+(118,44,1)
+(62,23,1)
+(118,103,1)
+(143,134,1)
+(80,152,1)
+(138,160,1)
+(91,18,1)
+(63,33,1)
+(101,160,1)
+(26,33,1)
+(37,15,1)
+(123,126,1)
+(85,34,1)
+(91,54,1)
+(136,134,1)
+(54,125,1)
+(56,140,1)
+(60,134,1)
+(23,138,1)
+(74,67,1)
+(46,129,1)
+(84,128,1)
+(138,150,1)
+(59,129,1)
+(60,67,1)
+(121,26,1)
+(67,105,1)
+(158,153,1)
+(82,57,1)
+(74,3,1)
+(144,7,1)
+(132,103,1)
+(137,129,1)
+(152,90,1)
+(99,33,1)
+(47,74,1)
+(149,154,1)
+(32,144,1)
+(122,42,1)
+(17,14,1)
+(95,118,1)
+(92,14,1)
+(74,134,1)
+(109,67,1)
+(125,8,1)
+(7,101,1)
+(17,96,1)
+(111,88,1)
+(106,61,1)
+(153,60,1)
+(107,11,1)
+(143,22,1)
+(63,34,1)
+(115,40,1)
+(117,87,1)
+(34,64,1)
+(154,95,2)
+(143,18,2)
+(48,160,2)
+(143,143,2)
+(152,14,2)
+(132,7,2)
+(119,38,2)
+(158,160,2)
+(159,47,2)
+(38,18,2)
+(99,7,2)
+(66,0,2)
+(148,95,2)
+(90,95,2)
+(38,134,2)
+(80,152,2)
+(149,95,2)
+(57,121,2)
+(47,95,2)
+(62,95,2)
+(106,117,2)
+(58,92,2)
+(92,134,2)
+(156,152,2)
+(15,95,2)
+(39,33,2)
+(134,152,2)
+(143,81,2)
+(136,95,2)
+(103,7,2)
+(152,18,2)
+(152,143,2)
+(161,146,2)
+(55,152,2)
+(60,134,2)
+(158,95,2)
+(60,47,2)
+(95,7,2)
+(124,7,2)
+(146,95,2)
+(38,14,2)
+(59,3,2)
+(79,146,2)
+(34,99,2)
+(137,99,2)
+(94,146,2)
+(58,95,2)
+(118,103,2)
+(39,3,2)
+(83,146,2)
+(138,160,2)
+(144,7,2)
+(87,95,2)
+(74,18,2)
+(95,50,2)
+(115,40,2)
+(157,24,2)
+(74,33,2)
+(44,50,2)
+(153,7,2)
+(143,134,2)
+(47,146,2)
+(8,146,2)
+(74,121,2)
+(3,34,2)
+(99,81,2)
+(153,95,2)
+(99,129,2)
+(25,95,2)
+(26,7,2)
+(139,38,2)
+(52,30,2)
+(115,38,2)
+(82,95,2)
+(147,7,2)
+(92,95,2)
+(99,3,2)
+(110,7,2)
+(17,90,2)
+(146,58,2)
+(104,115,2)
+(125,146,2)
+(76,38,2)
+(71,30,2)
+(36,152,2)
+(106,75,2)
+(60,33,2)
+(60,71,2)
+(117,160,2)
+(120,95,2)
+(74,14,2)
+(18,38,2)
+(23,95,2)
+(46,129,2)
+(106,138,2)
+(106,146,2)
+(91,14,2)
+(59,99,2)
+(7,160,2)
+(25,143,2)
+(143,14,2)
+(61,146,2)
+(50,7,2)
+(152,90,2)
+(60,3,2)
+(91,134,2)
+(118,50,2)
+(135,48,2)
+(22,95,2)
+(18,17,2)
+(124,99,2)
+(86,38,2)
+(22,143,2)
+(88,66,2)
+(17,38,2)
+(74,67,2)
+(121,26,2)
+(63,99,2)
+(61,7,2)
+(57,95,2)
+(41,146,2)
+(143,71,2)
+(133,160,2)
+(61,95,2)
+(83,58,2)
+(31,95,2)
+(46,95,2)
+(62,103,2)
+(92,18,2)
+(138,95,2)
+(51,146,2)
+(60,129,2)
+(111,88,2)
+(33,7,2)
+(19,95,2)
+(103,39,2)
+(68,152,2)
+(122,32,2)
+(50,121,2)
+(69,7,2)
+(98,7,2)
+(117,95,2)
+(74,71,2)
+(46,3,2)
+(59,129,2)
+(106,7,2)
+(56,99,2)
+(54,146,2)
+(143,95,2)
+(1,146,2)
+(26,129,2)
+(47,7,2)
+(14,104,2)
+(12,38,2)
+(65,34,2)
+(17,18,2)
+(102,47,2)
+(145,160,2)
+(133,146,2)
+(158,146,2)
+(42,32,2)
+(28,38,2)
+(26,33,2)
+(157,152,2)
+(140,99,2)
+(160,111,2)
+(123,7,2)
+(60,67,2)
+(91,146,2)
+(126,7,2)
+(158,7,2)
+(108,95,2)
+(64,99,2)
+(60,18,2)
+(34,129,2)
+(106,95,2)
+(32,146,2)
+(17,71,2)
+(38,68,2)
+(39,129,2)
+(91,18,2)
+(142,7,2)
+(60,128,2)
+(85,34,2)
+(75,95,2)
+(150,95,2)
+(45,146,2)
+(48,146,2)
+(63,7,2)
+(38,152,2)
+(136,143,2)
+(155,7,2)
+(152,95,2)
+(32,95,2)
+(96,38,2)
+(38,71,2)
+(78,95,2)
+(129,59,2)
+(13,146,2)
+(59,33,2)
+(46,33,2)
+(120,143,2)
+(74,107,2)
+(32,7,2)
+(121,7,2)
+(60,14,2)
+(152,134,2)
+(151,99,2)
+(141,146,2)
+(135,106,2)
+(99,99,2)
+(17,14,2)
+(91,71,2)
+(30,38,2)
+(74,129,2)
+(99,33,2)
+(104,38,2)
+(70,95,2)
+(92,14,2)
+(74,32,2)
+(74,134,2)
+(14,38,2)
+(95,118,2)
+(30,18,2)
+(39,7,2)
+(37,95,2)
+(153,146,2)
+(17,134,2)
+(100,146,2)
+(152,71,2)
+(33,110,2)
+(38,90,2)
+(92,71,2)
+(145,146,2)
+(74,3,2)
+(60,103,2)
+(129,99,2)
+(75,160,2)
+(68,157,2)
+(26,3,2)
+(125,160,2)
+(2,30,2)
+(6,95,2)
+-----------------------------------
+(0,*fdt = NULL)
+(1,new_fds)
+(2,NR_OPEN)
+(3,nfds = NR_OPEN)
+(4,)
+(5,new_execset)
+(6,new_openset)
+(7,!fdt)
+(8,max_fds)
+(9,nfds)
+(10,do)
+(11,NULL)
+(12,nfds)
+(13,fdt)
+(14,nfds = PAGE_SIZE / sizeof(struct file *)
+(15,fdt)
+(16,GFP_KERNEL)
+(17,nfds * 2)
+(18,nfds = nfds * 2)
+(19,nfds)
+(20,if (!new_fds)
+(21,fdt)
+(22,nr)
+(23,new_execset)
+(24,struct file *)
+(25,256)
+(26,alloc_fdset(nfds)
+(27,if (!new_openset || !new_execset)
+(28,nfds)
+(29,if (!fdt)
+(30,nfds > NR_OPEN)
+(31,fdt)
+(32,new_openset)
+(33,nfds = 8 * L1_CACHE_BYTES)
+(34,nfds > NR_OPEN)
+(35,)
+(36,PAGE_SIZE)
+(37,open_fds)
+(38,nfds < (PAGE_SIZE / sizeof(struct file *)
+(39,alloc_fdset(nfds)
+(40,struct file *)
+(41,goto out;)
+(42,new_openset)
+(43,fdt)
+(44,new_execset)
+(45,fdt)
+(46,fdt->max_fdset = nfds)
+(47,new_execset)
+(48,return fdt;)
+(49,)
+(50,!new_openset)
+(51,fdt)
+(52,nfds)
+(53,new_execset)
+(54,nfds)
+(55,nfds)
+(56,nfds)
+(57,fdt->open_fds = new_openset)
+(58,new_fds = alloc_fd_array(nfds)
+(59,nfds * 2)
+(60,free_fdset(new_execset, nfds)
+(61,NULL)
+(62,fdt->close_on_exec = new_execset)
+(63,nfds)
+(64,NR_OPEN)
+(65,NR_OPEN)
+(66,*fdt)
+(67,nfds = 0)
+(68,PAGE_SIZE / sizeof(struct file *)
+(69,new_execset)
+(70,goto out;)
+(71,nfds = NR_OPEN)
+(72,fdt)
+(73,if (nfds < 256)
+(74,free_fdset(new_openset, nfds)
+(75,fdt->open_fds)
+(76,PAGE_SIZE)
+(77,new_fds)
+(78,nfds)
+(79,fdt)
+(80,nfds)
+(81,int nr)
+(82,fdt)
+(83,fdt->fd = new_fds)
+(84,fdt)
+(85,nfds)
+(86,NR_OPEN)
+(87,max_fdset)
+(88,sizeof(*fdt)
+(89,out:)
+(90,nfds = NR_OPEN_DEFAULT)
+(91,fdt->max_fds = nfds)
+(92,alloc_fd_array(nfds)
+(93,nfds)
+(94,NULL)
+(95,!new_openset || !new_execset)
+(96,2)
+(97,if (new_openset)
+(98,nfds)
+(99,nfds <= nr)
+(100,fd)
+(101,fdt)
+(102,new_execset)
+(103,new_execset = alloc_fdset(nfds)
+(104,PAGE_SIZE / sizeof(struct file *)
+(105,0)
+(106,return NULL;)
+(107,*new_openset = NULL)
+(108,new_fds)
+(109,new_openset)
+(110,8 * L1_CACHE_BYTES)
+(111,kzalloc(sizeof(*fdt)
+(112,NULL)
+(113,while (nfds <= nr)
+(114,if (nfds > NR_OPEN)
+(115,sizeof(struct file *)
+(116,if (new_execset)
+(117,fdt->max_fdset)
+(118,!new_execset)
+(119,nfds)
+(120,nfds)
+(121,new_openset = alloc_fdset(nfds)
+(122,nfds)
+(123,nfds)
+(124,nr)
+(125,fdt->max_fds)
+(126,new_openset)
+(127,new_openset)
+(128,*new_execset = NULL)
+(129,nfds = nfds * 2)
+(130,if (nfds > NR_OPEN)
+(131,)
+(132,new_openset)
+(133,fdt->fd)
+(134,nfds = 256)
+(135,RET)
+(136,nfds)
+(137,nfds)
+(138,fdt->close_on_exec)
+(139,nfds)
+(140,nfds)
+(141,free_files)
+(142,nfds)
+(143,nfds <= nr)
+(144,goto out;)
+(145,fdt->free_files)
+(146,!new_fds)
+(147,L1_CACHE_BYTES)
+(148,new_fds)
+(149,NR_OPEN_DEFAULT)
+(150,close_on_exec)
+(151,2)
+(152,nfds < 256)
+(153,fdt)
+(154,nfds)
+(155,8)
+(156,256)
+(157,sizeof(struct file *)
+(158,kfree(fdt)
+(159,nfds)
+(160,fdt = kzalloc(sizeof(*fdt)
+(161,fdt->free_files = NULL)
+(162,NULL)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

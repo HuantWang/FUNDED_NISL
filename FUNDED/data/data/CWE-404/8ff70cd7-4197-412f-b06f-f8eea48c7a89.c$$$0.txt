@@ -1,0 +1,1735 @@
+-----label-----
+1
+-----code-----
+unsigned long
+arch_get_unmapped_area_topdown(struct file *filp, const unsigned long addr0,
+			const unsigned long len, const unsigned long pgoff,
+			const unsigned long flags)
+{
+	struct vm_area_struct *vma;
+	struct mm_struct *mm = current->mm;
+	unsigned long addr = addr0;
+	int do_align = 0;
+	int aliasing = cache_is_vipt_aliasing();
+	struct vm_unmapped_area_info info;
+
+	/*
+	 * We only need to do colour alignment if either the I or D
+	 * caches alias.
+	 */
+	if (aliasing)
+		do_align = filp || (flags & MAP_SHARED);
+
+	/* requested length too big for entire address space */
+	if (len > TASK_SIZE)
+		return -ENOMEM;
+
+	if (flags & MAP_FIXED) {
+		if (aliasing && flags & MAP_SHARED &&
+		    (addr - (pgoff << PAGE_SHIFT)) & (SHMLBA - 1))
+			return -EINVAL;
+		return addr;
+	}
+
+	/* requesting a specific address */
+	if (addr) {
+		if (do_align)
+			addr = COLOUR_ALIGN(addr, pgoff);
+		else
+			addr = PAGE_ALIGN(addr);
+		vma = find_vma(mm, addr);
+		if (TASK_SIZE - len >= addr &&
+				(!vma || addr + len <= vm_start_gap(vma)))
+			return addr;
+	}
+
+	info.flags = VM_UNMAPPED_AREA_TOPDOWN;
+	info.length = len;
+	info.low_limit = FIRST_USER_ADDRESS;
+	info.high_limit = mm->mmap_base;
+	info.align_mask = do_align ? (PAGE_MASK & (SHMLBA - 1)) : 0;
+	info.align_offset = pgoff << PAGE_SHIFT;
+	addr = vm_unmapped_area(&info);
+
+	/*
+	 * A failed mmap() very likely causes application failure,
+	 * so fall back to the bottom-up function here. This scenario
+	 * can happen with large stack limits and large mmap()
+	 * allocations.
+	 */
+	if (addr & ~PAGE_MASK) {
+		VM_BUG_ON(addr != -ENOMEM);
+		info.flags = 0;
+		info.low_limit = mm->mmap_base;
+		info.high_limit = TASK_SIZE;
+		addr = vm_unmapped_area(&info);
+	}
+
+	return addr;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+3,8
+3,9
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+13,14
+15,16
+15,17
+17,18
+19,20
+19,21
+21,22
+23,24
+23,25
+25,26
+27,28
+27,29
+27,30
+27,31
+27,32
+27,33
+27,34
+27,35
+27,36
+27,37
+27,38
+27,39
+27,40
+27,41
+27,42
+27,43
+27,44
+27,45
+27,46
+28,29
+29,30
+29,31
+30,31
+32,33
+32,34
+35,36
+36,37
+36,38
+37,38
+39,40
+39,41
+39,42
+42,43
+43,44
+43,45
+44,45
+47,48
+48,49
+48,50
+50,51
+50,52
+52,53
+53,54
+55,56
+56,57
+56,58
+58,59
+58,60
+60,61
+62,63
+63,64
+63,65
+65,66
+65,67
+67,68
+68,69
+69,70
+71,72
+72,73
+72,74
+73,74
+75,76
+77,78
+77,79
+78,79
+80,81
+81,82
+81,83
+82,83
+84,85
+84,86
+85,86
+87,88
+88,89
+88,90
+89,90
+91,92
+93,94
+93,95
+94,95
+94,96
+95,96
+97,98
+99,100
+100,101
+101,102
+103,104
+103,105
+104,105
+104,106
+105,106
+107,108
+109,110
+109,111
+110,111
+110,112
+111,112
+111,113
+112,113
+112,114
+113,114
+115,116
+115,117
+116,117
+118,119
+120,121
+120,122
+121,122
+122,123
+122,124
+123,124
+125,126
+126,127
+126,128
+127,128
+129,130
+131,132
+132,133
+132,134
+133,134
+136,137
+137,138
+138,139
+140,141
+141,142
+143,144
+143,145
+144,145
+146,147
+146,148
+146,149
+147,148
+147,149
+147,150
+148,149
+150,151
+151,152
+151,153
+152,153
+154,155
+154,156
+154,157
+155,156
+157,158
+159,160
+161,162
+162,163
+162,164
+163,164
+165,166
+165,167
+166,167
+168,169
+170,171
+171,172
+171,173
+172,173
+174,175
+174,176
+174,177
+175,176
+177,178
+179,180
+181,182
+181,183
+182,183
+182,184
+183,184
+183,185
+184,185
+184,186
+185,186
+187,188
+189,190
+191,192
+192,193
+192,194
+193,194
+194,195
+196,197
+196,198
+197,198
+197,199
+198,199
+200,201
+202,203
+202,204
+203,204
+205,206
+207,208
+208,209
+210,211
+211,212
+211,213
+212,213
+212,214
+213,214
+216,217
+218,219
+219,220
+219,221
+220,221
+220,222
+221,222
+224,225
+226,227
+227,228
+227,229
+228,229
+228,230
+229,230
+232,233
+234,235
+235,236
+235,237
+236,237
+236,238
+237,238
+240,241
+240,242
+241,242
+244,245
+245,246
+245,247
+246,247
+246,248
+247,248
+250,251
+250,252
+250,253
+251,252
+253,254
+254,255
+254,256
+255,256
+257,258
+258,259
+258,260
+259,260
+263,264
+264,265
+264,266
+265,266
+265,267
+266,267
+269,270
+269,271
+270,271
+272,273
+274,275
+275,276
+275,277
+276,277
+278,279
+278,280
+279,280
+281,282
+282,283
+284,285
+284,286
+285,286
+285,287
+286,287
+288,289
+289,290
+291,292
+291,293
+291,294
+291,295
+291,296
+292,293
+293,294
+293,295
+294,295
+296,297
+296,298
+297,298
+299,300
+300,301
+302,303
+303,304
+303,305
+304,305
+304,306
+305,306
+309,310
+310,311
+310,312
+311,312
+311,313
+312,313
+315,316
+315,317
+316,317
+319,320
+320,321
+320,322
+321,322
+321,323
+322,323
+325,326
+327,328
+328,329
+328,330
+329,330
+331,332
+331,333
+332,333
+334,335
+335,336
+337,338
+338,339
+-----nextToken-----
+2,4,7,9,10,12,14,16,18,20,22,24,26,31,33,34,38,40,41,45,46,49,51,54,57,59,61,64,66,70,74,76,79,83,86,90,92,96,98,102,106,108,114,117,119,124,128,130,134,135,139,142,145,149,153,156,158,160,164,167,169,173,176,178,180,186,188,190,195,199,201,204,206,209,214,215,217,222,223,225,230,231,233,238,239,242,243,248,249,252,256,260,261,262,267,268,271,273,277,280,283,287,290,295,298,301,306,307,308,313,314,317,318,323,324,326,330,333,336,339
+-----computeFrom-----
+81,82
+81,83
+84,85
+84,86
+88,89
+88,90
+94,95
+94,96
+104,105
+104,106
+111,112
+111,113
+112,113
+112,114
+115,116
+115,117
+120,121
+120,122
+122,123
+122,124
+126,127
+126,128
+132,133
+132,134
+151,152
+151,153
+162,163
+162,164
+171,172
+171,173
+182,183
+182,184
+183,184
+183,185
+184,185
+184,186
+192,193
+192,194
+196,197
+196,198
+197,198
+197,199
+211,212
+211,213
+219,220
+219,221
+227,228
+227,229
+235,236
+235,237
+245,246
+245,247
+254,255
+254,256
+258,259
+258,260
+264,265
+264,266
+269,270
+269,271
+275,276
+275,277
+285,286
+285,287
+296,297
+296,298
+303,304
+303,305
+310,311
+310,312
+320,321
+320,322
+328,329
+328,330
+-----guardedBy-----
+106,117
+199,209
+287,330
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;IfStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;ReturnStatement;UnaryExpression;IdExpression;Name;ReturnStatement;IdExpression;Name;IfStatement;IdExpression;Name;CompoundStatement;IfStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;UnaryExpression;BinaryExpression;UnaryExpression;IdExpression;Name;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;ConditionalExpression;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+unsigned longarch_get_unmapped_area_topdown(struct file *filp, const unsigned long addr0,			const unsigned long len, const unsigned long pgoff,			const unsigned long flags){	struct vm_area_struct *vma;	struct mm_struct *mm = current->mm;	unsigned long addr = addr0;	int do_align = 0;	int aliasing = cache_is_vipt_aliasing();	struct vm_unmapped_area_info info;	/*	 * We only need to do colour alignment if either the I or D	 * caches alias.	 */	if (aliasing)		do_align = filp || (flags & MAP_SHARED);	/* requested length too big for entire address space */	if (len > TASK_SIZE)		return -ENOMEM;	if (flags & MAP_FIXED) {		if (aliasing && flags & MAP_SHARED &&		    (addr - (pgoff << PAGE_SHIFT)) & (SHMLBA - 1))			return -EINVAL;		return addr;	}	/* requesting a specific address */	if (addr) {		if (do_align)			addr = COLOUR_ALIGN(addr, pgoff);		else			addr = PAGE_ALIGN(addr);		vma = find_vma(mm, addr);		if (TASK_SIZE - len >= addr &&				(!vma || addr + len <= vm_start_gap(vma)))			return addr;	}	info.flags = VM_UNMAPPED_AREA_TOPDOWN;	info.length = len;	info.low_limit = FIRST_USER_ADDRESS;	info.high_limit = mm->mmap_base;	info.align_mask = do_align ? (PAGE_MASK & (SHMLBA - 1)) : 0;	info.align_offset = pgoff << PAGE_SHIFT;	addr = vm_unmapped_area(&info);	/*	 * A failed mmap() very likely causes application failure,	 * so fall back to the bottom-up function here. This scenario	 * can happen with large stack limits and large mmap()	 * allocations.	 */	if (addr & ~PAGE_MASK) {		VM_BUG_ON(addr != -ENOMEM);		info.flags = 0;		info.low_limit = mm->mmap_base;		info.high_limit = TASK_SIZE;		addr = vm_unmapped_area(&info);	}	return addr;}
+unsigned long
+arch_get_unmapped_area_topdown(struct file *filp, const unsigned long addr0,			const unsigned long len, const unsigned long pgoff,			const unsigned long flags)
+arch_get_unmapped_area_topdown
+struct file *filp
+struct file
+file
+*filp
+*
+filp
+const unsigned long addr0
+const unsigned long
+addr0
+addr0
+const unsigned long len
+const unsigned long
+len
+len
+const unsigned long pgoff
+const unsigned long
+pgoff
+pgoff
+const unsigned long flags
+const unsigned long
+flags
+flags
+{	struct vm_area_struct *vma;	struct mm_struct *mm = current->mm;	unsigned long addr = addr0;	int do_align = 0;	int aliasing = cache_is_vipt_aliasing();	struct vm_unmapped_area_info info;	/*	 * We only need to do colour alignment if either the I or D	 * caches alias.	 */	if (aliasing)		do_align = filp || (flags & MAP_SHARED);	/* requested length too big for entire address space */	if (len > TASK_SIZE)		return -ENOMEM;	if (flags & MAP_FIXED) {		if (aliasing && flags & MAP_SHARED &&		    (addr - (pgoff << PAGE_SHIFT)) & (SHMLBA - 1))			return -EINVAL;		return addr;	}	/* requesting a specific address */	if (addr) {		if (do_align)			addr = COLOUR_ALIGN(addr, pgoff);		else			addr = PAGE_ALIGN(addr);		vma = find_vma(mm, addr);		if (TASK_SIZE - len >= addr &&				(!vma || addr + len <= vm_start_gap(vma)))			return addr;	}	info.flags = VM_UNMAPPED_AREA_TOPDOWN;	info.length = len;	info.low_limit = FIRST_USER_ADDRESS;	info.high_limit = mm->mmap_base;	info.align_mask = do_align ? (PAGE_MASK & (SHMLBA - 1)) : 0;	info.align_offset = pgoff << PAGE_SHIFT;	addr = vm_unmapped_area(&info);	/*	 * A failed mmap() very likely causes application failure,	 * so fall back to the bottom-up function here. This scenario	 * can happen with large stack limits and large mmap()	 * allocations.	 */	if (addr & ~PAGE_MASK) {		VM_BUG_ON(addr != -ENOMEM);		info.flags = 0;		info.low_limit = mm->mmap_base;		info.high_limit = TASK_SIZE;		addr = vm_unmapped_area(&info);	}	return addr;}
+struct vm_area_struct *vma;
+struct vm_area_struct *vma;
+struct vm_area_struct
+vm_area_struct
+*vma
+*
+vma
+struct mm_struct *mm = current->mm;
+struct mm_struct *mm = current->mm;
+struct mm_struct
+mm_struct
+*mm = current->mm
+*
+mm
+= current->mm
+current->mm
+current
+current
+mm
+unsigned long addr = addr0;
+unsigned long addr = addr0;
+unsigned long
+addr = addr0
+addr
+= addr0
+addr0
+addr0
+int do_align = 0;
+int do_align = 0;
+int
+do_align = 0
+do_align
+= 0
+0
+int aliasing = cache_is_vipt_aliasing();
+int aliasing = cache_is_vipt_aliasing();
+int
+aliasing = cache_is_vipt_aliasing()
+aliasing
+= cache_is_vipt_aliasing()
+cache_is_vipt_aliasing()
+cache_is_vipt_aliasing
+cache_is_vipt_aliasing
+struct vm_unmapped_area_info info;
+struct vm_unmapped_area_info info;
+struct vm_unmapped_area_info
+vm_unmapped_area_info
+info
+info
+if (aliasing)		do_align = filp || (flags & MAP_SHARED);
+aliasing
+aliasing
+do_align = filp || (flags & MAP_SHARED);
+do_align = filp || (flags & MAP_SHARED)
+do_align
+do_align
+filp || (flags & MAP_SHARED)
+filp
+filp
+(flags & MAP_SHARED)
+flags & MAP_SHARED
+flags
+flags
+MAP_SHARED
+MAP_SHARED
+if (len > TASK_SIZE)		return -ENOMEM;
+len > TASK_SIZE
+len
+len
+TASK_SIZE
+TASK_SIZE
+return -ENOMEM;
+-ENOMEM
+ENOMEM
+ENOMEM
+if (flags & MAP_FIXED) {		if (aliasing && flags & MAP_SHARED &&		    (addr - (pgoff << PAGE_SHIFT)) & (SHMLBA - 1))			return -EINVAL;		return addr;	}
+flags & MAP_FIXED
+flags
+flags
+MAP_FIXED
+MAP_FIXED
+{		if (aliasing && flags & MAP_SHARED &&		    (addr - (pgoff << PAGE_SHIFT)) & (SHMLBA - 1))			return -EINVAL;		return addr;	}
+if (aliasing && flags & MAP_SHARED &&		    (addr - (pgoff << PAGE_SHIFT)) & (SHMLBA - 1))			return -EINVAL;
+aliasing && flags & MAP_SHARED &&		    (addr - (pgoff << PAGE_SHIFT)) & (SHMLBA - 1)
+aliasing && flags & MAP_SHARED
+aliasing
+aliasing
+flags & MAP_SHARED
+flags
+flags
+MAP_SHARED
+MAP_SHARED
+(addr - (pgoff << PAGE_SHIFT)) & (SHMLBA - 1)
+(addr - (pgoff << PAGE_SHIFT))
+addr - (pgoff << PAGE_SHIFT)
+addr
+addr
+(pgoff << PAGE_SHIFT)
+pgoff << PAGE_SHIFT
+pgoff
+pgoff
+PAGE_SHIFT
+PAGE_SHIFT
+(SHMLBA - 1)
+SHMLBA - 1
+SHMLBA
+SHMLBA
+1
+return -EINVAL;
+-EINVAL
+EINVAL
+EINVAL
+return addr;
+addr
+addr
+if (addr) {		if (do_align)			addr = COLOUR_ALIGN(addr, pgoff);		else			addr = PAGE_ALIGN(addr);		vma = find_vma(mm, addr);		if (TASK_SIZE - len >= addr &&				(!vma || addr + len <= vm_start_gap(vma)))			return addr;	}
+addr
+addr
+{		if (do_align)			addr = COLOUR_ALIGN(addr, pgoff);		else			addr = PAGE_ALIGN(addr);		vma = find_vma(mm, addr);		if (TASK_SIZE - len >= addr &&				(!vma || addr + len <= vm_start_gap(vma)))			return addr;	}
+if (do_align)			addr = COLOUR_ALIGN(addr, pgoff);		else			addr = PAGE_ALIGN(addr);
+do_align
+do_align
+addr = COLOUR_ALIGN(addr, pgoff);
+addr = COLOUR_ALIGN(addr, pgoff)
+addr
+addr
+COLOUR_ALIGN(addr, pgoff)
+COLOUR_ALIGN
+COLOUR_ALIGN
+addr
+addr
+pgoff
+pgoff
+addr = PAGE_ALIGN(addr);
+addr = PAGE_ALIGN(addr)
+addr
+addr
+PAGE_ALIGN(addr)
+PAGE_ALIGN
+PAGE_ALIGN
+addr
+addr
+vma = find_vma(mm, addr);
+vma = find_vma(mm, addr)
+vma
+vma
+find_vma(mm, addr)
+find_vma
+find_vma
+mm
+mm
+addr
+addr
+if (TASK_SIZE - len >= addr &&				(!vma || addr + len <= vm_start_gap(vma)))			return addr;
+TASK_SIZE - len >= addr &&				(!vma || addr + len <= vm_start_gap(vma))
+TASK_SIZE - len >= addr
+TASK_SIZE - len
+TASK_SIZE
+TASK_SIZE
+len
+len
+addr
+addr
+(!vma || addr + len <= vm_start_gap(vma))
+!vma || addr + len <= vm_start_gap(vma)
+!vma
+vma
+vma
+addr + len <= vm_start_gap(vma)
+addr + len
+addr
+addr
+len
+len
+vm_start_gap(vma)
+vm_start_gap
+vm_start_gap
+vma
+vma
+return addr;
+addr
+addr
+info.flags = VM_UNMAPPED_AREA_TOPDOWN;
+info.flags = VM_UNMAPPED_AREA_TOPDOWN
+info.flags
+info
+info
+flags
+VM_UNMAPPED_AREA_TOPDOWN
+VM_UNMAPPED_AREA_TOPDOWN
+info.length = len;
+info.length = len
+info.length
+info
+info
+length
+len
+len
+info.low_limit = FIRST_USER_ADDRESS;
+info.low_limit = FIRST_USER_ADDRESS
+info.low_limit
+info
+info
+low_limit
+FIRST_USER_ADDRESS
+FIRST_USER_ADDRESS
+info.high_limit = mm->mmap_base;
+info.high_limit = mm->mmap_base
+info.high_limit
+info
+info
+high_limit
+mm->mmap_base
+mm
+mm
+mmap_base
+info.align_mask = do_align ? (PAGE_MASK & (SHMLBA - 1)) : 0;
+info.align_mask = do_align ? (PAGE_MASK & (SHMLBA - 1)) : 0
+info.align_mask
+info
+info
+align_mask
+do_align ? (PAGE_MASK & (SHMLBA - 1)) : 0
+do_align
+do_align
+(PAGE_MASK & (SHMLBA - 1))
+PAGE_MASK & (SHMLBA - 1)
+PAGE_MASK
+PAGE_MASK
+(SHMLBA - 1)
+SHMLBA - 1
+SHMLBA
+SHMLBA
+1
+0
+info.align_offset = pgoff << PAGE_SHIFT;
+info.align_offset = pgoff << PAGE_SHIFT
+info.align_offset
+info
+info
+align_offset
+pgoff << PAGE_SHIFT
+pgoff
+pgoff
+PAGE_SHIFT
+PAGE_SHIFT
+addr = vm_unmapped_area(&info);
+addr = vm_unmapped_area(&info)
+addr
+addr
+vm_unmapped_area(&info)
+vm_unmapped_area
+vm_unmapped_area
+&info
+info
+info
+if (addr & ~PAGE_MASK) {		VM_BUG_ON(addr != -ENOMEM);		info.flags = 0;		info.low_limit = mm->mmap_base;		info.high_limit = TASK_SIZE;		addr = vm_unmapped_area(&info);	}
+addr & ~PAGE_MASK
+addr
+addr
+~PAGE_MASK
+PAGE_MASK
+PAGE_MASK
+{		VM_BUG_ON(addr != -ENOMEM);		info.flags = 0;		info.low_limit = mm->mmap_base;		info.high_limit = TASK_SIZE;		addr = vm_unmapped_area(&info);	}
+VM_BUG_ON(addr != -ENOMEM);
+VM_BUG_ON(addr != -ENOMEM)
+VM_BUG_ON
+VM_BUG_ON
+addr != -ENOMEM
+addr
+addr
+-ENOMEM
+ENOMEM
+ENOMEM
+info.flags = 0;
+info.flags = 0
+info.flags
+info
+info
+flags
+0
+info.low_limit = mm->mmap_base;
+info.low_limit = mm->mmap_base
+info.low_limit
+info
+info
+low_limit
+mm->mmap_base
+mm
+mm
+mmap_base
+info.high_limit = TASK_SIZE;
+info.high_limit = TASK_SIZE
+info.high_limit
+info
+info
+high_limit
+TASK_SIZE
+TASK_SIZE
+addr = vm_unmapped_area(&info);
+addr = vm_unmapped_area(&info)
+addr
+addr
+vm_unmapped_area(&info)
+vm_unmapped_area
+vm_unmapped_area
+&info
+info
+info
+return addr;
+addr
+addr
+-----joern-----
+(29,176,0)
+(149,2,0)
+(46,176,0)
+(12,144,0)
+(86,93,0)
+(171,13,0)
+(94,125,0)
+(73,32,0)
+(184,136,0)
+(1,28,0)
+(144,50,0)
+(169,117,0)
+(136,116,0)
+(170,33,0)
+(181,75,0)
+(10,117,0)
+(139,92,0)
+(121,69,0)
+(173,8,0)
+(145,148,0)
+(81,176,0)
+(120,91,0)
+(74,36,0)
+(150,111,0)
+(143,72,0)
+(121,37,0)
+(94,64,0)
+(164,142,0)
+(181,117,0)
+(131,29,0)
+(66,116,0)
+(32,105,0)
+(0,7,0)
+(29,111,0)
+(66,93,0)
+(142,29,0)
+(64,94,0)
+(154,64,0)
+(54,150,0)
+(171,181,0)
+(84,80,0)
+(28,1,0)
+(78,176,0)
+(13,173,0)
+(36,67,0)
+(25,176,0)
+(172,92,0)
+(0,14,0)
+(20,40,0)
+(75,181,0)
+(75,12,0)
+(93,50,0)
+(113,49,0)
+(50,119,0)
+(30,34,0)
+(49,113,0)
+(27,139,0)
+(140,37,0)
+(82,140,0)
+(39,12,0)
+(121,49,0)
+(128,39,0)
+(3,12,0)
+(168,171,0)
+(78,87,0)
+(19,176,0)
+(59,115,0)
+(132,53,0)
+(8,12,0)
+(52,176,0)
+(185,125,0)
+(94,13,0)
+(43,34,0)
+(37,121,0)
+(66,39,0)
+(114,7,0)
+(81,72,0)
+(177,140,0)
+(159,33,0)
+(122,57,0)
+(64,12,0)
+(49,50,0)
+(152,74,0)
+(115,28,0)
+(21,176,0)
+(13,171,0)
+(61,57,0)
+(174,61,0)
+(91,81,0)
+(87,19,0)
+(162,176,0)
+(88,69,0)
+(51,176,0)
+(33,159,0)
+(178,20,0)
+(113,110,0)
+(108,9,0)
+(30,98,0)
+(107,21,0)
+(2,182,0)
+(8,33,0)
+(70,1,0)
+(145,37,0)
+(126,91,0)
+(138,60,0)
+(58,64,0)
+(100,176,0)
+(39,33,0)
+(165,8,0)
+(35,65,0)
+(22,142,0)
+(1,21,0)
+(38,61,0)
+(124,67,0)
+(93,167,0)
+(111,29,0)
+(85,176,0)
+(112,19,0)
+(144,12,0)
+(34,30,0)
+(37,145,0)
+(23,50,0)
+(140,40,0)
+(60,85,0)
+(144,110,0)
+(63,56,0)
+(36,176,0)
+(55,14,0)
+(118,40,0)
+(72,81,0)
+(8,173,0)
+(159,50,0)
+(179,45,0)
+(49,121,0)
+(1,32,0)
+(31,114,0)
+(111,150,0)
+(68,75,0)
+(14,80,0)
+(53,29,0)
+(9,56,0)
+(75,33,0)
+(103,159,0)
+(146,89,0)
+(127,1,0)
+(56,176,0)
+(156,99,0)
+(4,78,0)
+(98,7,0)
+(125,181,0)
+(83,60,0)
+(66,53,0)
+(125,94,0)
+(118,105,0)
+(71,4,0)
+(123,176,0)
+(105,32,0)
+(13,94,0)
+(64,67,0)
+(161,148,0)
+(153,139,0)
+(157,31,0)
+(148,134,0)
+(102,124,0)
+(14,0,0)
+(47,113,0)
+(148,176,0)
+(99,19,0)
+(105,118,0)
+(45,67,0)
+(65,114,0)
+(97,176,0)
+(155,4,0)
+(62,124,0)
+(141,87,0)
+(79,99,0)
+(18,115,0)
+(130,85,0)
+(16,181,0)
+(5,50,0)
+(183,113,0)
+(124,8,0)
+(53,98,0)
+(182,7,0)
+(19,99,0)
+(101,146,0)
+(53,176,0)
+(28,176,0)
+(64,33,0)
+(80,14,0)
+(160,105,0)
+(17,20,0)
+(77,176,0)
+(105,135,0)
+(106,45,0)
+(158,176,0)
+(14,29,0)
+(173,13,0)
+(96,118,0)
+(11,69,0)
+(69,121,0)
+(90,144,0)
+(109,98,0)
+(87,78,0)
+(48,176,0)
+(15,145,0)
+(6,118,0)
+(1,92,0)
+(129,75,0)
+(24,36,0)
+(42,49,0)
+(26,144,0)
+(180,167,0)
+(104,9,0)
+(98,30,0)
+(57,7,0)
+(76,65,0)
+(92,1,0)
+(8,124,0)
+(66,89,0)
+(72,110,0)
+(166,74,0)
+(137,2,0)
+(163,31,0)
+(37,140,0)
+(114,31,0)
+(133,87,0)
+(92,139,0)
+(175,21,0)
+(31,19,0)
+(75,19,0)
+(134,148,0)
+(50,176,0)
+(41,182,0)
+(44,72,0)
+(0,14,1)
+(177,82,1)
+(13,94,1)
+(115,59,1)
+(113,183,1)
+(127,115,1)
+(178,17,1)
+(173,13,1)
+(148,134,1)
+(105,160,1)
+(28,1,1)
+(50,5,1)
+(37,140,1)
+(50,119,1)
+(39,128,1)
+(140,177,1)
+(103,170,1)
+(107,50,1)
+(16,12,1)
+(75,19,1)
+(85,130,1)
+(78,87,1)
+(125,181,1)
+(179,32,1)
+(140,40,1)
+(86,145,1)
+(83,36,1)
+(11,88,1)
+(8,165,1)
+(149,137,1)
+(73,151,1)
+(19,99,1)
+(155,71,1)
+(24,74,1)
+(71,85,1)
+(57,122,1)
+(23,19,1)
+(145,148,1)
+(130,60,1)
+(45,67,1)
+(66,116,1)
+(146,101,1)
+(15,20,1)
+(121,69,1)
+(145,37,1)
+(159,50,1)
+(72,44,1)
+(31,19,1)
+(118,6,1)
+(20,178,1)
+(31,163,1)
+(68,16,1)
+(8,33,1)
+(131,81,1)
+(62,181,1)
+(129,68,1)
+(159,103,1)
+(2,149,1)
+(43,109,1)
+(157,65,1)
+(66,93,1)
+(156,112,1)
+(45,106,1)
+(101,145,1)
+(108,173,1)
+(39,33,1)
+(184,45,1)
+(54,131,1)
+(137,0,1)
+(33,159,1)
+(81,72,1)
+(134,161,1)
+(118,40,1)
+(144,50,1)
+(9,104,1)
+(22,29,1)
+(128,173,1)
+(145,15,1)
+(3,95,1)
+(125,185,1)
+(13,171,1)
+(32,105,1)
+(84,55,1)
+(64,12,1)
+(94,125,1)
+(58,154,1)
+(69,11,1)
+(12,144,1)
+(95,147,1)
+(105,135,1)
+(94,64,1)
+(14,80,1)
+(60,138,1)
+(165,124,1)
+(26,3,1)
+(90,26,1)
+(66,39,1)
+(144,90,1)
+(75,33,1)
+(44,143,1)
+(116,136,1)
+(74,166,1)
+(66,89,1)
+(1,70,1)
+(136,184,1)
+(88,49,1)
+(126,120,1)
+(142,29,1)
+(30,34,1)
+(4,155,1)
+(109,57,1)
+(98,30,1)
+(27,153,1)
+(20,40,1)
+(144,110,1)
+(133,4,1)
+(38,114,1)
+(168,8,1)
+(63,9,1)
+(124,67,1)
+(49,50,1)
+(141,133,1)
+(182,41,1)
+(92,139,1)
+(151,148,1)
+(42,140,1)
+(18,78,1)
+(70,127,1)
+(14,29,1)
+(47,42,1)
+(120,28,1)
+(113,110,1)
+(87,141,1)
+(82,15,1)
+(72,110,1)
+(122,61,1)
+(53,29,1)
+(66,53,1)
+(6,96,1)
+(64,67,1)
+(142,164,1)
+(96,160,1)
+(41,2,1)
+(181,75,1)
+(175,107,1)
+(55,142,1)
+(80,84,1)
+(8,12,1)
+(154,171,1)
+(36,24,1)
+(150,54,1)
+(53,98,1)
+(56,63,1)
+(93,86,1)
+(105,118,1)
+(1,32,1)
+(89,146,1)
+(106,179,1)
+(174,38,1)
+(163,157,1)
+(99,79,1)
+(65,35,1)
+(21,175,1)
+(64,58,1)
+(111,150,1)
+(114,31,1)
+(34,43,1)
+(139,27,1)
+(29,111,1)
+(53,132,1)
+(170,95,1)
+(104,108,1)
+(75,12,1)
+(64,33,1)
+(161,21,1)
+(35,76,1)
+(132,142,1)
+(17,45,1)
+(102,62,1)
+(124,102,1)
+(121,49,1)
+(1,92,1)
+(75,129,1)
+(91,126,1)
+(147,20,1)
+(39,12,1)
+(37,121,1)
+(153,172,1)
+(179,151,1)
+(5,23,1)
+(132,98,1)
+(79,156,1)
+(164,22,1)
+(59,18,1)
+(49,113,1)
+(93,50,1)
+(36,67,1)
+(171,168,1)
+(16,33,1)
+(171,181,1)
+(160,73,1)
+(143,91,1)
+(152,56,1)
+(61,174,1)
+(172,127,1)
+(185,64,1)
+(1,21,1)
+(76,182,1)
+(173,8,1)
+(108,147,1)
+(183,47,1)
+(138,83,1)
+(8,124,1)
+(87,19,1)
+(166,152,1)
+(128,173,2)
+(55,142,2)
+(78,87,2)
+(152,147,2)
+(87,173,2)
+(70,127,2)
+(75,147,2)
+(22,173,2)
+(145,20,2)
+(129,147,2)
+(115,147,2)
+(138,147,2)
+(32,151,2)
+(102,147,2)
+(29,111,2)
+(87,19,2)
+(49,140,2)
+(49,50,2)
+(1,92,2)
+(88,140,2)
+(39,12,2)
+(139,127,2)
+(93,145,2)
+(172,127,2)
+(142,147,2)
+(60,147,2)
+(53,29,2)
+(39,173,2)
+(111,173,2)
+(165,147,2)
+(105,151,2)
+(98,142,2)
+(126,147,2)
+(136,45,2)
+(13,8,2)
+(36,173,2)
+(43,142,2)
+(12,95,2)
+(66,53,2)
+(114,142,2)
+(31,19,2)
+(17,45,2)
+(74,173,2)
+(75,19,2)
+(33,95,2)
+(144,110,2)
+(143,173,2)
+(80,142,2)
+(150,147,2)
+(86,145,2)
+(138,173,2)
+(37,121,2)
+(58,171,2)
+(59,173,2)
+(8,147,2)
+(171,181,2)
+(118,160,2)
+(64,171,2)
+(8,12,2)
+(44,147,2)
+(124,147,2)
+(143,147,2)
+(24,147,2)
+(141,147,2)
+(19,99,2)
+(61,142,2)
+(18,147,2)
+(145,37,2)
+(26,95,2)
+(83,147,2)
+(53,147,2)
+(140,40,2)
+(27,127,2)
+(130,147,2)
+(130,173,2)
+(49,113,2)
+(83,173,2)
+(37,15,2)
+(121,140,2)
+(28,1,2)
+(157,142,2)
+(54,173,2)
+(74,147,2)
+(30,34,2)
+(116,45,2)
+(71,147,2)
+(36,67,2)
+(104,173,2)
+(160,151,2)
+(64,67,2)
+(181,75,2)
+(103,95,2)
+(50,119,2)
+(111,147,2)
+(133,147,2)
+(53,98,2)
+(12,144,2)
+(76,142,2)
+(13,171,2)
+(14,80,2)
+(66,93,2)
+(0,14,2)
+(118,40,2)
+(72,110,2)
+(147,20,2)
+(63,173,2)
+(0,142,2)
+(69,140,2)
+(140,15,2)
+(18,173,2)
+(68,147,2)
+(4,147,2)
+(36,147,2)
+(66,39,2)
+(72,147,2)
+(20,40,2)
+(89,145,2)
+(1,173,2)
+(125,181,2)
+(170,95,2)
+(121,69,2)
+(96,160,2)
+(155,173,2)
+(125,171,2)
+(181,147,2)
+(30,142,2)
+(131,173,2)
+(163,142,2)
+(33,159,2)
+(39,33,2)
+(75,33,2)
+(60,173,2)
+(145,148,2)
+(142,29,2)
+(124,67,2)
+(166,173,2)
+(92,127,2)
+(41,142,2)
+(9,147,2)
+(108,173,2)
+(109,142,2)
+(65,142,2)
+(44,173,2)
+(15,20,2)
+(3,95,2)
+(174,142,2)
+(1,147,2)
+(121,49,2)
+(59,147,2)
+(14,142,2)
+(24,173,2)
+(132,173,2)
+(164,173,2)
+(115,173,2)
+(64,33,2)
+(72,173,2)
+(141,173,2)
+(104,147,2)
+(144,95,2)
+(166,147,2)
+(56,173,2)
+(93,50,2)
+(63,147,2)
+(64,12,2)
+(150,173,2)
+(90,95,2)
+(154,171,2)
+(87,147,2)
+(9,173,2)
+(91,147,2)
+(91,173,2)
+(28,173,2)
+(168,8,2)
+(42,140,2)
+(16,147,2)
+(8,33,2)
+(92,139,2)
+(53,173,2)
+(84,142,2)
+(126,173,2)
+(159,95,2)
+(113,140,2)
+(173,147,2)
+(133,173,2)
+(182,142,2)
+(11,140,2)
+(152,173,2)
+(144,50,2)
+(1,32,2)
+(94,125,2)
+(149,142,2)
+(114,31,2)
+(94,64,2)
+(164,147,2)
+(78,173,2)
+(66,116,2)
+(178,45,2)
+(56,147,2)
+(105,118,2)
+(78,147,2)
+(35,142,2)
+(81,72,2)
+(185,171,2)
+(71,173,2)
+(173,8,2)
+(75,12,2)
+(153,127,2)
+(47,140,2)
+(131,147,2)
+(54,147,2)
+(29,147,2)
+(37,140,2)
+(4,173,2)
+(173,13,2)
+(120,173,2)
+(111,150,2)
+(45,67,2)
+(127,147,2)
+(113,110,2)
+(85,147,2)
+(22,147,2)
+(62,147,2)
+(14,29,2)
+(184,45,2)
+(171,8,2)
+(146,145,2)
+(122,142,2)
+(81,147,2)
+(2,142,2)
+(159,50,2)
+(29,173,2)
+(82,15,2)
+(132,147,2)
+(32,105,2)
+(31,142,2)
+(142,173,2)
+(95,147,2)
+(13,94,2)
+(98,30,2)
+(101,145,2)
+(177,15,2)
+(8,124,2)
+(105,135,2)
+(57,142,2)
+(38,142,2)
+(81,173,2)
+(20,45,2)
+(137,142,2)
+(66,89,2)
+(34,142,2)
+(108,147,2)
+(120,147,2)
+(1,21,2)
+(85,173,2)
+(183,140,2)
+(127,173,2)
+(28,147,2)
+(155,147,2)
+(94,171,2)
+(148,134,2)
+(6,160,2)
+(73,151,2)
+-----------------------------------
+(0,VM_BUG_ON(addr != -ENOMEM)
+(1,do_align ? (PAGE_MASK & (SHMLBA - 1)
+(2,info.flags)
+(3,addr)
+(4,info.high_limit)
+(5,addr0)
+(6,MAP_SHARED)
+(7,)
+(8,TASK_SIZE - len >= addr)
+(9,info.flags)
+(10,if (TASK_SIZE - len >= addr &&\n\\n\\t\\t\\t\\t(!vma || addr + len <= vm_start_gap(vma)
+(11,1)
+(12,addr = COLOUR_ALIGN(addr, pgoff)
+(13,!vma || addr + len <= vm_start_gap(vma)
+(14,addr != -ENOMEM)
+(15,aliasing)
+(16,vma)
+(17,flags)
+(18,info)
+(19,*mm = current->mm)
+(20,flags & MAP_FIXED)
+(21,do_align = 0)
+(22,addr)
+(23,addr)
+(24,len)
+(25,if (aliasing)
+(26,addr)
+(27,1)
+(28,info.align_mask = do_align ? (PAGE_MASK & (SHMLBA - 1)
+(29,addr = vm_unmapped_area(&info)
+(30,vm_unmapped_area(&info)
+(31,mm->mmap_base)
+(32,do_align = filp || (flags & MAP_SHARED)
+(33,addr = PAGE_ALIGN(addr)
+(34,&info)
+(35,low_limit)
+(36,info.length = len)
+(37,flags & MAP_SHARED &&\n\\n\\t\\t    (addr - (pgoff << PAGE_SHIFT)
+(38,info)
+(39,return addr;)
+(40,const unsigned long flags)
+(41,0)
+(42,addr)
+(43,info)
+(44,PAGE_SHIFT)
+(45,len > TASK_SIZE)
+(46,aliasing)
+(47,pgoff)
+(48,vma)
+(49,addr - (pgoff << PAGE_SHIFT)
+(50,addr = addr0)
+(51,info)
+(52,if (addr & ~PAGE_MASK)
+(53,return addr;)
+(54,info)
+(55,addr)
+(56,info.flags = VM_UNMAPPED_AREA_TOPDOWN)
+(57,info.high_limit = TASK_SIZE)
+(58,len)
+(59,align_mask)
+(60,info.low_limit)
+(61,info.high_limit)
+(62,TASK_SIZE)
+(63,VM_UNMAPPED_AREA_TOPDOWN)
+(64,addr + len)
+(65,info.low_limit)
+(66,RET)
+(67,const unsigned long len)
+(68,mm)
+(69,SHMLBA - 1)
+(70,0)
+(71,info)
+(72,pgoff << PAGE_SHIFT)
+(73,do_align)
+(74,info.length)
+(75,find_vma(mm, addr)
+(76,info)
+(77,mm)
+(78,info.high_limit = mm->mmap_base)
+(79,mm)
+(80,-ENOMEM)
+(81,info.align_offset = pgoff << PAGE_SHIFT)
+(82,flags)
+(83,info)
+(84,ENOMEM)
+(85,info.low_limit = FIRST_USER_ADDRESS)
+(86,addr)
+(87,mm->mmap_base)
+(88,SHMLBA)
+(89,return -EINVAL;)
+(90,pgoff)
+(91,info.align_offset)
+(92,PAGE_MASK & (SHMLBA - 1)
+(93,return addr;)
+(94,addr + len <= vm_start_gap(vma)
+(95,do_align)
+(96,flags)
+(97,if (addr)
+(98,addr = vm_unmapped_area(&info)
+(99,current->mm)
+(100,addr)
+(101,EINVAL)
+(102,len)
+(103,addr)
+(104,flags)
+(105,filp || (flags & MAP_SHARED)
+(106,TASK_SIZE)
+(107,do_align)
+(108,info)
+(109,addr)
+(110,const unsigned long pgoff)
+(111,vm_unmapped_area(&info)
+(112,mm)
+(113,pgoff << PAGE_SHIFT)
+(114,info.low_limit = mm->mmap_base)
+(115,info.align_mask)
+(116,return -ENOMEM;)
+(117,)
+(118,flags & MAP_SHARED)
+(119,const unsigned long addr0)
+(120,info)
+(121,(addr - (pgoff << PAGE_SHIFT)
+(122,TASK_SIZE)
+(123,if (len > TASK_SIZE)
+(124,TASK_SIZE - len)
+(125,vm_start_gap(vma)
+(126,align_offset)
+(127,do_align)
+(128,addr)
+(129,addr)
+(130,FIRST_USER_ADDRESS)
+(131,addr)
+(132,addr)
+(133,mm)
+(134,cache_is_vipt_aliasing()
+(135,struct file *filp)
+(136,-ENOMEM)
+(137,info)
+(138,low_limit)
+(139,SHMLBA - 1)
+(140,flags & MAP_SHARED)
+(141,mmap_base)
+(142,addr & ~PAGE_MASK)
+(143,pgoff)
+(144,COLOUR_ALIGN(addr, pgoff)
+(145,aliasing && flags & MAP_SHARED &&\n\\n\\t\\t    (addr - (pgoff << PAGE_SHIFT)
+(146,-EINVAL)
+(147,addr)
+(148,aliasing = cache_is_vipt_aliasing()
+(149,flags)
+(150,&info)
+(151,aliasing)
+(152,info)
+(153,SHMLBA)
+(154,addr)
+(155,high_limit)
+(156,current)
+(157,mm)
+(158,do_align)
+(159,PAGE_ALIGN(addr)
+(160,filp)
+(161,aliasing)
+(162,if (flags & MAP_FIXED)
+(163,mmap_base)
+(164,~PAGE_MASK)
+(165,addr)
+(166,length)
+(167,)
+(168,vma)
+(169,if (do_align)
+(170,addr)
+(171,!vma)
+(172,PAGE_MASK)
+(173,TASK_SIZE - len >= addr &&\n\\n\\t\\t\\t\\t(!vma || addr + len <= vm_start_gap(vma)
+(174,high_limit)
+(175,0)
+(176,)
+(177,MAP_SHARED)
+(178,MAP_FIXED)
+(179,len)
+(180,if (aliasing && flags & MAP_SHARED &&\n\\n\\t\\t    (addr - (pgoff << PAGE_SHIFT)
+(181,vma = find_vma(mm, addr)
+(182,info.flags = 0)
+(183,PAGE_SHIFT)
+(184,ENOMEM)
+(185,vma)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

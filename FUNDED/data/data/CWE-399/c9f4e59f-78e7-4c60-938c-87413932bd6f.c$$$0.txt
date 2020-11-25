@@ -1,0 +1,815 @@
+-----label-----
+0
+-----code-----
+static void *
+sba_alloc_coherent(struct device *dev, size_t size, dma_addr_t *dma_handle,
+		   gfp_t flags, struct dma_attrs *attrs)
+{
+	struct ioc *ioc;
+	void *addr;
+
+	ioc = GET_IOC(dev);
+	ASSERT(ioc);
+
+#ifdef CONFIG_NUMA
+	{
+		struct page *page;
+		page = alloc_pages_exact_node(ioc->node == MAX_NUMNODES ?
+		                        numa_node_id() : ioc->node, flags,
+		                        get_order(size));
+
+		if (unlikely(!page))
+			return NULL;
+
+		addr = page_address(page);
+	}
+#else
+	addr = (void *) __get_free_pages(flags, get_order(size));
+#endif
+	if (unlikely(!addr))
+		return NULL;
+
+	memset(addr, 0, size);
+	*dma_handle = virt_to_phys(addr);
+
+#ifdef ALLOW_IOV_BYPASS
+	ASSERT(dev->coherent_dma_mask);
+	/*
+ 	** Check if the PCI device can DMA to ptr... if so, just return ptr
+ 	*/
+	if (likely((*dma_handle & ~dev->coherent_dma_mask) == 0)) {
+		DBG_BYPASS("sba_alloc_coherent() bypass mask/addr: 0x%lx/0x%lx\n",
+		           dev->coherent_dma_mask, *dma_handle);
+
+		return addr;
+	}
+#endif
+
+	/*
+	 * If device can't bypass or bypass is disabled, pass the 32bit fake
+	 * device to map single to get an iova mapping.
+	 */
+	*dma_handle = sba_map_single_attrs(&ioc->sac_only_dev->dev, addr,
+					   size, 0, NULL);
+
+	return addr;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+3,8
+3,9
+3,10
+6,7
+6,8
+7,8
+9,10
+9,11
+12,13
+12,14
+13,14
+15,16
+17,18
+17,19
+18,19
+20,21
+20,22
+23,24
+23,25
+24,25
+26,27
+28,29
+28,30
+29,30
+31,32
+31,33
+34,35
+34,36
+34,37
+34,38
+34,39
+34,40
+34,41
+34,42
+34,43
+34,44
+35,36
+36,37
+36,38
+37,38
+39,40
+39,41
+42,43
+43,44
+43,45
+45,46
+45,47
+48,49
+49,50
+49,51
+50,51
+52,53
+52,54
+53,54
+55,56
+57,58
+58,59
+58,60
+59,60
+61,62
+63,64
+64,65
+64,66
+65,66
+67,68
+67,69
+68,69
+68,70
+70,71
+72,73
+72,74
+72,75
+73,74
+75,76
+77,78
+77,79
+78,79
+80,81
+82,83
+82,84
+83,84
+83,85
+84,85
+86,87
+87,88
+89,90
+90,91
+92,93
+93,94
+93,95
+93,96
+93,97
+94,95
+96,97
+99,100
+101,102
+102,103
+102,104
+103,104
+104,105
+106,107
+106,108
+107,108
+109,110
+111,112
+112,113
+112,114
+113,114
+114,115
+116,117
+116,118
+116,119
+116,120
+116,121
+116,122
+117,118
+119,120
+120,121
+120,122
+121,122
+121,123
+122,123
+126,127
+128,129
+131,132
+133,134
+134,135
+-----nextToken-----
+2,4,5,8,10,11,14,16,19,21,22,25,27,30,32,33,38,40,41,44,46,47,51,54,56,60,62,66,69,71,74,76,79,81,85,88,91,95,97,98,100,105,108,110,115,118,123,124,125,127,129,130,132,135
+-----computeFrom-----
+49,50
+49,51
+64,65
+64,66
+102,103
+102,104
+112,113
+112,114
+-----guardedBy-----
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ReturnStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;UnaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;UnaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+static void *sba_alloc_coherent(struct device *dev, size_t size, dma_addr_t *dma_handle,		   gfp_t flags, struct dma_attrs *attrs){	struct ioc *ioc;	void *addr;	ioc = GET_IOC(dev);	ASSERT(ioc);#ifdef CONFIG_NUMA	{		struct page *page;		page = alloc_pages_exact_node(ioc->node == MAX_NUMNODES ?		                        numa_node_id() : ioc->node, flags,		                        get_order(size));		if (unlikely(!page))			return NULL;		addr = page_address(page);	}#else	addr = (void *) __get_free_pages(flags, get_order(size));#endif	if (unlikely(!addr))		return NULL;	memset(addr, 0, size);	*dma_handle = virt_to_phys(addr);#ifdef ALLOW_IOV_BYPASS	ASSERT(dev->coherent_dma_mask);	/* 	** Check if the PCI device can DMA to ptr... if so, just return ptr 	*/	if (likely((*dma_handle & ~dev->coherent_dma_mask) == 0)) {		DBG_BYPASS("sba_alloc_coherent() bypass mask/addr: 0x%lx/0x%lx\n",		           dev->coherent_dma_mask, *dma_handle);		return addr;	}#endif	/*	 * If device can't bypass or bypass is disabled, pass the 32bit fake	 * device to map single to get an iova mapping.	 */	*dma_handle = sba_map_single_attrs(&ioc->sac_only_dev->dev, addr,					   size, 0, NULL);	return addr;}
+static void
+*sba_alloc_coherent(struct device *dev, size_t size, dma_addr_t *dma_handle,		   gfp_t flags, struct dma_attrs *attrs)
+*
+sba_alloc_coherent
+struct device *dev
+struct device
+device
+*dev
+*
+dev
+size_t size
+size_t
+size_t
+size
+size
+dma_addr_t *dma_handle
+dma_addr_t
+dma_addr_t
+*dma_handle
+*
+dma_handle
+gfp_t flags
+gfp_t
+gfp_t
+flags
+flags
+struct dma_attrs *attrs
+struct dma_attrs
+dma_attrs
+*attrs
+*
+attrs
+{	struct ioc *ioc;	void *addr;	ioc = GET_IOC(dev);	ASSERT(ioc);#ifdef CONFIG_NUMA	{		struct page *page;		page = alloc_pages_exact_node(ioc->node == MAX_NUMNODES ?		                        numa_node_id() : ioc->node, flags,		                        get_order(size));		if (unlikely(!page))			return NULL;		addr = page_address(page);	}#else	addr = (void *) __get_free_pages(flags, get_order(size));#endif	if (unlikely(!addr))		return NULL;	memset(addr, 0, size);	*dma_handle = virt_to_phys(addr);#ifdef ALLOW_IOV_BYPASS	ASSERT(dev->coherent_dma_mask);	/* 	** Check if the PCI device can DMA to ptr... if so, just return ptr 	*/	if (likely((*dma_handle & ~dev->coherent_dma_mask) == 0)) {		DBG_BYPASS("sba_alloc_coherent() bypass mask/addr: 0x%lx/0x%lx\n",		           dev->coherent_dma_mask, *dma_handle);		return addr;	}#endif	/*	 * If device can't bypass or bypass is disabled, pass the 32bit fake	 * device to map single to get an iova mapping.	 */	*dma_handle = sba_map_single_attrs(&ioc->sac_only_dev->dev, addr,					   size, 0, NULL);	return addr;}
+struct ioc *ioc;
+struct ioc *ioc;
+struct ioc
+ioc
+*ioc
+*
+ioc
+void *addr;
+void *addr;
+void
+*addr
+*
+addr
+ioc = GET_IOC(dev);
+ioc = GET_IOC(dev)
+ioc
+ioc
+GET_IOC(dev)
+GET_IOC
+GET_IOC
+dev
+dev
+ASSERT(ioc);
+ASSERT(ioc)
+ASSERT
+ASSERT
+ioc
+ioc
+addr = (void *) __get_free_pages(flags, get_order(size));
+addr = (void *) __get_free_pages(flags, get_order(size))
+addr
+addr
+(void *) __get_free_pages(flags, get_order(size))
+void *
+void
+*
+*
+__get_free_pages(flags, get_order(size))
+__get_free_pages
+__get_free_pages
+flags
+flags
+get_order(size)
+get_order
+get_order
+size
+size
+if (unlikely(!addr))		return NULL;
+unlikely(!addr)
+unlikely
+unlikely
+!addr
+addr
+addr
+return NULL;
+NULL
+NULL
+memset(addr, 0, size);
+memset(addr, 0, size)
+memset
+memset
+addr
+addr
+0
+size
+size
+*dma_handle = virt_to_phys(addr);
+*dma_handle = virt_to_phys(addr)
+*dma_handle
+dma_handle
+dma_handle
+virt_to_phys(addr)
+virt_to_phys
+virt_to_phys
+addr
+addr
+*dma_handle = sba_map_single_attrs(&ioc->sac_only_dev->dev, addr,					   size, 0, NULL);
+*dma_handle = sba_map_single_attrs(&ioc->sac_only_dev->dev, addr,					   size, 0, NULL)
+*dma_handle
+dma_handle
+dma_handle
+sba_map_single_attrs(&ioc->sac_only_dev->dev, addr,					   size, 0, NULL)
+sba_map_single_attrs
+sba_map_single_attrs
+&ioc->sac_only_dev->dev
+ioc->sac_only_dev->dev
+ioc->sac_only_dev
+ioc
+ioc
+sac_only_dev
+dev
+addr
+addr
+size
+size
+0
+NULL
+NULL
+return addr;
+addr
+addr
+-----joern-----
+(85,20,0)
+(42,3,0)
+(66,75,0)
+(35,25,0)
+(32,3,0)
+(13,3,0)
+(39,89,0)
+(7,57,0)
+(94,30,0)
+(59,63,0)
+(16,41,0)
+(48,43,0)
+(84,58,0)
+(68,16,0)
+(79,67,0)
+(20,85,0)
+(62,96,0)
+(86,5,0)
+(91,50,0)
+(21,43,0)
+(24,44,0)
+(39,28,0)
+(6,3,0)
+(13,57,0)
+(74,18,0)
+(57,41,0)
+(47,66,0)
+(66,3,0)
+(18,74,0)
+(90,3,0)
+(1,51,0)
+(92,96,0)
+(10,66,0)
+(34,20,0)
+(64,37,0)
+(57,13,0)
+(39,52,0)
+(47,91,0)
+(25,3,0)
+(23,86,0)
+(25,5,0)
+(83,44,0)
+(75,37,0)
+(96,92,0)
+(52,45,0)
+(61,6,0)
+(80,89,0)
+(59,92,0)
+(78,41,0)
+(58,65,0)
+(33,37,0)
+(89,39,0)
+(16,37,0)
+(54,5,0)
+(92,67,0)
+(67,92,0)
+(58,91,0)
+(5,3,0)
+(17,74,0)
+(88,64,0)
+(39,78,0)
+(43,89,0)
+(51,5,0)
+(53,37,0)
+(69,16,0)
+(4,59,0)
+(57,37,0)
+(60,96,0)
+(27,5,0)
+(29,57,0)
+(31,95,0)
+(38,16,0)
+(52,51,0)
+(19,86,0)
+(5,54,0)
+(12,39,0)
+(63,59,0)
+(88,95,0)
+(88,77,0)
+(72,91,0)
+(55,3,0)
+(82,78,0)
+(53,89,0)
+(51,52,0)
+(70,6,0)
+(91,47,0)
+(54,65,0)
+(76,53,0)
+(9,51,0)
+(37,53,0)
+(85,57,0)
+(40,56,0)
+(86,45,0)
+(49,45,0)
+(14,52,0)
+(44,24,0)
+(78,39,0)
+(0,57,0)
+(10,30,0)
+(87,3,0)
+(89,6,0)
+(87,37,0)
+(15,75,0)
+(2,94,0)
+(22,64,0)
+(57,85,0)
+(75,66,0)
+(88,87,0)
+(56,20,0)
+(92,59,0)
+(93,57,0)
+(16,3,0)
+(81,54,0)
+(36,58,0)
+(56,5,0)
+(26,77,0)
+(52,14,0)
+(52,39,0)
+(67,66,0)
+(44,37,0)
+(18,3,0)
+(94,13,0)
+(45,52,0)
+(45,86,0)
+(67,30,0)
+(20,56,0)
+(11,10,0)
+(8,47,0)
+(46,87,0)
+(47,30,0)
+(43,48,0)
+(91,58,0)
+(74,65,0)
+(71,74,0)
+(64,50,0)
+(73,56,0)
+(37,6,0)
+(14,45,1)
+(64,37,1)
+(20,56,1)
+(16,69,1)
+(29,0,1)
+(0,93,1)
+(18,74,1)
+(48,43,1)
+(53,76,1)
+(91,47,1)
+(78,82,1)
+(59,92,1)
+(35,5,1)
+(13,57,1)
+(88,95,1)
+(67,30,1)
+(71,66,1)
+(69,68,1)
+(39,28,1)
+(15,10,1)
+(87,46,1)
+(4,92,1)
+(10,11,1)
+(53,89,1)
+(72,63,1)
+(57,85,1)
+(87,37,1)
+(23,19,1)
+(47,8,1)
+(31,24,1)
+(21,89,1)
+(92,67,1)
+(17,71,1)
+(36,84,1)
+(79,18,1)
+(44,83,1)
+(74,17,1)
+(95,31,1)
+(76,33,1)
+(60,67,1)
+(52,14,1)
+(24,44,1)
+(94,30,1)
+(49,86,1)
+(22,91,1)
+(85,20,1)
+(38,24,1)
+(20,34,1)
+(56,5,1)
+(73,40,1)
+(59,4,1)
+(12,52,1)
+(44,37,1)
+(33,48,1)
+(46,13,1)
+(84,72,1)
+(75,15,1)
+(25,5,1)
+(89,39,1)
+(92,96,1)
+(62,60,1)
+(7,85,1)
+(16,37,1)
+(8,58,1)
+(37,53,1)
+(75,37,1)
+(57,37,1)
+(86,23,1)
+(94,2,1)
+(43,21,1)
+(2,63,1)
+(88,87,1)
+(9,1,1)
+(68,38,1)
+(39,78,1)
+(57,41,1)
+(58,36,1)
+(26,48,1)
+(47,66,1)
+(63,59,1)
+(5,54,1)
+(47,30,1)
+(25,35,1)
+(83,37,1)
+(81,27,1)
+(67,79,1)
+(91,58,1)
+(67,66,1)
+(16,41,1)
+(51,9,1)
+(45,49,1)
+(78,41,1)
+(40,94,1)
+(57,29,1)
+(74,65,1)
+(51,5,1)
+(64,22,1)
+(43,89,1)
+(52,51,1)
+(88,64,1)
+(54,81,1)
+(80,25,1)
+(45,86,1)
+(66,75,1)
+(86,5,1)
+(96,62,1)
+(58,65,1)
+(52,45,1)
+(77,26,1)
+(54,65,1)
+(39,52,1)
+(93,7,1)
+(88,77,1)
+(11,16,1)
+(56,73,1)
+(82,12,1)
+(1,45,1)
+(10,30,1)
+(19,80,1)
+(34,56,1)
+(88,64,2)
+(71,24,2)
+(62,24,2)
+(52,45,2)
+(13,57,2)
+(67,30,2)
+(10,30,2)
+(77,48,2)
+(87,37,2)
+(44,48,2)
+(9,45,2)
+(69,24,2)
+(66,75,2)
+(11,24,2)
+(86,5,2)
+(26,48,2)
+(56,5,2)
+(74,24,2)
+(29,63,2)
+(96,24,2)
+(67,66,2)
+(58,65,2)
+(2,63,2)
+(59,24,2)
+(13,63,2)
+(95,24,2)
+(84,63,2)
+(18,24,2)
+(16,24,2)
+(1,45,2)
+(38,24,2)
+(46,63,2)
+(88,95,2)
+(52,14,2)
+(10,24,2)
+(53,89,2)
+(57,85,2)
+(31,24,2)
+(52,51,2)
+(59,92,2)
+(64,37,2)
+(76,48,2)
+(72,63,2)
+(88,87,2)
+(85,63,2)
+(40,63,2)
+(83,48,2)
+(91,47,2)
+(56,63,2)
+(37,53,2)
+(78,41,2)
+(91,58,2)
+(75,37,2)
+(14,45,2)
+(68,24,2)
+(91,63,2)
+(53,48,2)
+(44,37,2)
+(57,41,2)
+(34,63,2)
+(17,24,2)
+(39,28,2)
+(94,63,2)
+(73,63,2)
+(0,63,2)
+(94,30,2)
+(67,24,2)
+(75,24,2)
+(47,66,2)
+(92,67,2)
+(79,24,2)
+(57,37,2)
+(60,24,2)
+(36,63,2)
+(7,63,2)
+(5,54,2)
+(47,30,2)
+(63,59,2)
+(20,63,2)
+(24,48,2)
+(33,48,2)
+(74,65,2)
+(20,56,2)
+(22,63,2)
+(16,41,2)
+(92,24,2)
+(92,96,2)
+(89,39,2)
+(47,63,2)
+(15,24,2)
+(8,63,2)
+(37,48,2)
+(18,74,2)
+(66,24,2)
+(85,20,2)
+(24,44,2)
+(25,5,2)
+(64,63,2)
+(4,24,2)
+(93,63,2)
+(58,63,2)
+(16,37,2)
+(39,78,2)
+(43,89,2)
+(51,5,2)
+(54,65,2)
+(39,52,2)
+(57,63,2)
+(88,77,2)
+(87,63,2)
+(63,24,2)
+(48,43,2)
+(51,45,2)
+(45,86,2)
+-----------------------------------
+(0,0)
+(1,ioc)
+(2,dma_handle)
+(3,)
+(4,0)
+(5,ioc = GET_IOC(dev)
+(6,)
+(7,addr)
+(8,dma_handle)
+(9,node)
+(10,*dma_handle)
+(11,dma_handle)
+(12,flags)
+(13,*dma_handle = sba_map_single_attrs(&ioc->sac_only_dev->dev, addr,\n\\n\\t\\t\\t\\t\\t   size, 0, NULL)
+(14,numa_node_id()
+(15,addr)
+(16,memset(addr, 0, size)
+(17,coherent_dma_mask)
+(18,ASSERT(dev->coherent_dma_mask)
+(19,ioc)
+(20,ioc->sac_only_dev->dev)
+(21,page)
+(22,addr)
+(23,node)
+(24,unlikely(!addr)
+(25,ASSERT(ioc)
+(26,NULL)
+(27,ioc)
+(28,gfp_t flags)
+(29,NULL)
+(30,dma_addr_t *dma_handle)
+(31,NULL)
+(32,addr)
+(33,addr)
+(34,dev)
+(35,ioc)
+(36,coherent_dma_mask)
+(37,addr = page_address(page)
+(38,addr)
+(39,alloc_pages_exact_node(ioc->node == MAX_NUMNODES ?\n\\n\\t\\t                        numa_node_id()
+(40,ioc)
+(41,size_t size)
+(42,ioc)
+(43,!page)
+(44,!addr)
+(45,ioc->node == MAX_NUMNODES)
+(46,addr)
+(47,*dma_handle)
+(48,unlikely(!page)
+(49,MAX_NUMNODES)
+(50,)
+(51,ioc->node)
+(52,ioc->node == MAX_NUMNODES ?\n\\n\\t\\t                        numa_node_id()
+(53,page_address(page)
+(54,GET_IOC(dev)
+(55,if (likely((*dma_handle & ~dev->coherent_dma_mask)
+(56,ioc->sac_only_dev)
+(57,sba_map_single_attrs(&ioc->sac_only_dev->dev, addr,\n\\n\\t\\t\\t\\t\\t   size, 0, NULL)
+(58,dev->coherent_dma_mask)
+(59,(*dma_handle & ~dev->coherent_dma_mask)
+(60,~dev)
+(61,page)
+(62,coherent_dma_mask)
+(63,likely((*dma_handle & ~dev->coherent_dma_mask)
+(64,return addr;)
+(65,struct device *dev)
+(66,*dma_handle = virt_to_phys(addr)
+(67,*dma_handle)
+(68,0)
+(69,size)
+(70,if (unlikely(!page)
+(71,dev)
+(72,"sba_alloc_coherent()
+(73,sac_only_dev)
+(74,dev->coherent_dma_mask)
+(75,virt_to_phys(addr)
+(76,page)
+(77,return NULL;)
+(78,get_order(size)
+(79,dma_handle)
+(80,page)
+(81,dev)
+(82,size)
+(83,addr)
+(84,dev)
+(85,&ioc->sac_only_dev->dev)
+(86,ioc->node)
+(87,return addr;)
+(88,RET)
+(89,page = alloc_pages_exact_node(ioc->node == MAX_NUMNODES ?\n\\n\\t\\t                        numa_node_id()
+(90,if (unlikely(!addr)
+(91,DBG_BYPASS("sba_alloc_coherent()
+(92,*dma_handle & ~dev->coherent_dma_mask)
+(93,size)
+(94,*dma_handle)
+(95,return NULL;)
+(96,~dev->coherent_dma_mask)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

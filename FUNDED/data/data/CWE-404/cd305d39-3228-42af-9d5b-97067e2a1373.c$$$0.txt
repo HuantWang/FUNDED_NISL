@@ -1,0 +1,1185 @@
+-----label-----
+0
+-----code-----
+static irqreturn_t iomd_dma_handle(int irq, void *dev_id)
+{
+	struct iomd_dma *idma = dev_id;
+	unsigned long base = idma->base;
+
+	do {
+		unsigned int status;
+
+		status = iomd_readb(base + ST);
+		if (!(status & DMA_ST_INT))
+			return IRQ_HANDLED;
+
+		if ((idma->state ^ status) & DMA_ST_AB)
+			iomd_get_next_sg(&idma->cur_sg, idma);
+
+		switch (status & (DMA_ST_OFL | DMA_ST_AB)) {
+		case DMA_ST_OFL:			/* OIA */
+		case DMA_ST_AB:				/* .IB */
+			iomd_writel(idma->cur_sg.dma_address, base + CURA);
+			iomd_writel(idma->cur_sg.length, base + ENDA);
+			idma->state = DMA_ST_AB;
+			break;
+
+		case DMA_ST_OFL | DMA_ST_AB:		/* OIB */
+		case 0:					/* .IA */
+			iomd_writel(idma->cur_sg.dma_address, base + CURB);
+			iomd_writel(idma->cur_sg.length, base + ENDB);
+			idma->state = 0;
+			break;
+		}
+
+		if (status & DMA_ST_OFL &&
+		    idma->cur_sg.length == (DMA_END_S|DMA_END_L))
+			break;
+	} while (1);
+
+	idma->state = ~DMA_ST_AB;
+	disable_irq_nosync(irq);
+
+	return IRQ_HANDLED;
+}
+-----children-----
+1,2
+1,3
+1,4
+2,3
+4,5
+4,6
+4,7
+6,7
+6,8
+8,9
+10,11
+10,12
+12,13
+12,14
+15,16
+15,17
+15,18
+15,19
+15,20
+15,21
+16,17
+17,18
+17,19
+18,19
+20,21
+20,22
+20,23
+23,24
+24,25
+26,27
+27,28
+27,29
+29,30
+29,31
+31,32
+32,33
+32,34
+33,34
+36,37
+36,38
+37,38
+37,39
+37,40
+37,41
+37,42
+37,43
+38,39
+39,40
+39,41
+41,42
+43,44
+44,45
+44,46
+45,46
+47,48
+47,49
+48,49
+50,51
+50,52
+51,52
+53,54
+55,56
+55,57
+56,57
+57,58
+58,59
+58,60
+59,60
+61,62
+63,64
+64,65
+66,67
+66,68
+67,68
+67,69
+68,69
+69,70
+69,71
+70,71
+70,72
+71,72
+74,75
+76,77
+78,79
+79,80
+79,81
+79,82
+80,81
+82,83
+83,84
+83,85
+84,85
+87,88
+89,90
+89,91
+90,91
+90,92
+91,92
+93,94
+94,95
+94,96
+95,96
+97,98
+99,100
+99,101
+99,102
+99,103
+99,104
+99,105
+99,106
+99,107
+99,108
+99,109
+99,110
+99,111
+100,101
+101,102
+103,104
+104,105
+106,107
+107,108
+107,109
+107,110
+108,109
+110,111
+110,112
+111,112
+111,113
+112,113
+116,117
+116,118
+117,118
+119,120
+121,122
+122,123
+122,124
+122,125
+123,124
+125,126
+125,127
+126,127
+126,128
+127,128
+131,132
+131,133
+132,133
+134,135
+136,137
+137,138
+137,139
+138,139
+138,140
+139,140
+142,143
+145,146
+146,147
+146,148
+147,148
+149,150
+151,152
+153,154
+154,155
+154,156
+154,157
+155,156
+157,158
+157,159
+158,159
+158,160
+159,160
+163,164
+163,165
+164,165
+166,167
+168,169
+169,170
+169,171
+169,172
+170,171
+172,173
+172,174
+173,174
+173,175
+174,175
+178,179
+178,180
+179,180
+181,182
+183,184
+184,185
+184,186
+185,186
+185,187
+186,187
+191,192
+191,193
+192,193
+192,194
+193,194
+193,195
+194,195
+196,197
+198,199
+198,200
+199,200
+199,201
+200,201
+200,202
+201,202
+205,206
+206,207
+206,208
+207,208
+209,210
+213,214
+214,215
+214,216
+215,216
+215,217
+216,217
+219,220
+220,221
+222,223
+223,224
+223,225
+224,225
+226,227
+228,229
+229,230
+-----nextToken-----
+3,5,7,9,11,13,14,19,21,22,25,28,30,34,35,40,42,46,49,52,54,60,62,65,72,73,75,77,81,85,86,88,92,96,98,102,105,109,113,114,115,118,120,124,128,129,130,133,135,140,141,143,144,148,150,152,156,160,161,162,165,167,171,175,176,177,180,182,187,188,189,190,195,197,202,203,204,208,210,211,212,217,218,221,225,227,230
+-----computeFrom-----
+44,45
+44,46
+50,51
+50,52
+58,59
+58,60
+67,68
+67,69
+69,70
+69,71
+90,91
+90,92
+94,95
+94,96
+116,117
+116,118
+131,132
+131,133
+137,138
+137,139
+146,147
+146,148
+163,164
+163,165
+178,179
+178,180
+184,185
+184,186
+192,193
+192,194
+193,194
+193,195
+198,199
+198,200
+206,207
+206,208
+214,215
+214,216
+-----guardedBy-----
+72,88
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;NamedTypeSpecifier;Name;FunctionDeclarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;FieldReference;IdExpression;Name;Name;DoStatement;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;SwitchStatement;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;CaseStatement;IdExpression;Name;CaseStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;BreakStatement;CaseStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CaseStatement;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;BreakStatement;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;BreakStatement;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+static irqreturn_t iomd_dma_handle(int irq, void *dev_id){	struct iomd_dma *idma = dev_id;	unsigned long base = idma->base;	do {		unsigned int status;		status = iomd_readb(base + ST);		if (!(status & DMA_ST_INT))			return IRQ_HANDLED;		if ((idma->state ^ status) & DMA_ST_AB)			iomd_get_next_sg(&idma->cur_sg, idma);		switch (status & (DMA_ST_OFL | DMA_ST_AB)) {		case DMA_ST_OFL:			/* OIA */		case DMA_ST_AB:				/* .IB */			iomd_writel(idma->cur_sg.dma_address, base + CURA);			iomd_writel(idma->cur_sg.length, base + ENDA);			idma->state = DMA_ST_AB;			break;		case DMA_ST_OFL | DMA_ST_AB:		/* OIB */		case 0:					/* .IA */			iomd_writel(idma->cur_sg.dma_address, base + CURB);			iomd_writel(idma->cur_sg.length, base + ENDB);			idma->state = 0;			break;		}		if (status & DMA_ST_OFL &&		    idma->cur_sg.length == (DMA_END_S|DMA_END_L))			break;	} while (1);	idma->state = ~DMA_ST_AB;	disable_irq_nosync(irq);	return IRQ_HANDLED;}
+static irqreturn_t
+irqreturn_t
+iomd_dma_handle(int irq, void *dev_id)
+iomd_dma_handle
+int irq
+int
+irq
+irq
+void *dev_id
+void
+*dev_id
+*
+dev_id
+{	struct iomd_dma *idma = dev_id;	unsigned long base = idma->base;	do {		unsigned int status;		status = iomd_readb(base + ST);		if (!(status & DMA_ST_INT))			return IRQ_HANDLED;		if ((idma->state ^ status) & DMA_ST_AB)			iomd_get_next_sg(&idma->cur_sg, idma);		switch (status & (DMA_ST_OFL | DMA_ST_AB)) {		case DMA_ST_OFL:			/* OIA */		case DMA_ST_AB:				/* .IB */			iomd_writel(idma->cur_sg.dma_address, base + CURA);			iomd_writel(idma->cur_sg.length, base + ENDA);			idma->state = DMA_ST_AB;			break;		case DMA_ST_OFL | DMA_ST_AB:		/* OIB */		case 0:					/* .IA */			iomd_writel(idma->cur_sg.dma_address, base + CURB);			iomd_writel(idma->cur_sg.length, base + ENDB);			idma->state = 0;			break;		}		if (status & DMA_ST_OFL &&		    idma->cur_sg.length == (DMA_END_S|DMA_END_L))			break;	} while (1);	idma->state = ~DMA_ST_AB;	disable_irq_nosync(irq);	return IRQ_HANDLED;}
+struct iomd_dma *idma = dev_id;
+struct iomd_dma *idma = dev_id;
+struct iomd_dma
+iomd_dma
+*idma = dev_id
+*
+idma
+= dev_id
+dev_id
+dev_id
+unsigned long base = idma->base;
+unsigned long base = idma->base;
+unsigned long
+base = idma->base
+base
+= idma->base
+idma->base
+idma
+idma
+base
+do {		unsigned int status;		status = iomd_readb(base + ST);		if (!(status & DMA_ST_INT))			return IRQ_HANDLED;		if ((idma->state ^ status) & DMA_ST_AB)			iomd_get_next_sg(&idma->cur_sg, idma);		switch (status & (DMA_ST_OFL | DMA_ST_AB)) {		case DMA_ST_OFL:			/* OIA */		case DMA_ST_AB:				/* .IB */			iomd_writel(idma->cur_sg.dma_address, base + CURA);			iomd_writel(idma->cur_sg.length, base + ENDA);			idma->state = DMA_ST_AB;			break;		case DMA_ST_OFL | DMA_ST_AB:		/* OIB */		case 0:					/* .IA */			iomd_writel(idma->cur_sg.dma_address, base + CURB);			iomd_writel(idma->cur_sg.length, base + ENDB);			idma->state = 0;			break;		}		if (status & DMA_ST_OFL &&		    idma->cur_sg.length == (DMA_END_S|DMA_END_L))			break;	} while (1);
+{		unsigned int status;		status = iomd_readb(base + ST);		if (!(status & DMA_ST_INT))			return IRQ_HANDLED;		if ((idma->state ^ status) & DMA_ST_AB)			iomd_get_next_sg(&idma->cur_sg, idma);		switch (status & (DMA_ST_OFL | DMA_ST_AB)) {		case DMA_ST_OFL:			/* OIA */		case DMA_ST_AB:				/* .IB */			iomd_writel(idma->cur_sg.dma_address, base + CURA);			iomd_writel(idma->cur_sg.length, base + ENDA);			idma->state = DMA_ST_AB;			break;		case DMA_ST_OFL | DMA_ST_AB:		/* OIB */		case 0:					/* .IA */			iomd_writel(idma->cur_sg.dma_address, base + CURB);			iomd_writel(idma->cur_sg.length, base + ENDB);			idma->state = 0;			break;		}		if (status & DMA_ST_OFL &&		    idma->cur_sg.length == (DMA_END_S|DMA_END_L))			break;	}
+unsigned int status;
+unsigned int status;
+unsigned int
+status
+status
+status = iomd_readb(base + ST);
+status = iomd_readb(base + ST)
+status
+status
+iomd_readb(base + ST)
+iomd_readb
+iomd_readb
+base + ST
+base
+base
+ST
+ST
+if (!(status & DMA_ST_INT))			return IRQ_HANDLED;
+!(status & DMA_ST_INT)
+(status & DMA_ST_INT)
+status & DMA_ST_INT
+status
+status
+DMA_ST_INT
+DMA_ST_INT
+return IRQ_HANDLED;
+IRQ_HANDLED
+IRQ_HANDLED
+if ((idma->state ^ status) & DMA_ST_AB)			iomd_get_next_sg(&idma->cur_sg, idma);
+(idma->state ^ status) & DMA_ST_AB
+(idma->state ^ status)
+idma->state ^ status
+idma->state
+idma
+idma
+state
+status
+status
+DMA_ST_AB
+DMA_ST_AB
+iomd_get_next_sg(&idma->cur_sg, idma);
+iomd_get_next_sg(&idma->cur_sg, idma)
+iomd_get_next_sg
+iomd_get_next_sg
+&idma->cur_sg
+idma->cur_sg
+idma
+idma
+cur_sg
+idma
+idma
+switch (status & (DMA_ST_OFL | DMA_ST_AB)) {		case DMA_ST_OFL:			/* OIA */		case DMA_ST_AB:				/* .IB */			iomd_writel(idma->cur_sg.dma_address, base + CURA);			iomd_writel(idma->cur_sg.length, base + ENDA);			idma->state = DMA_ST_AB;			break;		case DMA_ST_OFL | DMA_ST_AB:		/* OIB */		case 0:					/* .IA */			iomd_writel(idma->cur_sg.dma_address, base + CURB);			iomd_writel(idma->cur_sg.length, base + ENDB);			idma->state = 0;			break;		}
+status & (DMA_ST_OFL | DMA_ST_AB)
+status
+status
+(DMA_ST_OFL | DMA_ST_AB)
+DMA_ST_OFL | DMA_ST_AB
+DMA_ST_OFL
+DMA_ST_OFL
+DMA_ST_AB
+DMA_ST_AB
+{		case DMA_ST_OFL:			/* OIA */		case DMA_ST_AB:				/* .IB */			iomd_writel(idma->cur_sg.dma_address, base + CURA);			iomd_writel(idma->cur_sg.length, base + ENDA);			idma->state = DMA_ST_AB;			break;		case DMA_ST_OFL | DMA_ST_AB:		/* OIB */		case 0:					/* .IA */			iomd_writel(idma->cur_sg.dma_address, base + CURB);			iomd_writel(idma->cur_sg.length, base + ENDB);			idma->state = 0;			break;		}
+case DMA_ST_OFL:
+DMA_ST_OFL
+DMA_ST_OFL
+case DMA_ST_AB:
+DMA_ST_AB
+DMA_ST_AB
+iomd_writel(idma->cur_sg.dma_address, base + CURA);
+iomd_writel(idma->cur_sg.dma_address, base + CURA)
+iomd_writel
+iomd_writel
+idma->cur_sg.dma_address
+idma->cur_sg
+idma
+idma
+cur_sg
+dma_address
+base + CURA
+base
+base
+CURA
+CURA
+iomd_writel(idma->cur_sg.length, base + ENDA);
+iomd_writel(idma->cur_sg.length, base + ENDA)
+iomd_writel
+iomd_writel
+idma->cur_sg.length
+idma->cur_sg
+idma
+idma
+cur_sg
+length
+base + ENDA
+base
+base
+ENDA
+ENDA
+idma->state = DMA_ST_AB;
+idma->state = DMA_ST_AB
+idma->state
+idma
+idma
+state
+DMA_ST_AB
+DMA_ST_AB
+break;
+case DMA_ST_OFL | DMA_ST_AB:
+DMA_ST_OFL | DMA_ST_AB
+DMA_ST_OFL
+DMA_ST_OFL
+DMA_ST_AB
+DMA_ST_AB
+case 0:
+0
+iomd_writel(idma->cur_sg.dma_address, base + CURB);
+iomd_writel(idma->cur_sg.dma_address, base + CURB)
+iomd_writel
+iomd_writel
+idma->cur_sg.dma_address
+idma->cur_sg
+idma
+idma
+cur_sg
+dma_address
+base + CURB
+base
+base
+CURB
+CURB
+iomd_writel(idma->cur_sg.length, base + ENDB);
+iomd_writel(idma->cur_sg.length, base + ENDB)
+iomd_writel
+iomd_writel
+idma->cur_sg.length
+idma->cur_sg
+idma
+idma
+cur_sg
+length
+base + ENDB
+base
+base
+ENDB
+ENDB
+idma->state = 0;
+idma->state = 0
+idma->state
+idma
+idma
+state
+0
+break;
+if (status & DMA_ST_OFL &&		    idma->cur_sg.length == (DMA_END_S|DMA_END_L))			break;
+status & DMA_ST_OFL &&		    idma->cur_sg.length == (DMA_END_S|DMA_END_L)
+status & DMA_ST_OFL
+status
+status
+DMA_ST_OFL
+DMA_ST_OFL
+idma->cur_sg.length == (DMA_END_S|DMA_END_L)
+idma->cur_sg.length
+idma->cur_sg
+idma
+idma
+cur_sg
+length
+(DMA_END_S|DMA_END_L)
+DMA_END_S|DMA_END_L
+DMA_END_S
+DMA_END_S
+DMA_END_L
+DMA_END_L
+break;
+1
+idma->state = ~DMA_ST_AB;
+idma->state = ~DMA_ST_AB
+idma->state
+idma
+idma
+state
+~DMA_ST_AB
+DMA_ST_AB
+DMA_ST_AB
+disable_irq_nosync(irq);
+disable_irq_nosync(irq)
+disable_irq_nosync
+disable_irq_nosync
+irq
+irq
+return IRQ_HANDLED;
+IRQ_HANDLED
+IRQ_HANDLED
+-----joern-----
+(33,114,0)
+(22,96,0)
+(89,91,0)
+(68,20,0)
+(33,99,0)
+(20,71,0)
+(115,17,0)
+(112,84,0)
+(3,10,0)
+(117,114,0)
+(95,102,0)
+(38,112,0)
+(47,89,0)
+(87,110,0)
+(74,90,0)
+(121,17,0)
+(52,50,0)
+(67,39,0)
+(70,66,0)
+(37,96,0)
+(53,2,0)
+(94,50,0)
+(43,112,0)
+(43,126,0)
+(22,123,0)
+(18,41,0)
+(84,112,0)
+(55,85,0)
+(0,66,0)
+(99,33,0)
+(44,100,0)
+(125,118,0)
+(7,102,0)
+(96,58,0)
+(19,83,0)
+(12,41,0)
+(24,29,0)
+(22,50,0)
+(27,29,0)
+(63,39,0)
+(106,126,0)
+(122,89,0)
+(105,1,0)
+(57,62,0)
+(69,122,0)
+(13,22,0)
+(114,33,0)
+(42,21,0)
+(126,102,0)
+(92,41,0)
+(94,113,0)
+(98,102,0)
+(64,11,0)
+(17,21,0)
+(77,104,0)
+(28,58,0)
+(85,29,0)
+(25,84,0)
+(8,102,0)
+(120,74,0)
+(60,90,0)
+(106,89,0)
+(78,10,0)
+(21,102,0)
+(31,123,0)
+(56,123,0)
+(118,96,0)
+(96,89,0)
+(36,94,0)
+(104,93,0)
+(79,102,0)
+(6,61,0)
+(83,95,0)
+(71,50,0)
+(81,3,0)
+(8,39,0)
+(42,71,0)
+(43,58,0)
+(39,8,0)
+(66,71,0)
+(21,42,0)
+(85,55,0)
+(29,85,0)
+(90,74,0)
+(3,6,0)
+(120,89,0)
+(6,41,0)
+(123,11,0)
+(45,120,0)
+(61,100,0)
+(59,102,0)
+(82,102,0)
+(29,89,0)
+(26,42,0)
+(8,80,0)
+(66,89,0)
+(71,66,0)
+(20,55,0)
+(62,122,0)
+(21,17,0)
+(40,53,0)
+(4,106,0)
+(76,43,0)
+(110,80,0)
+(104,6,0)
+(124,71,0)
+(53,6,0)
+(48,1,0)
+(99,1,0)
+(122,62,0)
+(55,20,0)
+(90,89,0)
+(62,95,0)
+(123,89,0)
+(108,6,0)
+(116,41,0)
+(88,126,0)
+(61,6,0)
+(112,43,0)
+(100,61,0)
+(14,96,0)
+(43,89,0)
+(80,8,0)
+(54,50,0)
+(58,102,0)
+(118,106,0)
+(11,50,0)
+(16,41,0)
+(22,106,0)
+(74,120,0)
+(86,50,0)
+(30,89,0)
+(95,62,0)
+(121,89,0)
+(15,110,0)
+(51,33,0)
+(73,104,0)
+(34,85,0)
+(9,53,0)
+(65,43,0)
+(109,42,0)
+(100,71,0)
+(46,114,0)
+(99,2,0)
+(127,83,0)
+(1,99,0)
+(55,102,0)
+(125,22,0)
+(112,6,0)
+(89,50,0)
+(107,102,0)
+(32,100,0)
+(95,83,0)
+(75,122,0)
+(83,71,0)
+(103,10,0)
+(10,3,0)
+(2,53,0)
+(2,99,0)
+(97,20,0)
+(5,120,0)
+(93,104,0)
+(114,89,0)
+(17,121,0)
+(72,121,0)
+(80,110,0)
+(110,89,0)
+(101,106,0)
+(39,71,0)
+(23,80,0)
+(111,121,0)
+(49,118,0)
+(83,19,1)
+(22,13,1)
+(110,89,1)
+(32,108,1)
+(84,112,1)
+(114,89,1)
+(100,44,1)
+(122,69,1)
+(118,96,1)
+(28,96,1)
+(36,11,1)
+(31,35,1)
+(17,121,1)
+(84,25,1)
+(120,45,1)
+(112,43,1)
+(89,91,1)
+(108,35,1)
+(43,58,1)
+(80,23,1)
+(87,21,1)
+(45,5,1)
+(44,32,1)
+(3,6,1)
+(33,114,1)
+(33,51,1)
+(63,67,1)
+(115,121,1)
+(95,62,1)
+(2,53,1)
+(126,88,1)
+(90,74,1)
+(127,62,1)
+(39,71,1)
+(96,89,1)
+(100,71,1)
+(17,115,1)
+(20,97,1)
+(122,89,1)
+(76,65,1)
+(25,112,1)
+(93,104,1)
+(62,57,1)
+(21,42,1)
+(56,31,1)
+(10,78,1)
+(61,100,1)
+(85,34,1)
+(42,71,1)
+(39,63,1)
+(48,33,1)
+(8,39,1)
+(123,56,1)
+(3,10,1)
+(51,114,1)
+(119,2,1)
+(96,37,1)
+(121,89,1)
+(4,101,1)
+(15,87,1)
+(46,53,1)
+(9,40,1)
+(94,113,1)
+(81,90,1)
+(75,3,1)
+(118,106,1)
+(70,0,1)
+(62,122,1)
+(68,85,1)
+(58,28,1)
+(42,26,1)
+(78,103,1)
+(24,27,1)
+(22,96,1)
+(72,3,1)
+(2,99,1)
+(6,61,1)
+(69,75,1)
+(108,71,1)
+(106,89,1)
+(107,58,1)
+(124,89,1)
+(66,70,1)
+(57,122,1)
+(125,118,1)
+(35,2,1)
+(38,43,1)
+(43,76,1)
+(112,38,1)
+(125,22,1)
+(118,49,1)
+(53,6,1)
+(121,111,1)
+(71,66,1)
+(37,14,1)
+(27,95,1)
+(80,110,1)
+(43,89,1)
+(111,72,1)
+(49,93,1)
+(0,124,1)
+(29,89,1)
+(85,29,1)
+(13,94,1)
+(83,71,1)
+(8,80,1)
+(19,127,1)
+(22,123,1)
+(1,105,1)
+(89,47,1)
+(73,6,1)
+(99,1,1)
+(40,3,1)
+(94,36,1)
+(21,17,1)
+(103,81,1)
+(88,106,1)
+(40,7,1)
+(34,29,1)
+(65,93,1)
+(112,6,1)
+(117,46,1)
+(104,6,1)
+(40,107,1)
+(23,110,1)
+(22,106,1)
+(104,77,1)
+(55,20,1)
+(77,73,1)
+(97,68,1)
+(66,89,1)
+(43,126,1)
+(29,24,1)
+(11,64,1)
+(123,89,1)
+(74,120,1)
+(106,4,1)
+(90,60,1)
+(26,109,1)
+(47,30,1)
+(105,48,1)
+(67,80,1)
+(53,9,1)
+(114,117,1)
+(110,15,1)
+(81,84,1)
+(95,83,1)
+(14,55,1)
+(99,33,1)
+(109,17,1)
+(120,89,1)
+(7,126,1)
+(60,74,1)
+(90,89,1)
+(64,123,1)
+(5,84,1)
+(20,71,1)
+(101,8,1)
+(31,119,1)
+(55,85,1)
+(109,3,2)
+(110,89,2)
+(120,89,2)
+(90,89,2)
+(1,53,2)
+(108,35,2)
+(37,3,2)
+(111,3,2)
+(22,96,2)
+(43,58,2)
+(81,93,2)
+(122,89,2)
+(27,3,2)
+(7,3,2)
+(67,3,2)
+(60,84,2)
+(95,62,2)
+(104,35,2)
+(105,53,2)
+(83,3,2)
+(13,35,2)
+(114,89,2)
+(22,123,2)
+(90,84,2)
+(20,71,2)
+(64,2,2)
+(72,3,2)
+(114,53,2)
+(57,3,2)
+(34,3,2)
+(44,35,2)
+(112,93,2)
+(84,112,2)
+(43,89,2)
+(80,3,2)
+(83,71,2)
+(120,84,2)
+(106,89,2)
+(89,91,2)
+(36,35,2)
+(123,2,2)
+(125,22,2)
+(23,3,2)
+(3,6,2)
+(33,53,2)
+(8,39,2)
+(112,6,2)
+(39,71,2)
+(42,71,2)
+(61,100,2)
+(13,2,2)
+(3,10,2)
+(127,3,2)
+(94,113,2)
+(62,3,2)
+(123,89,2)
+(74,84,2)
+(121,3,2)
+(90,74,2)
+(9,93,2)
+(117,53,2)
+(46,53,2)
+(95,83,2)
+(45,84,2)
+(99,33,2)
+(121,89,2)
+(88,3,2)
+(8,80,2)
+(56,2,2)
+(24,3,2)
+(11,2,2)
+(26,3,2)
+(93,104,2)
+(99,1,2)
+(17,3,2)
+(85,29,2)
+(64,35,2)
+(97,3,2)
+(66,89,2)
+(104,6,2)
+(21,17,2)
+(25,93,2)
+(42,3,2)
+(2,53,2)
+(96,3,2)
+(49,93,2)
+(36,2,2)
+(115,3,2)
+(55,20,2)
+(2,93,2)
+(93,35,2)
+(51,53,2)
+(6,35,2)
+(126,3,2)
+(11,35,2)
+(14,3,2)
+(62,122,2)
+(112,43,2)
+(10,93,2)
+(65,93,2)
+(94,2,2)
+(21,42,2)
+(32,35,2)
+(6,61,2)
+(28,3,2)
+(85,3,2)
+(55,3,2)
+(33,114,2)
+(74,120,2)
+(99,53,2)
+(20,3,2)
+(63,3,2)
+(69,3,2)
+(76,93,2)
+(94,35,2)
+(39,3,2)
+(29,3,2)
+(100,71,2)
+(103,93,2)
+(71,66,2)
+(8,3,2)
+(106,3,2)
+(73,35,2)
+(22,35,2)
+(118,106,2)
+(95,3,2)
+(31,2,2)
+(35,2,2)
+(53,93,2)
+(3,93,2)
+(119,2,2)
+(53,6,2)
+(107,3,2)
+(110,3,2)
+(100,35,2)
+(40,93,2)
+(77,35,2)
+(118,93,2)
+(96,89,2)
+(55,85,2)
+(68,3,2)
+(75,3,2)
+(19,3,2)
+(22,2,2)
+(43,93,2)
+(101,3,2)
+(31,35,2)
+(5,84,2)
+(118,96,2)
+(123,35,2)
+(87,3,2)
+(80,110,2)
+(84,93,2)
+(78,93,2)
+(48,53,2)
+(58,3,2)
+(43,126,2)
+(22,106,2)
+(29,89,2)
+(4,3,2)
+(61,35,2)
+(125,118,2)
+(21,3,2)
+(17,121,2)
+(38,93,2)
+(122,3,2)
+(56,35,2)
+(2,99,2)
+(15,3,2)
+-----------------------------------
+(0,idma)
+(1,DMA_END_S|DMA_END_L)
+(2,status & DMA_ST_OFL &&\n\\n\\t\\t    idma->cur_sg.length == (DMA_END_S|DMA_END_L)
+(3,status & (DMA_ST_OFL | DMA_ST_AB)
+(4,state)
+(5,idma)
+(6,status = iomd_readb(base + ST)
+(7,break;)
+(8,iomd_writel(idma->cur_sg.length, base + ENDB)
+(9,DMA_ST_OFL)
+(10,DMA_ST_OFL | DMA_ST_AB)
+(11,idma->state = ~DMA_ST_AB)
+(12,status)
+(13,IRQ_HANDLED)
+(14,idma)
+(15,cur_sg)
+(16,if ((idma->state ^ status)
+(17,idma->cur_sg.dma_address)
+(18,if (status & DMA_ST_OFL &&\n\\n\\t\\t    idma->cur_sg.length == (DMA_END_S|DMA_END_L)
+(19,CURA)
+(20,base + ENDA)
+(21,iomd_writel(idma->cur_sg.dma_address, base + CURB)
+(22,return IRQ_HANDLED;)
+(23,length)
+(24,cur_sg)
+(25,DMA_ST_AB)
+(26,CURB)
+(27,idma)
+(28,DMA_ST_AB)
+(29,idma->cur_sg)
+(30,idma)
+(31,idma)
+(32,base)
+(33,idma->cur_sg.length)
+(34,length)
+(35,1)
+(36,irq)
+(37,state)
+(38,status)
+(39,base + ENDB)
+(40,status)
+(41,)
+(42,base + CURB)
+(43,idma->state)
+(44,ST)
+(45,cur_sg)
+(46,idma)
+(47,dev_id)
+(48,DMA_END_S)
+(49,IRQ_HANDLED)
+(50,)
+(51,length)
+(52,do)
+(53,status & DMA_ST_OFL)
+(54,base)
+(55,iomd_writel(idma->cur_sg.length, base + ENDA)
+(56,state)
+(57,dma_address)
+(58,idma->state = DMA_ST_AB)
+(59,case DMA_ST_OFL:)
+(60,idma)
+(61,iomd_readb(base + ST)
+(62,idma->cur_sg.dma_address)
+(63,ENDB)
+(64,~DMA_ST_AB)
+(65,idma)
+(66,idma->base)
+(67,base)
+(68,base)
+(69,cur_sg)
+(70,base)
+(71,base = idma->base)
+(72,idma)
+(73,status)
+(74,&idma->cur_sg)
+(75,idma)
+(76,state)
+(77,DMA_ST_INT)
+(78,DMA_ST_AB)
+(79,DMA_ST_AB:)
+(80,idma->cur_sg.length)
+(81,status)
+(82,case DMA_ST_AB:)
+(83,base + CURA)
+(84,(idma->state ^ status)
+(85,idma->cur_sg.length)
+(86,idma)
+(87,idma)
+(88,0)
+(89,*idma = dev_id)
+(90,iomd_get_next_sg(&idma->cur_sg, idma)
+(91,void *dev_id)
+(92,switch (status & (DMA_ST_OFL | DMA_ST_AB)
+(93,!(status & DMA_ST_INT)
+(94,disable_irq_nosync(irq)
+(95,iomd_writel(idma->cur_sg.dma_address, base + CURA)
+(96,idma->state)
+(97,ENDA)
+(98,case 0:)
+(99,idma->cur_sg.length == (DMA_END_S|DMA_END_L)
+(100,base + ST)
+(101,idma)
+(102,)
+(103,DMA_ST_OFL)
+(104,status & DMA_ST_INT)
+(105,DMA_END_L)
+(106,idma->state)
+(107,break;)
+(108,status)
+(109,base)
+(110,idma->cur_sg)
+(111,cur_sg)
+(112,idma->state ^ status)
+(113,int irq)
+(114,idma->cur_sg)
+(115,dma_address)
+(116,if (!(status & DMA_ST_INT)
+(117,cur_sg)
+(118,return IRQ_HANDLED;)
+(119,break;)
+(120,idma->cur_sg)
+(121,idma->cur_sg)
+(122,idma->cur_sg)
+(123,idma->state)
+(124,base)
+(125,RET)
+(126,idma->state = 0)
+(127,base)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
