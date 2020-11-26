@@ -152,14 +152,12 @@ This part contains GNN Detection model' relevant source code structure and parti
 ### Data Preprocessing
 
 To construct the AST, we use Soot for Java, ANTLR for Swift, PHP and joern for C/C++.
-
-The details are in EdgesGenerationAndDataPreprocess folders.
 #### c/c++
 
 ---
 For c/c++,we download different CWE types' datasets from [SARD](https://samate.nist.gov/SARD/search.php).
 
-Then we traverse all the source codes' AST nodes,which have been constructed by [cdt](http://www.eclipse.org/cdt/).While traversing, all nodes are numbered in sequence, and the relationship between different edges is obtained according to specific rules.
+Then we traverse all the source codes' AST nodes,which have been parsed by [cdt](http://www.eclipse.org/cdt/).While traversing, all nodes are numbered in sequence, and the relationship between different edges is obtained according to specific rules.
 
 With [joern](https://joern.io/), we can get all the control flows and data flows in the source code.
 
@@ -190,7 +188,9 @@ java Main.java sourceFilePath savafilePath
 #### PHP and Swift
 
 ---
-For PHP and Swift,We collect datasets from github using our pre-trained "mixture of experts" model.Then extracting edge nodes from AST constructed with [Antlr](https://github.com/antlr/antlr4).
+For PHP and Swift,We collect datasets from github using our pre-trained "mixture of experts" model.
+
+Then extracting edge nodes from AST constructed with [Antlr](https://github.com/antlr/antlr4).
 
 ~~~
 cd NISL_TIFS2021/EdgesGenerationAndDataPreprocess/php_swift/src/php/main
