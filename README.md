@@ -63,7 +63,7 @@ $ pip install -r requirements.txt
 
 #### 3) Run the testcase
 ``` console
-$ cd FUNDED/cli
+$ cd NISL_TIFS2021/FUNDED/cli
 $ CUDA_VISIBLE_DEVICES=2 python train.py RGIN GraphBinaryClassification ../data/data/CWE-399
 ```
 <br/><br/>
@@ -154,6 +154,52 @@ This part contains GNN Detection model' relevant source code structure and parti
 To construct the AST, we use Soot for Java, ANTLR for Swift, PHP and joern for C/C++.
 
 The details are in EdgesGenerationAndDataPreprocess folders.
+#### c/c++
+
+---
+For c/c++,we download different CWE types' datasets from [SARD](https://samate.nist.gov/SARD/search.php).
+
+Then we traverse all the source codes' AST nodes,which have been constructed by [cdt](http://www.eclipse.org/cdt/).While traversing, all nodes are numbered in sequence, and the relationship between different edges is obtained according to specific rules.
+
+With [joern](https://joern.io/), we can get all the control flows and data flows in the source code.
+
+Finally,connect the two parts.
+
+> Warning: Modify the path with your own data
+~~~
+cd NISL_TIFS2021/EdgesGenerationAndDataPreprocess/C_cdt_7Edges_cdt/src/main/java/nodeTraversal
+java ParserExample.java sourceFilePath savafilePath
+
+cd ../concateEgeAndJoern
+java concateJoern.java sourceFilePath savafilePath
+~~~
+
+#### java 
+
+---
+For java,We download data from [SARD](https://samate.nist.gov/SARD/search.php) as well.
+
+With the same idea like parsing c/c++ above,we construct all relationships in different edges using [soot](https://soot-oss.github.io/soot/) and [jdt](https://www.eclipse.org/jdt/).
+
+> Warning: Modify the path with your own data
+~~~
+cd NISL_TIFS2021/EdgesGenerationAndDataPreprocess/Java_jdt_AST_CDFG/src/main/java/yoshikihigo/tinypdg/
+java Main.java sourceFilePath savafilePath
+~~~
+
+#### PHP and Swift
+
+---
+For PHP and Swift,We collect datasets from github using our pre-trained "mixture of experts" model.Then extracting edge nodes from AST constructed with [Antlr](https://github.com/antlr/antlr4).
+
+~~~
+cd NISL_TIFS2021/EdgesGenerationAndDataPreprocess/php_swift/src/php/main
+java TestPhp.java sourceFilePath savafilePath
+
+cd NISL_TIFS2021/EdgesGenerationAndDataPreprocess/php_swift/src/swift3/main
+java TestSwift3.java sourceFilePath savafilePath
+~~~
+
 
 ### Dataset
 
