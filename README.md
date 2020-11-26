@@ -151,15 +151,15 @@ This part contains GNN Detection model' relevant source code structure and parti
 ```
 ### Data Preprocessing
 
-To construct the AST, we use [soot](https://soot-oss.github.io/soot/) and [jdt](https://www.eclipse.org/jdt/) for Java, [Antlr](https://github.com/antlr/antlr4) for Swift and PHP , [joern](https://joern.io/) and [cdt](http://www.eclipse.org/cdt/) for C/C++.
+To construct the AST, we use Soot for Java, ANTLR for Swift, PHP and joern for C/C++.
 #### c/c++
 
 ---
 For c/c++,we download different CWE types' datasets from [SARD](https://samate.nist.gov/SARD/search.php).
 
-Then we traverse all the source codes' AST nodes,which have been parsed by cdt.While traversing, all nodes are numbered in sequence, and the relationship between different edges is obtained according to specific rules.
+Then we traverse all the source codes' AST nodes,which have been parsed by [cdt](http://www.eclipse.org/cdt/).While traversing, all nodes are numbered in sequence, and the relationship between different edges is obtained according to specific rules.
 
-With joern, we can get all the control flows and data flows in the source code.
+With [joern](https://joern.io/), we can get all the control flows and data flows in the source code.
 
 Finally,connect the two parts.
 
@@ -177,7 +177,7 @@ java concateJoern.java sourceFilePath savafilePath
 ---
 For java,We download data from [SARD](https://samate.nist.gov/SARD/search.php) as well.
 
-With the same idea like parsing c/c++ above,we construct all relationships in different edges using soot and jdt.
+With the same idea like parsing c/c++ above,we construct all relationships in different edges using [soot](https://soot-oss.github.io/soot/) and [jdt](https://www.eclipse.org/jdt/).
 
 > Warning: Modify the path with your own data
 ~~~
@@ -190,7 +190,7 @@ java Main.java sourceFilePath savafilePath
 ---
 For PHP and Swift,We collect datasets from github using our pre-trained "mixture of experts" model.
 
-Then extracting edge nodes from AST constructed with Antlr.
+Then extracting edge nodes from AST constructed with [Antlr](https://github.com/antlr/antlr4).
 
 ~~~
 cd NISL_TIFS2021/EdgesGenerationAndDataPreprocess/php_swift/src/php/main
