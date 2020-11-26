@@ -1,0 +1,29 @@
+# joern-cli
+We use joern to parse AST, CFG, PDG for C/C++.
+## Usage
+### 1) Parse code by joern-parse.sh
+
+    $ mkdir parse_result
+    $ sh joern-parse data/good --out parse_result/good.bin
+### 2) Load CPG graph
+
+    $ sh joern
+    $ loadCpg("parse_result/good.bin")
+### 3) Modify the generated result path in graph/all.sc and run the script
+
+    $ cpg.runScript("graph/all.sc")
+ 
+### 4) Use [joern_relation.py](https://github.com/FrancisWangH/NISL_TIFS2021/blob/main/EdgesGenerationAndDataPreprocess/data_preprocess/joern_relation.py) to extract node information and purify
+Part of the result is shown below:
+
+    ...
+    (14,16,2)                           <- Graph edge relations
+    (2,5,2)
+    -----------------------------------
+    (0,a)
+    (1,strcmp(c,"dateadded")            <- Graph nodes
+    ...
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1                                   <- Sample label
+
+Click [here](https://github.com/FrancisWangH/NISL_TIFS2021/tree/main/EdgesGenerationAndDataPreprocess/joern-cli/result) to view the full result.
