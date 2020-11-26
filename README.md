@@ -164,13 +164,13 @@ With [joern](https://joern.io/), we can get all the control flows and data flows
 Finally,connect the two parts.
 
 > Warning: Modify the path with your own data
-~~~
-cd NISL_TIFS2021/EdgesGenerationAndDataPreprocess/C_cdt_7Edges_cdt/src/main/java/nodeTraversal
-java ParserExample.java sourceFilePath savafilePath
+``` console
+$ cd NISL_TIFS2021/EdgesGenerationAndDataPreprocess/C_cdt_7Edges_cdt/src/main/java/nodeTraversal
+$ java ParserExample.java sourceFilePath savafilePath
 
-cd ../concateEgeAndJoern
-java concateJoern.java sourceFilePath savafilePath
-~~~
+$ cd ../concateEgeAndJoern
+$ java concateJoern.java sourceFilePath savafilePath
+```
 
 #### java 
 
@@ -180,10 +180,10 @@ For java,We download data from [SARD](https://samate.nist.gov/SARD/search.php) a
 With the same idea like parsing c/c++ above,we construct all relationships in different edges using [soot](https://soot-oss.github.io/soot/) and [jdt](https://www.eclipse.org/jdt/).
 
 > Warning: Modify the path with your own data
-~~~
-cd NISL_TIFS2021/EdgesGenerationAndDataPreprocess/Java_jdt_AST_CDFG/src/main/java/yoshikihigo/tinypdg/
-java Main.java sourceFilePath savafilePath
-~~~
+```console
+$ cd NISL_TIFS2021/EdgesGenerationAndDataPreprocess/Java_jdt_AST_CDFG/src/main/java/yoshikihigo/tinypdg/
+$ java Main.java sourceFilePath savafilePath
+```
 
 #### PHP and Swift
 
@@ -192,13 +192,13 @@ For PHP and Swift,We collect datasets from github using our pre-trained "mixture
 
 Then extracting edge nodes from AST constructed with [Antlr](https://github.com/antlr/antlr4).
 
-~~~
-cd NISL_TIFS2021/EdgesGenerationAndDataPreprocess/php_swift/src/php/main
-java TestPhp.java sourceFilePath savafilePath
+```console
+$ cd NISL_TIFS2021/EdgesGenerationAndDataPreprocess/php_swift/src/php/main
+$ java TestPhp.java sourceFilePath savafilePath
 
-cd NISL_TIFS2021/EdgesGenerationAndDataPreprocess/php_swift/src/swift3/main
-java TestSwift3.java sourceFilePath savafilePath
-~~~
+$ cd NISL_TIFS2021/EdgesGenerationAndDataPreprocess/php_swift/src/swift3/main
+$ java TestSwift3.java sourceFilePath savafilePath
+```
 
 
 ### Dataset
@@ -308,9 +308,9 @@ CP  | Accuracy = 0.857 | precision = 0.875 | recall = 0.875 | f1 = 0.875 |TPR = 
 
 > Warning: Replace the path with your own data
 
-~~~
-python InputData_New.py 
-~~~
+```console
+$ python InputData_New.py 
+```
 
 
 ## Authors
