@@ -1,0 +1,1185 @@
+-----label-----
+1
+-----code-----
+static void
+write_rc_messagetable (FILE *e, rc_uint_type length, const bfd_byte *data)
+{
+  int has_error = 0;
+  const struct bin_messagetable *mt;
+
+  fprintf (e, "BEGIN\n");
+
+  write_rc_datablock (e, length, data, 0, 0, 0);
+
+  fprintf (e, "\n");
+  wr_printcomment (e, "MC syntax dump");
+  if (length < BIN_MESSAGETABLE_SIZE)
+    has_error = 1;
+  else
+    do
+      {
+	rc_uint_type m, i;
+
+	mt = (const struct bin_messagetable *) data;
+	m = windres_get_32 (&wrtarget, mt->cblocks, length);
+
+	if (length < (BIN_MESSAGETABLE_SIZE + m * BIN_MESSAGETABLE_BLOCK_SIZE))
+	  {
+	    has_error = 1;
+	    break;
+	  }
+	for (i = 0; i < m; i++)
+	  {
+	    rc_uint_type low, high, offset;
+	    const struct bin_messagetable_item *mti;
+
+	    low = windres_get_32 (&wrtarget, mt->items[i].lowid, 4);
+	    high = windres_get_32 (&wrtarget, mt->items[i].highid, 4);
+	    offset = windres_get_32 (&wrtarget, mt->items[i].offset, 4);
+
+	    while (low <= high)
+	      {
+		rc_uint_type elen, flags;
+		if ((offset + BIN_MESSAGETABLE_ITEM_SIZE) > length)
+		  {
+		    has_error = 1;
+		    break;
+		  }
+		mti = (const struct bin_messagetable_item *) &data[offset];
+		elen = windres_get_16 (&wrtarget, mti->length, 2);
+		flags = windres_get_16 (&wrtarget, mti->flags, 2);
+		if ((offset + elen) > length)
+		  {
+		    has_error = 1;
+		    break;
+		  }
+		wr_printcomment (e, "MessageId = 0x%x", low);
+		wr_printcomment (e, "");
+
+		if ((flags & MESSAGE_RESOURCE_UNICODE) == MESSAGE_RESOURCE_UNICODE)
+		  {
+		    /* PR 17512: file: 5c3232dc.  */
+		    if (elen > BIN_MESSAGETABLE_ITEM_SIZE * 2)
+		      unicode_print (e, (const unichar *) mti->data,
+				     (elen - BIN_MESSAGETABLE_ITEM_SIZE) / 2);
+		  }
+		else
+		  {
+		    if (elen > BIN_MESSAGETABLE_ITEM_SIZE)
+		      ascii_print (e, (const char *) mti->data,
+				   (elen - BIN_MESSAGETABLE_ITEM_SIZE));
+		  }
+
+		wr_printcomment (e,"");
+		++low;
+		offset += elen;
+	      }
+	  }
+      }
+    while (0);
+
+  if (has_error)
+    wr_printcomment (e, "Illegal data");
+  wr_print_flush (e);
+  fprintf (e, "END\n");
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+12,13
+14,15
+16,17
+16,18
+17,18
+19,20
+19,21
+22,23
+22,24
+22,25
+22,26
+22,27
+22,28
+22,29
+22,30
+22,31
+22,32
+23,24
+24,25
+24,26
+26,27
+26,28
+28,29
+30,31
+31,32
+31,33
+32,33
+34,35
+34,36
+37,38
+38,39
+38,40
+38,41
+39,40
+41,42
+44,45
+45,46
+45,47
+45,48
+45,49
+45,50
+45,51
+45,52
+46,47
+48,49
+50,51
+52,53
+57,58
+58,59
+58,60
+58,61
+59,60
+61,62
+64,65
+65,66
+65,67
+65,68
+66,67
+68,69
+71,72
+71,73
+71,74
+72,73
+72,74
+73,74
+75,76
+77,78
+78,79
+78,80
+79,80
+82,83
+82,84
+83,84
+83,85
+83,86
+83,87
+83,88
+84,85
+85,86
+85,87
+85,88
+86,87
+88,89
+90,91
+92,93
+93,94
+93,95
+94,95
+96,97
+96,98
+97,98
+97,99
+98,99
+100,101
+102,103
+104,105
+105,106
+105,107
+106,107
+108,109
+108,110
+108,111
+108,112
+109,110
+111,112
+112,113
+114,115
+114,116
+115,116
+118,119
+120,121
+120,122
+121,122
+121,123
+122,123
+124,125
+125,126
+125,127
+126,127
+128,129
+128,130
+129,130
+131,132
+133,134
+133,135
+134,135
+135,136
+135,137
+136,137
+140,141
+140,142
+140,143
+140,144
+141,142
+142,143
+142,144
+143,144
+146,147
+146,148
+147,148
+149,150
+151,152
+152,153
+154,155
+154,156
+154,157
+154,158
+154,159
+154,160
+155,156
+156,157
+156,158
+156,159
+156,160
+157,158
+159,160
+161,162
+163,164
+165,166
+166,167
+166,168
+167,168
+169,170
+169,171
+172,173
+173,174
+173,175
+174,175
+176,177
+176,178
+176,179
+176,180
+177,178
+179,180
+180,181
+182,183
+182,184
+183,184
+183,185
+184,185
+184,186
+185,186
+188,189
+192,193
+193,194
+193,195
+194,195
+196,197
+196,198
+196,199
+196,200
+197,198
+199,200
+200,201
+202,203
+202,204
+203,204
+203,205
+204,205
+204,206
+205,206
+208,209
+212,213
+213,214
+213,215
+214,215
+216,217
+216,218
+216,219
+216,220
+217,218
+219,220
+220,221
+222,223
+222,224
+223,224
+223,225
+224,225
+224,226
+225,226
+228,229
+232,233
+232,234
+233,234
+233,235
+234,235
+236,237
+238,239
+238,240
+238,241
+238,242
+238,243
+238,244
+238,245
+238,246
+238,247
+238,248
+238,249
+238,250
+239,240
+240,241
+240,242
+240,243
+241,242
+243,244
+245,246
+247,248
+247,249
+248,249
+248,250
+249,250
+250,251
+250,252
+251,252
+253,254
+255,256
+257,258
+257,259
+258,259
+259,260
+259,261
+260,261
+264,265
+265,266
+265,267
+266,267
+268,269
+268,270
+269,270
+269,271
+270,271
+272,273
+274,275
+275,276
+275,277
+276,277
+278,279
+280,281
+281,282
+281,283
+282,283
+284,285
+284,286
+284,287
+284,288
+285,286
+287,288
+288,289
+290,291
+290,292
+291,292
+295,296
+296,297
+296,298
+297,298
+299,300
+299,301
+299,302
+299,303
+300,301
+302,303
+303,304
+305,306
+305,307
+306,307
+310,311
+310,312
+311,312
+311,313
+312,313
+313,314
+313,315
+314,315
+316,317
+318,319
+320,321
+320,322
+321,322
+322,323
+322,324
+323,324
+327,328
+328,329
+328,330
+328,331
+328,332
+329,330
+331,332
+334,335
+336,337
+337,338
+337,339
+337,340
+338,339
+340,341
+343,344
+343,345
+343,346
+344,345
+344,346
+345,346
+346,347
+346,348
+347,348
+349,350
+351,352
+353,354
+354,355
+354,356
+355,356
+355,357
+356,357
+358,359
+358,360
+359,360
+362,363
+363,364
+363,365
+363,366
+363,367
+364,365
+366,367
+368,369
+368,370
+369,370
+369,371
+370,371
+372,373
+374,375
+374,376
+375,376
+378,379
+378,380
+379,380
+380,381
+380,382
+381,382
+383,384
+386,387
+387,388
+387,389
+388,389
+388,390
+389,390
+391,392
+393,394
+394,395
+394,396
+394,397
+394,398
+395,396
+397,398
+399,400
+399,401
+400,401
+400,402
+402,403
+404,405
+404,406
+405,406
+408,409
+409,410
+409,411
+410,411
+412,413
+414,415
+415,416
+415,417
+415,418
+416,417
+418,419
+421,422
+422,423
+423,424
+425,426
+426,427
+426,428
+427,428
+429,430
+432,433
+432,434
+433,434
+435,436
+436,437
+436,438
+436,439
+437,438
+439,440
+442,443
+443,444
+443,445
+444,445
+446,447
+448,449
+449,450
+449,451
+449,452
+450,451
+452,453
+-----nextToken-----
+2,4,7,9,10,13,15,18,20,21,25,27,29,33,35,36,40,42,43,47,49,51,53,54,55,56,60,62,63,67,69,70,74,76,80,81,87,89,91,95,99,101,103,107,110,113,116,117,119,123,127,130,132,137,138,139,144,145,148,150,153,158,160,162,164,168,170,171,175,178,181,186,187,189,190,191,195,198,201,206,207,209,210,211,215,218,221,226,227,229,230,231,235,237,242,244,246,252,254,256,261,262,263,267,271,273,277,279,283,286,289,292,293,294,298,301,304,307,308,309,315,317,319,324,325,326,330,332,333,335,339,341,342,348,350,352,357,360,361,365,367,371,373,376,377,382,384,385,390,392,396,398,401,403,406,407,411,413,417,419,420,424,428,430,431,434,438,440,441,445,447,451,453,454
+-----computeFrom-----
+72,73
+72,74
+78,79
+78,80
+93,94
+93,95
+105,106
+105,107
+121,122
+121,123
+125,126
+125,127
+128,129
+128,130
+135,136
+135,137
+142,143
+142,144
+146,147
+146,148
+173,174
+173,175
+193,194
+193,195
+213,214
+213,215
+233,234
+233,235
+248,249
+248,250
+250,251
+250,252
+259,260
+259,261
+265,266
+265,267
+281,282
+281,283
+296,297
+296,298
+311,312
+311,313
+313,314
+313,315
+322,323
+322,324
+344,345
+344,346
+346,347
+346,348
+355,356
+355,357
+358,359
+358,360
+378,379
+378,380
+380,381
+380,382
+388,389
+388,390
+409,410
+409,411
+426,427
+426,428
+-----guardedBy-----
+360,384
+357,382
+392,413
+390,411
+-----guardedByNegation-----
+76,127
+74,319
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;LiteralExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;DoStatement;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;Pointer;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BreakStatement;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;Declarator;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;FieldReference;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;FieldReference;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;FieldReference;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;Name;LiteralExpression;WhileStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;Declarator;Name;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BreakStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;Pointer;UnaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BreakStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;Pointer;FieldReference;IdExpression;Name;Name;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;CompoundStatement;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;FieldReference;IdExpression;Name;Name;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IfStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;
+-----ast_node-----
+static voidwrite_rc_messagetable (FILE *e, rc_uint_type length, const bfd_byte *data){  int has_error = 0;  const struct bin_messagetable *mt;  fprintf (e, "BEGIN\n");  write_rc_datablock (e, length, data, 0, 0, 0);  fprintf (e, "\n");  wr_printcomment (e, "MC syntax dump");  if (length < BIN_MESSAGETABLE_SIZE)    has_error = 1;  else    do      {	rc_uint_type m, i;	mt = (const struct bin_messagetable *) data;	m = windres_get_32 (&wrtarget, mt->cblocks, length);	if (length < (BIN_MESSAGETABLE_SIZE + m * BIN_MESSAGETABLE_BLOCK_SIZE))	  {	    has_error = 1;	    break;	  }	for (i = 0; i < m; i++)	  {	    rc_uint_type low, high, offset;	    const struct bin_messagetable_item *mti;	    low = windres_get_32 (&wrtarget, mt->items[i].lowid, 4);	    high = windres_get_32 (&wrtarget, mt->items[i].highid, 4);	    offset = windres_get_32 (&wrtarget, mt->items[i].offset, 4);	    while (low <= high)	      {		rc_uint_type elen, flags;		if ((offset + BIN_MESSAGETABLE_ITEM_SIZE) > length)		  {		    has_error = 1;		    break;		  }		mti = (const struct bin_messagetable_item *) &data[offset];		elen = windres_get_16 (&wrtarget, mti->length, 2);		flags = windres_get_16 (&wrtarget, mti->flags, 2);		if ((offset + elen) > length)		  {		    has_error = 1;		    break;		  }		wr_printcomment (e, "MessageId = 0x%x", low);		wr_printcomment (e, "");		if ((flags & MESSAGE_RESOURCE_UNICODE) == MESSAGE_RESOURCE_UNICODE)		  {		    /* PR 17512: file: 5c3232dc.  */		    if (elen > BIN_MESSAGETABLE_ITEM_SIZE * 2)		      unicode_print (e, (const unichar *) mti->data,				     (elen - BIN_MESSAGETABLE_ITEM_SIZE) / 2);		  }		else		  {		    if (elen > BIN_MESSAGETABLE_ITEM_SIZE)		      ascii_print (e, (const char *) mti->data,				   (elen - BIN_MESSAGETABLE_ITEM_SIZE));		  }		wr_printcomment (e,"");		++low;		offset += elen;	      }	  }      }    while (0);  if (has_error)    wr_printcomment (e, "Illegal data");  wr_print_flush (e);  fprintf (e, "END\n");}
+static void
+write_rc_messagetable (FILE *e, rc_uint_type length, const bfd_byte *data)
+write_rc_messagetable
+FILE *e
+FILE
+FILE
+*e
+*
+e
+rc_uint_type length
+rc_uint_type
+rc_uint_type
+length
+length
+const bfd_byte *data
+const bfd_byte
+bfd_byte
+*data
+*
+data
+{  int has_error = 0;  const struct bin_messagetable *mt;  fprintf (e, "BEGIN\n");  write_rc_datablock (e, length, data, 0, 0, 0);  fprintf (e, "\n");  wr_printcomment (e, "MC syntax dump");  if (length < BIN_MESSAGETABLE_SIZE)    has_error = 1;  else    do      {	rc_uint_type m, i;	mt = (const struct bin_messagetable *) data;	m = windres_get_32 (&wrtarget, mt->cblocks, length);	if (length < (BIN_MESSAGETABLE_SIZE + m * BIN_MESSAGETABLE_BLOCK_SIZE))	  {	    has_error = 1;	    break;	  }	for (i = 0; i < m; i++)	  {	    rc_uint_type low, high, offset;	    const struct bin_messagetable_item *mti;	    low = windres_get_32 (&wrtarget, mt->items[i].lowid, 4);	    high = windres_get_32 (&wrtarget, mt->items[i].highid, 4);	    offset = windres_get_32 (&wrtarget, mt->items[i].offset, 4);	    while (low <= high)	      {		rc_uint_type elen, flags;		if ((offset + BIN_MESSAGETABLE_ITEM_SIZE) > length)		  {		    has_error = 1;		    break;		  }		mti = (const struct bin_messagetable_item *) &data[offset];		elen = windres_get_16 (&wrtarget, mti->length, 2);		flags = windres_get_16 (&wrtarget, mti->flags, 2);		if ((offset + elen) > length)		  {		    has_error = 1;		    break;		  }		wr_printcomment (e, "MessageId = 0x%x", low);		wr_printcomment (e, "");		if ((flags & MESSAGE_RESOURCE_UNICODE) == MESSAGE_RESOURCE_UNICODE)		  {		    /* PR 17512: file: 5c3232dc.  */		    if (elen > BIN_MESSAGETABLE_ITEM_SIZE * 2)		      unicode_print (e, (const unichar *) mti->data,				     (elen - BIN_MESSAGETABLE_ITEM_SIZE) / 2);		  }		else		  {		    if (elen > BIN_MESSAGETABLE_ITEM_SIZE)		      ascii_print (e, (const char *) mti->data,				   (elen - BIN_MESSAGETABLE_ITEM_SIZE));		  }		wr_printcomment (e,"");		++low;		offset += elen;	      }	  }      }    while (0);  if (has_error)    wr_printcomment (e, "Illegal data");  wr_print_flush (e);  fprintf (e, "END\n");}
+int has_error = 0;
+int has_error = 0;
+int
+has_error = 0
+has_error
+= 0
+0
+const struct bin_messagetable *mt;
+const struct bin_messagetable *mt;
+const struct bin_messagetable
+bin_messagetable
+*mt
+*
+mt
+fprintf (e, "BEGIN\n");
+fprintf (e, "BEGIN\n")
+fprintf
+fprintf
+e
+e
+"BEGIN\n"
+write_rc_datablock (e, length, data, 0, 0, 0);
+write_rc_datablock (e, length, data, 0, 0, 0)
+write_rc_datablock
+write_rc_datablock
+e
+e
+length
+length
+data
+data
+0
+0
+0
+fprintf (e, "\n");
+fprintf (e, "\n")
+fprintf
+fprintf
+e
+e
+"\n"
+wr_printcomment (e, "MC syntax dump");
+wr_printcomment (e, "MC syntax dump")
+wr_printcomment
+wr_printcomment
+e
+e
+"MC syntax dump"
+if (length < BIN_MESSAGETABLE_SIZE)    has_error = 1;  else    do      {	rc_uint_type m, i;	mt = (const struct bin_messagetable *) data;	m = windres_get_32 (&wrtarget, mt->cblocks, length);	if (length < (BIN_MESSAGETABLE_SIZE + m * BIN_MESSAGETABLE_BLOCK_SIZE))	  {	    has_error = 1;	    break;	  }	for (i = 0; i < m; i++)	  {	    rc_uint_type low, high, offset;	    const struct bin_messagetable_item *mti;	    low = windres_get_32 (&wrtarget, mt->items[i].lowid, 4);	    high = windres_get_32 (&wrtarget, mt->items[i].highid, 4);	    offset = windres_get_32 (&wrtarget, mt->items[i].offset, 4);	    while (low <= high)	      {		rc_uint_type elen, flags;		if ((offset + BIN_MESSAGETABLE_ITEM_SIZE) > length)		  {		    has_error = 1;		    break;		  }		mti = (const struct bin_messagetable_item *) &data[offset];		elen = windres_get_16 (&wrtarget, mti->length, 2);		flags = windres_get_16 (&wrtarget, mti->flags, 2);		if ((offset + elen) > length)		  {		    has_error = 1;		    break;		  }		wr_printcomment (e, "MessageId = 0x%x", low);		wr_printcomment (e, "");		if ((flags & MESSAGE_RESOURCE_UNICODE) == MESSAGE_RESOURCE_UNICODE)		  {		    /* PR 17512: file: 5c3232dc.  */		    if (elen > BIN_MESSAGETABLE_ITEM_SIZE * 2)		      unicode_print (e, (const unichar *) mti->data,				     (elen - BIN_MESSAGETABLE_ITEM_SIZE) / 2);		  }		else		  {		    if (elen > BIN_MESSAGETABLE_ITEM_SIZE)		      ascii_print (e, (const char *) mti->data,				   (elen - BIN_MESSAGETABLE_ITEM_SIZE));		  }		wr_printcomment (e,"");		++low;		offset += elen;	      }	  }      }    while (0);
+length < BIN_MESSAGETABLE_SIZE
+length
+length
+BIN_MESSAGETABLE_SIZE
+BIN_MESSAGETABLE_SIZE
+has_error = 1;
+has_error = 1
+has_error
+has_error
+1
+do      {	rc_uint_type m, i;	mt = (const struct bin_messagetable *) data;	m = windres_get_32 (&wrtarget, mt->cblocks, length);	if (length < (BIN_MESSAGETABLE_SIZE + m * BIN_MESSAGETABLE_BLOCK_SIZE))	  {	    has_error = 1;	    break;	  }	for (i = 0; i < m; i++)	  {	    rc_uint_type low, high, offset;	    const struct bin_messagetable_item *mti;	    low = windres_get_32 (&wrtarget, mt->items[i].lowid, 4);	    high = windres_get_32 (&wrtarget, mt->items[i].highid, 4);	    offset = windres_get_32 (&wrtarget, mt->items[i].offset, 4);	    while (low <= high)	      {		rc_uint_type elen, flags;		if ((offset + BIN_MESSAGETABLE_ITEM_SIZE) > length)		  {		    has_error = 1;		    break;		  }		mti = (const struct bin_messagetable_item *) &data[offset];		elen = windres_get_16 (&wrtarget, mti->length, 2);		flags = windres_get_16 (&wrtarget, mti->flags, 2);		if ((offset + elen) > length)		  {		    has_error = 1;		    break;		  }		wr_printcomment (e, "MessageId = 0x%x", low);		wr_printcomment (e, "");		if ((flags & MESSAGE_RESOURCE_UNICODE) == MESSAGE_RESOURCE_UNICODE)		  {		    /* PR 17512: file: 5c3232dc.  */		    if (elen > BIN_MESSAGETABLE_ITEM_SIZE * 2)		      unicode_print (e, (const unichar *) mti->data,				     (elen - BIN_MESSAGETABLE_ITEM_SIZE) / 2);		  }		else		  {		    if (elen > BIN_MESSAGETABLE_ITEM_SIZE)		      ascii_print (e, (const char *) mti->data,				   (elen - BIN_MESSAGETABLE_ITEM_SIZE));		  }		wr_printcomment (e,"");		++low;		offset += elen;	      }	  }      }    while (0);
+{	rc_uint_type m, i;	mt = (const struct bin_messagetable *) data;	m = windres_get_32 (&wrtarget, mt->cblocks, length);	if (length < (BIN_MESSAGETABLE_SIZE + m * BIN_MESSAGETABLE_BLOCK_SIZE))	  {	    has_error = 1;	    break;	  }	for (i = 0; i < m; i++)	  {	    rc_uint_type low, high, offset;	    const struct bin_messagetable_item *mti;	    low = windres_get_32 (&wrtarget, mt->items[i].lowid, 4);	    high = windres_get_32 (&wrtarget, mt->items[i].highid, 4);	    offset = windres_get_32 (&wrtarget, mt->items[i].offset, 4);	    while (low <= high)	      {		rc_uint_type elen, flags;		if ((offset + BIN_MESSAGETABLE_ITEM_SIZE) > length)		  {		    has_error = 1;		    break;		  }		mti = (const struct bin_messagetable_item *) &data[offset];		elen = windres_get_16 (&wrtarget, mti->length, 2);		flags = windres_get_16 (&wrtarget, mti->flags, 2);		if ((offset + elen) > length)		  {		    has_error = 1;		    break;		  }		wr_printcomment (e, "MessageId = 0x%x", low);		wr_printcomment (e, "");		if ((flags & MESSAGE_RESOURCE_UNICODE) == MESSAGE_RESOURCE_UNICODE)		  {		    /* PR 17512: file: 5c3232dc.  */		    if (elen > BIN_MESSAGETABLE_ITEM_SIZE * 2)		      unicode_print (e, (const unichar *) mti->data,				     (elen - BIN_MESSAGETABLE_ITEM_SIZE) / 2);		  }		else		  {		    if (elen > BIN_MESSAGETABLE_ITEM_SIZE)		      ascii_print (e, (const char *) mti->data,				   (elen - BIN_MESSAGETABLE_ITEM_SIZE));		  }		wr_printcomment (e,"");		++low;		offset += elen;	      }	  }      }
+rc_uint_type m, i;
+rc_uint_type m, i;
+rc_uint_type
+rc_uint_type
+m
+m
+i
+i
+mt = (const struct bin_messagetable *) data;
+mt = (const struct bin_messagetable *) data
+mt
+mt
+(const struct bin_messagetable *) data
+const struct bin_messagetable *
+const struct bin_messagetable
+bin_messagetable
+*
+*
+data
+data
+m = windres_get_32 (&wrtarget, mt->cblocks, length);
+m = windres_get_32 (&wrtarget, mt->cblocks, length)
+m
+m
+windres_get_32 (&wrtarget, mt->cblocks, length)
+windres_get_32
+windres_get_32
+&wrtarget
+wrtarget
+wrtarget
+mt->cblocks
+mt
+mt
+cblocks
+length
+length
+if (length < (BIN_MESSAGETABLE_SIZE + m * BIN_MESSAGETABLE_BLOCK_SIZE))	  {	    has_error = 1;	    break;	  }
+length < (BIN_MESSAGETABLE_SIZE + m * BIN_MESSAGETABLE_BLOCK_SIZE)
+length
+length
+(BIN_MESSAGETABLE_SIZE + m * BIN_MESSAGETABLE_BLOCK_SIZE)
+BIN_MESSAGETABLE_SIZE + m * BIN_MESSAGETABLE_BLOCK_SIZE
+BIN_MESSAGETABLE_SIZE
+BIN_MESSAGETABLE_SIZE
+m * BIN_MESSAGETABLE_BLOCK_SIZE
+m
+m
+BIN_MESSAGETABLE_BLOCK_SIZE
+BIN_MESSAGETABLE_BLOCK_SIZE
+{	    has_error = 1;	    break;	  }
+has_error = 1;
+has_error = 1
+has_error
+has_error
+1
+break;
+for (i = 0; i < m; i++)	  {	    rc_uint_type low, high, offset;	    const struct bin_messagetable_item *mti;	    low = windres_get_32 (&wrtarget, mt->items[i].lowid, 4);	    high = windres_get_32 (&wrtarget, mt->items[i].highid, 4);	    offset = windres_get_32 (&wrtarget, mt->items[i].offset, 4);	    while (low <= high)	      {		rc_uint_type elen, flags;		if ((offset + BIN_MESSAGETABLE_ITEM_SIZE) > length)		  {		    has_error = 1;		    break;		  }		mti = (const struct bin_messagetable_item *) &data[offset];		elen = windres_get_16 (&wrtarget, mti->length, 2);		flags = windres_get_16 (&wrtarget, mti->flags, 2);		if ((offset + elen) > length)		  {		    has_error = 1;		    break;		  }		wr_printcomment (e, "MessageId = 0x%x", low);		wr_printcomment (e, "");		if ((flags & MESSAGE_RESOURCE_UNICODE) == MESSAGE_RESOURCE_UNICODE)		  {		    /* PR 17512: file: 5c3232dc.  */		    if (elen > BIN_MESSAGETABLE_ITEM_SIZE * 2)		      unicode_print (e, (const unichar *) mti->data,				     (elen - BIN_MESSAGETABLE_ITEM_SIZE) / 2);		  }		else		  {		    if (elen > BIN_MESSAGETABLE_ITEM_SIZE)		      ascii_print (e, (const char *) mti->data,				   (elen - BIN_MESSAGETABLE_ITEM_SIZE));		  }		wr_printcomment (e,"");		++low;		offset += elen;	      }	  }
+i = 0;
+i = 0
+i
+i
+0
+i < m
+i
+i
+m
+m
+i++
+i
+i
+{	    rc_uint_type low, high, offset;	    const struct bin_messagetable_item *mti;	    low = windres_get_32 (&wrtarget, mt->items[i].lowid, 4);	    high = windres_get_32 (&wrtarget, mt->items[i].highid, 4);	    offset = windres_get_32 (&wrtarget, mt->items[i].offset, 4);	    while (low <= high)	      {		rc_uint_type elen, flags;		if ((offset + BIN_MESSAGETABLE_ITEM_SIZE) > length)		  {		    has_error = 1;		    break;		  }		mti = (const struct bin_messagetable_item *) &data[offset];		elen = windres_get_16 (&wrtarget, mti->length, 2);		flags = windres_get_16 (&wrtarget, mti->flags, 2);		if ((offset + elen) > length)		  {		    has_error = 1;		    break;		  }		wr_printcomment (e, "MessageId = 0x%x", low);		wr_printcomment (e, "");		if ((flags & MESSAGE_RESOURCE_UNICODE) == MESSAGE_RESOURCE_UNICODE)		  {		    /* PR 17512: file: 5c3232dc.  */		    if (elen > BIN_MESSAGETABLE_ITEM_SIZE * 2)		      unicode_print (e, (const unichar *) mti->data,				     (elen - BIN_MESSAGETABLE_ITEM_SIZE) / 2);		  }		else		  {		    if (elen > BIN_MESSAGETABLE_ITEM_SIZE)		      ascii_print (e, (const char *) mti->data,				   (elen - BIN_MESSAGETABLE_ITEM_SIZE));		  }		wr_printcomment (e,"");		++low;		offset += elen;	      }	  }
+rc_uint_type low, high, offset;
+rc_uint_type low, high, offset;
+rc_uint_type
+rc_uint_type
+low
+low
+high
+high
+offset
+offset
+const struct bin_messagetable_item *mti;
+const struct bin_messagetable_item *mti;
+const struct bin_messagetable_item
+bin_messagetable_item
+*mti
+*
+mti
+low = windres_get_32 (&wrtarget, mt->items[i].lowid, 4);
+low = windres_get_32 (&wrtarget, mt->items[i].lowid, 4)
+low
+low
+windres_get_32 (&wrtarget, mt->items[i].lowid, 4)
+windres_get_32
+windres_get_32
+&wrtarget
+wrtarget
+wrtarget
+mt->items[i].lowid
+mt->items[i]
+mt->items
+mt
+mt
+items
+i
+i
+lowid
+4
+high = windres_get_32 (&wrtarget, mt->items[i].highid, 4);
+high = windres_get_32 (&wrtarget, mt->items[i].highid, 4)
+high
+high
+windres_get_32 (&wrtarget, mt->items[i].highid, 4)
+windres_get_32
+windres_get_32
+&wrtarget
+wrtarget
+wrtarget
+mt->items[i].highid
+mt->items[i]
+mt->items
+mt
+mt
+items
+i
+i
+highid
+4
+offset = windres_get_32 (&wrtarget, mt->items[i].offset, 4);
+offset = windres_get_32 (&wrtarget, mt->items[i].offset, 4)
+offset
+offset
+windres_get_32 (&wrtarget, mt->items[i].offset, 4)
+windres_get_32
+windres_get_32
+&wrtarget
+wrtarget
+wrtarget
+mt->items[i].offset
+mt->items[i]
+mt->items
+mt
+mt
+items
+i
+i
+offset
+4
+while (low <= high)	      {		rc_uint_type elen, flags;		if ((offset + BIN_MESSAGETABLE_ITEM_SIZE) > length)		  {		    has_error = 1;		    break;		  }		mti = (const struct bin_messagetable_item *) &data[offset];		elen = windres_get_16 (&wrtarget, mti->length, 2);		flags = windres_get_16 (&wrtarget, mti->flags, 2);		if ((offset + elen) > length)		  {		    has_error = 1;		    break;		  }		wr_printcomment (e, "MessageId = 0x%x", low);		wr_printcomment (e, "");		if ((flags & MESSAGE_RESOURCE_UNICODE) == MESSAGE_RESOURCE_UNICODE)		  {		    /* PR 17512: file: 5c3232dc.  */		    if (elen > BIN_MESSAGETABLE_ITEM_SIZE * 2)		      unicode_print (e, (const unichar *) mti->data,				     (elen - BIN_MESSAGETABLE_ITEM_SIZE) / 2);		  }		else		  {		    if (elen > BIN_MESSAGETABLE_ITEM_SIZE)		      ascii_print (e, (const char *) mti->data,				   (elen - BIN_MESSAGETABLE_ITEM_SIZE));		  }		wr_printcomment (e,"");		++low;		offset += elen;	      }
+low <= high
+low
+low
+high
+high
+{		rc_uint_type elen, flags;		if ((offset + BIN_MESSAGETABLE_ITEM_SIZE) > length)		  {		    has_error = 1;		    break;		  }		mti = (const struct bin_messagetable_item *) &data[offset];		elen = windres_get_16 (&wrtarget, mti->length, 2);		flags = windres_get_16 (&wrtarget, mti->flags, 2);		if ((offset + elen) > length)		  {		    has_error = 1;		    break;		  }		wr_printcomment (e, "MessageId = 0x%x", low);		wr_printcomment (e, "");		if ((flags & MESSAGE_RESOURCE_UNICODE) == MESSAGE_RESOURCE_UNICODE)		  {		    /* PR 17512: file: 5c3232dc.  */		    if (elen > BIN_MESSAGETABLE_ITEM_SIZE * 2)		      unicode_print (e, (const unichar *) mti->data,				     (elen - BIN_MESSAGETABLE_ITEM_SIZE) / 2);		  }		else		  {		    if (elen > BIN_MESSAGETABLE_ITEM_SIZE)		      ascii_print (e, (const char *) mti->data,				   (elen - BIN_MESSAGETABLE_ITEM_SIZE));		  }		wr_printcomment (e,"");		++low;		offset += elen;	      }
+rc_uint_type elen, flags;
+rc_uint_type elen, flags;
+rc_uint_type
+rc_uint_type
+elen
+elen
+flags
+flags
+if ((offset + BIN_MESSAGETABLE_ITEM_SIZE) > length)		  {		    has_error = 1;		    break;		  }
+(offset + BIN_MESSAGETABLE_ITEM_SIZE) > length
+(offset + BIN_MESSAGETABLE_ITEM_SIZE)
+offset + BIN_MESSAGETABLE_ITEM_SIZE
+offset
+offset
+BIN_MESSAGETABLE_ITEM_SIZE
+BIN_MESSAGETABLE_ITEM_SIZE
+length
+length
+{		    has_error = 1;		    break;		  }
+has_error = 1;
+has_error = 1
+has_error
+has_error
+1
+break;
+mti = (const struct bin_messagetable_item *) &data[offset];
+mti = (const struct bin_messagetable_item *) &data[offset]
+mti
+mti
+(const struct bin_messagetable_item *) &data[offset]
+const struct bin_messagetable_item *
+const struct bin_messagetable_item
+bin_messagetable_item
+*
+*
+&data[offset]
+data[offset]
+data
+data
+offset
+offset
+elen = windres_get_16 (&wrtarget, mti->length, 2);
+elen = windres_get_16 (&wrtarget, mti->length, 2)
+elen
+elen
+windres_get_16 (&wrtarget, mti->length, 2)
+windres_get_16
+windres_get_16
+&wrtarget
+wrtarget
+wrtarget
+mti->length
+mti
+mti
+length
+2
+flags = windres_get_16 (&wrtarget, mti->flags, 2);
+flags = windres_get_16 (&wrtarget, mti->flags, 2)
+flags
+flags
+windres_get_16 (&wrtarget, mti->flags, 2)
+windres_get_16
+windres_get_16
+&wrtarget
+wrtarget
+wrtarget
+mti->flags
+mti
+mti
+flags
+2
+if ((offset + elen) > length)		  {		    has_error = 1;		    break;		  }
+(offset + elen) > length
+(offset + elen)
+offset + elen
+offset
+offset
+elen
+elen
+length
+length
+{		    has_error = 1;		    break;		  }
+has_error = 1;
+has_error = 1
+has_error
+has_error
+1
+break;
+wr_printcomment (e, "MessageId = 0x%x", low);
+wr_printcomment (e, "MessageId = 0x%x", low)
+wr_printcomment
+wr_printcomment
+e
+e
+"MessageId = 0x%x"
+low
+low
+wr_printcomment (e, "");
+wr_printcomment (e, "")
+wr_printcomment
+wr_printcomment
+e
+e
+""
+if ((flags & MESSAGE_RESOURCE_UNICODE) == MESSAGE_RESOURCE_UNICODE)		  {		    /* PR 17512: file: 5c3232dc.  */		    if (elen > BIN_MESSAGETABLE_ITEM_SIZE * 2)		      unicode_print (e, (const unichar *) mti->data,				     (elen - BIN_MESSAGETABLE_ITEM_SIZE) / 2);		  }		else		  {		    if (elen > BIN_MESSAGETABLE_ITEM_SIZE)		      ascii_print (e, (const char *) mti->data,				   (elen - BIN_MESSAGETABLE_ITEM_SIZE));		  }
+(flags & MESSAGE_RESOURCE_UNICODE) == MESSAGE_RESOURCE_UNICODE
+(flags & MESSAGE_RESOURCE_UNICODE)
+flags & MESSAGE_RESOURCE_UNICODE
+flags
+flags
+MESSAGE_RESOURCE_UNICODE
+MESSAGE_RESOURCE_UNICODE
+MESSAGE_RESOURCE_UNICODE
+MESSAGE_RESOURCE_UNICODE
+{		    /* PR 17512: file: 5c3232dc.  */		    if (elen > BIN_MESSAGETABLE_ITEM_SIZE * 2)		      unicode_print (e, (const unichar *) mti->data,				     (elen - BIN_MESSAGETABLE_ITEM_SIZE) / 2);		  }
+if (elen > BIN_MESSAGETABLE_ITEM_SIZE * 2)		      unicode_print (e, (const unichar *) mti->data,				     (elen - BIN_MESSAGETABLE_ITEM_SIZE) / 2);
+elen > BIN_MESSAGETABLE_ITEM_SIZE * 2
+elen
+elen
+BIN_MESSAGETABLE_ITEM_SIZE * 2
+BIN_MESSAGETABLE_ITEM_SIZE
+BIN_MESSAGETABLE_ITEM_SIZE
+2
+unicode_print (e, (const unichar *) mti->data,				     (elen - BIN_MESSAGETABLE_ITEM_SIZE) / 2);
+unicode_print (e, (const unichar *) mti->data,				     (elen - BIN_MESSAGETABLE_ITEM_SIZE) / 2)
+unicode_print
+unicode_print
+e
+e
+(const unichar *) mti->data
+const unichar *
+const unichar
+unichar
+*
+*
+mti->data
+mti
+mti
+data
+(elen - BIN_MESSAGETABLE_ITEM_SIZE) / 2
+(elen - BIN_MESSAGETABLE_ITEM_SIZE)
+elen - BIN_MESSAGETABLE_ITEM_SIZE
+elen
+elen
+BIN_MESSAGETABLE_ITEM_SIZE
+BIN_MESSAGETABLE_ITEM_SIZE
+2
+{		    if (elen > BIN_MESSAGETABLE_ITEM_SIZE)		      ascii_print (e, (const char *) mti->data,				   (elen - BIN_MESSAGETABLE_ITEM_SIZE));		  }
+if (elen > BIN_MESSAGETABLE_ITEM_SIZE)		      ascii_print (e, (const char *) mti->data,				   (elen - BIN_MESSAGETABLE_ITEM_SIZE));
+elen > BIN_MESSAGETABLE_ITEM_SIZE
+elen
+elen
+BIN_MESSAGETABLE_ITEM_SIZE
+BIN_MESSAGETABLE_ITEM_SIZE
+ascii_print (e, (const char *) mti->data,				   (elen - BIN_MESSAGETABLE_ITEM_SIZE));
+ascii_print (e, (const char *) mti->data,				   (elen - BIN_MESSAGETABLE_ITEM_SIZE))
+ascii_print
+ascii_print
+e
+e
+(const char *) mti->data
+const char *
+const char
+*
+*
+mti->data
+mti
+mti
+data
+(elen - BIN_MESSAGETABLE_ITEM_SIZE)
+elen - BIN_MESSAGETABLE_ITEM_SIZE
+elen
+elen
+BIN_MESSAGETABLE_ITEM_SIZE
+BIN_MESSAGETABLE_ITEM_SIZE
+wr_printcomment (e,"");
+wr_printcomment (e,"")
+wr_printcomment
+wr_printcomment
+e
+e
+""
+++low;
+++low
+low
+low
+offset += elen;
+offset += elen
+offset
+offset
+elen
+elen
+0
+if (has_error)    wr_printcomment (e, "Illegal data");
+has_error
+has_error
+wr_printcomment (e, "Illegal data");
+wr_printcomment (e, "Illegal data")
+wr_printcomment
+wr_printcomment
+e
+e
+"Illegal data"
+wr_print_flush (e);
+wr_print_flush (e)
+wr_print_flush
+wr_print_flush
+e
+e
+fprintf (e, "END\n");
+fprintf (e, "END\n")
+fprintf
+fprintf
+e
+e
+"END\n"
+-----joern-----
+(11,15,0)
+(26,32,0)
+(25,19,0)
+(5,7,0)
+(15,31,0)
+(13,30,0)
+(14,4,0)
+(27,7,0)
+(13,7,0)
+(12,15,0)
+(17,4,0)
+(6,30,0)
+(2,32,0)
+(24,6,0)
+(3,27,0)
+(15,7,0)
+(10,15,0)
+(19,21,0)
+(22,7,0)
+(0,15,0)
+(29,13,0)
+(4,7,0)
+(15,30,0)
+(8,13,0)
+(20,15,0)
+(28,7,0)
+(18,15,0)
+(15,21,0)
+(1,6,0)
+(9,27,0)
+(27,30,0)
+(6,7,0)
+(16,19,0)
+(17,14,1)
+(20,0,1)
+(2,19,1)
+(9,4,1)
+(11,27,1)
+(18,20,1)
+(29,8,1)
+(3,9,1)
+(0,12,1)
+(13,29,1)
+(6,24,1)
+(15,18,1)
+(25,6,1)
+(23,19,1)
+(4,17,1)
+(27,3,1)
+(13,30,1)
+(19,21,1)
+(16,25,1)
+(6,30,1)
+(27,30,1)
+(24,1,1)
+(23,32,1)
+(10,11,1)
+(32,26,1)
+(15,30,1)
+(1,13,1)
+(19,16,1)
+(8,15,1)
+(15,31,1)
+(12,10,1)
+(26,2,1)
+(15,21,1)
+(19,21,2)
+(32,19,2)
+(26,19,2)
+(27,30,2)
+(15,31,2)
+(15,30,2)
+(13,30,2)
+(15,21,2)
+(2,19,2)
+(6,30,2)
+-----------------------------------
+(0,0)
+(1,e)
+(2,has_error)
+(3,"BEGIN\\n")
+(4,has_error = 0)
+(5,if (length < BIN_MESSAGETABLE_SIZE)
+(6,wr_printcomment (e, "MC syntax dump")
+(7,)
+(8,e)
+(9,e)
+(10,length)
+(11,e)
+(12,data)
+(13,fprintf (e, "\\n")
+(14,has_error)
+(15,write_rc_datablock (e, length, data, 0, 0, 0)
+(16,BIN_MESSAGETABLE_SIZE)
+(17,0)
+(18,0)
+(19,length < BIN_MESSAGETABLE_SIZE)
+(20,0)
+(21,rc_uint_type length)
+(22,has_error)
+(23,RET)
+(24,"MC syntax dump")
+(25,length)
+(26,1)
+(27,fprintf (e, "BEGIN\\n")
+(28,mt)
+(29,"\\n")
+(30,FILE *e)
+(31,const bfd_byte *data)
+(32,has_error = 1)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

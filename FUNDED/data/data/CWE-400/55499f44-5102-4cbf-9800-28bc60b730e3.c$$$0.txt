@@ -1,0 +1,2884 @@
+-----label-----
+1
+-----code-----
+static struct ast_channel *iax2_request(const char *type, struct ast_format_cap *cap, const struct ast_channel *requestor, const char *data, int *cause)
+{
+	int callno;
+	int res;
+	struct sockaddr_in sin;
+	struct ast_channel *c;
+	struct parsed_dial_string pds;
+	struct create_addr_info cai;
+	char *tmpstr;
+	struct ast_callid *callid;
+
+	memset(&pds, 0, sizeof(pds));
+	tmpstr = ast_strdupa(data);
+	parse_dial_string(tmpstr, &pds);
+
+	callid = ast_read_threadstorage_callid();
+
+	if (ast_strlen_zero(pds.peer)) {
+		ast_log(LOG_WARNING, "No peer provided in the IAX2 dial string '%s'\n", data);
+		return NULL;
+	}
+	memset(&cai, 0, sizeof(cai));
+	cai.capability = iax2_capability;
+
+	ast_copy_flags64(&cai, &globalflags, IAX_NOTRANSFER | IAX_TRANSFERMEDIA | IAX_USEJITTERBUF | IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE);
+
+	/* Populate our address from the given */
+	if (create_addr(pds.peer, NULL, &sin, &cai)) {
+		*cause = AST_CAUSE_UNREGISTERED;
+		return NULL;
+	}
+
+	if (pds.port)
+		sin.sin_port = htons(atoi(pds.port));
+
+	callno = find_callno_locked(0, 0, &sin, NEW_FORCE, cai.sockfd, 0);
+	if (callno < 1) {
+		ast_log(LOG_WARNING, "Unable to create call\n");
+		*cause = AST_CAUSE_CONGESTION;
+		return NULL;
+	}
+
+	/* If this is a trunk, update it now */
+	ast_copy_flags64(iaxs[callno], &cai, IAX_TRUNK | IAX_SENDANI | IAX_NOTRANSFER | IAX_TRANSFERMEDIA | IAX_USEJITTERBUF | IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE);
+	if (ast_test_flag64(&cai, IAX_TRUNK)) {
+		int new_callno;
+		if ((new_callno = make_trunk(callno, 1)) != -1)
+			callno = new_callno;
+	}
+	iaxs[callno]->maxtime = cai.maxtime;
+	if (callid) {
+		iax_pvt_callid_set(callno, callid);
+	}
+
+	if (cai.found) {
+		ast_string_field_set(iaxs[callno], host, pds.peer);
+	}
+
+	c = ast_iax2_new(callno, AST_STATE_DOWN, cai.capability, requestor ? ast_channel_linkedid(requestor) : NULL, cai.found);
+
+	ast_mutex_unlock(&iaxsl[callno]);
+
+	if (c) {
+		struct ast_format_cap *joint;
+		if (callid) {
+			ast_channel_callid_set(c, callid);
+		}
+
+		/* Choose a format we can live with */
+		if ((joint = ast_format_cap_joint(ast_channel_nativeformats(c), cap))) {
+			ast_format_cap_copy(ast_channel_nativeformats(c), joint);
+			joint = ast_format_cap_destroy(joint);
+		} else {
+			struct ast_format best_fmt_cap;
+			struct ast_format best_fmt_native;
+			res = ast_translator_best_choice(cap, ast_channel_nativeformats(c), &best_fmt_cap, &best_fmt_native);
+			if (res < 0) {
+				char tmp[256];
+				char tmp2[256];
+				ast_log(LOG_WARNING, "Unable to create translator path for %s to %s on %s\n",
+					ast_getformatname_multiple(tmp, sizeof(tmp), ast_channel_nativeformats(c)), ast_getformatname_multiple(tmp2, sizeof(tmp2), cap), ast_channel_name(c));
+				ast_hangup(c);
+				return NULL;
+			}
+			ast_format_cap_set(ast_channel_nativeformats(c), &best_fmt_native);
+		}
+		ast_best_codec(ast_channel_nativeformats(c), ast_channel_readformat(c));
+		ast_format_copy(ast_channel_writeformat(c), ast_channel_readformat(c));
+	}
+
+	if (callid) {
+		ast_callid_unref(callid);
+	}
+	return c;
+}
+-----children-----
+1,2
+1,3
+1,4
+2,3
+4,5
+4,6
+4,7
+4,8
+4,9
+4,10
+4,11
+7,8
+7,9
+9,10
+9,11
+12,13
+12,14
+13,14
+15,16
+15,17
+18,19
+18,20
+19,20
+21,22
+21,23
+24,25
+24,26
+26,27
+26,28
+29,30
+29,31
+31,32
+31,33
+34,35
+34,36
+34,37
+34,38
+34,39
+34,40
+34,41
+34,42
+34,43
+34,44
+34,45
+34,46
+34,47
+34,48
+34,49
+34,50
+34,51
+34,52
+34,53
+34,54
+34,55
+34,56
+34,57
+34,58
+34,59
+34,60
+34,61
+34,62
+34,63
+34,64
+35,36
+36,37
+36,38
+38,39
+40,41
+41,42
+41,43
+43,44
+45,46
+46,47
+46,48
+47,48
+49,50
+51,52
+52,53
+52,54
+53,54
+55,56
+55,57
+58,59
+59,60
+59,61
+60,61
+62,63
+64,65
+65,66
+65,67
+66,67
+68,69
+70,71
+71,72
+71,73
+73,74
+73,75
+76,77
+77,78
+77,79
+78,79
+80,81
+80,82
+83,84
+84,85
+84,86
+84,87
+84,88
+85,86
+87,88
+88,89
+91,92
+92,93
+93,94
+95,96
+96,97
+96,98
+97,98
+99,100
+99,101
+100,101
+102,103
+104,105
+105,106
+105,107
+105,108
+106,107
+108,109
+110,111
+111,112
+113,114
+114,115
+114,116
+115,116
+117,118
+118,119
+120,121
+120,122
+121,122
+121,123
+122,123
+124,125
+124,126
+125,126
+128,129
+128,130
+129,130
+130,131
+130,132
+130,133
+130,134
+131,132
+133,134
+136,137
+138,139
+139,140
+141,142
+142,143
+142,144
+142,145
+142,146
+143,144
+145,146
+146,147
+149,150
+150,151
+151,152
+153,154
+154,155
+154,156
+155,156
+155,157
+156,157
+159,160
+161,162
+162,163
+162,164
+162,165
+162,166
+163,164
+165,166
+166,167
+168,169
+169,170
+171,172
+171,173
+172,173
+172,174
+173,174
+173,175
+174,175
+174,176
+175,176
+175,177
+176,177
+178,179
+180,181
+182,183
+184,185
+186,187
+188,189
+188,190
+189,190
+189,191
+189,192
+189,193
+189,194
+190,191
+192,193
+192,194
+193,194
+196,197
+198,199
+199,200
+201,202
+202,203
+204,205
+204,206
+205,206
+206,207
+206,208
+207,208
+208,209
+210,211
+212,213
+213,214
+215,216
+215,217
+216,217
+216,218
+217,218
+220,221
+221,222
+221,223
+222,223
+222,224
+223,224
+226,227
+226,228
+227,228
+229,230
+229,231
+230,231
+232,233
+232,234
+233,234
+236,237
+237,238
+237,239
+238,239
+240,241
+240,242
+240,243
+240,244
+240,245
+240,246
+240,247
+241,242
+245,246
+246,247
+248,249
+250,251
+250,252
+251,252
+255,256
+255,257
+256,257
+256,258
+257,258
+260,261
+260,262
+260,263
+261,262
+262,263
+262,264
+262,265
+263,264
+265,266
+268,269
+269,270
+269,271
+270,271
+271,272
+273,274
+275,276
+276,277
+278,279
+279,280
+279,281
+279,282
+279,283
+280,281
+282,283
+282,284
+283,284
+285,286
+287,288
+288,289
+290,291
+290,292
+291,292
+291,293
+292,293
+292,294
+293,294
+293,295
+294,295
+294,296
+295,296
+295,297
+296,297
+296,298
+297,298
+299,300
+301,302
+303,304
+305,306
+307,308
+309,310
+311,312
+313,314
+313,315
+314,315
+314,316
+314,317
+315,316
+317,318
+318,319
+320,321
+322,323
+322,324
+323,324
+324,325
+324,326
+326,327
+328,329
+328,330
+329,330
+329,331
+330,331
+331,332
+331,333
+332,333
+334,335
+334,336
+334,337
+335,336
+337,338
+340,341
+342,343
+343,344
+343,345
+344,345
+346,347
+348,349
+349,350
+349,351
+350,351
+350,352
+351,352
+351,353
+352,353
+354,355
+357,358
+357,359
+358,359
+361,362
+361,363
+362,363
+364,365
+365,366
+366,367
+366,368
+366,369
+367,368
+369,370
+371,372
+373,374
+373,375
+374,375
+374,376
+375,376
+378,379
+379,380
+380,381
+380,382
+380,383
+380,384
+381,382
+383,384
+383,385
+384,385
+386,387
+388,389
+390,391
+390,392
+391,392
+394,395
+395,396
+395,397
+396,397
+398,399
+398,400
+398,401
+398,402
+398,403
+398,404
+399,400
+401,402
+403,404
+405,406
+405,407
+406,407
+409,410
+409,411
+409,412
+410,411
+412,413
+412,414
+413,414
+415,416
+417,418
+419,420
+419,421
+420,421
+423,424
+424,425
+424,426
+425,426
+427,428
+428,429
+428,430
+428,431
+431,432
+432,433
+434,435
+434,436
+435,436
+437,438
+437,439
+437,440
+437,441
+437,442
+438,439
+439,440
+439,441
+440,441
+442,443
+442,444
+445,446
+445,447
+446,447
+448,449
+449,450
+450,451
+450,452
+450,453
+451,452
+453,454
+455,456
+457,458
+457,459
+457,460
+458,459
+459,460
+459,461
+460,461
+462,463
+462,464
+462,465
+463,464
+465,466
+465,467
+466,467
+468,469
+470,471
+472,473
+472,474
+473,474
+474,475
+474,476
+474,477
+475,476
+477,478
+477,479
+478,479
+480,481
+482,483
+484,485
+485,486
+485,487
+486,487
+488,489
+488,490
+489,490
+491,492
+493,494
+493,495
+493,496
+493,497
+493,498
+494,495
+495,496
+495,497
+496,497
+498,499
+500,501
+501,502
+501,503
+502,503
+504,505
+506,507
+507,508
+507,509
+508,509
+510,511
+510,512
+510,513
+510,514
+510,515
+511,512
+513,514
+515,516
+515,517
+516,517
+518,519
+520,521
+521,522
+523,524
+524,525
+526,527
+526,528
+527,528
+527,529
+528,529
+531,532
+531,533
+531,534
+531,535
+531,536
+532,533
+533,534
+533,535
+535,536
+535,537
+537,538
+539,540
+540,541
+540,542
+542,543
+542,544
+544,545
+546,547
+547,548
+547,549
+547,550
+547,551
+547,552
+547,553
+548,549
+550,551
+553,554
+553,555
+553,556
+553,557
+554,555
+556,557
+558,559
+559,560
+560,561
+562,563
+562,564
+563,564
+565,566
+567,568
+567,569
+567,570
+567,571
+568,569
+570,571
+572,573
+573,574
+574,575
+576,577
+578,579
+578,580
+579,580
+581,582
+583,584
+584,585
+584,586
+585,586
+587,588
+589,590
+590,591
+592,593
+593,594
+593,595
+593,596
+594,595
+596,597
+596,598
+597,598
+599,600
+601,602
+602,603
+604,605
+605,606
+605,607
+605,608
+606,607
+608,609
+608,610
+609,610
+611,612
+613,614
+613,615
+614,615
+616,617
+618,619
+619,620
+619,621
+619,622
+620,621
+622,623
+622,624
+623,624
+625,626
+627,628
+627,629
+628,629
+630,631
+632,633
+632,634
+633,634
+635,636
+636,637
+637,638
+637,639
+638,639
+640,641
+642,643
+643,644
+-----nextToken-----
+3,5,6,8,10,11,14,16,17,20,22,23,25,27,28,30,32,33,37,39,42,44,48,50,54,56,57,61,63,67,69,72,74,75,79,81,82,86,89,90,94,98,101,103,107,109,112,116,119,123,126,127,132,134,135,137,140,144,147,148,152,157,158,160,164,167,170,177,179,181,183,185,187,191,194,195,197,200,203,209,211,214,218,219,224,225,228,231,234,235,239,242,243,244,247,249,252,253,254,258,259,264,266,267,272,274,277,281,284,286,289,298,300,302,304,306,308,310,312,316,319,321,325,327,333,336,338,339,341,345,347,353,355,356,359,360,363,368,370,372,376,377,382,385,387,389,392,393,397,400,402,404,407,408,411,414,416,418,421,422,426,429,430,433,436,441,443,444,447,452,454,456,461,464,467,469,471,476,479,481,483,487,490,492,497,499,503,505,509,512,514,517,519,522,525,529,530,534,536,538,541,543,545,549,551,552,555,557,561,564,566,569,571,575,577,580,582,586,588,591,595,598,600,603,607,610,612,615,617,621,624,626,629,631,634,639,641,644
+-----computeFrom-----
+96,97
+96,98
+114,115
+114,116
+154,155
+154,156
+171,172
+171,173
+172,173
+172,174
+173,174
+173,175
+174,175
+174,176
+175,176
+175,177
+206,207
+206,208
+221,222
+221,223
+237,238
+237,239
+256,257
+256,258
+269,270
+269,271
+290,291
+290,292
+291,292
+291,293
+292,293
+292,294
+293,294
+293,295
+294,295
+294,296
+295,296
+295,297
+296,297
+296,298
+329,330
+329,331
+331,332
+331,333
+343,344
+343,345
+349,350
+349,351
+395,396
+395,397
+459,460
+459,461
+485,486
+485,487
+507,508
+507,509
+527,528
+527,529
+-----guardedBy-----
+338,345
+333,347
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;ElaboratedTypeSpecifier;Name;FunctionDeclarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;UnaryExpression;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;ReturnStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;UnaryExpression;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;BinaryExpression;BinaryExpression;BinaryExpression;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;IfStatement;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;LiteralExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;BinaryExpression;BinaryExpression;BinaryExpression;BinaryExpression;BinaryExpression;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;UnaryExpression;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;ConditionalExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;ArrayDeclarator;ReferenceOperator;Name;ArrayModifier;IdExpression;Name;IfStatement;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;ArrayDeclarator;Name;ArrayModifier;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;ArrayDeclarator;Name;ArrayModifier;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;UnaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+static struct ast_channel *iax2_request(const char *type, struct ast_format_cap *cap, const struct ast_channel *requestor, const char *data, int *cause){	int callno;	int res;	struct sockaddr_in sin;	struct ast_channel *c;	struct parsed_dial_string pds;	struct create_addr_info cai;	char *tmpstr;	struct ast_callid *callid;	memset(&pds, 0, sizeof(pds));	tmpstr = ast_strdupa(data);	parse_dial_string(tmpstr, &pds);	callid = ast_read_threadstorage_callid();	if (ast_strlen_zero(pds.peer)) {		ast_log(LOG_WARNING, "No peer provided in the IAX2 dial string '%s'\n", data);		return NULL;	}	memset(&cai, 0, sizeof(cai));	cai.capability = iax2_capability;	ast_copy_flags64(&cai, &globalflags, IAX_NOTRANSFER | IAX_TRANSFERMEDIA | IAX_USEJITTERBUF | IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE);	/* Populate our address from the given */	if (create_addr(pds.peer, NULL, &sin, &cai)) {		*cause = AST_CAUSE_UNREGISTERED;		return NULL;	}	if (pds.port)		sin.sin_port = htons(atoi(pds.port));	callno = find_callno_locked(0, 0, &sin, NEW_FORCE, cai.sockfd, 0);	if (callno < 1) {		ast_log(LOG_WARNING, "Unable to create call\n");		*cause = AST_CAUSE_CONGESTION;		return NULL;	}	/* If this is a trunk, update it now */	ast_copy_flags64(iaxs[callno], &cai, IAX_TRUNK | IAX_SENDANI | IAX_NOTRANSFER | IAX_TRANSFERMEDIA | IAX_USEJITTERBUF | IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE);	if (ast_test_flag64(&cai, IAX_TRUNK)) {		int new_callno;		if ((new_callno = make_trunk(callno, 1)) != -1)			callno = new_callno;	}	iaxs[callno]->maxtime = cai.maxtime;	if (callid) {		iax_pvt_callid_set(callno, callid);	}	if (cai.found) {		ast_string_field_set(iaxs[callno], host, pds.peer);	}	c = ast_iax2_new(callno, AST_STATE_DOWN, cai.capability, requestor ? ast_channel_linkedid(requestor) : NULL, cai.found);	ast_mutex_unlock(&iaxsl[callno]);	if (c) {		struct ast_format_cap *joint;		if (callid) {			ast_channel_callid_set(c, callid);		}		/* Choose a format we can live with */		if ((joint = ast_format_cap_joint(ast_channel_nativeformats(c), cap))) {			ast_format_cap_copy(ast_channel_nativeformats(c), joint);			joint = ast_format_cap_destroy(joint);		} else {			struct ast_format best_fmt_cap;			struct ast_format best_fmt_native;			res = ast_translator_best_choice(cap, ast_channel_nativeformats(c), &best_fmt_cap, &best_fmt_native);			if (res < 0) {				char tmp[256];				char tmp2[256];				ast_log(LOG_WARNING, "Unable to create translator path for %s to %s on %s\n",					ast_getformatname_multiple(tmp, sizeof(tmp), ast_channel_nativeformats(c)), ast_getformatname_multiple(tmp2, sizeof(tmp2), cap), ast_channel_name(c));				ast_hangup(c);				return NULL;			}			ast_format_cap_set(ast_channel_nativeformats(c), &best_fmt_native);		}		ast_best_codec(ast_channel_nativeformats(c), ast_channel_readformat(c));		ast_format_copy(ast_channel_writeformat(c), ast_channel_readformat(c));	}	if (callid) {		ast_callid_unref(callid);	}	return c;}
+static struct ast_channel
+ast_channel
+*iax2_request(const char *type, struct ast_format_cap *cap, const struct ast_channel *requestor, const char *data, int *cause)
+*
+iax2_request
+const char *type
+const char
+*type
+*
+type
+struct ast_format_cap *cap
+struct ast_format_cap
+ast_format_cap
+*cap
+*
+cap
+const struct ast_channel *requestor
+const struct ast_channel
+ast_channel
+*requestor
+*
+requestor
+const char *data
+const char
+*data
+*
+data
+int *cause
+int
+*cause
+*
+cause
+{	int callno;	int res;	struct sockaddr_in sin;	struct ast_channel *c;	struct parsed_dial_string pds;	struct create_addr_info cai;	char *tmpstr;	struct ast_callid *callid;	memset(&pds, 0, sizeof(pds));	tmpstr = ast_strdupa(data);	parse_dial_string(tmpstr, &pds);	callid = ast_read_threadstorage_callid();	if (ast_strlen_zero(pds.peer)) {		ast_log(LOG_WARNING, "No peer provided in the IAX2 dial string '%s'\n", data);		return NULL;	}	memset(&cai, 0, sizeof(cai));	cai.capability = iax2_capability;	ast_copy_flags64(&cai, &globalflags, IAX_NOTRANSFER | IAX_TRANSFERMEDIA | IAX_USEJITTERBUF | IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE);	/* Populate our address from the given */	if (create_addr(pds.peer, NULL, &sin, &cai)) {		*cause = AST_CAUSE_UNREGISTERED;		return NULL;	}	if (pds.port)		sin.sin_port = htons(atoi(pds.port));	callno = find_callno_locked(0, 0, &sin, NEW_FORCE, cai.sockfd, 0);	if (callno < 1) {		ast_log(LOG_WARNING, "Unable to create call\n");		*cause = AST_CAUSE_CONGESTION;		return NULL;	}	/* If this is a trunk, update it now */	ast_copy_flags64(iaxs[callno], &cai, IAX_TRUNK | IAX_SENDANI | IAX_NOTRANSFER | IAX_TRANSFERMEDIA | IAX_USEJITTERBUF | IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE);	if (ast_test_flag64(&cai, IAX_TRUNK)) {		int new_callno;		if ((new_callno = make_trunk(callno, 1)) != -1)			callno = new_callno;	}	iaxs[callno]->maxtime = cai.maxtime;	if (callid) {		iax_pvt_callid_set(callno, callid);	}	if (cai.found) {		ast_string_field_set(iaxs[callno], host, pds.peer);	}	c = ast_iax2_new(callno, AST_STATE_DOWN, cai.capability, requestor ? ast_channel_linkedid(requestor) : NULL, cai.found);	ast_mutex_unlock(&iaxsl[callno]);	if (c) {		struct ast_format_cap *joint;		if (callid) {			ast_channel_callid_set(c, callid);		}		/* Choose a format we can live with */		if ((joint = ast_format_cap_joint(ast_channel_nativeformats(c), cap))) {			ast_format_cap_copy(ast_channel_nativeformats(c), joint);			joint = ast_format_cap_destroy(joint);		} else {			struct ast_format best_fmt_cap;			struct ast_format best_fmt_native;			res = ast_translator_best_choice(cap, ast_channel_nativeformats(c), &best_fmt_cap, &best_fmt_native);			if (res < 0) {				char tmp[256];				char tmp2[256];				ast_log(LOG_WARNING, "Unable to create translator path for %s to %s on %s\n",					ast_getformatname_multiple(tmp, sizeof(tmp), ast_channel_nativeformats(c)), ast_getformatname_multiple(tmp2, sizeof(tmp2), cap), ast_channel_name(c));				ast_hangup(c);				return NULL;			}			ast_format_cap_set(ast_channel_nativeformats(c), &best_fmt_native);		}		ast_best_codec(ast_channel_nativeformats(c), ast_channel_readformat(c));		ast_format_copy(ast_channel_writeformat(c), ast_channel_readformat(c));	}	if (callid) {		ast_callid_unref(callid);	}	return c;}
+int callno;
+int callno;
+int
+callno
+callno
+int res;
+int res;
+int
+res
+res
+struct sockaddr_in sin;
+struct sockaddr_in sin;
+struct sockaddr_in
+sockaddr_in
+sin
+sin
+struct ast_channel *c;
+struct ast_channel *c;
+struct ast_channel
+ast_channel
+*c
+*
+c
+struct parsed_dial_string pds;
+struct parsed_dial_string pds;
+struct parsed_dial_string
+parsed_dial_string
+pds
+pds
+struct create_addr_info cai;
+struct create_addr_info cai;
+struct create_addr_info
+create_addr_info
+cai
+cai
+char *tmpstr;
+char *tmpstr;
+char
+*tmpstr
+*
+tmpstr
+struct ast_callid *callid;
+struct ast_callid *callid;
+struct ast_callid
+ast_callid
+*callid
+*
+callid
+memset(&pds, 0, sizeof(pds));
+memset(&pds, 0, sizeof(pds))
+memset
+memset
+&pds
+pds
+pds
+0
+sizeof(pds)
+(pds)
+pds
+pds
+tmpstr = ast_strdupa(data);
+tmpstr = ast_strdupa(data)
+tmpstr
+tmpstr
+ast_strdupa(data)
+ast_strdupa
+ast_strdupa
+data
+data
+parse_dial_string(tmpstr, &pds);
+parse_dial_string(tmpstr, &pds)
+parse_dial_string
+parse_dial_string
+tmpstr
+tmpstr
+&pds
+pds
+pds
+callid = ast_read_threadstorage_callid();
+callid = ast_read_threadstorage_callid()
+callid
+callid
+ast_read_threadstorage_callid()
+ast_read_threadstorage_callid
+ast_read_threadstorage_callid
+if (ast_strlen_zero(pds.peer)) {		ast_log(LOG_WARNING, "No peer provided in the IAX2 dial string '%s'\n", data);		return NULL;	}
+ast_strlen_zero(pds.peer)
+ast_strlen_zero
+ast_strlen_zero
+pds.peer
+pds
+pds
+peer
+{		ast_log(LOG_WARNING, "No peer provided in the IAX2 dial string '%s'\n", data);		return NULL;	}
+ast_log(LOG_WARNING, "No peer provided in the IAX2 dial string '%s'\n", data);
+ast_log(LOG_WARNING, "No peer provided in the IAX2 dial string '%s'\n", data)
+ast_log
+ast_log
+LOG_WARNING
+LOG_WARNING
+"No peer provided in the IAX2 dial string '%s'\n"
+data
+data
+return NULL;
+NULL
+NULL
+memset(&cai, 0, sizeof(cai));
+memset(&cai, 0, sizeof(cai))
+memset
+memset
+&cai
+cai
+cai
+0
+sizeof(cai)
+(cai)
+cai
+cai
+cai.capability = iax2_capability;
+cai.capability = iax2_capability
+cai.capability
+cai
+cai
+capability
+iax2_capability
+iax2_capability
+ast_copy_flags64(&cai, &globalflags, IAX_NOTRANSFER | IAX_TRANSFERMEDIA | IAX_USEJITTERBUF | IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE);
+ast_copy_flags64(&cai, &globalflags, IAX_NOTRANSFER | IAX_TRANSFERMEDIA | IAX_USEJITTERBUF | IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE)
+ast_copy_flags64
+ast_copy_flags64
+&cai
+cai
+cai
+&globalflags
+globalflags
+globalflags
+IAX_NOTRANSFER | IAX_TRANSFERMEDIA | IAX_USEJITTERBUF | IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE
+IAX_NOTRANSFER | IAX_TRANSFERMEDIA | IAX_USEJITTERBUF | IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE
+IAX_NOTRANSFER | IAX_TRANSFERMEDIA | IAX_USEJITTERBUF | IAX_FORCEJITTERBUF
+IAX_NOTRANSFER | IAX_TRANSFERMEDIA | IAX_USEJITTERBUF
+IAX_NOTRANSFER | IAX_TRANSFERMEDIA
+IAX_NOTRANSFER
+IAX_NOTRANSFER
+IAX_TRANSFERMEDIA
+IAX_TRANSFERMEDIA
+IAX_USEJITTERBUF
+IAX_USEJITTERBUF
+IAX_FORCEJITTERBUF
+IAX_FORCEJITTERBUF
+IAX_SENDCONNECTEDLINE
+IAX_SENDCONNECTEDLINE
+IAX_RECVCONNECTEDLINE
+IAX_RECVCONNECTEDLINE
+if (create_addr(pds.peer, NULL, &sin, &cai)) {		*cause = AST_CAUSE_UNREGISTERED;		return NULL;	}
+create_addr(pds.peer, NULL, &sin, &cai)
+create_addr
+create_addr
+pds.peer
+pds
+pds
+peer
+NULL
+NULL
+&sin
+sin
+sin
+&cai
+cai
+cai
+{		*cause = AST_CAUSE_UNREGISTERED;		return NULL;	}
+*cause = AST_CAUSE_UNREGISTERED;
+*cause = AST_CAUSE_UNREGISTERED
+*cause
+cause
+cause
+AST_CAUSE_UNREGISTERED
+AST_CAUSE_UNREGISTERED
+return NULL;
+NULL
+NULL
+if (pds.port)		sin.sin_port = htons(atoi(pds.port));
+pds.port
+pds
+pds
+port
+sin.sin_port = htons(atoi(pds.port));
+sin.sin_port = htons(atoi(pds.port))
+sin.sin_port
+sin
+sin
+sin_port
+htons(atoi(pds.port))
+htons
+htons
+atoi(pds.port)
+atoi
+atoi
+pds.port
+pds
+pds
+port
+callno = find_callno_locked(0, 0, &sin, NEW_FORCE, cai.sockfd, 0);
+callno = find_callno_locked(0, 0, &sin, NEW_FORCE, cai.sockfd, 0)
+callno
+callno
+find_callno_locked(0, 0, &sin, NEW_FORCE, cai.sockfd, 0)
+find_callno_locked
+find_callno_locked
+0
+0
+&sin
+sin
+sin
+NEW_FORCE
+NEW_FORCE
+cai.sockfd
+cai
+cai
+sockfd
+0
+if (callno < 1) {		ast_log(LOG_WARNING, "Unable to create call\n");		*cause = AST_CAUSE_CONGESTION;		return NULL;	}
+callno < 1
+callno
+callno
+1
+{		ast_log(LOG_WARNING, "Unable to create call\n");		*cause = AST_CAUSE_CONGESTION;		return NULL;	}
+ast_log(LOG_WARNING, "Unable to create call\n");
+ast_log(LOG_WARNING, "Unable to create call\n")
+ast_log
+ast_log
+LOG_WARNING
+LOG_WARNING
+"Unable to create call\n"
+*cause = AST_CAUSE_CONGESTION;
+*cause = AST_CAUSE_CONGESTION
+*cause
+cause
+cause
+AST_CAUSE_CONGESTION
+AST_CAUSE_CONGESTION
+return NULL;
+NULL
+NULL
+ast_copy_flags64(iaxs[callno], &cai, IAX_TRUNK | IAX_SENDANI | IAX_NOTRANSFER | IAX_TRANSFERMEDIA | IAX_USEJITTERBUF | IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE);
+ast_copy_flags64(iaxs[callno], &cai, IAX_TRUNK | IAX_SENDANI | IAX_NOTRANSFER | IAX_TRANSFERMEDIA | IAX_USEJITTERBUF | IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE)
+ast_copy_flags64
+ast_copy_flags64
+iaxs[callno]
+iaxs
+iaxs
+callno
+callno
+&cai
+cai
+cai
+IAX_TRUNK | IAX_SENDANI | IAX_NOTRANSFER | IAX_TRANSFERMEDIA | IAX_USEJITTERBUF | IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE
+IAX_TRUNK | IAX_SENDANI | IAX_NOTRANSFER | IAX_TRANSFERMEDIA | IAX_USEJITTERBUF | IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE
+IAX_TRUNK | IAX_SENDANI | IAX_NOTRANSFER | IAX_TRANSFERMEDIA | IAX_USEJITTERBUF | IAX_FORCEJITTERBUF
+IAX_TRUNK | IAX_SENDANI | IAX_NOTRANSFER | IAX_TRANSFERMEDIA | IAX_USEJITTERBUF
+IAX_TRUNK | IAX_SENDANI | IAX_NOTRANSFER | IAX_TRANSFERMEDIA
+IAX_TRUNK | IAX_SENDANI | IAX_NOTRANSFER
+IAX_TRUNK | IAX_SENDANI
+IAX_TRUNK
+IAX_TRUNK
+IAX_SENDANI
+IAX_SENDANI
+IAX_NOTRANSFER
+IAX_NOTRANSFER
+IAX_TRANSFERMEDIA
+IAX_TRANSFERMEDIA
+IAX_USEJITTERBUF
+IAX_USEJITTERBUF
+IAX_FORCEJITTERBUF
+IAX_FORCEJITTERBUF
+IAX_SENDCONNECTEDLINE
+IAX_SENDCONNECTEDLINE
+IAX_RECVCONNECTEDLINE
+IAX_RECVCONNECTEDLINE
+if (ast_test_flag64(&cai, IAX_TRUNK)) {		int new_callno;		if ((new_callno = make_trunk(callno, 1)) != -1)			callno = new_callno;	}
+ast_test_flag64(&cai, IAX_TRUNK)
+ast_test_flag64
+ast_test_flag64
+&cai
+cai
+cai
+IAX_TRUNK
+IAX_TRUNK
+{		int new_callno;		if ((new_callno = make_trunk(callno, 1)) != -1)			callno = new_callno;	}
+int new_callno;
+int new_callno;
+int
+new_callno
+new_callno
+if ((new_callno = make_trunk(callno, 1)) != -1)			callno = new_callno;
+(new_callno = make_trunk(callno, 1)) != -1
+(new_callno = make_trunk(callno, 1))
+new_callno = make_trunk(callno, 1)
+new_callno
+new_callno
+make_trunk(callno, 1)
+make_trunk
+make_trunk
+callno
+callno
+1
+-1
+1
+callno = new_callno;
+callno = new_callno
+callno
+callno
+new_callno
+new_callno
+iaxs[callno]->maxtime = cai.maxtime;
+iaxs[callno]->maxtime = cai.maxtime
+iaxs[callno]->maxtime
+iaxs[callno]
+iaxs
+iaxs
+callno
+callno
+maxtime
+cai.maxtime
+cai
+cai
+maxtime
+if (callid) {		iax_pvt_callid_set(callno, callid);	}
+callid
+callid
+{		iax_pvt_callid_set(callno, callid);	}
+iax_pvt_callid_set(callno, callid);
+iax_pvt_callid_set(callno, callid)
+iax_pvt_callid_set
+iax_pvt_callid_set
+callno
+callno
+callid
+callid
+if (cai.found) {		ast_string_field_set(iaxs[callno], host, pds.peer);	}
+cai.found
+cai
+cai
+found
+{		ast_string_field_set(iaxs[callno], host, pds.peer);	}
+ast_string_field_set(iaxs[callno], host, pds.peer);
+ast_string_field_set(iaxs[callno], host, pds.peer)
+ast_string_field_set
+ast_string_field_set
+iaxs[callno]
+iaxs
+iaxs
+callno
+callno
+host
+host
+pds.peer
+pds
+pds
+peer
+c = ast_iax2_new(callno, AST_STATE_DOWN, cai.capability, requestor ? ast_channel_linkedid(requestor) : NULL, cai.found);
+c = ast_iax2_new(callno, AST_STATE_DOWN, cai.capability, requestor ? ast_channel_linkedid(requestor) : NULL, cai.found)
+c
+c
+ast_iax2_new(callno, AST_STATE_DOWN, cai.capability, requestor ? ast_channel_linkedid(requestor) : NULL, cai.found)
+ast_iax2_new
+ast_iax2_new
+callno
+callno
+AST_STATE_DOWN
+AST_STATE_DOWN
+cai.capability
+cai
+cai
+capability
+requestor ? ast_channel_linkedid(requestor) : NULL
+requestor
+requestor
+ast_channel_linkedid(requestor)
+ast_channel_linkedid
+ast_channel_linkedid
+requestor
+requestor
+NULL
+NULL
+cai.found
+cai
+cai
+found
+ast_mutex_unlock(&iaxsl[callno]);
+ast_mutex_unlock(&iaxsl[callno]);
+ast_mutex_unlock
+ast_mutex_unlock
+(&iaxsl[callno])
+&iaxsl[callno]
+&
+iaxsl
+[callno]
+callno
+callno
+if (c) {		struct ast_format_cap *joint;		if (callid) {			ast_channel_callid_set(c, callid);		}		/* Choose a format we can live with */		if ((joint = ast_format_cap_joint(ast_channel_nativeformats(c), cap))) {			ast_format_cap_copy(ast_channel_nativeformats(c), joint);			joint = ast_format_cap_destroy(joint);		} else {			struct ast_format best_fmt_cap;			struct ast_format best_fmt_native;			res = ast_translator_best_choice(cap, ast_channel_nativeformats(c), &best_fmt_cap, &best_fmt_native);			if (res < 0) {				char tmp[256];				char tmp2[256];				ast_log(LOG_WARNING, "Unable to create translator path for %s to %s on %s\n",					ast_getformatname_multiple(tmp, sizeof(tmp), ast_channel_nativeformats(c)), ast_getformatname_multiple(tmp2, sizeof(tmp2), cap), ast_channel_name(c));				ast_hangup(c);				return NULL;			}			ast_format_cap_set(ast_channel_nativeformats(c), &best_fmt_native);		}		ast_best_codec(ast_channel_nativeformats(c), ast_channel_readformat(c));		ast_format_copy(ast_channel_writeformat(c), ast_channel_readformat(c));	}
+c
+c
+{		struct ast_format_cap *joint;		if (callid) {			ast_channel_callid_set(c, callid);		}		/* Choose a format we can live with */		if ((joint = ast_format_cap_joint(ast_channel_nativeformats(c), cap))) {			ast_format_cap_copy(ast_channel_nativeformats(c), joint);			joint = ast_format_cap_destroy(joint);		} else {			struct ast_format best_fmt_cap;			struct ast_format best_fmt_native;			res = ast_translator_best_choice(cap, ast_channel_nativeformats(c), &best_fmt_cap, &best_fmt_native);			if (res < 0) {				char tmp[256];				char tmp2[256];				ast_log(LOG_WARNING, "Unable to create translator path for %s to %s on %s\n",					ast_getformatname_multiple(tmp, sizeof(tmp), ast_channel_nativeformats(c)), ast_getformatname_multiple(tmp2, sizeof(tmp2), cap), ast_channel_name(c));				ast_hangup(c);				return NULL;			}			ast_format_cap_set(ast_channel_nativeformats(c), &best_fmt_native);		}		ast_best_codec(ast_channel_nativeformats(c), ast_channel_readformat(c));		ast_format_copy(ast_channel_writeformat(c), ast_channel_readformat(c));	}
+struct ast_format_cap *joint;
+struct ast_format_cap *joint;
+struct ast_format_cap
+ast_format_cap
+*joint
+*
+joint
+if (callid) {			ast_channel_callid_set(c, callid);		}
+callid
+callid
+{			ast_channel_callid_set(c, callid);		}
+ast_channel_callid_set(c, callid);
+ast_channel_callid_set(c, callid)
+ast_channel_callid_set
+ast_channel_callid_set
+c
+c
+callid
+callid
+if ((joint = ast_format_cap_joint(ast_channel_nativeformats(c), cap))) {			ast_format_cap_copy(ast_channel_nativeformats(c), joint);			joint = ast_format_cap_destroy(joint);		} else {			struct ast_format best_fmt_cap;			struct ast_format best_fmt_native;			res = ast_translator_best_choice(cap, ast_channel_nativeformats(c), &best_fmt_cap, &best_fmt_native);			if (res < 0) {				char tmp[256];				char tmp2[256];				ast_log(LOG_WARNING, "Unable to create translator path for %s to %s on %s\n",					ast_getformatname_multiple(tmp, sizeof(tmp), ast_channel_nativeformats(c)), ast_getformatname_multiple(tmp2, sizeof(tmp2), cap), ast_channel_name(c));				ast_hangup(c);				return NULL;			}			ast_format_cap_set(ast_channel_nativeformats(c), &best_fmt_native);		}
+(joint = ast_format_cap_joint(ast_channel_nativeformats(c), cap))
+joint = ast_format_cap_joint(ast_channel_nativeformats(c), cap)
+joint
+joint
+ast_format_cap_joint(ast_channel_nativeformats(c), cap)
+ast_format_cap_joint
+ast_format_cap_joint
+ast_channel_nativeformats(c)
+ast_channel_nativeformats
+ast_channel_nativeformats
+c
+c
+cap
+cap
+{			ast_format_cap_copy(ast_channel_nativeformats(c), joint);			joint = ast_format_cap_destroy(joint);		}
+ast_format_cap_copy(ast_channel_nativeformats(c), joint);
+ast_format_cap_copy(ast_channel_nativeformats(c), joint)
+ast_format_cap_copy
+ast_format_cap_copy
+ast_channel_nativeformats(c)
+ast_channel_nativeformats
+ast_channel_nativeformats
+c
+c
+joint
+joint
+joint = ast_format_cap_destroy(joint);
+joint = ast_format_cap_destroy(joint)
+joint
+joint
+ast_format_cap_destroy(joint)
+ast_format_cap_destroy
+ast_format_cap_destroy
+joint
+joint
+{			struct ast_format best_fmt_cap;			struct ast_format best_fmt_native;			res = ast_translator_best_choice(cap, ast_channel_nativeformats(c), &best_fmt_cap, &best_fmt_native);			if (res < 0) {				char tmp[256];				char tmp2[256];				ast_log(LOG_WARNING, "Unable to create translator path for %s to %s on %s\n",					ast_getformatname_multiple(tmp, sizeof(tmp), ast_channel_nativeformats(c)), ast_getformatname_multiple(tmp2, sizeof(tmp2), cap), ast_channel_name(c));				ast_hangup(c);				return NULL;			}			ast_format_cap_set(ast_channel_nativeformats(c), &best_fmt_native);		}
+struct ast_format best_fmt_cap;
+struct ast_format best_fmt_cap;
+struct ast_format
+ast_format
+best_fmt_cap
+best_fmt_cap
+struct ast_format best_fmt_native;
+struct ast_format best_fmt_native;
+struct ast_format
+ast_format
+best_fmt_native
+best_fmt_native
+res = ast_translator_best_choice(cap, ast_channel_nativeformats(c), &best_fmt_cap, &best_fmt_native);
+res = ast_translator_best_choice(cap, ast_channel_nativeformats(c), &best_fmt_cap, &best_fmt_native)
+res
+res
+ast_translator_best_choice(cap, ast_channel_nativeformats(c), &best_fmt_cap, &best_fmt_native)
+ast_translator_best_choice
+ast_translator_best_choice
+cap
+cap
+ast_channel_nativeformats(c)
+ast_channel_nativeformats
+ast_channel_nativeformats
+c
+c
+&best_fmt_cap
+best_fmt_cap
+best_fmt_cap
+&best_fmt_native
+best_fmt_native
+best_fmt_native
+if (res < 0) {				char tmp[256];				char tmp2[256];				ast_log(LOG_WARNING, "Unable to create translator path for %s to %s on %s\n",					ast_getformatname_multiple(tmp, sizeof(tmp), ast_channel_nativeformats(c)), ast_getformatname_multiple(tmp2, sizeof(tmp2), cap), ast_channel_name(c));				ast_hangup(c);				return NULL;			}
+res < 0
+res
+res
+0
+{				char tmp[256];				char tmp2[256];				ast_log(LOG_WARNING, "Unable to create translator path for %s to %s on %s\n",					ast_getformatname_multiple(tmp, sizeof(tmp), ast_channel_nativeformats(c)), ast_getformatname_multiple(tmp2, sizeof(tmp2), cap), ast_channel_name(c));				ast_hangup(c);				return NULL;			}
+char tmp[256];
+char tmp[256];
+char
+tmp[256]
+tmp
+[256]
+256
+char tmp2[256];
+char tmp2[256];
+char
+tmp2[256]
+tmp2
+[256]
+256
+ast_log(LOG_WARNING, "Unable to create translator path for %s to %s on %s\n",					ast_getformatname_multiple(tmp, sizeof(tmp), ast_channel_nativeformats(c)), ast_getformatname_multiple(tmp2, sizeof(tmp2), cap), ast_channel_name(c));
+ast_log(LOG_WARNING, "Unable to create translator path for %s to %s on %s\n",					ast_getformatname_multiple(tmp, sizeof(tmp), ast_channel_nativeformats(c)), ast_getformatname_multiple(tmp2, sizeof(tmp2), cap), ast_channel_name(c))
+ast_log
+ast_log
+LOG_WARNING
+LOG_WARNING
+"Unable to create translator path for %s to %s on %s\n"
+ast_getformatname_multiple(tmp, sizeof(tmp), ast_channel_nativeformats(c))
+ast_getformatname_multiple
+ast_getformatname_multiple
+tmp
+tmp
+sizeof(tmp)
+(tmp)
+tmp
+tmp
+ast_channel_nativeformats(c)
+ast_channel_nativeformats
+ast_channel_nativeformats
+c
+c
+ast_getformatname_multiple(tmp2, sizeof(tmp2), cap)
+ast_getformatname_multiple
+ast_getformatname_multiple
+tmp2
+tmp2
+sizeof(tmp2)
+(tmp2)
+tmp2
+tmp2
+cap
+cap
+ast_channel_name(c)
+ast_channel_name
+ast_channel_name
+c
+c
+ast_hangup(c);
+ast_hangup(c)
+ast_hangup
+ast_hangup
+c
+c
+return NULL;
+NULL
+NULL
+ast_format_cap_set(ast_channel_nativeformats(c), &best_fmt_native);
+ast_format_cap_set(ast_channel_nativeformats(c), &best_fmt_native)
+ast_format_cap_set
+ast_format_cap_set
+ast_channel_nativeformats(c)
+ast_channel_nativeformats
+ast_channel_nativeformats
+c
+c
+&best_fmt_native
+best_fmt_native
+best_fmt_native
+ast_best_codec(ast_channel_nativeformats(c), ast_channel_readformat(c));
+ast_best_codec(ast_channel_nativeformats(c), ast_channel_readformat(c))
+ast_best_codec
+ast_best_codec
+ast_channel_nativeformats(c)
+ast_channel_nativeformats
+ast_channel_nativeformats
+c
+c
+ast_channel_readformat(c)
+ast_channel_readformat
+ast_channel_readformat
+c
+c
+ast_format_copy(ast_channel_writeformat(c), ast_channel_readformat(c));
+ast_format_copy(ast_channel_writeformat(c), ast_channel_readformat(c))
+ast_format_copy
+ast_format_copy
+ast_channel_writeformat(c)
+ast_channel_writeformat
+ast_channel_writeformat
+c
+c
+ast_channel_readformat(c)
+ast_channel_readformat
+ast_channel_readformat
+c
+c
+if (callid) {		ast_callid_unref(callid);	}
+callid
+callid
+{		ast_callid_unref(callid);	}
+ast_callid_unref(callid);
+ast_callid_unref(callid)
+ast_callid_unref
+ast_callid_unref
+callid
+callid
+return c;
+c
+c
+-----joern-----
+(290,61,0)
+(6,71,0)
+(280,92,0)
+(259,74,0)
+(151,129,0)
+(155,3,0)
+(117,164,0)
+(18,180,0)
+(44,147,0)
+(206,61,0)
+(285,240,0)
+(32,300,0)
+(128,200,0)
+(4,240,0)
+(46,107,0)
+(63,3,0)
+(224,148,0)
+(302,242,0)
+(55,201,0)
+(29,171,0)
+(185,179,0)
+(17,226,0)
+(50,234,0)
+(10,178,0)
+(252,269,0)
+(278,68,0)
+(154,280,0)
+(95,72,0)
+(242,179,0)
+(254,268,0)
+(279,54,0)
+(155,271,0)
+(144,186,0)
+(192,122,0)
+(185,91,0)
+(16,47,0)
+(205,273,0)
+(76,86,0)
+(28,76,0)
+(238,146,0)
+(66,32,0)
+(258,268,0)
+(201,132,0)
+(183,90,0)
+(38,300,0)
+(1,53,0)
+(257,47,0)
+(211,104,0)
+(291,300,0)
+(151,74,0)
+(156,132,0)
+(299,129,0)
+(214,61,0)
+(93,61,0)
+(48,250,0)
+(8,68,0)
+(80,161,0)
+(146,277,0)
+(102,151,0)
+(25,76,0)
+(66,116,0)
+(17,163,0)
+(84,277,0)
+(42,300,0)
+(218,228,0)
+(136,143,0)
+(142,4,0)
+(288,295,0)
+(54,92,0)
+(163,68,0)
+(274,300,0)
+(295,60,0)
+(203,300,0)
+(231,300,0)
+(241,97,0)
+(182,173,0)
+(234,253,0)
+(88,27,0)
+(271,24,0)
+(217,189,0)
+(43,232,0)
+(296,117,0)
+(128,250,0)
+(253,234,0)
+(195,146,0)
+(197,63,0)
+(17,119,0)
+(59,138,0)
+(256,119,0)
+(140,194,0)
+(284,163,0)
+(107,173,0)
+(133,125,0)
+(171,255,0)
+(268,212,0)
+(191,257,0)
+(168,288,0)
+(128,212,0)
+(117,228,0)
+(270,11,0)
+(23,300,0)
+(263,165,0)
+(75,19,0)
+(256,200,0)
+(90,183,0)
+(176,67,0)
+(121,3,0)
+(165,9,0)
+(170,22,0)
+(232,27,0)
+(92,300,0)
+(5,273,0)
+(255,8,0)
+(151,102,0)
+(232,300,0)
+(40,300,0)
+(186,194,0)
+(150,54,0)
+(12,0,0)
+(134,294,0)
+(165,1,0)
+(82,8,0)
+(215,143,0)
+(174,122,0)
+(166,70,0)
+(61,164,0)
+(261,244,0)
+(291,187,0)
+(263,169,0)
+(271,155,0)
+(130,256,0)
+(272,22,0)
+(20,32,0)
+(3,68,0)
+(145,216,0)
+(56,68,0)
+(242,39,0)
+(131,279,0)
+(74,151,0)
+(70,164,0)
+(132,201,0)
+(149,191,0)
+(100,300,0)
+(120,215,0)
+(107,46,0)
+(213,86,0)
+(221,234,0)
+(189,291,0)
+(34,148,0)
+(126,178,0)
+(83,257,0)
+(32,159,0)
+(215,294,0)
+(283,34,0)
+(105,18,0)
+(143,215,0)
+(228,72,0)
+(220,97,0)
+(170,263,0)
+(188,235,0)
+(127,91,0)
+(3,63,0)
+(63,26,0)
+(251,183,0)
+(163,17,0)
+(61,106,0)
+(64,244,0)
+(19,100,0)
+(228,117,0)
+(187,291,0)
+(145,115,0)
+(177,117,0)
+(170,4,0)
+(7,16,0)
+(222,63,0)
+(263,178,0)
+(98,26,0)
+(167,2,0)
+(278,240,0)
+(233,16,0)
+(190,125,0)
+(173,164,0)
+(270,104,0)
+(201,164,0)
+(4,169,0)
+(186,269,0)
+(208,28,0)
+(181,256,0)
+(3,155,0)
+(295,200,0)
+(132,156,0)
+(139,72,0)
+(84,230,0)
+(155,24,0)
+(227,89,0)
+(86,266,0)
+(51,70,0)
+(78,68,0)
+(194,9,0)
+(101,201,0)
+(205,147,0)
+(295,288,0)
+(107,300,0)
+(119,256,0)
+(209,94,0)
+(204,66,0)
+(170,293,0)
+(26,300,0)
+(46,34,0)
+(3,47,0)
+(245,71,0)
+(100,19,0)
+(118,169,0)
+(90,300,0)
+(160,155,0)
+(3,122,0)
+(69,173,0)
+(111,104,0)
+(33,300,0)
+(246,252,0)
+(11,270,0)
+(201,47,0)
+(97,241,0)
+(91,300,0)
+(277,146,0)
+(11,68,0)
+(173,107,0)
+(57,300,0)
+(277,84,0)
+(235,119,0)
+(298,3,0)
+(0,295,0)
+(223,145,0)
+(229,183,0)
+(115,68,0)
+(124,31,0)
+(122,3,0)
+(257,191,0)
+(123,169,0)
+(301,147,0)
+(244,68,0)
+(226,17,0)
+(52,102,0)
+(180,18,0)
+(148,34,0)
+(41,28,0)
+(100,91,0)
+(291,189,0)
+(270,56,0)
+(193,100,0)
+(15,241,0)
+(212,128,0)
+(170,186,0)
+(0,68,0)
+(14,104,0)
+(86,76,0)
+(295,73,0)
+(292,60,0)
+(153,293,0)
+(235,68,0)
+(4,178,0)
+(232,31,0)
+(137,17,0)
+(237,271,0)
+(99,263,0)
+(230,84,0)
+(293,39,0)
+(125,73,0)
+(180,161,0)
+(107,282,0)
+(279,294,0)
+(248,300,0)
+(117,47,0)
+(16,164,0)
+(16,32,0)
+(147,205,0)
+(244,32,0)
+(256,110,0)
+(180,104,0)
+(56,270,0)
+(110,256,0)
+(77,89,0)
+(16,79,0)
+(4,191,0)
+(164,61,0)
+(247,30,0)
+(244,249,0)
+(207,291,0)
+(18,68,0)
+(264,164,0)
+(138,92,0)
+(81,212,0)
+(161,180,0)
+(263,53,0)
+(68,300,0)
+(268,254,0)
+(172,73,0)
+(119,17,0)
+(22,300,0)
+(36,67,0)
+(108,1,0)
+(257,164,0)
+(73,295,0)
+(260,94,0)
+(147,44,0)
+(287,300,0)
+(286,300,0)
+(71,61,0)
+(191,90,0)
+(148,266,0)
+(196,282,0)
+(275,47,0)
+(289,300,0)
+(87,30,0)
+(106,61,0)
+(65,295,0)
+(141,106,0)
+(236,11,0)
+(250,128,0)
+(2,53,0)
+(184,226,0)
+(27,232,0)
+(157,278,0)
+(186,178,0)
+(158,2,0)
+(119,235,0)
+(35,143,0)
+(72,228,0)
+(45,47,0)
+(44,164,0)
+(152,185,0)
+(58,266,0)
+(145,212,0)
+(62,44,0)
+(73,89,0)
+(31,232,0)
+(8,255,0)
+(254,216,0)
+(297,240,0)
+(169,230,0)
+(161,68,0)
+(61,71,0)
+(115,145,0)
+(76,28,0)
+(68,3,0)
+(103,242,0)
+(266,86,0)
+(129,151,0)
+(294,279,0)
+(13,257,0)
+(21,115,0)
+(96,187,0)
+(3,164,0)
+(112,128,0)
+(198,300,0)
+(92,280,0)
+(114,300,0)
+(85,254,0)
+(34,46,0)
+(113,155,0)
+(295,0,0)
+(47,147,0)
+(202,46,0)
+(255,171,0)
+(294,215,0)
+(199,151,0)
+(156,300,0)
+(273,205,0)
+(267,56,0)
+(243,74,0)
+(239,300,0)
+(164,300,0)
+(225,165,0)
+(178,26,0)
+(37,89,0)
+(92,54,0)
+(91,185,0)
+(228,109,0)
+(250,68,0)
+(265,300,0)
+(162,44,0)
+(54,279,0)
+(22,68,0)
+(194,252,0)
+(262,119,0)
+(282,107,0)
+(210,242,0)
+(266,148,0)
+(159,32,0)
+(92,138,0)
+(60,295,0)
+(255,89,0)
+(276,119,0)
+(281,110,0)
+(119,240,0)
+(170,293,1)
+(30,87,1)
+(49,156,1)
+(295,288,1)
+(17,163,1)
+(83,205,1)
+(263,178,1)
+(139,218,1)
+(263,169,1)
+(191,257,1)
+(120,134,1)
+(170,186,1)
+(221,32,1)
+(268,258,1)
+(271,237,1)
+(16,47,1)
+(17,226,1)
+(61,106,1)
+(16,233,1)
+(189,217,1)
+(186,144,1)
+(48,81,1)
+(152,127,1)
+(288,168,1)
+(97,220,1)
+(151,129,1)
+(271,24,1)
+(235,188,1)
+(212,128,1)
+(129,299,1)
+(100,19,1)
+(193,91,1)
+(259,243,1)
+(86,76,1)
+(246,194,1)
+(184,137,1)
+(163,284,1)
+(81,244,1)
+(76,28,1)
+(113,63,1)
+(128,250,1)
+(66,204,1)
+(27,88,1)
+(244,68,1)
+(294,215,1)
+(123,118,1)
+(64,135,1)
+(12,65,1)
+(258,85,1)
+(187,96,1)
+(199,74,1)
+(170,4,1)
+(292,0,1)
+(173,182,1)
+(229,251,1)
+(257,13,1)
+(237,113,1)
+(80,18,1)
+(74,259,1)
+(54,279,1)
+(174,192,1)
+(134,131,1)
+(178,126,1)
+(244,32,1)
+(214,264,1)
+(13,83,1)
+(291,189,1)
+(147,44,1)
+(250,68,1)
+(188,256,1)
+(145,115,1)
+(150,280,1)
+(162,301,1)
+(138,59,1)
+(215,143,1)
+(247,151,1)
+(156,132,1)
+(4,169,1)
+(232,31,1)
+(107,173,1)
+(66,32,1)
+(22,272,1)
+(0,12,1)
+(208,41,1)
+(278,68,1)
+(301,241,1)
+(205,147,1)
+(29,8,1)
+(75,193,1)
+(73,295,1)
+(173,164,1)
+(181,17,1)
+(270,11,1)
+(196,173,1)
+(201,55,1)
+(102,52,1)
+(55,101,1)
+(112,250,1)
+(145,212,1)
+(128,200,1)
+(78,228,1)
+(19,75,1)
+(223,115,1)
+(68,3,1)
+(69,70,1)
+(224,283,1)
+(236,255,1)
+(58,224,1)
+(163,68,1)
+(180,161,1)
+(82,125,1)
+(56,68,1)
+(197,222,1)
+(44,62,1)
+(110,281,1)
+(234,50,1)
+(106,141,1)
+(135,49,1)
+(171,29,1)
+(242,210,1)
+(165,9,1)
+(133,73,1)
+(154,138,1)
+(257,47,1)
+(219,90,1)
+(70,164,1)
+(267,11,1)
+(25,213,1)
+(277,146,1)
+(283,202,1)
+(190,133,1)
+(295,60,1)
+(96,253,1)
+(222,298,1)
+(176,16,1)
+(87,247,1)
+(61,71,1)
+(7,219,1)
+(206,71,1)
+(34,148,1)
+(115,68,1)
+(44,164,1)
+(32,159,1)
+(236,254,1)
+(155,271,1)
+(266,86,1)
+(254,268,1)
+(180,18,1)
+(125,73,1)
+(56,267,1)
+(72,95,1)
+(117,177,1)
+(226,184,1)
+(98,178,1)
+(195,238,1)
+(295,0,1)
+(136,35,1)
+(194,140,1)
+(117,164,1)
+(4,191,1)
+(284,226,1)
+(155,160,1)
+(153,242,1)
+(119,235,1)
+(6,290,1)
+(95,139,1)
+(2,167,1)
+(263,99,1)
+(92,54,1)
+(235,68,1)
+(161,80,1)
+(194,9,1)
+(159,20,1)
+(18,105,1)
+(261,64,1)
+(191,149,1)
+(3,155,1)
+(186,194,1)
+(275,45,1)
+(146,195,1)
+(3,164,1)
+(31,124,1)
+(0,68,1)
+(279,294,1)
+(175,180,1)
+(65,172,1)
+(52,199,1)
+(230,84,1)
+(119,256,1)
+(165,225,1)
+(205,273,1)
+(3,47,1)
+(210,103,1)
+(202,282,1)
+(272,175,1)
+(299,102,1)
+(170,263,1)
+(264,230,1)
+(263,165,1)
+(20,100,1)
+(282,196,1)
+(207,187,1)
+(63,197,1)
+(141,93,1)
+(280,154,1)
+(81,135,1)
+(276,262,1)
+(22,68,1)
+(130,110,1)
+(293,153,1)
+(45,205,1)
+(228,72,1)
+(99,1,1)
+(291,187,1)
+(270,56,1)
+(155,24,1)
+(183,229,1)
+(28,208,1)
+(172,212,1)
+(47,275,1)
+(117,47,1)
+(11,68,1)
+(84,277,1)
+(127,232,1)
+(255,8,1)
+(50,221,1)
+(91,185,1)
+(4,142,1)
+(128,112,1)
+(273,5,1)
+(228,117,1)
+(35,120,1)
+(296,67,1)
+(250,48,1)
+(218,117,1)
+(92,138,1)
+(125,190,1)
+(118,30,1)
+(3,122,1)
+(4,178,1)
+(108,165,1)
+(302,253,1)
+(256,200,1)
+(51,166,1)
+(255,171,1)
+(185,152,1)
+(121,78,1)
+(83,47,1)
+(161,68,1)
+(119,17,1)
+(8,82,1)
+(272,66,1)
+(241,15,1)
+(151,102,1)
+(175,49,1)
+(36,176,1)
+(264,30,1)
+(78,67,1)
+(252,246,1)
+(225,2,1)
+(160,113,1)
+(164,61,1)
+(26,98,1)
+(176,219,1)
+(220,107,1)
+(115,21,1)
+(298,121,1)
+(41,25,1)
+(18,68,1)
+(166,164,1)
+(177,296,1)
+(107,282,1)
+(201,164,1)
+(201,47,1)
+(268,212,1)
+(253,234,1)
+(83,241,1)
+(16,164,1)
+(21,212,1)
+(100,91,1)
+(105,270,1)
+(151,74,1)
+(251,191,1)
+(281,181,1)
+(232,27,1)
+(242,179,1)
+(90,183,1)
+(256,130,1)
+(5,147,1)
+(167,158,1)
+(142,278,1)
+(67,36,1)
+(62,162,1)
+(11,236,1)
+(243,92,1)
+(137,276,1)
+(145,223,1)
+(15,97,1)
+(245,6,1)
+(185,179,1)
+(295,200,1)
+(257,164,1)
+(233,7,1)
+(158,70,1)
+(1,108,1)
+(85,145,1)
+(149,257,1)
+(59,26,1)
+(126,10,1)
+(144,252,1)
+(132,201,1)
+(148,266,1)
+(3,63,1)
+(256,110,1)
+(16,32,1)
+(186,178,1)
+(157,119,1)
+(204,175,1)
+(103,302,1)
+(170,22,1)
+(143,136,1)
+(217,207,1)
+(60,292,1)
+(70,51,1)
+(46,34,1)
+(124,43,1)
+(262,125,1)
+(169,123,1)
+(122,174,1)
+(182,69,1)
+(140,151,1)
+(238,169,1)
+(168,60,1)
+(71,245,1)
+(290,106,1)
+(107,46,1)
+(131,150,1)
+(63,26,1)
+(192,155,1)
+(10,291,1)
+(244,261,1)
+(93,214,1)
+(241,97,1)
+(92,280,1)
+(47,147,1)
+(61,206,1)
+(101,68,1)
+(213,58,1)
+(43,27,1)
+(8,68,1)
+(278,157,1)
+(97,70,2)
+(256,110,2)
+(178,253,2)
+(173,70,2)
+(238,30,2)
+(105,212,2)
+(158,70,2)
+(181,125,2)
+(170,186,2)
+(1,70,2)
+(245,151,2)
+(32,159,2)
+(268,212,2)
+(28,70,2)
+(92,253,2)
+(149,70,2)
+(125,73,2)
+(280,253,2)
+(70,151,2)
+(180,125,2)
+(86,76,2)
+(4,125,2)
+(117,67,2)
+(241,97,2)
+(205,147,2)
+(232,27,2)
+(47,205,2)
+(80,125,2)
+(55,70,2)
+(261,135,2)
+(161,125,2)
+(86,70,2)
+(106,151,2)
+(22,49,2)
+(205,273,2)
+(135,49,2)
+(34,70,2)
+(213,70,2)
+(212,49,2)
+(84,30,2)
+(263,178,2)
+(165,70,2)
+(3,70,2)
+(25,70,2)
+(273,241,2)
+(132,201,2)
+(182,70,2)
+(263,165,2)
+(235,125,2)
+(194,9,2)
+(47,147,2)
+(8,68,2)
+(256,125,2)
+(232,31,2)
+(16,164,2)
+(291,189,2)
+(63,70,2)
+(171,125,2)
+(197,70,2)
+(151,102,2)
+(3,122,2)
+(202,70,2)
+(128,49,2)
+(52,253,2)
+(5,241,2)
+(228,72,2)
+(148,266,2)
+(257,164,2)
+(272,125,2)
+(252,151,2)
+(263,169,2)
+(250,49,2)
+(220,70,2)
+(117,47,2)
+(186,178,2)
+(71,151,2)
+(87,151,2)
+(107,70,2)
+(64,135,2)
+(90,70,2)
+(56,68,2)
+(0,68,2)
+(266,70,2)
+(258,212,2)
+(56,125,2)
+(270,56,2)
+(22,212,2)
+(138,253,2)
+(2,70,2)
+(67,70,2)
+(92,54,2)
+(22,68,2)
+(223,212,2)
+(270,125,2)
+(128,200,2)
+(167,70,2)
+(271,24,2)
+(284,125,2)
+(215,253,2)
+(107,282,2)
+(279,294,2)
+(279,253,2)
+(259,253,2)
+(214,151,2)
+(120,253,2)
+(166,151,2)
+(92,280,2)
+(147,44,2)
+(278,125,2)
+(155,70,2)
+(163,68,2)
+(17,226,2)
+(145,212,2)
+(11,68,2)
+(73,295,2)
+(126,253,2)
+(4,169,2)
+(61,106,2)
+(36,70,2)
+(3,47,2)
+(81,49,2)
+(291,253,2)
+(186,194,2)
+(61,151,2)
+(7,219,2)
+(13,70,2)
+(115,212,2)
+(156,70,2)
+(302,253,2)
+(65,212,2)
+(217,253,2)
+(189,253,2)
+(301,241,2)
+(115,68,2)
+(103,253,2)
+(298,70,2)
+(99,70,2)
+(206,151,2)
+(151,253,2)
+(218,67,2)
+(272,49,2)
+(207,253,2)
+(161,68,2)
+(107,46,2)
+(119,256,2)
+(45,205,2)
+(105,125,2)
+(228,67,2)
+(277,30,2)
+(172,212,2)
+(132,70,2)
+(226,125,2)
+(244,135,2)
+(295,288,2)
+(165,9,2)
+(119,125,2)
+(41,70,2)
+(139,67,2)
+(92,138,2)
+(154,253,2)
+(170,263,2)
+(98,253,2)
+(164,151,2)
+(72,67,2)
+(66,175,2)
+(35,253,2)
+(272,212,2)
+(201,164,2)
+(78,70,2)
+(233,219,2)
+(180,161,2)
+(192,70,2)
+(201,47,2)
+(8,125,2)
+(199,253,2)
+(183,70,2)
+(180,212,2)
+(141,151,2)
+(143,253,2)
+(164,61,2)
+(222,70,2)
+(175,125,2)
+(26,253,2)
+(34,148,2)
+(142,125,2)
+(162,241,2)
+(275,205,2)
+(3,155,2)
+(270,212,2)
+(299,253,2)
+(225,70,2)
+(110,125,2)
+(131,253,2)
+(156,132,2)
+(74,253,2)
+(100,91,2)
+(195,30,2)
+(121,70,2)
+(246,151,2)
+(278,68,2)
+(254,268,2)
+(295,212,2)
+(44,241,2)
+(188,125,2)
+(276,125,2)
+(177,67,2)
+(76,28,2)
+(191,70,2)
+(129,253,2)
+(44,164,2)
+(123,30,2)
+(91,185,2)
+(185,179,2)
+(150,253,2)
+(16,219,2)
+(82,125,2)
+(295,0,2)
+(190,212,2)
+(58,70,2)
+(241,70,2)
+(84,277,2)
+(125,212,2)
+(267,125,2)
+(229,70,2)
+(68,3,2)
+(194,151,2)
+(119,235,2)
+(283,70,2)
+(219,70,2)
+(18,125,2)
+(0,212,2)
+(101,70,2)
+(18,68,2)
+(293,253,2)
+(46,70,2)
+(170,4,2)
+(290,151,2)
+(66,32,2)
+(174,70,2)
+(134,253,2)
+(170,293,2)
+(137,125,2)
+(122,70,2)
+(224,70,2)
+(176,70,2)
+(256,200,2)
+(30,151,2)
+(187,253,2)
+(281,125,2)
+(113,70,2)
+(242,253,2)
+(180,18,2)
+(255,8,2)
+(63,26,2)
+(76,70,2)
+(173,164,2)
+(108,70,2)
+(236,212,2)
+(93,151,2)
+(163,125,2)
+(271,113,2)
+(16,47,2)
+(16,32,2)
+(112,49,2)
+(4,178,2)
+(244,68,2)
+(3,164,2)
+(244,32,2)
+(61,71,2)
+(208,70,2)
+(263,70,2)
+(153,253,2)
+(253,234,2)
+(161,212,2)
+(54,279,2)
+(205,241,2)
+(15,70,2)
+(175,49,2)
+(117,164,2)
+(54,253,2)
+(247,151,2)
+(210,253,2)
+(257,70,2)
+(146,30,2)
+(170,22,2)
+(18,212,2)
+(255,171,2)
+(21,212,2)
+(118,30,2)
+(69,70,2)
+(6,151,2)
+(119,17,2)
+(56,212,2)
+(140,151,2)
+(90,183,2)
+(68,70,2)
+(22,125,2)
+(11,125,2)
+(95,67,2)
+(242,179,2)
+(144,151,2)
+(145,115,2)
+(294,253,2)
+(49,70,2)
+(212,128,2)
+(48,49,2)
+(157,125,2)
+(130,125,2)
+(235,68,2)
+(270,11,2)
+(215,143,2)
+(250,68,2)
+(151,74,2)
+(254,212,2)
+(191,257,2)
+(243,253,2)
+(51,151,2)
+(155,271,2)
+(136,253,2)
+(262,125,2)
+(277,146,2)
+(62,241,2)
+(60,212,2)
+(102,253,2)
+(46,34,2)
+(4,191,2)
+(204,175,2)
+(148,70,2)
+(292,212,2)
+(133,212,2)
+(295,200,2)
+(264,151,2)
+(17,163,2)
+(230,30,2)
+(228,117,2)
+(17,125,2)
+(59,253,2)
+(160,113,2)
+(73,212,2)
+(186,151,2)
+(107,173,2)
+(257,47,2)
+(184,125,2)
+(294,215,2)
+(175,212,2)
+(70,164,2)
+(169,30,2)
+(83,70,2)
+(237,113,2)
+(230,84,2)
+(100,19,2)
+(288,212,2)
+(266,86,2)
+(155,24,2)
+(201,70,2)
+(295,60,2)
+(267,212,2)
+(85,212,2)
+(296,67,2)
+(151,129,2)
+(291,187,2)
+(80,212,2)
+(168,212,2)
+(29,125,2)
+(282,70,2)
+(3,63,2)
+(147,241,2)
+(128,250,2)
+(12,212,2)
+(11,212,2)
+(255,125,2)
+(196,70,2)
+(251,70,2)
+(96,253,2)
+(10,253,2)
+(236,125,2)
+-----------------------------------
+(0,ast_channel_nativeformats(c)
+(1,*cause = AST_CAUSE_CONGESTION)
+(2,ast_log(LOG_WARNING, "Unable to create call\\n")
+(3,ast_iax2_new(callno, AST_STATE_DOWN, cai.capability, requestor ? ast_channel_linkedid(requestor)
+(4,return NULL;)
+(5,1)
+(6,cai)
+(7,callno)
+(8,ast_channel_nativeformats(c)
+(9,int *cause)
+(10,cai)
+(11,ast_channel_nativeformats(c)
+(12,c)
+(13,callno)
+(14,if (callid)
+(15,IAX_TRUNK)
+(16,iax_pvt_callid_set(callno, callid)
+(17,ast_getformatname_multiple(tmp, sizeof(tmp)
+(18,ast_channel_writeformat(c)
+(19,&pds)
+(20,callid)
+(21,c)
+(22,return c;)
+(23,callid)
+(24,const struct ast_channel *requestor)
+(25,IAX_FORCEJITTERBUF)
+(26,cai.capability = iax2_capability)
+(27,&pds)
+(28,IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE)
+(29,best_fmt_native)
+(30,pds.port)
+(31,sizeof(pds)
+(32,callid = ast_read_threadstorage_callid()
+(33,if (ast_strlen_zero(pds.peer)
+(34,IAX_SENDANI | IAX_NOTRANSFER | IAX_TRANSFERMEDIA | IAX_USEJITTERBUF | IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE)
+(35,IAX_SENDCONNECTEDLINE)
+(36,found)
+(37,best_fmt_native)
+(38,if (callno < 1)
+(39,)
+(40,if (cai.found)
+(41,IAX_SENDCONNECTEDLINE)
+(42,pds)
+(43,0)
+(44,make_trunk(callno, 1)
+(45,callno)
+(46,IAX_TRUNK | IAX_SENDANI | IAX_NOTRANSFER | IAX_TRANSFERMEDIA | IAX_USEJITTERBUF | IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE)
+(47,callno = new_callno)
+(48,c)
+(49,c)
+(50,peer)
+(51,1)
+(52,sin)
+(53,)
+(54,IAX_NOTRANSFER | IAX_TRANSFERMEDIA | IAX_USEJITTERBUF | IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE)
+(55,callno)
+(56,ast_channel_readformat(c)
+(57,if (c)
+(58,IAX_TRANSFERMEDIA)
+(59,cai)
+(60,&best_fmt_cap)
+(61,find_callno_locked(0, 0, &sin, NEW_FORCE, cai.sockfd, 0)
+(62,1)
+(63,cai.capability)
+(64,c)
+(65,cap)
+(66,ast_callid_unref(callid)
+(67,cai.found)
+(68,c = ast_iax2_new(callno, AST_STATE_DOWN, cai.capability, requestor ? ast_channel_linkedid(requestor)
+(69,iaxs)
+(70,callno < 1)
+(71,cai.sockfd)
+(72,pds.peer)
+(73,res = ast_translator_best_choice(cap, ast_channel_nativeformats(c)
+(74,pds.peer)
+(75,pds)
+(76,IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE)
+(77,if (res < 0)
+(78,c)
+(79,)
+(80,c)
+(81,joint)
+(82,c)
+(83,iaxs)
+(84,htons(atoi(pds.port)
+(85,joint)
+(86,IAX_USEJITTERBUF | IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE)
+(87,port)
+(88,pds)
+(89,)
+(90,iaxs[callno]->maxtime = cai.maxtime)
+(91,tmpstr = ast_strdupa(data)
+(92,ast_copy_flags64(&cai, &globalflags, IAX_NOTRANSFER | IAX_TRANSFERMEDIA | IAX_USEJITTERBUF | IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE)
+(93,0)
+(94,)
+(95,peer)
+(96,cai)
+(97,&cai)
+(98,iax2_capability)
+(99,NULL)
+(100,parse_dial_string(tmpstr, &pds)
+(101,iaxsl)
+(102,&sin)
+(103,"No peer provided in the IAX2 dial string \'%s\'\\n")
+(104,)
+(105,c)
+(106,&sin)
+(107,ast_copy_flags64(iaxs[callno], &cai, IAX_TRUNK | IAX_SENDANI | IAX_NOTRANSFER | IAX_TRANSFERMEDIA | IAX_USEJITTERBUF | IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE)
+(108,AST_CAUSE_CONGESTION)
+(109,)
+(110,sizeof(tmp2)
+(111,if ((joint = ast_format_cap_joint(ast_channel_nativeformats(c)
+(112,cap)
+(113,requestor)
+(114,sin)
+(115,ast_channel_nativeformats(c)
+(116,)
+(117,iaxs[callno])
+(118,sin)
+(119,ast_log(LOG_WARNING, "Unable to create translator path for %s to %s on %s\\n",\n\\n\\t\\t\\t\\t\\tast_getformatname_multiple(tmp, sizeof(tmp)
+(120,IAX_FORCEJITTERBUF)
+(121,callno)
+(122,cai.found)
+(123,sin_port)
+(124,pds)
+(125,res < 0)
+(126,capability)
+(127,tmpstr)
+(128,ast_format_cap_joint(ast_channel_nativeformats(c)
+(129,&cai)
+(130,cap)
+(131,IAX_TRANSFERMEDIA)
+(132,&iaxsl[callno])
+(133,res)
+(134,IAX_USEJITTERBUF)
+(135,callid)
+(136,IAX_RECVCONNECTEDLINE)
+(137,tmp)
+(138,&cai)
+(139,pds)
+(140,cause)
+(141,sin)
+(142,NULL)
+(143,IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE)
+(144,NULL)
+(145,ast_format_cap_copy(ast_channel_nativeformats(c)
+(146,pds.port)
+(147,new_callno = make_trunk(callno, 1)
+(148,IAX_NOTRANSFER | IAX_TRANSFERMEDIA | IAX_USEJITTERBUF | IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE)
+(149,maxtime)
+(150,IAX_NOTRANSFER)
+(151,create_addr(pds.peer, NULL, &sin, &cai)
+(152,data)
+(153,NULL)
+(154,globalflags)
+(155,requestor ? ast_channel_linkedid(requestor)
+(156,ast_mutex_unlock(&iaxsl[callno])
+(157,c)
+(158,LOG_WARNING)
+(159,ast_read_threadstorage_callid()
+(160,NULL)
+(161,ast_channel_readformat(c)
+(162,callno)
+(163,ast_channel_nativeformats(c)
+(164,callno = find_callno_locked(0, 0, &sin, NEW_FORCE, cai.sockfd, 0)
+(165,*cause)
+(166,callno)
+(167,"Unable to create call\\n")
+(168,best_fmt_native)
+(169,sin.sin_port)
+(170,RET)
+(171,&best_fmt_native)
+(172,res)
+(173,iaxs[callno])
+(174,found)
+(175,callid)
+(176,cai)
+(177,callno)
+(178,cai.capability)
+(179,const char *data)
+(180,ast_format_copy(ast_channel_writeformat(c)
+(181,tmp2)
+(182,callno)
+(183,cai.maxtime)
+(184,tmp)
+(185,ast_strdupa(data)
+(186,return NULL;)
+(187,&cai)
+(188,c)
+(189,sizeof(cai)
+(190,0)
+(191,iaxs[callno]->maxtime)
+(192,cai)
+(193,tmpstr)
+(194,*cause)
+(195,port)
+(196,cai)
+(197,capability)
+(198,if (pds.port)
+(199,NULL)
+(200,struct ast_format_cap *cap)
+(201,iaxsl[callno])
+(202,IAX_TRUNK)
+(203,if (ast_test_flag64(&cai, IAX_TRUNK)
+(204,callid)
+(205,(new_callno = make_trunk(callno, 1)
+(206,0)
+(207,0)
+(208,IAX_RECVCONNECTEDLINE)
+(209,if ((new_callno = make_trunk(callno, 1)
+(210,data)
+(211,joint)
+(212,joint = ast_format_cap_joint(ast_channel_nativeformats(c)
+(213,IAX_USEJITTERBUF)
+(214,0)
+(215,IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE)
+(216,)
+(217,cai)
+(218,host)
+(219,callid)
+(220,cai)
+(221,pds)
+(222,cai)
+(223,joint)
+(224,IAX_NOTRANSFER)
+(225,cause)
+(226,sizeof(tmp)
+(227,best_fmt_cap)
+(228,ast_string_field_set(iaxs[callno], host, pds.peer)
+(229,maxtime)
+(230,sin.sin_port = htons(atoi(pds.port)
+(231,cai)
+(232,memset(&pds, 0, sizeof(pds)
+(233,callid)
+(234,pds.peer)
+(235,ast_channel_name(c)
+(236,c)
+(237,requestor)
+(238,pds)
+(239,res)
+(240,)
+(241,ast_test_flag64(&cai, IAX_TRUNK)
+(242,ast_log(LOG_WARNING, "No peer provided in the IAX2 dial string \'%s\'\\n", data)
+(243,pds)
+(244,ast_channel_callid_set(c, callid)
+(245,sockfd)
+(246,AST_CAUSE_UNREGISTERED)
+(247,pds)
+(248,if (callid)
+(249,)
+(250,ast_channel_nativeformats(c)
+(251,cai)
+(252,*cause = AST_CAUSE_UNREGISTERED)
+(253,ast_strlen_zero(pds.peer)
+(254,joint = ast_format_cap_destroy(joint)
+(255,ast_format_cap_set(ast_channel_nativeformats(c)
+(256,ast_getformatname_multiple(tmp2, sizeof(tmp2)
+(257,iaxs[callno])
+(258,joint)
+(259,peer)
+(260,new_callno)
+(261,callid)
+(262,LOG_WARNING)
+(263,return NULL;)
+(264,callno)
+(265,tmpstr)
+(266,IAX_TRANSFERMEDIA | IAX_USEJITTERBUF | IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE)
+(267,c)
+(268,ast_format_cap_destroy(joint)
+(269,)
+(270,ast_best_codec(ast_channel_nativeformats(c)
+(271,ast_channel_linkedid(requestor)
+(272,c)
+(273,-1)
+(274,if (callid)
+(275,new_callno)
+(276,"Unable to create translator path for %s to %s on %s\\n")
+(277,atoi(pds.port)
+(278,ast_hangup(c)
+(279,IAX_TRANSFERMEDIA | IAX_USEJITTERBUF | IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE)
+(280,&globalflags)
+(281,tmp2)
+(282,&cai)
+(283,IAX_SENDANI)
+(284,c)
+(285,tmp2)
+(286,if (create_addr(pds.peer, NULL, &sin, &cai)
+(287,c)
+(288,&best_fmt_native)
+(289,callno)
+(290,NEW_FORCE)
+(291,memset(&cai, 0, sizeof(cai)
+(292,best_fmt_cap)
+(293,return NULL;)
+(294,IAX_USEJITTERBUF | IAX_FORCEJITTERBUF | IAX_SENDCONNECTEDLINE | IAX_RECVCONNECTEDLINE)
+(295,ast_translator_best_choice(cap, ast_channel_nativeformats(c)
+(296,iaxs)
+(297,tmp)
+(298,AST_STATE_DOWN)
+(299,cai)
+(300,)
+(301,new_callno)
+(302,LOG_WARNING)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

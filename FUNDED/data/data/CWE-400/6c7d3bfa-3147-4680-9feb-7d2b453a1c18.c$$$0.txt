@@ -1,0 +1,3623 @@
+-----label-----
+1
+-----code-----
+int ref_transaction_commit(struct ref_transaction *transaction,
+			   struct strbuf *err)
+{
+	int ret = 0, i;
+	int n = transaction->nr;
+	struct ref_update **updates = transaction->updates;
+	struct string_list refs_to_delete = STRING_LIST_INIT_NODUP;
+	struct string_list_item *ref_to_delete;
+
+	assert(err);
+
+	if (transaction->state != REF_TRANSACTION_OPEN)
+		die("BUG: commit called for transaction that is not open");
+
+	if (!n) {
+		transaction->state = REF_TRANSACTION_CLOSED;
+		return 0;
+	}
+
+	/* Copy, sort, and reject duplicate refs */
+	qsort(updates, n, sizeof(*updates), ref_update_compare);
+	if (ref_update_reject_duplicates(updates, n, err)) {
+		ret = TRANSACTION_GENERIC_ERROR;
+		goto cleanup;
+	}
+
+	/*
+	 * Acquire all locks, verify old values if provided, check
+	 * that new values are valid, and write new values to the
+	 * lockfiles, ready to be activated. Only keep one lockfile
+	 * open at a time to avoid running out of file descriptors.
+	 */
+	for (i = 0; i < n; i++) {
+		struct ref_update *update = updates[i];
+
+		if ((update->flags & REF_HAVE_NEW) &&
+		    is_null_sha1(update->new_sha1))
+			update->flags |= REF_DELETING;
+		update->lock = lock_ref_sha1_basic(
+				update->refname,
+				((update->flags & REF_HAVE_OLD) ?
+				 update->old_sha1 : NULL),
+				NULL,
+				update->flags,
+				&update->type);
+		if (!update->lock) {
+			ret = (errno == ENOTDIR)
+				? TRANSACTION_NAME_CONFLICT
+				: TRANSACTION_GENERIC_ERROR;
+			strbuf_addf(err, "Cannot lock the ref '%s'.",
+				    update->refname);
+			goto cleanup;
+		}
+		if ((update->flags & REF_HAVE_NEW) &&
+		    !(update->flags & REF_DELETING)) {
+			int overwriting_symref = ((update->type & REF_ISSYMREF) &&
+						  (update->flags & REF_NODEREF));
+
+			if (!overwriting_symref &&
+			    !hashcmp(update->lock->old_sha1, update->new_sha1)) {
+				/*
+				 * The reference already has the desired
+				 * value, so we don't need to write it.
+				 */
+			} else if (write_ref_to_lockfile(update->lock,
+							 update->new_sha1)) {
+				/*
+				 * The lock was freed upon failure of
+				 * write_ref_to_lockfile():
+				 */
+				update->lock = NULL;
+				strbuf_addf(err, "Cannot update the ref '%s'.",
+					    update->refname);
+				ret = TRANSACTION_GENERIC_ERROR;
+				goto cleanup;
+			} else {
+				update->flags |= REF_NEEDS_COMMIT;
+			}
+		}
+		if (!(update->flags & REF_NEEDS_COMMIT)) {
+			/*
+			 * We didn't have to write anything to the lockfile.
+			 * Close it to free up the file descriptor:
+			 */
+			if (close_ref(update->lock)) {
+				strbuf_addf(err, "Couldn't close %s.lock",
+					    update->refname);
+				goto cleanup;
+			}
+		}
+	}
+
+	/* Perform updates first so live commits remain referenced */
+	for (i = 0; i < n; i++) {
+		struct ref_update *update = updates[i];
+
+		if (update->flags & REF_NEEDS_COMMIT) {
+			if (commit_ref_update(update->lock,
+					      update->new_sha1, update->msg)) {
+				/* freed by commit_ref_update(): */
+				update->lock = NULL;
+				strbuf_addf(err, "Cannot update the ref '%s'.",
+					    update->refname);
+				ret = TRANSACTION_GENERIC_ERROR;
+				goto cleanup;
+			} else {
+				/* freed by commit_ref_update(): */
+				update->lock = NULL;
+			}
+		}
+	}
+
+	/* Perform deletes now that updates are safely completed */
+	for (i = 0; i < n; i++) {
+		struct ref_update *update = updates[i];
+
+		if (update->flags & REF_DELETING) {
+			if (delete_ref_loose(update->lock, update->type, err)) {
+				ret = TRANSACTION_GENERIC_ERROR;
+				goto cleanup;
+			}
+
+			if (!(update->flags & REF_ISPRUNING))
+				string_list_append(&refs_to_delete,
+						   update->lock->ref_name);
+		}
+	}
+
+	if (repack_without_refs(&refs_to_delete, err)) {
+		ret = TRANSACTION_GENERIC_ERROR;
+		goto cleanup;
+	}
+	for_each_string_list_item(ref_to_delete, &refs_to_delete)
+		unlink_or_warn(git_path("logs/%s", ref_to_delete->string));
+	clear_loose_ref_cache(&ref_cache);
+
+cleanup:
+	transaction->state = REF_TRANSACTION_CLOSED;
+
+	for (i = 0; i < n; i++)
+		if (updates[i]->lock)
+			unlock_ref(updates[i]->lock);
+	string_list_clear(&refs_to_delete, 0);
+	return ret;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+17,19
+17,20
+17,21
+17,22
+17,23
+17,24
+17,25
+17,26
+17,27
+17,28
+17,29
+17,30
+17,31
+17,32
+17,33
+17,34
+17,35
+17,36
+17,37
+17,38
+17,39
+18,19
+19,20
+19,21
+19,22
+21,22
+21,23
+23,24
+25,26
+27,28
+28,29
+28,30
+30,31
+30,32
+32,33
+33,34
+33,35
+34,35
+37,38
+38,39
+38,40
+39,40
+41,42
+41,43
+41,44
+41,45
+45,46
+46,47
+46,48
+47,48
+50,51
+51,52
+51,53
+52,53
+54,55
+54,56
+56,57
+57,58
+59,60
+60,61
+60,62
+61,62
+63,64
+63,65
+66,67
+67,68
+67,69
+68,69
+70,71
+72,73
+72,74
+73,74
+73,75
+74,75
+74,76
+75,76
+78,79
+80,81
+81,82
+81,83
+82,83
+85,86
+85,87
+86,87
+87,88
+89,90
+89,91
+90,91
+91,92
+91,93
+92,93
+92,94
+93,94
+96,97
+98,99
+100,101
+101,102
+101,103
+101,104
+101,105
+101,106
+102,103
+104,105
+106,107
+108,109
+109,110
+110,111
+111,112
+113,114
+115,116
+115,117
+116,117
+116,118
+116,119
+116,120
+117,118
+119,120
+121,122
+123,124
+125,126
+125,127
+126,127
+127,128
+127,129
+128,129
+130,131
+132,133
+134,135
+134,136
+134,137
+134,138
+135,136
+136,137
+136,138
+137,138
+140,141
+140,142
+141,142
+143,144
+145,146
+146,147
+148,149
+148,150
+148,151
+148,152
+148,153
+148,154
+149,150
+150,151
+150,152
+151,152
+153,154
+153,155
+153,156
+156,157
+157,158
+157,159
+158,159
+160,161
+162,163
+162,164
+163,164
+163,165
+164,165
+165,166
+165,167
+166,167
+166,168
+167,168
+170,171
+172,173
+172,174
+173,174
+175,176
+175,177
+176,177
+179,180
+180,181
+180,182
+181,182
+181,183
+182,183
+185,186
+187,188
+188,189
+188,190
+189,190
+189,191
+190,191
+193,194
+193,195
+193,196
+193,197
+193,198
+193,199
+194,195
+196,197
+196,198
+197,198
+200,201
+201,202
+201,203
+201,204
+202,203
+203,204
+203,205
+204,205
+204,206
+205,206
+208,209
+210,211
+210,212
+211,212
+214,215
+216,217
+218,219
+218,220
+219,220
+222,223
+223,224
+223,225
+224,225
+227,228
+227,229
+228,229
+229,230
+229,231
+230,231
+233,234
+233,235
+233,236
+234,235
+235,236
+235,237
+236,237
+238,239
+238,240
+238,241
+239,240
+240,241
+240,242
+241,242
+243,244
+245,246
+247,248
+249,250
+250,251
+250,252
+250,253
+250,254
+251,252
+253,254
+256,257
+256,258
+257,258
+260,261
+262,263
+262,264
+263,264
+263,265
+264,265
+265,266
+265,267
+266,267
+266,268
+267,268
+270,271
+272,273
+273,274
+274,275
+274,276
+275,276
+275,277
+276,277
+279,280
+281,282
+281,283
+282,283
+283,284
+283,285
+285,286
+285,287
+287,288
+288,289
+289,290
+289,291
+290,291
+291,292
+291,293
+292,293
+292,294
+293,294
+296,297
+298,299
+299,300
+299,301
+300,301
+300,302
+301,302
+304,305
+306,307
+306,308
+306,309
+307,308
+307,309
+308,309
+309,310
+311,312
+312,313
+312,314
+312,315
+313,314
+315,316
+315,317
+316,317
+316,318
+317,318
+321,322
+321,323
+322,323
+326,327
+326,328
+326,329
+327,328
+327,329
+327,330
+328,329
+330,331
+330,332
+331,332
+334,335
+334,336
+335,336
+338,339
+338,340
+338,341
+338,342
+339,340
+340,341
+340,342
+341,342
+341,343
+342,343
+345,346
+347,348
+348,349
+348,350
+348,351
+348,352
+349,350
+351,352
+354,355
+354,356
+355,356
+358,359
+359,360
+359,361
+360,361
+362,363
+364,365
+366,367
+367,368
+368,369
+368,370
+369,370
+369,371
+370,371
+373,374
+375,376
+375,377
+376,377
+377,378
+378,379
+378,380
+379,380
+379,381
+380,381
+383,384
+385,386
+386,387
+386,388
+387,388
+387,389
+388,389
+390,391
+390,392
+391,392
+394,395
+394,396
+395,396
+396,397
+396,398
+396,399
+396,400
+397,398
+399,400
+402,403
+402,404
+403,404
+406,407
+408,409
+408,410
+408,411
+408,412
+409,410
+410,411
+410,412
+411,412
+414,415
+414,416
+415,416
+417,418
+419,420
+420,421
+422,423
+422,424
+423,424
+424,425
+424,426
+425,426
+427,428
+427,429
+427,430
+430,431
+431,432
+431,433
+432,433
+434,435
+436,437
+436,438
+437,438
+437,439
+438,439
+438,440
+439,440
+442,443
+444,445
+445,446
+445,447
+445,448
+446,447
+446,448
+446,449
+446,450
+447,448
+449,450
+449,451
+450,451
+453,454
+453,455
+454,455
+457,458
+457,459
+458,459
+461,462
+461,463
+461,464
+461,465
+462,463
+463,464
+463,465
+464,465
+464,466
+465,466
+468,469
+470,471
+471,472
+471,473
+471,474
+471,475
+472,473
+474,475
+477,478
+477,479
+478,479
+481,482
+482,483
+482,484
+483,484
+485,486
+487,488
+489,490
+490,491
+491,492
+491,493
+492,493
+492,494
+493,494
+496,497
+498,499
+498,500
+498,501
+498,502
+499,500
+500,501
+500,502
+501,502
+504,505
+504,506
+505,506
+507,508
+509,510
+510,511
+512,513
+512,514
+513,514
+514,515
+514,516
+515,516
+517,518
+517,519
+517,520
+520,521
+521,522
+521,523
+522,523
+524,525
+526,527
+526,528
+527,528
+527,529
+528,529
+528,530
+529,530
+532,533
+534,535
+534,536
+535,536
+535,537
+536,537
+536,538
+536,539
+536,540
+537,538
+539,540
+539,541
+540,541
+543,544
+543,545
+544,545
+547,548
+549,550
+549,551
+550,551
+551,552
+551,553
+552,553
+554,555
+556,557
+558,559
+558,560
+559,560
+560,561
+561,562
+561,563
+562,563
+562,564
+563,564
+566,567
+568,569
+569,570
+569,571
+569,572
+570,571
+572,573
+573,574
+575,576
+575,577
+576,577
+576,578
+577,578
+581,582
+581,583
+582,583
+582,584
+582,585
+583,584
+585,586
+586,587
+588,589
+590,591
+590,592
+591,592
+592,593
+592,594
+593,594
+595,596
+597,598
+599,600
+600,601
+600,602
+600,603
+601,602
+603,604
+605,606
+606,607
+608,609
+609,610
+610,611
+610,612
+611,612
+613,614
+613,615
+613,616
+614,615
+617,618
+617,619
+618,619
+621,622
+622,623
+622,624
+623,624
+625,626
+626,627
+626,628
+629,630
+629,631
+631,632
+632,633
+632,634
+633,634
+633,635
+634,635
+637,638
+639,640
+639,641
+639,642
+639,643
+640,641
+641,642
+641,643
+642,643
+645,646
+645,647
+646,647
+648,649
+650,651
+651,652
+653,654
+653,655
+654,655
+654,656
+655,656
+655,657
+656,657
+658,659
+661,662
+662,663
+662,664
+663,664
+665,666
+665,667
+666,667
+666,668
+667,668
+669,670
+672,673
+673,674
+673,675
+673,676
+674,675
+676,677
+677,678
+680,681
+681,682
+-----nextToken-----
+2,4,7,9,10,13,15,16,20,22,24,26,29,31,35,36,40,42,43,44,48,49,53,55,58,62,64,65,69,71,76,77,79,83,84,88,94,95,97,99,103,105,107,112,114,118,120,122,124,129,131,133,138,139,142,144,147,152,154,155,159,161,168,169,171,174,177,178,183,184,186,191,192,195,198,199,206,207,209,212,213,215,217,220,221,225,226,231,232,237,242,244,246,248,252,254,255,258,259,261,268,269,271,277,278,280,284,286,294,295,297,302,303,305,310,314,318,319,320,323,324,325,329,332,333,336,337,343,344,346,350,352,353,356,357,361,363,365,371,372,374,381,382,384,389,392,393,398,400,401,404,405,407,412,413,416,418,421,426,428,429,433,435,440,441,443,448,451,452,455,456,459,460,466,467,469,473,475,476,479,480,484,486,488,494,495,497,502,503,506,508,511,516,518,519,523,525,530,531,533,538,541,542,545,546,548,553,555,557,564,565,567,571,574,578,579,580,584,587,589,594,596,598,602,604,607,612,615,616,619,620,624,627,628,630,635,636,638,643,644,647,649,652,657,659,660,664,668,670,671,675,678,679,682
+-----computeFrom-----
+73,74
+73,75
+91,92
+91,93
+127,128
+127,129
+136,137
+136,138
+140,141
+140,142
+163,164
+163,165
+165,166
+165,167
+180,181
+180,182
+188,189
+188,190
+203,204
+203,205
+235,236
+235,237
+240,241
+240,242
+263,264
+263,265
+265,266
+265,267
+274,275
+274,276
+289,290
+289,291
+291,292
+291,293
+299,300
+299,301
+307,308
+307,309
+340,341
+340,342
+359,360
+359,361
+368,369
+368,370
+378,379
+378,380
+410,411
+410,412
+414,415
+414,416
+437,438
+437,439
+463,464
+463,465
+482,483
+482,484
+491,492
+491,493
+500,501
+500,502
+504,505
+504,506
+527,528
+527,529
+551,552
+551,553
+561,562
+561,563
+592,593
+592,594
+632,633
+632,634
+641,642
+641,643
+645,646
+645,647
+-----guardedBy-----
+169,184
+177,183
+278,372
+277,371
+440,494
+531,565
+530,578
+-----guardedByNegation-----
+324,337
+323,371
+319,344
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Pointer;Name;EqualsInitializer;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IfStatement;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ReturnStatement;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;UnaryExpression;UnaryExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;GotoStatement;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;ConditionalExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;IfStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;ConditionalExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;GotoStatement;Name;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;UnaryExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;UnaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;BinaryExpression;UnaryExpression;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;IfStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;GotoStatement;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;IfStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;GotoStatement;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;IfStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;GotoStatement;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;IfStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;GotoStatement;Name;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IfStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;GotoStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;ProblemStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;ReferenceOperator;Name;LabelStatement;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+int ref_transaction_commit(struct ref_transaction *transaction,			   struct strbuf *err){	int ret = 0, i;	int n = transaction->nr;	struct ref_update **updates = transaction->updates;	struct string_list refs_to_delete = STRING_LIST_INIT_NODUP;	struct string_list_item *ref_to_delete;	assert(err);	if (transaction->state != REF_TRANSACTION_OPEN)		die("BUG: commit called for transaction that is not open");	if (!n) {		transaction->state = REF_TRANSACTION_CLOSED;		return 0;	}	/* Copy, sort, and reject duplicate refs */	qsort(updates, n, sizeof(*updates), ref_update_compare);	if (ref_update_reject_duplicates(updates, n, err)) {		ret = TRANSACTION_GENERIC_ERROR;		goto cleanup;	}	/*	 * Acquire all locks, verify old values if provided, check	 * that new values are valid, and write new values to the	 * lockfiles, ready to be activated. Only keep one lockfile	 * open at a time to avoid running out of file descriptors.	 */	for (i = 0; i < n; i++) {		struct ref_update *update = updates[i];		if ((update->flags & REF_HAVE_NEW) &&		    is_null_sha1(update->new_sha1))			update->flags |= REF_DELETING;		update->lock = lock_ref_sha1_basic(				update->refname,				((update->flags & REF_HAVE_OLD) ?				 update->old_sha1 : NULL),				NULL,				update->flags,				&update->type);		if (!update->lock) {			ret = (errno == ENOTDIR)				? TRANSACTION_NAME_CONFLICT				: TRANSACTION_GENERIC_ERROR;			strbuf_addf(err, "Cannot lock the ref '%s'.",				    update->refname);			goto cleanup;		}		if ((update->flags & REF_HAVE_NEW) &&		    !(update->flags & REF_DELETING)) {			int overwriting_symref = ((update->type & REF_ISSYMREF) &&						  (update->flags & REF_NODEREF));			if (!overwriting_symref &&			    !hashcmp(update->lock->old_sha1, update->new_sha1)) {				/*				 * The reference already has the desired				 * value, so we don't need to write it.				 */			} else if (write_ref_to_lockfile(update->lock,							 update->new_sha1)) {				/*				 * The lock was freed upon failure of				 * write_ref_to_lockfile():				 */				update->lock = NULL;				strbuf_addf(err, "Cannot update the ref '%s'.",					    update->refname);				ret = TRANSACTION_GENERIC_ERROR;				goto cleanup;			} else {				update->flags |= REF_NEEDS_COMMIT;			}		}		if (!(update->flags & REF_NEEDS_COMMIT)) {			/*			 * We didn't have to write anything to the lockfile.			 * Close it to free up the file descriptor:			 */			if (close_ref(update->lock)) {				strbuf_addf(err, "Couldn't close %s.lock",					    update->refname);				goto cleanup;			}		}	}	/* Perform updates first so live commits remain referenced */	for (i = 0; i < n; i++) {		struct ref_update *update = updates[i];		if (update->flags & REF_NEEDS_COMMIT) {			if (commit_ref_update(update->lock,					      update->new_sha1, update->msg)) {				/* freed by commit_ref_update(): */				update->lock = NULL;				strbuf_addf(err, "Cannot update the ref '%s'.",					    update->refname);				ret = TRANSACTION_GENERIC_ERROR;				goto cleanup;			} else {				/* freed by commit_ref_update(): */				update->lock = NULL;			}		}	}	/* Perform deletes now that updates are safely completed */	for (i = 0; i < n; i++) {		struct ref_update *update = updates[i];		if (update->flags & REF_DELETING) {			if (delete_ref_loose(update->lock, update->type, err)) {				ret = TRANSACTION_GENERIC_ERROR;				goto cleanup;			}			if (!(update->flags & REF_ISPRUNING))				string_list_append(&refs_to_delete,						   update->lock->ref_name);		}	}	if (repack_without_refs(&refs_to_delete, err)) {		ret = TRANSACTION_GENERIC_ERROR;		goto cleanup;	}	for_each_string_list_item(ref_to_delete, &refs_to_delete)		unlink_or_warn(git_path("logs/%s", ref_to_delete->string));	clear_loose_ref_cache(&ref_cache);cleanup:	transaction->state = REF_TRANSACTION_CLOSED;	for (i = 0; i < n; i++)		if (updates[i]->lock)			unlock_ref(updates[i]->lock);	string_list_clear(&refs_to_delete, 0);	return ret;}
+int
+ref_transaction_commit(struct ref_transaction *transaction,			   struct strbuf *err)
+ref_transaction_commit
+struct ref_transaction *transaction
+struct ref_transaction
+ref_transaction
+*transaction
+*
+transaction
+struct strbuf *err
+struct strbuf
+strbuf
+*err
+*
+err
+{	int ret = 0, i;	int n = transaction->nr;	struct ref_update **updates = transaction->updates;	struct string_list refs_to_delete = STRING_LIST_INIT_NODUP;	struct string_list_item *ref_to_delete;	assert(err);	if (transaction->state != REF_TRANSACTION_OPEN)		die("BUG: commit called for transaction that is not open");	if (!n) {		transaction->state = REF_TRANSACTION_CLOSED;		return 0;	}	/* Copy, sort, and reject duplicate refs */	qsort(updates, n, sizeof(*updates), ref_update_compare);	if (ref_update_reject_duplicates(updates, n, err)) {		ret = TRANSACTION_GENERIC_ERROR;		goto cleanup;	}	/*	 * Acquire all locks, verify old values if provided, check	 * that new values are valid, and write new values to the	 * lockfiles, ready to be activated. Only keep one lockfile	 * open at a time to avoid running out of file descriptors.	 */	for (i = 0; i < n; i++) {		struct ref_update *update = updates[i];		if ((update->flags & REF_HAVE_NEW) &&		    is_null_sha1(update->new_sha1))			update->flags |= REF_DELETING;		update->lock = lock_ref_sha1_basic(				update->refname,				((update->flags & REF_HAVE_OLD) ?				 update->old_sha1 : NULL),				NULL,				update->flags,				&update->type);		if (!update->lock) {			ret = (errno == ENOTDIR)				? TRANSACTION_NAME_CONFLICT				: TRANSACTION_GENERIC_ERROR;			strbuf_addf(err, "Cannot lock the ref '%s'.",				    update->refname);			goto cleanup;		}		if ((update->flags & REF_HAVE_NEW) &&		    !(update->flags & REF_DELETING)) {			int overwriting_symref = ((update->type & REF_ISSYMREF) &&						  (update->flags & REF_NODEREF));			if (!overwriting_symref &&			    !hashcmp(update->lock->old_sha1, update->new_sha1)) {				/*				 * The reference already has the desired				 * value, so we don't need to write it.				 */			} else if (write_ref_to_lockfile(update->lock,							 update->new_sha1)) {				/*				 * The lock was freed upon failure of				 * write_ref_to_lockfile():				 */				update->lock = NULL;				strbuf_addf(err, "Cannot update the ref '%s'.",					    update->refname);				ret = TRANSACTION_GENERIC_ERROR;				goto cleanup;			} else {				update->flags |= REF_NEEDS_COMMIT;			}		}		if (!(update->flags & REF_NEEDS_COMMIT)) {			/*			 * We didn't have to write anything to the lockfile.			 * Close it to free up the file descriptor:			 */			if (close_ref(update->lock)) {				strbuf_addf(err, "Couldn't close %s.lock",					    update->refname);				goto cleanup;			}		}	}	/* Perform updates first so live commits remain referenced */	for (i = 0; i < n; i++) {		struct ref_update *update = updates[i];		if (update->flags & REF_NEEDS_COMMIT) {			if (commit_ref_update(update->lock,					      update->new_sha1, update->msg)) {				/* freed by commit_ref_update(): */				update->lock = NULL;				strbuf_addf(err, "Cannot update the ref '%s'.",					    update->refname);				ret = TRANSACTION_GENERIC_ERROR;				goto cleanup;			} else {				/* freed by commit_ref_update(): */				update->lock = NULL;			}		}	}	/* Perform deletes now that updates are safely completed */	for (i = 0; i < n; i++) {		struct ref_update *update = updates[i];		if (update->flags & REF_DELETING) {			if (delete_ref_loose(update->lock, update->type, err)) {				ret = TRANSACTION_GENERIC_ERROR;				goto cleanup;			}			if (!(update->flags & REF_ISPRUNING))				string_list_append(&refs_to_delete,						   update->lock->ref_name);		}	}	if (repack_without_refs(&refs_to_delete, err)) {		ret = TRANSACTION_GENERIC_ERROR;		goto cleanup;	}	for_each_string_list_item(ref_to_delete, &refs_to_delete)		unlink_or_warn(git_path("logs/%s", ref_to_delete->string));	clear_loose_ref_cache(&ref_cache);cleanup:	transaction->state = REF_TRANSACTION_CLOSED;	for (i = 0; i < n; i++)		if (updates[i]->lock)			unlock_ref(updates[i]->lock);	string_list_clear(&refs_to_delete, 0);	return ret;}
+int ret = 0, i;
+int ret = 0, i;
+int
+ret = 0
+ret
+= 0
+0
+i
+i
+int n = transaction->nr;
+int n = transaction->nr;
+int
+n = transaction->nr
+n
+= transaction->nr
+transaction->nr
+transaction
+transaction
+nr
+struct ref_update **updates = transaction->updates;
+struct ref_update **updates = transaction->updates;
+struct ref_update
+ref_update
+**updates = transaction->updates
+*
+*
+updates
+= transaction->updates
+transaction->updates
+transaction
+transaction
+updates
+struct string_list refs_to_delete = STRING_LIST_INIT_NODUP;
+struct string_list refs_to_delete = STRING_LIST_INIT_NODUP;
+struct string_list
+string_list
+refs_to_delete = STRING_LIST_INIT_NODUP
+refs_to_delete
+= STRING_LIST_INIT_NODUP
+STRING_LIST_INIT_NODUP
+STRING_LIST_INIT_NODUP
+struct string_list_item *ref_to_delete;
+struct string_list_item *ref_to_delete;
+struct string_list_item
+string_list_item
+*ref_to_delete
+*
+ref_to_delete
+assert(err);
+assert(err)
+assert
+assert
+err
+err
+if (transaction->state != REF_TRANSACTION_OPEN)		die("BUG: commit called for transaction that is not open");
+transaction->state != REF_TRANSACTION_OPEN
+transaction->state
+transaction
+transaction
+state
+REF_TRANSACTION_OPEN
+REF_TRANSACTION_OPEN
+die("BUG: commit called for transaction that is not open");
+die("BUG: commit called for transaction that is not open")
+die
+die
+"BUG: commit called for transaction that is not open"
+if (!n) {		transaction->state = REF_TRANSACTION_CLOSED;		return 0;	}
+!n
+n
+n
+{		transaction->state = REF_TRANSACTION_CLOSED;		return 0;	}
+transaction->state = REF_TRANSACTION_CLOSED;
+transaction->state = REF_TRANSACTION_CLOSED
+transaction->state
+transaction
+transaction
+state
+REF_TRANSACTION_CLOSED
+REF_TRANSACTION_CLOSED
+return 0;
+0
+qsort(updates, n, sizeof(*updates), ref_update_compare);
+qsort(updates, n, sizeof(*updates), ref_update_compare)
+qsort
+qsort
+updates
+updates
+n
+n
+sizeof(*updates)
+(*updates)
+*updates
+updates
+updates
+ref_update_compare
+ref_update_compare
+if (ref_update_reject_duplicates(updates, n, err)) {		ret = TRANSACTION_GENERIC_ERROR;		goto cleanup;	}
+ref_update_reject_duplicates(updates, n, err)
+ref_update_reject_duplicates
+ref_update_reject_duplicates
+updates
+updates
+n
+n
+err
+err
+{		ret = TRANSACTION_GENERIC_ERROR;		goto cleanup;	}
+ret = TRANSACTION_GENERIC_ERROR;
+ret = TRANSACTION_GENERIC_ERROR
+ret
+ret
+TRANSACTION_GENERIC_ERROR
+TRANSACTION_GENERIC_ERROR
+goto cleanup;
+cleanup
+for (i = 0; i < n; i++) {		struct ref_update *update = updates[i];		if ((update->flags & REF_HAVE_NEW) &&		    is_null_sha1(update->new_sha1))			update->flags |= REF_DELETING;		update->lock = lock_ref_sha1_basic(				update->refname,				((update->flags & REF_HAVE_OLD) ?				 update->old_sha1 : NULL),				NULL,				update->flags,				&update->type);		if (!update->lock) {			ret = (errno == ENOTDIR)				? TRANSACTION_NAME_CONFLICT				: TRANSACTION_GENERIC_ERROR;			strbuf_addf(err, "Cannot lock the ref '%s'.",				    update->refname);			goto cleanup;		}		if ((update->flags & REF_HAVE_NEW) &&		    !(update->flags & REF_DELETING)) {			int overwriting_symref = ((update->type & REF_ISSYMREF) &&						  (update->flags & REF_NODEREF));			if (!overwriting_symref &&			    !hashcmp(update->lock->old_sha1, update->new_sha1)) {				/*				 * The reference already has the desired				 * value, so we don't need to write it.				 */			} else if (write_ref_to_lockfile(update->lock,							 update->new_sha1)) {				/*				 * The lock was freed upon failure of				 * write_ref_to_lockfile():				 */				update->lock = NULL;				strbuf_addf(err, "Cannot update the ref '%s'.",					    update->refname);				ret = TRANSACTION_GENERIC_ERROR;				goto cleanup;			} else {				update->flags |= REF_NEEDS_COMMIT;			}		}		if (!(update->flags & REF_NEEDS_COMMIT)) {			/*			 * We didn't have to write anything to the lockfile.			 * Close it to free up the file descriptor:			 */			if (close_ref(update->lock)) {				strbuf_addf(err, "Couldn't close %s.lock",					    update->refname);				goto cleanup;			}		}	}
+i = 0;
+i = 0
+i
+i
+0
+i < n
+i
+i
+n
+n
+i++
+i
+i
+{		struct ref_update *update = updates[i];		if ((update->flags & REF_HAVE_NEW) &&		    is_null_sha1(update->new_sha1))			update->flags |= REF_DELETING;		update->lock = lock_ref_sha1_basic(				update->refname,				((update->flags & REF_HAVE_OLD) ?				 update->old_sha1 : NULL),				NULL,				update->flags,				&update->type);		if (!update->lock) {			ret = (errno == ENOTDIR)				? TRANSACTION_NAME_CONFLICT				: TRANSACTION_GENERIC_ERROR;			strbuf_addf(err, "Cannot lock the ref '%s'.",				    update->refname);			goto cleanup;		}		if ((update->flags & REF_HAVE_NEW) &&		    !(update->flags & REF_DELETING)) {			int overwriting_symref = ((update->type & REF_ISSYMREF) &&						  (update->flags & REF_NODEREF));			if (!overwriting_symref &&			    !hashcmp(update->lock->old_sha1, update->new_sha1)) {				/*				 * The reference already has the desired				 * value, so we don't need to write it.				 */			} else if (write_ref_to_lockfile(update->lock,							 update->new_sha1)) {				/*				 * The lock was freed upon failure of				 * write_ref_to_lockfile():				 */				update->lock = NULL;				strbuf_addf(err, "Cannot update the ref '%s'.",					    update->refname);				ret = TRANSACTION_GENERIC_ERROR;				goto cleanup;			} else {				update->flags |= REF_NEEDS_COMMIT;			}		}		if (!(update->flags & REF_NEEDS_COMMIT)) {			/*			 * We didn't have to write anything to the lockfile.			 * Close it to free up the file descriptor:			 */			if (close_ref(update->lock)) {				strbuf_addf(err, "Couldn't close %s.lock",					    update->refname);				goto cleanup;			}		}	}
+struct ref_update *update = updates[i];
+struct ref_update *update = updates[i];
+struct ref_update
+ref_update
+*update = updates[i]
+*
+update
+= updates[i]
+updates[i]
+updates
+updates
+i
+i
+if ((update->flags & REF_HAVE_NEW) &&		    is_null_sha1(update->new_sha1))			update->flags |= REF_DELETING;
+(update->flags & REF_HAVE_NEW) &&		    is_null_sha1(update->new_sha1)
+(update->flags & REF_HAVE_NEW)
+update->flags & REF_HAVE_NEW
+update->flags
+update
+update
+flags
+REF_HAVE_NEW
+REF_HAVE_NEW
+is_null_sha1(update->new_sha1)
+is_null_sha1
+is_null_sha1
+update->new_sha1
+update
+update
+new_sha1
+update->flags |= REF_DELETING;
+update->flags |= REF_DELETING
+update->flags
+update
+update
+flags
+REF_DELETING
+REF_DELETING
+update->lock = lock_ref_sha1_basic(				update->refname,				((update->flags & REF_HAVE_OLD) ?				 update->old_sha1 : NULL),				NULL,				update->flags,				&update->type);
+update->lock = lock_ref_sha1_basic(				update->refname,				((update->flags & REF_HAVE_OLD) ?				 update->old_sha1 : NULL),				NULL,				update->flags,				&update->type)
+update->lock
+update
+update
+lock
+lock_ref_sha1_basic(				update->refname,				((update->flags & REF_HAVE_OLD) ?				 update->old_sha1 : NULL),				NULL,				update->flags,				&update->type)
+lock_ref_sha1_basic
+lock_ref_sha1_basic
+update->refname
+update
+update
+refname
+((update->flags & REF_HAVE_OLD) ?				 update->old_sha1 : NULL)
+(update->flags & REF_HAVE_OLD) ?				 update->old_sha1 : NULL
+(update->flags & REF_HAVE_OLD)
+update->flags & REF_HAVE_OLD
+update->flags
+update
+update
+flags
+REF_HAVE_OLD
+REF_HAVE_OLD
+update->old_sha1
+update
+update
+old_sha1
+NULL
+NULL
+NULL
+NULL
+update->flags
+update
+update
+flags
+&update->type
+update->type
+update
+update
+type
+if (!update->lock) {			ret = (errno == ENOTDIR)				? TRANSACTION_NAME_CONFLICT				: TRANSACTION_GENERIC_ERROR;			strbuf_addf(err, "Cannot lock the ref '%s'.",				    update->refname);			goto cleanup;		}
+!update->lock
+update->lock
+update
+update
+lock
+{			ret = (errno == ENOTDIR)				? TRANSACTION_NAME_CONFLICT				: TRANSACTION_GENERIC_ERROR;			strbuf_addf(err, "Cannot lock the ref '%s'.",				    update->refname);			goto cleanup;		}
+ret = (errno == ENOTDIR)				? TRANSACTION_NAME_CONFLICT				: TRANSACTION_GENERIC_ERROR;
+ret = (errno == ENOTDIR)				? TRANSACTION_NAME_CONFLICT				: TRANSACTION_GENERIC_ERROR
+ret
+ret
+(errno == ENOTDIR)				? TRANSACTION_NAME_CONFLICT				: TRANSACTION_GENERIC_ERROR
+(errno == ENOTDIR)
+errno == ENOTDIR
+errno
+errno
+ENOTDIR
+ENOTDIR
+TRANSACTION_NAME_CONFLICT
+TRANSACTION_NAME_CONFLICT
+TRANSACTION_GENERIC_ERROR
+TRANSACTION_GENERIC_ERROR
+strbuf_addf(err, "Cannot lock the ref '%s'.",				    update->refname);
+strbuf_addf(err, "Cannot lock the ref '%s'.",				    update->refname)
+strbuf_addf
+strbuf_addf
+err
+err
+"Cannot lock the ref '%s'."
+update->refname
+update
+update
+refname
+goto cleanup;
+cleanup
+if ((update->flags & REF_HAVE_NEW) &&		    !(update->flags & REF_DELETING)) {			int overwriting_symref = ((update->type & REF_ISSYMREF) &&						  (update->flags & REF_NODEREF));			if (!overwriting_symref &&			    !hashcmp(update->lock->old_sha1, update->new_sha1)) {				/*				 * The reference already has the desired				 * value, so we don't need to write it.				 */			} else if (write_ref_to_lockfile(update->lock,							 update->new_sha1)) {				/*				 * The lock was freed upon failure of				 * write_ref_to_lockfile():				 */				update->lock = NULL;				strbuf_addf(err, "Cannot update the ref '%s'.",					    update->refname);				ret = TRANSACTION_GENERIC_ERROR;				goto cleanup;			} else {				update->flags |= REF_NEEDS_COMMIT;			}		}
+(update->flags & REF_HAVE_NEW) &&		    !(update->flags & REF_DELETING)
+(update->flags & REF_HAVE_NEW)
+update->flags & REF_HAVE_NEW
+update->flags
+update
+update
+flags
+REF_HAVE_NEW
+REF_HAVE_NEW
+!(update->flags & REF_DELETING)
+(update->flags & REF_DELETING)
+update->flags & REF_DELETING
+update->flags
+update
+update
+flags
+REF_DELETING
+REF_DELETING
+{			int overwriting_symref = ((update->type & REF_ISSYMREF) &&						  (update->flags & REF_NODEREF));			if (!overwriting_symref &&			    !hashcmp(update->lock->old_sha1, update->new_sha1)) {				/*				 * The reference already has the desired				 * value, so we don't need to write it.				 */			} else if (write_ref_to_lockfile(update->lock,							 update->new_sha1)) {				/*				 * The lock was freed upon failure of				 * write_ref_to_lockfile():				 */				update->lock = NULL;				strbuf_addf(err, "Cannot update the ref '%s'.",					    update->refname);				ret = TRANSACTION_GENERIC_ERROR;				goto cleanup;			} else {				update->flags |= REF_NEEDS_COMMIT;			}		}
+int overwriting_symref = ((update->type & REF_ISSYMREF) &&						  (update->flags & REF_NODEREF));
+int overwriting_symref = ((update->type & REF_ISSYMREF) &&						  (update->flags & REF_NODEREF));
+int
+overwriting_symref = ((update->type & REF_ISSYMREF) &&						  (update->flags & REF_NODEREF))
+overwriting_symref
+= ((update->type & REF_ISSYMREF) &&						  (update->flags & REF_NODEREF))
+((update->type & REF_ISSYMREF) &&						  (update->flags & REF_NODEREF))
+(update->type & REF_ISSYMREF) &&						  (update->flags & REF_NODEREF)
+(update->type & REF_ISSYMREF)
+update->type & REF_ISSYMREF
+update->type
+update
+update
+type
+REF_ISSYMREF
+REF_ISSYMREF
+(update->flags & REF_NODEREF)
+update->flags & REF_NODEREF
+update->flags
+update
+update
+flags
+REF_NODEREF
+REF_NODEREF
+if (!overwriting_symref &&			    !hashcmp(update->lock->old_sha1, update->new_sha1)) {				/*				 * The reference already has the desired				 * value, so we don't need to write it.				 */			} else if (write_ref_to_lockfile(update->lock,							 update->new_sha1)) {				/*				 * The lock was freed upon failure of				 * write_ref_to_lockfile():				 */				update->lock = NULL;				strbuf_addf(err, "Cannot update the ref '%s'.",					    update->refname);				ret = TRANSACTION_GENERIC_ERROR;				goto cleanup;			} else {				update->flags |= REF_NEEDS_COMMIT;			}
+!overwriting_symref &&			    !hashcmp(update->lock->old_sha1, update->new_sha1)
+!overwriting_symref
+overwriting_symref
+overwriting_symref
+!hashcmp(update->lock->old_sha1, update->new_sha1)
+hashcmp(update->lock->old_sha1, update->new_sha1)
+hashcmp
+hashcmp
+update->lock->old_sha1
+update->lock
+update
+update
+lock
+old_sha1
+update->new_sha1
+update
+update
+new_sha1
+{				/*				 * The reference already has the desired				 * value, so we don't need to write it.				 */			}
+if (write_ref_to_lockfile(update->lock,							 update->new_sha1)) {				/*				 * The lock was freed upon failure of				 * write_ref_to_lockfile():				 */				update->lock = NULL;				strbuf_addf(err, "Cannot update the ref '%s'.",					    update->refname);				ret = TRANSACTION_GENERIC_ERROR;				goto cleanup;			} else {				update->flags |= REF_NEEDS_COMMIT;			}
+write_ref_to_lockfile(update->lock,							 update->new_sha1)
+write_ref_to_lockfile
+write_ref_to_lockfile
+update->lock
+update
+update
+lock
+update->new_sha1
+update
+update
+new_sha1
+{				/*				 * The lock was freed upon failure of				 * write_ref_to_lockfile():				 */				update->lock = NULL;				strbuf_addf(err, "Cannot update the ref '%s'.",					    update->refname);				ret = TRANSACTION_GENERIC_ERROR;				goto cleanup;			}
+update->lock = NULL;
+update->lock = NULL
+update->lock
+update
+update
+lock
+NULL
+NULL
+strbuf_addf(err, "Cannot update the ref '%s'.",					    update->refname);
+strbuf_addf(err, "Cannot update the ref '%s'.",					    update->refname)
+strbuf_addf
+strbuf_addf
+err
+err
+"Cannot update the ref '%s'."
+update->refname
+update
+update
+refname
+ret = TRANSACTION_GENERIC_ERROR;
+ret = TRANSACTION_GENERIC_ERROR
+ret
+ret
+TRANSACTION_GENERIC_ERROR
+TRANSACTION_GENERIC_ERROR
+goto cleanup;
+cleanup
+{				update->flags |= REF_NEEDS_COMMIT;			}
+update->flags |= REF_NEEDS_COMMIT;
+update->flags |= REF_NEEDS_COMMIT
+update->flags
+update
+update
+flags
+REF_NEEDS_COMMIT
+REF_NEEDS_COMMIT
+if (!(update->flags & REF_NEEDS_COMMIT)) {			/*			 * We didn't have to write anything to the lockfile.			 * Close it to free up the file descriptor:			 */			if (close_ref(update->lock)) {				strbuf_addf(err, "Couldn't close %s.lock",					    update->refname);				goto cleanup;			}		}
+!(update->flags & REF_NEEDS_COMMIT)
+(update->flags & REF_NEEDS_COMMIT)
+update->flags & REF_NEEDS_COMMIT
+update->flags
+update
+update
+flags
+REF_NEEDS_COMMIT
+REF_NEEDS_COMMIT
+{			/*			 * We didn't have to write anything to the lockfile.			 * Close it to free up the file descriptor:			 */			if (close_ref(update->lock)) {				strbuf_addf(err, "Couldn't close %s.lock",					    update->refname);				goto cleanup;			}		}
+if (close_ref(update->lock)) {				strbuf_addf(err, "Couldn't close %s.lock",					    update->refname);				goto cleanup;			}
+close_ref(update->lock)
+close_ref
+close_ref
+update->lock
+update
+update
+lock
+{				strbuf_addf(err, "Couldn't close %s.lock",					    update->refname);				goto cleanup;			}
+strbuf_addf(err, "Couldn't close %s.lock",					    update->refname);
+strbuf_addf(err, "Couldn't close %s.lock",					    update->refname)
+strbuf_addf
+strbuf_addf
+err
+err
+"Couldn't close %s.lock"
+update->refname
+update
+update
+refname
+goto cleanup;
+cleanup
+for (i = 0; i < n; i++) {		struct ref_update *update = updates[i];		if (update->flags & REF_NEEDS_COMMIT) {			if (commit_ref_update(update->lock,					      update->new_sha1, update->msg)) {				/* freed by commit_ref_update(): */				update->lock = NULL;				strbuf_addf(err, "Cannot update the ref '%s'.",					    update->refname);				ret = TRANSACTION_GENERIC_ERROR;				goto cleanup;			} else {				/* freed by commit_ref_update(): */				update->lock = NULL;			}		}	}
+i = 0;
+i = 0
+i
+i
+0
+i < n
+i
+i
+n
+n
+i++
+i
+i
+{		struct ref_update *update = updates[i];		if (update->flags & REF_NEEDS_COMMIT) {			if (commit_ref_update(update->lock,					      update->new_sha1, update->msg)) {				/* freed by commit_ref_update(): */				update->lock = NULL;				strbuf_addf(err, "Cannot update the ref '%s'.",					    update->refname);				ret = TRANSACTION_GENERIC_ERROR;				goto cleanup;			} else {				/* freed by commit_ref_update(): */				update->lock = NULL;			}		}	}
+struct ref_update *update = updates[i];
+struct ref_update *update = updates[i];
+struct ref_update
+ref_update
+*update = updates[i]
+*
+update
+= updates[i]
+updates[i]
+updates
+updates
+i
+i
+if (update->flags & REF_NEEDS_COMMIT) {			if (commit_ref_update(update->lock,					      update->new_sha1, update->msg)) {				/* freed by commit_ref_update(): */				update->lock = NULL;				strbuf_addf(err, "Cannot update the ref '%s'.",					    update->refname);				ret = TRANSACTION_GENERIC_ERROR;				goto cleanup;			} else {				/* freed by commit_ref_update(): */				update->lock = NULL;			}		}
+update->flags & REF_NEEDS_COMMIT
+update->flags
+update
+update
+flags
+REF_NEEDS_COMMIT
+REF_NEEDS_COMMIT
+{			if (commit_ref_update(update->lock,					      update->new_sha1, update->msg)) {				/* freed by commit_ref_update(): */				update->lock = NULL;				strbuf_addf(err, "Cannot update the ref '%s'.",					    update->refname);				ret = TRANSACTION_GENERIC_ERROR;				goto cleanup;			} else {				/* freed by commit_ref_update(): */				update->lock = NULL;			}		}
+if (commit_ref_update(update->lock,					      update->new_sha1, update->msg)) {				/* freed by commit_ref_update(): */				update->lock = NULL;				strbuf_addf(err, "Cannot update the ref '%s'.",					    update->refname);				ret = TRANSACTION_GENERIC_ERROR;				goto cleanup;			} else {				/* freed by commit_ref_update(): */				update->lock = NULL;			}
+commit_ref_update(update->lock,					      update->new_sha1, update->msg)
+commit_ref_update
+commit_ref_update
+update->lock
+update
+update
+lock
+update->new_sha1
+update
+update
+new_sha1
+update->msg
+update
+update
+msg
+{				/* freed by commit_ref_update(): */				update->lock = NULL;				strbuf_addf(err, "Cannot update the ref '%s'.",					    update->refname);				ret = TRANSACTION_GENERIC_ERROR;				goto cleanup;			}
+update->lock = NULL;
+update->lock = NULL
+update->lock
+update
+update
+lock
+NULL
+NULL
+strbuf_addf(err, "Cannot update the ref '%s'.",					    update->refname);
+strbuf_addf(err, "Cannot update the ref '%s'.",					    update->refname)
+strbuf_addf
+strbuf_addf
+err
+err
+"Cannot update the ref '%s'."
+update->refname
+update
+update
+refname
+ret = TRANSACTION_GENERIC_ERROR;
+ret = TRANSACTION_GENERIC_ERROR
+ret
+ret
+TRANSACTION_GENERIC_ERROR
+TRANSACTION_GENERIC_ERROR
+goto cleanup;
+cleanup
+{				/* freed by commit_ref_update(): */				update->lock = NULL;			}
+update->lock = NULL;
+update->lock = NULL
+update->lock
+update
+update
+lock
+NULL
+NULL
+for (i = 0; i < n; i++) {		struct ref_update *update = updates[i];		if (update->flags & REF_DELETING) {			if (delete_ref_loose(update->lock, update->type, err)) {				ret = TRANSACTION_GENERIC_ERROR;				goto cleanup;			}			if (!(update->flags & REF_ISPRUNING))				string_list_append(&refs_to_delete,						   update->lock->ref_name);		}	}
+i = 0;
+i = 0
+i
+i
+0
+i < n
+i
+i
+n
+n
+i++
+i
+i
+{		struct ref_update *update = updates[i];		if (update->flags & REF_DELETING) {			if (delete_ref_loose(update->lock, update->type, err)) {				ret = TRANSACTION_GENERIC_ERROR;				goto cleanup;			}			if (!(update->flags & REF_ISPRUNING))				string_list_append(&refs_to_delete,						   update->lock->ref_name);		}	}
+struct ref_update *update = updates[i];
+struct ref_update *update = updates[i];
+struct ref_update
+ref_update
+*update = updates[i]
+*
+update
+= updates[i]
+updates[i]
+updates
+updates
+i
+i
+if (update->flags & REF_DELETING) {			if (delete_ref_loose(update->lock, update->type, err)) {				ret = TRANSACTION_GENERIC_ERROR;				goto cleanup;			}			if (!(update->flags & REF_ISPRUNING))				string_list_append(&refs_to_delete,						   update->lock->ref_name);		}
+update->flags & REF_DELETING
+update->flags
+update
+update
+flags
+REF_DELETING
+REF_DELETING
+{			if (delete_ref_loose(update->lock, update->type, err)) {				ret = TRANSACTION_GENERIC_ERROR;				goto cleanup;			}			if (!(update->flags & REF_ISPRUNING))				string_list_append(&refs_to_delete,						   update->lock->ref_name);		}
+if (delete_ref_loose(update->lock, update->type, err)) {				ret = TRANSACTION_GENERIC_ERROR;				goto cleanup;			}
+delete_ref_loose(update->lock, update->type, err)
+delete_ref_loose
+delete_ref_loose
+update->lock
+update
+update
+lock
+update->type
+update
+update
+type
+err
+err
+{				ret = TRANSACTION_GENERIC_ERROR;				goto cleanup;			}
+ret = TRANSACTION_GENERIC_ERROR;
+ret = TRANSACTION_GENERIC_ERROR
+ret
+ret
+TRANSACTION_GENERIC_ERROR
+TRANSACTION_GENERIC_ERROR
+goto cleanup;
+cleanup
+if (!(update->flags & REF_ISPRUNING))				string_list_append(&refs_to_delete,						   update->lock->ref_name);
+!(update->flags & REF_ISPRUNING)
+(update->flags & REF_ISPRUNING)
+update->flags & REF_ISPRUNING
+update->flags
+update
+update
+flags
+REF_ISPRUNING
+REF_ISPRUNING
+string_list_append(&refs_to_delete,						   update->lock->ref_name);
+string_list_append(&refs_to_delete,						   update->lock->ref_name)
+string_list_append
+string_list_append
+&refs_to_delete
+refs_to_delete
+refs_to_delete
+update->lock->ref_name
+update->lock
+update
+update
+lock
+ref_name
+if (repack_without_refs(&refs_to_delete, err)) {		ret = TRANSACTION_GENERIC_ERROR;		goto cleanup;	}
+repack_without_refs(&refs_to_delete, err)
+repack_without_refs
+repack_without_refs
+&refs_to_delete
+refs_to_delete
+refs_to_delete
+err
+err
+{		ret = TRANSACTION_GENERIC_ERROR;		goto cleanup;	}
+ret = TRANSACTION_GENERIC_ERROR;
+ret = TRANSACTION_GENERIC_ERROR
+ret
+ret
+TRANSACTION_GENERIC_ERROR
+TRANSACTION_GENERIC_ERROR
+goto cleanup;
+cleanup
+for_each_string_list_item(ref_to_delete, &refs_to_delete)
+for_each_string_list_item(ref_to_delete, &refs_to_delete)
+for_each_string_list_item
+for_each_string_list_item
+ref_to_delete
+ref_to_delete
+&refs_to_delete
+refs_to_delete
+refs_to_delete
+)
+unlink_or_warn(git_path("logs/%s", ref_to_delete->string));
+unlink_or_warn(git_path("logs/%s", ref_to_delete->string))
+unlink_or_warn
+unlink_or_warn
+git_path("logs/%s", ref_to_delete->string)
+git_path
+git_path
+"logs/%s"
+ref_to_delete->string
+ref_to_delete
+ref_to_delete
+string
+clear_loose_ref_cache(&ref_cache);
+clear_loose_ref_cache(&ref_cache);
+clear_loose_ref_cache
+clear_loose_ref_cache
+(&ref_cache)
+&ref_cache
+&
+ref_cache
+cleanup:	transaction->state = REF_TRANSACTION_CLOSED;
+cleanup
+transaction->state = REF_TRANSACTION_CLOSED;
+transaction->state = REF_TRANSACTION_CLOSED
+transaction->state
+transaction
+transaction
+state
+REF_TRANSACTION_CLOSED
+REF_TRANSACTION_CLOSED
+for (i = 0; i < n; i++)		if (updates[i]->lock)			unlock_ref(updates[i]->lock);
+i = 0;
+i = 0
+i
+i
+0
+i < n
+i
+i
+n
+n
+i++
+i
+i
+if (updates[i]->lock)			unlock_ref(updates[i]->lock);
+updates[i]->lock
+updates[i]
+updates
+updates
+i
+i
+lock
+unlock_ref(updates[i]->lock);
+unlock_ref(updates[i]->lock)
+unlock_ref
+unlock_ref
+updates[i]->lock
+updates[i]
+updates
+updates
+i
+i
+lock
+string_list_clear(&refs_to_delete, 0);
+string_list_clear(&refs_to_delete, 0)
+string_list_clear
+string_list_clear
+&refs_to_delete
+refs_to_delete
+refs_to_delete
+0
+return ret;
+ret
+ret
+-----joern-----
+(52,144,0)
+(33,317,0)
+(163,68,0)
+(123,99,0)
+(371,49,0)
+(337,98,0)
+(222,99,0)
+(133,223,0)
+(289,191,0)
+(342,287,0)
+(68,163,0)
+(199,189,0)
+(208,322,0)
+(183,65,0)
+(225,83,0)
+(325,385,0)
+(2,252,0)
+(314,324,0)
+(71,221,0)
+(59,233,0)
+(136,193,0)
+(135,176,0)
+(255,144,0)
+(22,311,0)
+(211,98,0)
+(98,11,0)
+(235,138,0)
+(241,245,0)
+(77,48,0)
+(178,324,0)
+(356,170,0)
+(59,36,0)
+(337,323,0)
+(357,185,0)
+(206,20,0)
+(293,185,0)
+(70,211,0)
+(382,88,0)
+(86,76,0)
+(220,228,0)
+(144,358,0)
+(244,204,0)
+(104,82,0)
+(352,23,0)
+(193,261,0)
+(282,18,0)
+(256,88,0)
+(164,54,0)
+(249,88,0)
+(20,313,0)
+(91,47,0)
+(201,172,0)
+(145,11,0)
+(38,271,0)
+(363,141,0)
+(223,133,0)
+(365,40,0)
+(318,49,0)
+(111,35,0)
+(118,269,0)
+(332,126,0)
+(175,27,0)
+(281,182,0)
+(351,65,0)
+(353,82,0)
+(263,337,0)
+(324,271,0)
+(136,191,0)
+(152,67,0)
+(296,355,0)
+(63,7,0)
+(210,324,0)
+(136,175,0)
+(100,156,0)
+(298,236,0)
+(143,5,0)
+(265,198,0)
+(89,156,0)
+(343,182,0)
+(340,322,0)
+(259,233,0)
+(253,221,0)
+(26,49,0)
+(139,177,0)
+(180,378,0)
+(332,99,0)
+(342,170,0)
+(382,252,0)
+(122,201,0)
+(126,332,0)
+(137,19,0)
+(189,382,0)
+(113,333,0)
+(169,33,0)
+(196,139,0)
+(375,50,0)
+(337,182,0)
+(324,178,0)
+(83,369,0)
+(221,69,0)
+(97,88,0)
+(302,242,0)
+(62,20,0)
+(3,37,0)
+(18,99,0)
+(150,198,0)
+(89,279,0)
+(161,256,0)
+(138,99,0)
+(246,250,0)
+(228,111,0)
+(170,342,0)
+(330,189,0)
+(147,382,0)
+(329,245,0)
+(151,196,0)
+(10,361,0)
+(211,323,0)
+(376,139,0)
+(186,83,0)
+(128,273,0)
+(59,382,0)
+(385,98,0)
+(337,166,0)
+(6,286,0)
+(196,40,0)
+(189,199,0)
+(288,70,0)
+(166,260,0)
+(314,323,0)
+(197,88,0)
+(299,88,0)
+(271,98,0)
+(12,291,0)
+(57,126,0)
+(286,98,0)
+(111,228,0)
+(85,83,0)
+(344,11,0)
+(52,348,0)
+(178,72,0)
+(185,15,0)
+(390,242,0)
+(204,98,0)
+(165,88,0)
+(23,98,0)
+(157,338,0)
+(335,141,0)
+(149,346,0)
+(304,218,0)
+(4,104,0)
+(211,70,0)
+(283,222,0)
+(235,69,0)
+(23,352,0)
+(19,172,0)
+(339,174,0)
+(106,52,0)
+(308,201,0)
+(146,23,0)
+(390,354,0)
+(346,49,0)
+(366,175,0)
+(228,296,0)
+(392,139,0)
+(275,281,0)
+(333,27,0)
+(323,176,0)
+(87,393,0)
+(350,238,0)
+(342,70,0)
+(243,186,0)
+(279,69,0)
+(359,178,0)
+(268,96,0)
+(170,25,0)
+(74,378,0)
+(248,299,0)
+(62,98,0)
+(65,98,0)
+(121,222,0)
+(82,323,0)
+(66,62,0)
+(192,318,0)
+(46,107,0)
+(159,271,0)
+(186,233,0)
+(134,222,0)
+(108,98,0)
+(355,58,0)
+(126,256,0)
+(374,198,0)
+(109,385,0)
+(45,176,0)
+(40,348,0)
+(182,295,0)
+(73,27,0)
+(181,225,0)
+(65,18,0)
+(160,238,0)
+(245,88,0)
+(116,367,0)
+(273,182,0)
+(316,41,0)
+(226,152,0)
+(361,163,0)
+(200,7,0)
+(260,28,0)
+(127,390,0)
+(168,23,0)
+(270,88,0)
+(82,98,0)
+(327,299,0)
+(44,42,0)
+(277,35,0)
+(262,369,0)
+(210,385,0)
+(214,98,0)
+(198,150,0)
+(69,78,0)
+(326,250,0)
+(15,328,0)
+(393,108,0)
+(291,258,0)
+(94,247,0)
+(292,88,0)
+(80,246,0)
+(369,250,0)
+(237,281,0)
+(72,178,0)
+(296,348,0)
+(264,72,0)
+(393,99,0)
+(171,338,0)
+(176,177,0)
+(69,238,0)
+(216,296,0)
+(214,182,0)
+(314,98,0)
+(136,88,0)
+(118,172,0)
+(139,196,0)
+(25,170,0)
+(362,88,0)
+(378,180,0)
+(101,367,0)
+(176,98,0)
+(331,314,0)
+(163,361,0)
+(95,88,0)
+(370,390,0)
+(187,332,0)
+(323,76,0)
+(55,246,0)
+(29,68,0)
+(51,299,0)
+(215,208,0)
+(148,166,0)
+(280,324,0)
+(378,323,0)
+(273,98,0)
+(174,69,0)
+(368,261,0)
+(60,193,0)
+(52,323,0)
+(338,171,0)
+(123,124,0)
+(295,98,0)
+(139,355,0)
+(174,333,0)
+(314,182,0)
+(238,382,0)
+(5,115,0)
+(379,235,0)
+(299,327,0)
+(130,193,0)
+(144,52,0)
+(171,88,0)
+(177,367,0)
+(251,136,0)
+(184,25,0)
+(369,83,0)
+(327,53,0)
+(372,326,0)
+(276,354,0)
+(296,228,0)
+(321,393,0)
+(141,123,0)
+(53,382,0)
+(303,88,0)
+(212,9,0)
+(92,85,0)
+(34,88,0)
+(37,177,0)
+(296,177,0)
+(89,37,0)
+(172,19,0)
+(211,182,0)
+(129,337,0)
+(324,210,0)
+(389,36,0)
+(53,327,0)
+(25,98,0)
+(182,76,0)
+(249,117,0)
+(364,204,0)
+(154,315,0)
+(182,176,0)
+(271,324,0)
+(31,47,0)
+(234,336,0)
+(361,98,0)
+(281,98,0)
+(323,295,0)
+(83,88,0)
+(140,232,0)
+(269,118,0)
+(68,98,0)
+(125,369,0)
+(178,7,0)
+(260,166,0)
+(328,15,0)
+(257,286,0)
+(141,98,0)
+(23,177,0)
+(279,89,0)
+(358,144,0)
+(84,378,0)
+(108,393,0)
+(16,355,0)
+(24,88,0)
+(324,177,0)
+(14,211,0)
+(347,367,0)
+(354,390,0)
+(158,54,0)
+(319,225,0)
+(9,83,0)
+(54,258,0)
+(238,69,0)
+(70,342,0)
+(119,367,0)
+(294,28,0)
+(32,235,0)
+(177,324,0)
+(312,108,0)
+(117,61,0)
+(381,171,0)
+(37,69,0)
+(317,88,0)
+(7,98,0)
+(76,323,0)
+(272,69,0)
+(153,88,0)
+(189,233,0)
+(79,68,0)
+(225,49,0)
+(107,236,0)
+(179,82,0)
+(222,382,0)
+(214,72,0)
+(11,98,0)
+(246,96,0)
+(131,9,0)
+(232,99,0)
+(239,214,0)
+(68,177,0)
+(247,233,0)
+(209,156,0)
+(294,273,0)
+(188,223,0)
+(214,323,0)
+(284,191,0)
+(295,182,0)
+(28,294,0)
+(1,88,0)
+(41,269,0)
+(201,98,0)
+(158,136,0)
+(281,223,0)
+(198,182,0)
+(90,98,0)
+(18,313,0)
+(190,295,0)
+(385,210,0)
+(136,107,0)
+(41,287,0)
+(199,387,0)
+(217,279,0)
+(238,115,0)
+(172,201,0)
+(167,354,0)
+(117,249,0)
+(56,296,0)
+(204,177,0)
+(156,69,0)
+(388,287,0)
+(11,382,0)
+(8,348,0)
+(162,346,0)
+(383,199,0)
+(345,81,0)
+(221,355,0)
+(281,323,0)
+(299,83,0)
+(224,233,0)
+(299,382,0)
+(305,361,0)
+(9,322,0)
+(196,99,0)
+(198,69,0)
+(36,59,0)
+(315,250,0)
+(387,199,0)
+(198,323,0)
+(28,260,0)
+(139,348,0)
+(320,88,0)
+(232,88,0)
+(136,152,0)
+(203,40,0)
+(341,299,0)
+(37,355,0)
+(13,37,0)
+(166,337,0)
+(229,315,0)
+(202,314,0)
+(82,104,0)
+(19,204,0)
+(7,178,0)
+(204,19,0)
+(43,152,0)
+(72,214,0)
+(110,336,0)
+(76,98,0)
+(219,367,0)
+(218,115,0)
+(35,256,0)
+(346,382,0)
+(0,189,0)
+(373,273,0)
+(310,124,0)
+(326,291,0)
+(205,256,0)
+(380,252,0)
+(102,295,0)
+(93,123,0)
+(391,107,0)
+(393,50,0)
+(230,5,0)
+(278,117,0)
+(311,88,0)
+(172,118,0)
+(286,257,0)
+(285,323,0)
+(213,83,0)
+(17,279,0)
+(104,328,0)
+(223,281,0)
+(323,254,0)
+(123,141,0)
+(378,348,0)
+(15,185,0)
+(54,326,0)
+(82,182,0)
+(290,138,0)
+(273,294,0)
+(309,115,0)
+(242,50,0)
+(231,115,0)
+(297,307,0)
+(300,67,0)
+(98,367,0)
+(338,256,0)
+(348,346,0)
+(360,61,0)
+(242,390,0)
+(227,53,0)
+(138,27,0)
+(315,311,0)
+(136,242,0)
+(273,323,0)
+(287,342,0)
+(195,150,0)
+(155,138,0)
+(346,348,0)
+(185,98,0)
+(40,196,0)
+(324,314,0)
+(37,89,0)
+(120,214,0)
+(287,47,0)
+(306,180,0)
+(384,59,0)
+(348,336,0)
+(286,177,0)
+(11,322,0)
+(207,286,0)
+(96,246,0)
+(301,18,0)
+(114,62,0)
+(35,111,0)
+(252,382,0)
+(349,322,0)
+(222,83,0)
+(378,182,0)
+(132,81,0)
+(136,245,0)
+(173,88,0)
+(39,52,0)
+(194,175,0)
+(266,174,0)
+(138,235,0)
+(269,41,0)
+(274,61,0)
+(18,65,0)
+(64,294,0)
+(267,123,0)
+(252,250,0)
+(105,76,0)
+(377,326,0)
+(5,83,0)
+(156,89,0)
+(30,211,0)
+(334,25,0)
+(142,59,0)
+(317,33,0)
+(75,88,0)
+(112,78,0)
+(240,313,0)
+(21,78,0)
+(386,108,0)
+(52,182,0)
+(328,104,0)
+(61,117,0)
+(103,186,0)
+(191,313,0)
+(5,115,1)
+(147,83,1)
+(15,185,1)
+(377,372,1)
+(223,281,1)
+(154,300,1)
+(93,257,1)
+(160,350,1)
+(263,129,1)
+(286,177,1)
+(306,378,1)
+(10,305,1)
+(272,5,1)
+(111,35,1)
+(42,44,1)
+(144,255,1)
+(141,335,1)
+(12,326,1)
+(294,64,1)
+(20,206,1)
+(392,180,1)
+(233,259,1)
+(127,354,1)
+(184,388,1)
+(247,94,1)
+(46,222,1)
+(5,83,1)
+(324,178,1)
+(17,217,1)
+(217,37,1)
+(253,71,1)
+(198,182,1)
+(358,144,1)
+(274,360,1)
+(296,216,1)
+(136,245,1)
+(120,239,1)
+(154,298,1)
+(136,193,1)
+(328,104,1)
+(378,348,1)
+(247,233,1)
+(169,249,1)
+(318,192,1)
+(154,368,1)
+(33,169,1)
+(299,83,1)
+(41,316,1)
+(105,163,1)
+(222,83,1)
+(382,252,1)
+(166,337,1)
+(375,393,1)
+(368,193,1)
+(249,117,1)
+(170,25,1)
+(296,177,1)
+(71,89,1)
+(96,246,1)
+(115,231,1)
+(242,390,1)
+(312,321,1)
+(199,383,1)
+(299,51,1)
+(350,272,1)
+(62,98,1)
+(104,4,1)
+(40,348,1)
+(319,181,1)
+(26,371,1)
+(185,98,1)
+(316,287,1)
+(346,49,1)
+(390,354,1)
+(141,98,1)
+(136,251,1)
+(268,246,1)
+(216,56,1)
+(108,98,1)
+(389,59,1)
+(146,177,1)
+(19,137,1)
+(314,98,1)
+(53,227,1)
+(327,53,1)
+(64,273,1)
+(45,135,1)
+(23,177,1)
+(381,338,1)
+(338,256,1)
+(195,198,1)
+(214,182,1)
+(103,233,1)
+(202,280,1)
+(208,215,1)
+(175,194,1)
+(301,282,1)
+(243,103,1)
+(199,189,1)
+(365,139,1)
+(163,361,1)
+(126,57,1)
+(225,49,1)
+(238,115,1)
+(136,175,1)
+(0,36,1)
+(310,123,1)
+(351,183,1)
+(186,83,1)
+(296,355,1)
+(314,182,1)
+(155,333,1)
+(337,182,1)
+(138,235,1)
+(69,238,1)
+(273,128,1)
+(287,342,1)
+(211,323,1)
+(135,328,1)
+(177,324,1)
+(275,323,1)
+(174,69,1)
+(326,250,1)
+(9,322,1)
+(66,163,1)
+(82,98,1)
+(286,98,1)
+(309,9,1)
+(142,186,1)
+(143,218,1)
+(238,160,1)
+(122,19,1)
+(156,69,1)
+(232,140,1)
+(323,285,1)
+(182,176,1)
+(314,331,1)
+(156,100,1)
+(28,294,1)
+(25,98,1)
+(40,203,1)
+(227,341,1)
+(387,199,1)
+(148,337,1)
+(244,364,1)
+(37,177,1)
+(128,373,1)
+(353,98,1)
+(340,349,1)
+(196,139,1)
+(92,42,1)
+(152,43,1)
+(85,92,1)
+(337,263,1)
+(223,188,1)
+(182,343,1)
+(332,126,1)
+(299,382,1)
+(369,250,1)
+(182,295,1)
+(240,191,1)
+(72,214,1)
+(279,17,1)
+(59,233,1)
+(59,384,1)
+(35,277,1)
+(98,11,1)
+(325,109,1)
+(172,201,1)
+(256,161,1)
+(136,152,1)
+(158,54,1)
+(335,363,1)
+(9,212,1)
+(151,40,1)
+(176,45,1)
+(59,382,1)
+(94,387,1)
+(273,98,1)
+(215,257,1)
+(55,80,1)
+(304,355,1)
+(4,82,1)
+(318,49,1)
+(370,354,1)
+(108,386,1)
+(198,69,1)
+(260,28,1)
+(154,240,1)
+(57,225,1)
+(220,296,1)
+(206,62,1)
+(252,2,1)
+(342,70,1)
+(168,146,1)
+(205,382,1)
+(131,322,1)
+(361,98,1)
+(339,89,1)
+(106,196,1)
+(154,73,1)
+(53,382,1)
+(44,96,1)
+(171,381,1)
+(139,177,1)
+(214,98,1)
+(92,96,1)
+(212,131,1)
+(349,222,1)
+(83,369,1)
+(70,211,1)
+(180,306,1)
+(114,66,1)
+(193,130,1)
+(29,79,1)
+(281,98,1)
+(136,242,1)
+(200,63,1)
+(293,104,1)
+(178,359,1)
+(144,52,1)
+(96,268,1)
+(134,283,1)
+(139,348,1)
+(43,226,1)
+(266,339,1)
+(324,210,1)
+(369,125,1)
+(321,87,1)
+(378,182,1)
+(13,150,1)
+(189,330,1)
+(218,115,1)
+(286,207,1)
+(374,69,1)
+(198,265,1)
+(176,98,1)
+(185,357,1)
+(136,191,1)
+(338,157,1)
+(52,182,1)
+(187,126,1)
+(214,120,1)
+(295,98,1)
+(145,90,1)
+(388,260,1)
+(264,214,1)
+(139,376,1)
+(222,99,1)
+(104,82,1)
+(111,228,1)
+(180,378,1)
+(373,166,1)
+(131,208,1)
+(213,245,1)
+(230,143,1)
+(228,296,1)
+(8,225,1)
+(196,99,1)
+(211,182,1)
+(18,65,1)
+(391,46,1)
+(161,205,1)
+(302,352,1)
+(56,35,1)
+(73,175,1)
+(290,155,1)
+(150,195,1)
+(355,16,1)
+(282,20,1)
+(35,256,1)
+(332,99,1)
+(323,76,1)
+(68,98,1)
+(245,329,1)
+(38,159,1)
+(30,14,1)
+(255,52,1)
+(54,164,1)
+(37,3,1)
+(265,374,1)
+(19,204,1)
+(298,107,1)
+(89,279,1)
+(269,118,1)
+(209,279,1)
+(354,167,1)
+(158,136,1)
+(178,72,1)
+(332,187,1)
+(360,278,1)
+(23,168,1)
+(275,269,1)
+(232,99,1)
+(356,25,1)
+(330,0,1)
+(289,18,1)
+(109,314,1)
+(51,327,1)
+(281,182,1)
+(85,83,1)
+(126,256,1)
+(2,380,1)
+(194,366,1)
+(204,244,1)
+(102,328,1)
+(164,291,1)
+(84,348,1)
+(183,301,1)
+(154,375,1)
+(89,37,1)
+(137,204,1)
+(191,284,1)
+(94,36,1)
+(260,166,1)
+(37,355,1)
+(14,170,1)
+(380,147,1)
+(221,69,1)
+(324,314,1)
+(100,209,1)
+(239,271,1)
+(178,7,1)
+(135,182,1)
+(150,198,1)
+(18,99,1)
+(284,289,1)
+(271,38,1)
+(136,107,1)
+(181,318,1)
+(201,308,1)
+(211,98,1)
+(257,286,1)
+(334,184,1)
+(198,323,1)
+(324,271,1)
+(72,264,1)
+(224,311,1)
+(89,156,1)
+(317,33,1)
+(296,348,1)
+(82,323,1)
+(229,154,1)
+(68,29,1)
+(208,322,1)
+(7,98,1)
+(139,355,1)
+(379,290,1)
+(113,174,1)
+(123,141,1)
+(90,9,1)
+(295,190,1)
+(341,248,1)
+(262,213,1)
+(299,327,1)
+(192,111,1)
+(315,229,1)
+(235,32,1)
+(196,151,1)
+(82,179,1)
+(167,276,1)
+(61,274,1)
+(269,41,1)
+(192,180,1)
+(304,150,1)
+(9,83,1)
+(372,85,1)
+(308,122,1)
+(163,68,1)
+(179,353,1)
+(280,178,1)
+(49,26,1)
+(305,68,1)
+(204,98,1)
+(311,22,1)
+(348,346,1)
+(138,99,1)
+(246,55,1)
+(285,76,1)
+(74,84,1)
+(103,247,1)
+(323,295,1)
+(315,250,1)
+(235,69,1)
+(283,299,1)
+(251,171,1)
+(36,59,1)
+(386,312,1)
+(125,262,1)
+(393,108,1)
+(352,23,1)
+(23,98,1)
+(87,242,1)
+(52,39,1)
+(211,30,1)
+(228,220,1)
+(192,358,1)
+(76,86,1)
+(166,148,1)
+(52,348,1)
+(11,382,1)
+(329,241,1)
+(52,323,1)
+(86,105,1)
+(182,76,1)
+(174,266,1)
+(384,142,1)
+(344,145,1)
+(63,72,1)
+(328,15,1)
+(322,340,1)
+(129,352,1)
+(364,41,1)
+(279,69,1)
+(117,61,1)
+(385,98,1)
+(159,176,1)
+(133,223,1)
+(337,323,1)
+(204,177,1)
+(11,344,1)
+(225,319,1)
+(333,113,1)
+(275,260,1)
+(378,323,1)
+(82,182,1)
+(143,115,1)
+(70,288,1)
+(371,5,1)
+(246,250,1)
+(378,74,1)
+(41,287,1)
+(273,182,1)
+(172,19,1)
+(278,332,1)
+(326,377,1)
+(123,99,1)
+(346,149,1)
+(273,323,1)
+(337,98,1)
+(222,382,1)
+(215,133,1)
+(65,351,1)
+(60,196,1)
+(79,269,1)
+(39,106,1)
+(207,6,1)
+(196,40,1)
+(281,237,1)
+(343,295,1)
+(359,72,1)
+(390,127,1)
+(188,281,1)
+(237,275,1)
+(342,170,1)
+(376,392,1)
+(171,338,1)
+(361,10,1)
+(238,382,1)
+(186,233,1)
+(300,152,1)
+(121,134,1)
+(65,98,1)
+(231,309,1)
+(323,176,1)
+(130,60,1)
+(190,102,1)
+(393,99,1)
+(222,121,1)
+(383,189,1)
+(3,13,1)
+(363,267,1)
+(277,358,1)
+(294,273,1)
+(149,162,1)
+(154,317,1)
+(107,391,1)
+(314,323,1)
+(189,382,1)
+(37,69,1)
+(22,315,1)
+(140,256,1)
+(281,323,1)
+(6,133,1)
+(36,389,1)
+(210,385,1)
+(170,356,1)
+(271,98,1)
+(366,138,1)
+(80,232,1)
+(68,177,1)
+(186,243,1)
+(54,326,1)
+(76,98,1)
+(259,224,1)
+(390,370,1)
+(11,322,1)
+(25,334,1)
+(226,332,1)
+(154,310,1)
+(218,304,1)
+(252,250,1)
+(288,211,1)
+(16,221,1)
+(7,200,1)
+(118,172,1)
+(248,85,1)
+(225,83,1)
+(385,325,1)
+(162,8,1)
+(291,12,1)
+(267,93,1)
+(203,365,1)
+(221,253,1)
+(357,293,1)
+(62,114,1)
+(214,323,1)
+(181,49,1)
+(32,379,1)
+(331,202,1)
+(157,186,1)
+(189,233,1)
+(201,98,1)
+(276,302,1)
+(346,382,1)
+(5,230,1)
+(82,98,2)
+(32,89,2)
+(139,348,2)
+(158,136,2)
+(235,69,2)
+(17,150,2)
+(323,76,2)
+(178,7,2)
+(319,196,2)
+(158,54,2)
+(9,83,2)
+(281,269,2)
+(378,225,2)
+(143,9,2)
+(188,269,2)
+(281,182,2)
+(5,115,2)
+(171,85,2)
+(15,185,2)
+(51,85,2)
+(180,225,2)
+(304,89,2)
+(293,104,2)
+(237,163,2)
+(299,83,2)
+(167,352,2)
+(354,352,2)
+(288,170,2)
+(59,382,2)
+(53,85,2)
+(358,196,2)
+(11,322,2)
+(196,99,2)
+(52,196,2)
+(76,163,2)
+(341,85,2)
+(208,133,2)
+(269,41,2)
+(322,222,2)
+(174,89,2)
+(118,41,2)
+(301,163,2)
+(96,246,2)
+(90,9,2)
+(186,186,2)
+(260,166,2)
+(89,279,2)
+(316,260,2)
+(334,260,2)
+(86,163,2)
+(37,69,2)
+(296,358,2)
+(319,5,2)
+(249,332,2)
+(368,196,2)
+(181,5,2)
+(384,186,2)
+(337,98,2)
+(145,9,2)
+(104,9,2)
+(108,98,2)
+(264,9,2)
+(309,9,2)
+(342,70,2)
+(182,76,2)
+(275,260,2)
+(223,281,2)
+(87,352,2)
+(82,9,2)
+(176,98,2)
+(118,172,2)
+(26,5,2)
+(346,49,2)
+(20,163,2)
+(9,322,2)
+(11,9,2)
+(120,9,2)
+(131,222,2)
+(327,85,2)
+(10,269,2)
+(284,163,2)
+(123,257,2)
+(390,352,2)
+(319,180,2)
+(123,99,2)
+(172,201,2)
+(364,41,2)
+(38,9,2)
+(179,9,2)
+(298,222,2)
+(330,36,2)
+(209,150,2)
+(340,222,2)
+(18,99,2)
+(279,150,2)
+(129,352,2)
+(144,52,2)
+(221,89,2)
+(315,85,2)
+(64,166,2)
+(5,150,2)
+(107,222,2)
+(276,352,2)
+(35,358,2)
+(294,273,2)
+(273,166,2)
+(225,83,2)
+(111,358,2)
+(328,9,2)
+(159,9,2)
+(214,182,2)
+(342,170,2)
+(102,328,2)
+(215,257,2)
+(74,225,2)
+(221,69,2)
+(44,96,2)
+(83,369,2)
+(286,177,2)
+(327,53,2)
+(138,99,2)
+(157,85,2)
+(214,98,2)
+(366,89,2)
+(267,257,2)
+(343,328,2)
+(273,182,2)
+(156,150,2)
+(312,352,2)
+(311,85,2)
+(385,9,2)
+(136,107,2)
+(177,9,2)
+(19,204,2)
+(296,348,2)
+(227,85,2)
+(225,49,2)
+(318,196,2)
+(33,332,2)
+(196,180,2)
+(248,85,2)
+(369,250,2)
+(255,196,2)
+(52,348,2)
+(263,352,2)
+(46,222,2)
+(257,133,2)
+(182,176,2)
+(195,5,2)
+(136,193,2)
+(133,223,2)
+(337,323,2)
+(392,180,2)
+(218,115,2)
+(176,9,2)
+(387,36,2)
+(60,196,2)
+(141,98,2)
+(204,98,2)
+(274,332,2)
+(393,108,2)
+(211,170,2)
+(325,9,2)
+(242,390,2)
+(37,355,2)
+(98,9,2)
+(5,9,2)
+(82,323,2)
+(210,385,2)
+(65,98,2)
+(291,85,2)
+(37,150,2)
+(198,69,2)
+(130,196,2)
+(382,252,2)
+(318,49,2)
+(163,361,2)
+(211,98,2)
+(328,104,2)
+(302,352,2)
+(239,9,2)
+(372,85,2)
+(156,69,2)
+(198,182,2)
+(188,260,2)
+(155,89,2)
+(11,382,2)
+(61,332,2)
+(182,295,2)
+(344,9,2)
+(56,358,2)
+(141,257,2)
+(349,222,2)
+(169,332,2)
+(281,163,2)
+(220,358,2)
+(171,338,2)
+(85,83,2)
+(326,85,2)
+(103,85,2)
+(314,182,2)
+(273,323,2)
+(136,191,2)
+(143,150,2)
+(22,85,2)
+(201,98,2)
+(323,163,2)
+(358,144,2)
+(223,269,2)
+(100,150,2)
+(391,222,2)
+(139,177,2)
+(126,225,2)
+(218,150,2)
+(208,322,2)
+(59,186,2)
+(23,177,2)
+(243,85,2)
+(19,41,2)
+(30,170,2)
+(170,260,2)
+(393,352,2)
+(191,163,2)
+(231,9,2)
+(163,269,2)
+(135,9,2)
+(68,269,2)
+(177,324,2)
+(69,238,2)
+(123,141,2)
+(12,85,2)
+(228,296,2)
+(225,180,2)
+(134,85,2)
+(323,176,2)
+(73,89,2)
+(186,85,2)
+(357,104,2)
+(52,182,2)
+(154,85,2)
+(333,89,2)
+(314,9,2)
+(324,271,2)
+(370,354,2)
+(198,5,2)
+(275,163,2)
+(324,9,2)
+(244,41,2)
+(342,260,2)
+(185,98,2)
+(103,186,2)
+(36,186,2)
+(164,85,2)
+(326,250,2)
+(14,170,2)
+(57,225,2)
+(126,256,2)
+(379,89,2)
+(186,83,2)
+(331,9,2)
+(178,72,2)
+(201,41,2)
+(279,69,2)
+(166,337,2)
+(137,41,2)
+(198,323,2)
+(238,115,2)
+(136,152,2)
+(136,242,2)
+(13,150,2)
+(249,117,2)
+(144,196,2)
+(240,163,2)
+(194,89,2)
+(393,99,2)
+(168,9,2)
+(9,257,2)
+(204,177,2)
+(62,98,2)
+(296,355,2)
+(361,269,2)
+(206,163,2)
+(217,150,2)
+(359,72,2)
+(98,11,2)
+(138,89,2)
+(237,260,2)
+(172,19,2)
+(94,186,2)
+(111,35,2)
+(180,378,2)
+(166,352,2)
+(337,182,2)
+(136,85,2)
+(299,85,2)
+(139,355,2)
+(387,199,2)
+(28,166,2)
+(260,352,2)
+(282,163,2)
+(181,196,2)
+(230,9,2)
+(200,72,2)
+(352,9,2)
+(45,9,2)
+(260,28,2)
+(8,225,2)
+(265,5,2)
+(314,98,2)
+(189,382,2)
+(269,118,2)
+(3,150,2)
+(332,225,2)
+(76,98,2)
+(151,180,2)
+(9,133,2)
+(109,9,2)
+(271,98,2)
+(89,156,2)
+(224,85,2)
+(257,286,2)
+(63,72,2)
+(242,352,2)
+(286,98,2)
+(148,352,2)
+(353,9,2)
+(324,210,2)
+(175,89,2)
+(278,332,2)
+(229,85,2)
+(42,96,2)
+(230,150,2)
+(228,358,2)
+(385,98,2)
+(332,126,2)
+(259,85,2)
+(281,260,2)
+(133,269,2)
+(70,211,2)
+(251,85,2)
+(152,332,2)
+(54,326,2)
+(281,98,2)
+(174,69,2)
+(72,214,2)
+(222,382,2)
+(7,72,2)
+(238,382,2)
+(214,323,2)
+(133,163,2)
+(214,9,2)
+(23,9,2)
+(324,178,2)
+(196,40,2)
+(39,196,2)
+(216,358,2)
+(371,5,2)
+(324,314,2)
+(222,83,2)
+(142,186,2)
+(40,348,2)
+(383,36,2)
+(188,163,2)
+(43,332,2)
+(9,222,2)
+(139,180,2)
+(252,250,2)
+(348,346,2)
+(136,245,2)
+(233,85,2)
+(378,348,2)
+(271,9,2)
+(310,257,2)
+(351,163,2)
+(315,250,2)
+(212,133,2)
+(131,257,2)
+(25,260,2)
+(0,36,2)
+(113,89,2)
+(289,163,2)
+(192,180,2)
+(235,89,2)
+(243,186,2)
+(286,133,2)
+(25,98,2)
+(280,9,2)
+(204,41,2)
+(338,256,2)
+(68,177,2)
+(128,166,2)
+(189,233,2)
+(275,269,2)
+(72,9,2)
+(163,68,2)
+(192,196,2)
+(49,5,2)
+(339,89,2)
+(35,256,2)
+(183,163,2)
+(53,382,2)
+(237,269,2)
+(181,180,2)
+(283,85,2)
+(150,198,2)
+(360,332,2)
+(15,104,2)
+(68,98,2)
+(170,25,2)
+(272,5,2)
+(122,41,2)
+(222,99,2)
+(199,189,2)
+(376,180,2)
+(62,163,2)
+(223,163,2)
+(182,328,2)
+(178,9,2)
+(185,104,2)
+(117,61,2)
+(202,9,2)
+(363,257,2)
+(212,257,2)
+(104,82,2)
+(7,98,2)
+(226,332,2)
+(186,233,2)
+(308,41,2)
+(318,180,2)
+(189,36,2)
+(71,89,2)
+(210,9,2)
+(300,332,2)
+(294,166,2)
+(66,163,2)
+(352,23,2)
+(365,180,2)
+(203,180,2)
+(187,225,2)
+(184,260,2)
+(305,269,2)
+(146,9,2)
+(232,99,2)
+(306,225,2)
+(388,260,2)
+(266,89,2)
+(299,382,2)
+(304,150,2)
+(160,5,2)
+(4,9,2)
+(149,225,2)
+(247,233,2)
+(16,89,2)
+(374,5,2)
+(361,98,2)
+(41,260,2)
+(281,323,2)
+(28,294,2)
+(223,260,2)
+(89,150,2)
+(314,323,2)
+(230,89,2)
+(299,327,2)
+(346,382,2)
+(381,85,2)
+(350,5,2)
+(246,250,2)
+(143,89,2)
+(54,85,2)
+(127,354,2)
+(337,352,2)
+(373,166,2)
+(207,133,2)
+(82,182,2)
+(269,260,2)
+(356,260,2)
+(287,260,2)
+(290,89,2)
+(196,139,2)
+(138,235,2)
+(386,352,2)
+(114,163,2)
+(5,89,2)
+(335,257,2)
+(295,98,2)
+(18,65,2)
+(211,182,2)
+(208,257,2)
+(115,9,2)
+(172,41,2)
+(40,180,2)
+(277,358,2)
+(193,196,2)
+(65,163,2)
+(238,5,2)
+(215,133,2)
+(212,222,2)
+(70,170,2)
+(389,186,2)
+(199,36,2)
+(29,269,2)
+(296,177,2)
+(332,99,2)
+(5,83,2)
+(18,163,2)
+(323,295,2)
+(375,352,2)
+(378,182,2)
+(338,85,2)
+(106,196,2)
+(59,233,2)
+(285,163,2)
+(225,196,2)
+(69,5,2)
+(317,332,2)
+(93,257,2)
+(225,5,2)
+(133,260,2)
+(84,225,2)
+(378,323,2)
+(390,354,2)
+(162,225,2)
+(150,5,2)
+(190,328,2)
+(117,332,2)
+(328,15,2)
+(105,163,2)
+(111,228,2)
+(253,89,2)
+(218,89,2)
+(377,85,2)
+(346,225,2)
+(108,352,2)
+(222,85,2)
+(355,89,2)
+(52,323,2)
+(23,98,2)
+(89,37,2)
+(273,98,2)
+(321,352,2)
+(79,269,2)
+(37,177,2)
+(247,186,2)
+(287,342,2)
+(136,175,2)
+(295,328,2)
+(348,225,2)
+(121,85,2)
+(6,133,2)
+(131,133,2)
+(41,287,2)
+(317,33,2)
+(36,59,2)
+(211,323,2)
+-----------------------------------
+(0,updates)
+(1,ret)
+(2,updates)
+(3,lock)
+(4,REF_HAVE_NEW)
+(5,i < n)
+(6,update)
+(7,update->old_sha1)
+(8,update)
+(9,i < n)
+(10,new_sha1)
+(11,updates[i])
+(12,REF_TRANSACTION_CLOSED)
+(13,update)
+(14,update)
+(15,is_null_sha1(update->new_sha1)
+(16,NULL)
+(17,new_sha1)
+(18,strbuf_addf(err, "Cannot update the ref \'%s\'.",\n\\n\\t\\t\\t\\t\\t    update->refname)
+(19,update->lock->old_sha1)
+(20,update->lock = NULL)
+(21,update)
+(22,REF_TRANSACTION_CLOSED)
+(23,update->lock)
+(24,updates)
+(25,update->type)
+(26,0)
+(27,)
+(28,!(update->flags & REF_DELETING)
+(29,lock)
+(30,flags)
+(31,if (!overwriting_symref &&\n\\n\\t\\t\\t    !hashcmp(update->lock->old_sha1, update->new_sha1)
+(32,refname)
+(33,&ref_cache)
+(34,for (i = 0; i < n; i++)
+(35,&refs_to_delete)
+(36,updates[i]->lock)
+(37,update->lock)
+(38,refname)
+(39,flags)
+(40,update->type)
+(41,!overwriting_symref)
+(42,die("BUG: commit called for transaction that is not open")
+(43,TRANSACTION_GENERIC_ERROR)
+(44,"BUG: commit called for transaction that is not open")
+(45,lock)
+(46,ret)
+(47,)
+(48,)
+(49,i = 0)
+(50,)
+(51,ref_update_compare)
+(52,update->flags)
+(53,*updates)
+(54,return 0;)
+(55,state)
+(56,update)
+(57,refs_to_delete)
+(58,)
+(59,updates[i])
+(60,ret)
+(61,ref_to_delete->string)
+(62,update->lock)
+(63,update)
+(64,REF_DELETING)
+(65,update->refname)
+(66,update)
+(67,)
+(68,update->lock)
+(69,*update = updates[i])
+(70,update->flags & REF_NODEREF)
+(71,update)
+(72,update->flags & REF_HAVE_OLD)
+(73,goto cleanup;)
+(74,flags)
+(75,if (ref_update_reject_duplicates(updates, n, err)
+(76,update->flags)
+(77,if (commit_ref_update(update->lock,\n\\n\\t\\t\\t\\t\\t      update->new_sha1, update->msg)
+(78,)
+(79,update)
+(80,transaction)
+(81,)
+(82,update->flags)
+(83,n = transaction->nr)
+(84,update)
+(85,!n)
+(86,flags)
+(87,err)
+(88,)
+(89,commit_ref_update(update->lock,\n\\n\\t\\t\\t\\t\\t      update->new_sha1, update->msg)
+(90,update)
+(91,overwriting_symref)
+(92,n)
+(93,err)
+(94,i)
+(95,n)
+(96,transaction->state != REF_TRANSACTION_OPEN)
+(97,for (i = 0; i < n; i++)
+(98,*update = updates[i])
+(99,struct strbuf *err)
+(100,msg)
+(101,update)
+(102,update)
+(103,i)
+(104,update->flags & REF_HAVE_NEW)
+(105,update)
+(106,update)
+(107,ret = TRANSACTION_GENERIC_ERROR)
+(108,update->refname)
+(109,update)
+(110,if (update->flags & REF_DELETING)
+(111,string_list_append(&refs_to_delete,\n\\n\\t\\t\\t\\t\\t\\t   update->lock->ref_name)
+(112,if (update->flags & REF_NEEDS_COMMIT)
+(113,NULL)
+(114,lock)
+(115,i = 0)
+(116,if (!update->lock)
+(117,git_path("logs/%s", ref_to_delete->string)
+(118,!hashcmp(update->lock->old_sha1, update->new_sha1)
+(119,if ((update->flags & REF_HAVE_NEW)
+(120,flags)
+(121,err)
+(122,update)
+(123,strbuf_addf(err, "Couldn\'t close %s.lock",\n\\n\\t\\t\\t\\t\\t    update->refname)
+(124,)
+(125,nr)
+(126,&refs_to_delete)
+(127,TRANSACTION_NAME_CONFLICT)
+(128,flags)
+(129,update)
+(130,TRANSACTION_GENERIC_ERROR)
+(131,i)
+(132,if (delete_ref_loose(update->lock, update->type, err)
+(133,!(update->flags & REF_NEEDS_COMMIT)
+(134,n)
+(135,update)
+(136,return ret;)
+(137,old_sha1)
+(138,strbuf_addf(err, "Cannot update the ref \'%s\'.",\n\\n\\t\\t\\t\\t\\t    update->refname)
+(139,update->lock)
+(140,err)
+(141,update->refname)
+(142,updates)
+(143,i)
+(144,update->flags & REF_ISPRUNING)
+(145,updates)
+(146,update)
+(147,updates)
+(148,REF_HAVE_NEW)
+(149,i)
+(150,update->flags & REF_NEEDS_COMMIT)
+(151,err)
+(152,ret = TRANSACTION_GENERIC_ERROR)
+(153,if (transaction->state != REF_TRANSACTION_OPEN)
+(154,transaction)
+(155,err)
+(156,update->msg)
+(157,refs_to_delete)
+(158,RET)
+(159,update)
+(160,i)
+(161,STRING_LIST_INIT_NODUP)
+(162,updates)
+(163,write_ref_to_lockfile(update->lock,\n\\n\\t\\t\\t\\t\\t\\t\\t update->new_sha1)
+(164,0)
+(165,if (repack_without_refs(&refs_to_delete, err)
+(166,update->flags & REF_HAVE_NEW)
+(167,ENOTDIR)
+(168,lock)
+(169,ref_cache)
+(170,update->type & REF_ISSYMREF)
+(171,string_list_clear(&refs_to_delete, 0)
+(172,hashcmp(update->lock->old_sha1, update->new_sha1)
+(173,cleanup:)
+(174,update->lock)
+(175,ret = TRANSACTION_GENERIC_ERROR)
+(176,update->lock)
+(177,update->lock = lock_ref_sha1_basic(\n\\n\\t\\t\\t\\tupdate->refname,\n\\n\\t\\t\\t\\t((update->flags & REF_HAVE_OLD)
+(178,(update->flags & REF_HAVE_OLD)
+(179,flags)
+(180,update->flags & REF_DELETING)
+(181,i)
+(182,update->flags |= REF_DELETING)
+(183,update)
+(184,update)
+(185,update->new_sha1)
+(186,i < n)
+(187,err)
+(188,REF_NEEDS_COMMIT)
+(189,updates[i])
+(190,flags)
+(191,ret = TRANSACTION_GENERIC_ERROR)
+(192,i)
+(193,ret = TRANSACTION_GENERIC_ERROR)
+(194,TRANSACTION_GENERIC_ERROR)
+(195,REF_NEEDS_COMMIT)
+(196,delete_ref_loose(update->lock, update->type, err)
+(197,for (i = 0; i < n; i++)
+(198,update->flags)
+(199,updates[i]->lock)
+(200,old_sha1)
+(201,update->new_sha1)
+(202,update)
+(203,type)
+(204,update->lock)
+(205,refs_to_delete)
+(206,NULL)
+(207,lock)
+(208,i++)
+(209,update)
+(210,&update->type)
+(211,update->flags)
+(212,n)
+(213,n)
+(214,update->flags)
+(215,i)
+(216,lock)
+(217,update)
+(218,i++)
+(219,if (!(update->flags & REF_NEEDS_COMMIT)
+(220,ref_name)
+(221,update->lock)
+(222,ref_update_reject_duplicates(updates, n, err)
+(223,update->flags & REF_NEEDS_COMMIT)
+(224,i)
+(225,i < n)
+(226,ret)
+(227,updates)
+(228,update->lock->ref_name)
+(229,state)
+(230,n)
+(231,0)
+(232,assert(err)
+(233,i = 0)
+(234,update)
+(235,update->refname)
+(236,)
+(237,flags)
+(238,updates[i])
+(239,update)
+(240,goto cleanup;)
+(241,ret)
+(242,ret = (errno == ENOTDIR)
+(243,n)
+(244,lock)
+(245,ret = 0)
+(246,transaction->state)
+(247,i++)
+(248,updates)
+(249,unlink_or_warn(git_path("logs/%s", ref_to_delete->string)
+(250,struct ref_transaction *transaction)
+(251,ret)
+(252,transaction->updates)
+(253,lock)
+(254,)
+(255,REF_ISPRUNING)
+(256,refs_to_delete = STRING_LIST_INIT_NODUP)
+(257,close_ref(update->lock)
+(258,)
+(259,0)
+(260,(update->flags & REF_HAVE_NEW)
+(261,)
+(262,transaction)
+(263,flags)
+(264,REF_HAVE_OLD)
+(265,flags)
+(266,lock)
+(267,"Couldn\'t close %s.lock")
+(268,REF_TRANSACTION_OPEN)
+(269,!overwriting_symref &&\n\\n\\t\\t\\t    !hashcmp(update->lock->old_sha1, update->new_sha1)
+(270,if (!n)
+(271,update->refname)
+(272,update)
+(273,update->flags)
+(274,string)
+(275,update)
+(276,errno)
+(277,refs_to_delete)
+(278,"logs/%s")
+(279,update->new_sha1)
+(280,NULL)
+(281,update->flags)
+(282,err)
+(283,updates)
+(284,TRANSACTION_GENERIC_ERROR)
+(285,REF_NEEDS_COMMIT)
+(286,update->lock)
+(287,overwriting_symref = ((update->type & REF_ISSYMREF)
+(288,REF_NODEREF)
+(289,ret)
+(290,"Cannot update the ref \'%s\'.")
+(291,transaction->state = REF_TRANSACTION_CLOSED)
+(292,for (i = 0; i < n; i++)
+(293,update)
+(294,update->flags & REF_DELETING)
+(295,update->flags)
+(296,update->lock)
+(297,if (close_ref(update->lock)
+(298,goto cleanup;)
+(299,qsort(updates, n, sizeof(*updates)
+(300,goto cleanup;)
+(301,"Cannot update the ref \'%s\'.")
+(302,ret)
+(303,i)
+(304,i)
+(305,update)
+(306,REF_DELETING)
+(307,)
+(308,new_sha1)
+(309,i)
+(310,goto cleanup;)
+(311,transaction->state = REF_TRANSACTION_CLOSED)
+(312,update)
+(313,)
+(314,update->flags)
+(315,transaction->state)
+(316,overwriting_symref)
+(317,clear_loose_ref_cache(&ref_cache)
+(318,i++)
+(319,n)
+(320,refs_to_delete)
+(321,"Cannot lock the ref \'%s\'.")
+(322,i = 0)
+(323,update->flags |= REF_NEEDS_COMMIT)
+(324,lock_ref_sha1_basic(\n\\n\\t\\t\\t\\tupdate->refname,\n\\n\\t\\t\\t\\t((update->flags & REF_HAVE_OLD)
+(325,type)
+(326,transaction->state)
+(327,sizeof(*updates)
+(328,(update->flags & REF_HAVE_NEW)
+(329,0)
+(330,i)
+(331,flags)
+(332,repack_without_refs(&refs_to_delete, err)
+(333,update->lock = NULL)
+(334,type)
+(335,refname)
+(336,)
+(337,update->flags)
+(338,&refs_to_delete)
+(339,update)
+(340,0)
+(341,n)
+(342,(update->type & REF_ISSYMREF)
+(343,REF_DELETING)
+(344,i)
+(345,if (!(update->flags & REF_ISPRUNING)
+(346,updates[i])
+(347,if ((update->flags & REF_HAVE_NEW)
+(348,*update = updates[i])
+(349,i)
+(350,updates)
+(351,refname)
+(352,!update->lock)
+(353,update)
+(354,errno == ENOTDIR)
+(355,update->lock = NULL)
+(356,REF_ISSYMREF)
+(357,new_sha1)
+(358,!(update->flags & REF_ISPRUNING)
+(359,NULL)
+(360,ref_to_delete)
+(361,update->new_sha1)
+(362,ref_to_delete)
+(363,update)
+(364,update)
+(365,update)
+(366,ret)
+(367,)
+(368,goto cleanup;)
+(369,transaction->nr)
+(370,TRANSACTION_GENERIC_ERROR)
+(371,i)
+(372,transaction)
+(373,update)
+(374,update)
+(375,goto cleanup;)
+(376,lock)
+(377,state)
+(378,update->flags)
+(379,update)
+(380,transaction)
+(381,0)
+(382,**updates = transaction->updates)
+(383,lock)
+(384,i)
+(385,update->type)
+(386,refname)
+(387,unlock_ref(updates[i]->lock)
+(388,overwriting_symref)
+(389,lock)
+(390,(errno == ENOTDIR)
+(391,TRANSACTION_GENERIC_ERROR)
+(392,update)
+(393,strbuf_addf(err, "Cannot lock the ref \'%s\'.",\n\\n\\t\\t\\t\\t    update->refname)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

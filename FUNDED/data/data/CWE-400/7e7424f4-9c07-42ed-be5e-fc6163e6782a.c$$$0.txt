@@ -1,0 +1,932 @@
+-----label-----
+1
+-----code-----
+static unsigned int packet_poll(struct file *file, struct socket *sock,
+				poll_table *wait)
+{
+	struct sock *sk = sock->sk;
+	struct packet_sock *po = pkt_sk(sk);
+	unsigned int mask = datagram_poll(file, sock, wait);
+
+	spin_lock_bh(&sk->sk_receive_queue.lock);
+	if (po->rx_ring.pg_vec) {
+		if (!packet_previous_rx_frame(po, &po->rx_ring,
+			TP_STATUS_KERNEL))
+			mask |= POLLIN | POLLRDNORM;
+	}
+	if (po->pressure && __packet_rcv_has_room(po, NULL) == ROOM_NORMAL)
+		xchg(&po->pressure, 0);
+	spin_unlock_bh(&sk->sk_receive_queue.lock);
+	spin_lock_bh(&sk->sk_write_queue.lock);
+	if (po->tx_ring.pg_vec) {
+		if (packet_current_frame(po, &po->tx_ring, TP_STATUS_AVAILABLE))
+			mask |= POLLOUT | POLLWRNORM;
+	}
+	spin_unlock_bh(&sk->sk_write_queue.lock);
+	return mask;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+17,19
+18,19
+20,21
+20,22
+23,24
+23,25
+23,26
+23,27
+23,28
+23,29
+23,30
+23,31
+23,32
+23,33
+23,34
+24,25
+25,26
+25,27
+26,27
+28,29
+28,30
+28,31
+31,32
+32,33
+32,34
+33,34
+36,37
+37,38
+37,39
+38,39
+40,41
+40,42
+40,43
+43,44
+44,45
+44,46
+45,46
+47,48
+49,50
+50,51
+50,52
+52,53
+52,54
+54,55
+55,56
+55,57
+55,58
+55,59
+56,57
+58,59
+60,61
+62,63
+64,65
+65,66
+65,67
+66,67
+68,69
+69,70
+69,71
+70,71
+70,72
+71,72
+75,76
+75,77
+76,77
+76,78
+77,78
+77,79
+78,79
+82,83
+83,84
+83,85
+84,85
+85,86
+85,87
+85,88
+85,89
+86,87
+88,89
+90,91
+91,92
+91,93
+92,93
+95,96
+97,98
+98,99
+98,100
+99,100
+101,102
+101,103
+102,103
+104,105
+106,107
+106,108
+107,108
+107,109
+108,109
+108,110
+109,110
+112,113
+112,114
+113,114
+113,115
+113,116
+114,115
+116,117
+118,119
+120,121
+122,123
+123,124
+123,125
+123,126
+124,125
+126,127
+127,128
+127,129
+128,129
+132,133
+133,134
+133,135
+134,135
+136,137
+137,138
+137,139
+138,139
+138,140
+139,140
+143,144
+144,145
+144,146
+145,146
+147,148
+148,149
+148,150
+149,150
+149,151
+150,151
+154,155
+154,156
+155,156
+155,157
+156,157
+156,158
+157,158
+161,162
+162,163
+162,164
+163,164
+163,165
+163,166
+163,167
+164,165
+166,167
+168,169
+169,170
+169,171
+170,171
+173,174
+175,176
+176,177
+176,178
+177,178
+179,180
+179,181
+180,181
+182,183
+184,185
+185,186
+185,187
+186,187
+188,189
+189,190
+189,191
+190,191
+190,192
+191,192
+195,196
+196,197
+-----nextToken-----
+2,4,7,9,10,13,15,16,19,21,22,27,29,30,34,35,39,41,42,46,48,51,53,57,59,61,63,67,72,73,74,79,80,81,87,89,93,94,96,100,103,105,110,111,115,117,119,121,125,129,130,131,135,140,141,142,146,151,152,153,158,159,160,165,167,171,172,174,178,181,183,187,192,193,194,197
+-----computeFrom-----
+98,99
+98,100
+101,102
+101,103
+107,108
+107,109
+112,113
+112,114
+176,177
+176,178
+179,180
+179,181
+-----guardedBy-----
+111,130
+117,129
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IfStatement;FieldReference;FieldReference;IdExpression;Name;Name;Name;CompoundStatement;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IfStatement;FieldReference;FieldReference;IdExpression;Name;Name;Name;CompoundStatement;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+static unsigned int packet_poll(struct file *file, struct socket *sock,				poll_table *wait){	struct sock *sk = sock->sk;	struct packet_sock *po = pkt_sk(sk);	unsigned int mask = datagram_poll(file, sock, wait);	spin_lock_bh(&sk->sk_receive_queue.lock);	if (po->rx_ring.pg_vec) {		if (!packet_previous_rx_frame(po, &po->rx_ring,			TP_STATUS_KERNEL))			mask |= POLLIN | POLLRDNORM;	}	if (po->pressure && __packet_rcv_has_room(po, NULL) == ROOM_NORMAL)		xchg(&po->pressure, 0);	spin_unlock_bh(&sk->sk_receive_queue.lock);	spin_lock_bh(&sk->sk_write_queue.lock);	if (po->tx_ring.pg_vec) {		if (packet_current_frame(po, &po->tx_ring, TP_STATUS_AVAILABLE))			mask |= POLLOUT | POLLWRNORM;	}	spin_unlock_bh(&sk->sk_write_queue.lock);	return mask;}
+static unsigned int
+packet_poll(struct file *file, struct socket *sock,				poll_table *wait)
+packet_poll
+struct file *file
+struct file
+file
+*file
+*
+file
+struct socket *sock
+struct socket
+socket
+*sock
+*
+sock
+poll_table *wait
+poll_table
+poll_table
+*wait
+*
+wait
+{	struct sock *sk = sock->sk;	struct packet_sock *po = pkt_sk(sk);	unsigned int mask = datagram_poll(file, sock, wait);	spin_lock_bh(&sk->sk_receive_queue.lock);	if (po->rx_ring.pg_vec) {		if (!packet_previous_rx_frame(po, &po->rx_ring,			TP_STATUS_KERNEL))			mask |= POLLIN | POLLRDNORM;	}	if (po->pressure && __packet_rcv_has_room(po, NULL) == ROOM_NORMAL)		xchg(&po->pressure, 0);	spin_unlock_bh(&sk->sk_receive_queue.lock);	spin_lock_bh(&sk->sk_write_queue.lock);	if (po->tx_ring.pg_vec) {		if (packet_current_frame(po, &po->tx_ring, TP_STATUS_AVAILABLE))			mask |= POLLOUT | POLLWRNORM;	}	spin_unlock_bh(&sk->sk_write_queue.lock);	return mask;}
+struct sock *sk = sock->sk;
+struct sock *sk = sock->sk;
+struct sock
+sock
+*sk = sock->sk
+*
+sk
+= sock->sk
+sock->sk
+sock
+sock
+sk
+struct packet_sock *po = pkt_sk(sk);
+struct packet_sock *po = pkt_sk(sk);
+struct packet_sock
+packet_sock
+*po = pkt_sk(sk)
+*
+po
+= pkt_sk(sk)
+pkt_sk(sk)
+pkt_sk
+pkt_sk
+sk
+sk
+unsigned int mask = datagram_poll(file, sock, wait);
+unsigned int mask = datagram_poll(file, sock, wait);
+unsigned int
+mask = datagram_poll(file, sock, wait)
+mask
+= datagram_poll(file, sock, wait)
+datagram_poll(file, sock, wait)
+datagram_poll
+datagram_poll
+file
+file
+sock
+sock
+wait
+wait
+spin_lock_bh(&sk->sk_receive_queue.lock);
+spin_lock_bh(&sk->sk_receive_queue.lock)
+spin_lock_bh
+spin_lock_bh
+&sk->sk_receive_queue.lock
+sk->sk_receive_queue.lock
+sk->sk_receive_queue
+sk
+sk
+sk_receive_queue
+lock
+if (po->rx_ring.pg_vec) {		if (!packet_previous_rx_frame(po, &po->rx_ring,			TP_STATUS_KERNEL))			mask |= POLLIN | POLLRDNORM;	}
+po->rx_ring.pg_vec
+po->rx_ring
+po
+po
+rx_ring
+pg_vec
+{		if (!packet_previous_rx_frame(po, &po->rx_ring,			TP_STATUS_KERNEL))			mask |= POLLIN | POLLRDNORM;	}
+if (!packet_previous_rx_frame(po, &po->rx_ring,			TP_STATUS_KERNEL))			mask |= POLLIN | POLLRDNORM;
+!packet_previous_rx_frame(po, &po->rx_ring,			TP_STATUS_KERNEL)
+packet_previous_rx_frame(po, &po->rx_ring,			TP_STATUS_KERNEL)
+packet_previous_rx_frame
+packet_previous_rx_frame
+po
+po
+&po->rx_ring
+po->rx_ring
+po
+po
+rx_ring
+TP_STATUS_KERNEL
+TP_STATUS_KERNEL
+mask |= POLLIN | POLLRDNORM;
+mask |= POLLIN | POLLRDNORM
+mask
+mask
+POLLIN | POLLRDNORM
+POLLIN
+POLLIN
+POLLRDNORM
+POLLRDNORM
+if (po->pressure && __packet_rcv_has_room(po, NULL) == ROOM_NORMAL)		xchg(&po->pressure, 0);
+po->pressure && __packet_rcv_has_room(po, NULL) == ROOM_NORMAL
+po->pressure
+po
+po
+pressure
+__packet_rcv_has_room(po, NULL) == ROOM_NORMAL
+__packet_rcv_has_room(po, NULL)
+__packet_rcv_has_room
+__packet_rcv_has_room
+po
+po
+NULL
+NULL
+ROOM_NORMAL
+ROOM_NORMAL
+xchg(&po->pressure, 0);
+xchg(&po->pressure, 0)
+xchg
+xchg
+&po->pressure
+po->pressure
+po
+po
+pressure
+0
+spin_unlock_bh(&sk->sk_receive_queue.lock);
+spin_unlock_bh(&sk->sk_receive_queue.lock)
+spin_unlock_bh
+spin_unlock_bh
+&sk->sk_receive_queue.lock
+sk->sk_receive_queue.lock
+sk->sk_receive_queue
+sk
+sk
+sk_receive_queue
+lock
+spin_lock_bh(&sk->sk_write_queue.lock);
+spin_lock_bh(&sk->sk_write_queue.lock)
+spin_lock_bh
+spin_lock_bh
+&sk->sk_write_queue.lock
+sk->sk_write_queue.lock
+sk->sk_write_queue
+sk
+sk
+sk_write_queue
+lock
+if (po->tx_ring.pg_vec) {		if (packet_current_frame(po, &po->tx_ring, TP_STATUS_AVAILABLE))			mask |= POLLOUT | POLLWRNORM;	}
+po->tx_ring.pg_vec
+po->tx_ring
+po
+po
+tx_ring
+pg_vec
+{		if (packet_current_frame(po, &po->tx_ring, TP_STATUS_AVAILABLE))			mask |= POLLOUT | POLLWRNORM;	}
+if (packet_current_frame(po, &po->tx_ring, TP_STATUS_AVAILABLE))			mask |= POLLOUT | POLLWRNORM;
+packet_current_frame(po, &po->tx_ring, TP_STATUS_AVAILABLE)
+packet_current_frame
+packet_current_frame
+po
+po
+&po->tx_ring
+po->tx_ring
+po
+po
+tx_ring
+TP_STATUS_AVAILABLE
+TP_STATUS_AVAILABLE
+mask |= POLLOUT | POLLWRNORM;
+mask |= POLLOUT | POLLWRNORM
+mask
+mask
+POLLOUT | POLLWRNORM
+POLLOUT
+POLLOUT
+POLLWRNORM
+POLLWRNORM
+spin_unlock_bh(&sk->sk_write_queue.lock);
+spin_unlock_bh(&sk->sk_write_queue.lock)
+spin_unlock_bh
+spin_unlock_bh
+&sk->sk_write_queue.lock
+sk->sk_write_queue.lock
+sk->sk_write_queue
+sk
+sk
+sk_write_queue
+lock
+return mask;
+mask
+mask
+-----joern-----
+(77,13,0)
+(47,37,0)
+(56,28,0)
+(98,14,0)
+(21,27,0)
+(64,39,0)
+(32,28,0)
+(60,6,0)
+(38,13,0)
+(65,74,0)
+(27,5,0)
+(51,13,0)
+(1,37,0)
+(62,75,0)
+(55,73,0)
+(20,37,0)
+(106,63,0)
+(105,86,0)
+(7,43,0)
+(52,69,0)
+(102,69,0)
+(35,58,0)
+(7,37,0)
+(63,53,0)
+(61,37,0)
+(45,37,0)
+(0,37,0)
+(27,53,0)
+(22,74,0)
+(22,53,0)
+(71,65,0)
+(73,53,0)
+(97,37,0)
+(75,53,0)
+(13,77,0)
+(28,69,0)
+(54,1,0)
+(26,11,0)
+(104,11,0)
+(5,73,0)
+(18,101,0)
+(84,77,0)
+(48,92,0)
+(89,91,0)
+(72,50,0)
+(15,47,0)
+(6,44,0)
+(11,26,0)
+(39,69,0)
+(81,58,0)
+(94,13,0)
+(109,44,0)
+(73,5,0)
+(17,8,0)
+(52,86,0)
+(1,11,0)
+(87,1,0)
+(59,19,0)
+(34,75,0)
+(79,65,0)
+(39,23,0)
+(33,68,0)
+(4,69,0)
+(86,52,0)
+(82,22,0)
+(86,101,0)
+(100,65,0)
+(13,57,0)
+(91,4,0)
+(76,35,0)
+(1,77,0)
+(99,41,0)
+(107,36,0)
+(65,53,0)
+(80,8,0)
+(41,109,0)
+(53,37,0)
+(12,58,0)
+(41,53,0)
+(4,91,0)
+(83,37,0)
+(63,14,0)
+(44,109,0)
+(13,31,0)
+(88,52,0)
+(102,53,0)
+(16,109,0)
+(8,92,0)
+(47,15,0)
+(101,18,0)
+(29,41,0)
+(67,22,0)
+(6,53,0)
+(96,102,0)
+(44,6,0)
+(28,57,0)
+(9,63,0)
+(75,19,0)
+(95,98,0)
+(58,53,0)
+(23,15,0)
+(14,98,0)
+(90,77,0)
+(25,39,0)
+(84,36,0)
+(11,77,0)
+(49,26,0)
+(43,7,0)
+(30,27,0)
+(78,23,0)
+(77,37,0)
+(74,65,0)
+(24,53,0)
+(18,37,0)
+(93,4,0)
+(43,92,0)
+(36,84,0)
+(91,89,0)
+(40,69,0)
+(5,27,0)
+(14,63,0)
+(66,84,0)
+(2,52,0)
+(103,73,0)
+(108,36,0)
+(65,79,0)
+(15,23,0)
+(92,43,0)
+(109,41,0)
+(74,22,0)
+(8,69,0)
+(83,89,0)
+(10,26,0)
+(23,39,0)
+(13,70,0)
+(53,102,0)
+(92,8,0)
+(19,75,0)
+(3,37,0)
+(11,84,0)
+(101,86,0)
+(85,4,0)
+(42,91,0)
+(69,37,0)
+(1,84,0)
+(46,6,0)
+(89,83,0)
+(69,28,0)
+(58,35,0)
+(12,47,1)
+(41,53,1)
+(74,22,1)
+(38,90,1)
+(65,74,1)
+(19,59,1)
+(103,35,1)
+(71,19,1)
+(56,32,1)
+(104,73,1)
+(52,88,1)
+(14,63,1)
+(96,24,1)
+(75,53,1)
+(29,99,1)
+(63,53,1)
+(27,53,1)
+(98,95,1)
+(88,2,1)
+(41,29,1)
+(79,65,1)
+(35,58,1)
+(17,98,1)
+(89,91,1)
+(35,76,1)
+(19,75,1)
+(93,11,1)
+(9,106,1)
+(49,104,1)
+(99,6,1)
+(2,77,1)
+(36,107,1)
+(62,34,1)
+(17,44,1)
+(23,78,1)
+(65,53,1)
+(109,41,1)
+(32,40,1)
+(106,44,1)
+(28,57,1)
+(84,36,1)
+(73,55,1)
+(44,109,1)
+(94,51,1)
+(98,14,1)
+(44,6,1)
+(6,46,1)
+(13,31,1)
+(87,83,1)
+(58,81,1)
+(46,60,1)
+(22,82,1)
+(92,8,1)
+(102,69,1)
+(39,69,1)
+(1,87,1)
+(58,53,1)
+(51,38,1)
+(108,66,1)
+(107,108,1)
+(65,100,1)
+(1,77,1)
+(39,64,1)
+(63,9,1)
+(8,69,1)
+(60,79,1)
+(11,77,1)
+(75,62,1)
+(60,84,1)
+(101,86,1)
+(59,75,1)
+(15,23,1)
+(42,4,1)
+(11,84,1)
+(8,80,1)
+(27,30,1)
+(66,79,1)
+(60,19,1)
+(80,17,1)
+(28,56,1)
+(22,53,1)
+(77,13,1)
+(55,5,1)
+(102,96,1)
+(13,57,1)
+(83,89,1)
+(86,52,1)
+(11,26,1)
+(21,103,1)
+(91,42,1)
+(4,69,1)
+(73,53,1)
+(85,93,1)
+(47,15,1)
+(6,53,1)
+(78,39,1)
+(25,7,1)
+(90,53,1)
+(84,77,1)
+(43,92,1)
+(26,10,1)
+(18,101,1)
+(64,25,1)
+(4,85,1)
+(73,5,1)
+(67,71,1)
+(5,27,1)
+(13,94,1)
+(48,8,1)
+(24,69,1)
+(13,70,1)
+(16,41,1)
+(52,69,1)
+(53,102,1)
+(34,18,1)
+(82,67,1)
+(54,1,1)
+(92,48,1)
+(95,14,1)
+(1,84,1)
+(7,43,1)
+(86,105,1)
+(93,35,1)
+(30,21,1)
+(100,74,1)
+(81,12,1)
+(1,11,1)
+(93,73,1)
+(91,4,1)
+(109,16,1)
+(76,58,1)
+(105,52,1)
+(69,28,1)
+(23,39,1)
+(10,49,1)
+(11,26,2)
+(4,69,2)
+(65,53,2)
+(86,52,2)
+(11,73,2)
+(106,44,2)
+(104,73,2)
+(6,53,2)
+(15,23,2)
+(16,6,2)
+(79,65,2)
+(28,57,2)
+(73,53,2)
+(65,74,2)
+(11,84,2)
+(66,79,2)
+(95,44,2)
+(79,19,2)
+(18,101,2)
+(26,73,2)
+(8,69,2)
+(55,35,2)
+(1,11,2)
+(29,6,2)
+(77,13,2)
+(7,43,2)
+(21,35,2)
+(102,69,2)
+(100,19,2)
+(98,44,2)
+(22,53,2)
+(1,77,2)
+(101,86,2)
+(84,36,2)
+(108,79,2)
+(83,89,2)
+(82,19,2)
+(36,79,2)
+(39,69,2)
+(35,58,2)
+(98,14,2)
+(43,92,2)
+(11,77,2)
+(13,57,2)
+(9,44,2)
+(74,19,2)
+(5,35,2)
+(44,6,2)
+(27,53,2)
+(107,79,2)
+(63,44,2)
+(109,6,2)
+(41,6,2)
+(30,35,2)
+(23,39,2)
+(73,5,2)
+(13,70,2)
+(103,35,2)
+(84,79,2)
+(75,53,2)
+(44,109,2)
+(27,35,2)
+(65,19,2)
+(52,69,2)
+(84,77,2)
+(14,44,2)
+(41,53,2)
+(91,4,2)
+(69,28,2)
+(73,35,2)
+(10,73,2)
+(47,15,2)
+(5,27,2)
+(71,19,2)
+(63,53,2)
+(53,102,2)
+(13,31,2)
+(58,53,2)
+(89,91,2)
+(22,19,2)
+(54,1,2)
+(19,75,2)
+(67,19,2)
+(1,84,2)
+(14,63,2)
+(109,41,2)
+(92,8,2)
+(49,73,2)
+(99,6,2)
+(74,22,2)
+-----------------------------------
+(0,if (po->rx_ring.pg_vec)
+(1,return mask;)
+(2,sk)
+(3,if (po->pressure && __packet_rcv_has_room(po, NULL)
+(4,sk->sk_write_queue)
+(5,&po->tx_ring)
+(6,po->pressure)
+(7,spin_unlock_bh(&sk->sk_receive_queue.lock)
+(8,sk->sk_receive_queue)
+(9,pressure)
+(10,POLLWRNORM)
+(11,mask |= POLLOUT | POLLWRNORM)
+(12,po)
+(13,datagram_poll(file, sock, wait)
+(14,&po->pressure)
+(15,&sk->sk_write_queue.lock)
+(16,ROOM_NORMAL)
+(17,sk)
+(18,spin_lock_bh(&sk->sk_receive_queue.lock)
+(19,po->rx_ring.pg_vec)
+(20,sk)
+(21,po)
+(22,po->rx_ring)
+(23,sk->sk_write_queue.lock)
+(24,po)
+(25,sk)
+(26,POLLOUT | POLLWRNORM)
+(27,po->tx_ring)
+(28,sock->sk)
+(29,NULL)
+(30,tx_ring)
+(31,struct file *file)
+(32,sock)
+(33,if (!packet_previous_rx_frame(po, &po->rx_ring,\n\\n\\t\\t\\tTP_STATUS_KERNEL)
+(34,po)
+(35,po->tx_ring.pg_vec)
+(36,POLLIN | POLLRDNORM)
+(37,)
+(38,file)
+(39,sk->sk_write_queue)
+(40,sk)
+(41,__packet_rcv_has_room(po, NULL)
+(42,lock)
+(43,&sk->sk_receive_queue.lock)
+(44,po->pressure && __packet_rcv_has_room(po, NULL)
+(45,if (po->tx_ring.pg_vec)
+(46,pressure)
+(47,spin_lock_bh(&sk->sk_write_queue.lock)
+(48,lock)
+(49,POLLOUT)
+(50,)
+(51,sock)
+(52,sk->sk_receive_queue)
+(53,*po = pkt_sk(sk)
+(54,RET)
+(55,TP_STATUS_AVAILABLE)
+(56,sk)
+(57,struct socket *sock)
+(58,po->tx_ring)
+(59,pg_vec)
+(60,po)
+(61,mask)
+(62,rx_ring)
+(63,po->pressure)
+(64,sk_write_queue)
+(65,packet_previous_rx_frame(po, &po->rx_ring,\n\\n\\t\\t\\tTP_STATUS_KERNEL)
+(66,mask)
+(67,po)
+(68,)
+(69,*sk = sock->sk)
+(70,poll_table *wait)
+(71,po)
+(72,if (packet_current_frame(po, &po->tx_ring, TP_STATUS_AVAILABLE)
+(73,packet_current_frame(po, &po->tx_ring, TP_STATUS_AVAILABLE)
+(74,&po->rx_ring)
+(75,po->rx_ring)
+(76,pg_vec)
+(77,mask = datagram_poll(file, sock, wait)
+(78,lock)
+(79,!packet_previous_rx_frame(po, &po->rx_ring,\n\\n\\t\\t\\tTP_STATUS_KERNEL)
+(80,sk_receive_queue)
+(81,tx_ring)
+(82,rx_ring)
+(83,spin_unlock_bh(&sk->sk_write_queue.lock)
+(84,mask |= POLLIN | POLLRDNORM)
+(85,sk_write_queue)
+(86,sk->sk_receive_queue.lock)
+(87,mask)
+(88,sk_receive_queue)
+(89,&sk->sk_write_queue.lock)
+(90,mask)
+(91,sk->sk_write_queue.lock)
+(92,sk->sk_receive_queue.lock)
+(93,sk)
+(94,wait)
+(95,0)
+(96,sk)
+(97,po)
+(98,xchg(&po->pressure, 0)
+(99,po)
+(100,TP_STATUS_KERNEL)
+(101,&sk->sk_receive_queue.lock)
+(102,pkt_sk(sk)
+(103,po)
+(104,mask)
+(105,lock)
+(106,po)
+(107,POLLRDNORM)
+(108,POLLIN)
+(109,__packet_rcv_has_room(po, NULL)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,1323 @@
+-----label-----
+0
+-----code-----
+static int shaper_msg_recv(void) {
+  int nmsgs = 0;
+  ssize_t msglen = 0;
+  struct shaper_msg *msg;
+
+  /* The expected message length consists of a priority (the unsigned int),
+   * the new downrate (the long double), and the new uprate (another long
+   * double).
+   */
+  size_t msgsz = sizeof(unsigned int) + sizeof(long double) +
+    sizeof(long double);
+
+  msg = malloc(sizeof(struct shaper_msg) + msgsz - sizeof(msg->mtext));
+  if (msg == NULL) {
+    pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),
+      MOD_SHAPER_VERSION ": Out of memory!");
+    pr_session_disconnect(&shaper_module, PR_SESS_DISCONNECT_NOMEM, NULL);
+  }
+
+  msglen = msgrcv(shaper_qid, msg, msgsz, getpid(), IPC_NOWAIT|MSG_NOERROR);
+  while (msglen > 0) {
+    unsigned int prio;
+    long double downrate, uprate;
+
+    pr_signals_handle();
+    nmsgs++;
+
+    memcpy(&prio, msg->mtext, sizeof(unsigned int));
+    memcpy(&downrate, msg->mtext + sizeof(unsigned int), sizeof(long double));
+    memcpy(&uprate, msg->mtext + sizeof(unsigned int) + sizeof(long double),
+      sizeof(long double));
+
+    (void) pr_log_writefile(shaper_logfd, MOD_SHAPER_VERSION,
+      "received prio %u, rate %3.2Lf down, %3.2Lf up", prio, downrate,
+      uprate);
+
+    if (shaper_rate_alter(prio, downrate, uprate) < 0) {
+      (void) pr_log_writefile(shaper_logfd, MOD_SHAPER_VERSION,
+        "error altering rate for current session: %s", strerror(errno));
+    }
+
+    msglen = msgrcv(shaper_qid, msg, msgsz, getpid(), IPC_NOWAIT|MSG_NOERROR);
+  }
+
+  free(msg);
+
+  if (msglen < 0 &&
+#ifdef ENOMSG
+      errno != ENOMSG &&
+#endif /* ENOMSG */
+      errno != EAGAIN)
+    return -1;
+
+  return nmsgs;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+5,6
+5,7
+7,8
+9,10
+9,11
+9,12
+9,13
+9,14
+9,15
+9,16
+9,17
+9,18
+9,19
+9,20
+10,11
+11,12
+11,13
+13,14
+13,15
+15,16
+17,18
+18,19
+18,20
+19,20
+21,22
+21,23
+23,24
+25,26
+26,27
+26,28
+27,28
+29,30
+29,31
+32,33
+33,34
+33,35
+34,35
+36,37
+36,38
+38,39
+39,40
+39,41
+40,41
+40,42
+41,42
+42,43
+42,44
+45,46
+46,47
+46,48
+49,50
+50,51
+50,52
+53,54
+54,55
+54,56
+55,56
+57,58
+57,59
+58,59
+60,61
+60,62
+61,62
+61,63
+62,63
+63,64
+63,65
+64,65
+67,68
+69,70
+70,71
+71,72
+71,73
+72,73
+75,76
+75,77
+76,77
+76,78
+77,78
+79,80
+81,82
+81,83
+82,83
+83,84
+84,85
+84,86
+84,87
+84,88
+85,86
+87,88
+88,89
+90,91
+92,93
+94,95
+95,96
+95,97
+96,97
+98,99
+98,100
+98,101
+98,102
+98,103
+98,104
+99,100
+101,102
+103,104
+105,106
+107,108
+108,109
+110,111
+110,112
+111,112
+113,114
+115,116
+115,117
+116,117
+116,118
+117,118
+120,121
+120,122
+120,123
+120,124
+120,125
+120,126
+120,127
+120,128
+120,129
+120,130
+121,122
+122,123
+122,124
+124,125
+126,127
+127,128
+127,129
+127,130
+129,130
+131,132
+133,134
+134,135
+135,136
+137,138
+138,139
+139,140
+141,142
+142,143
+142,144
+142,145
+142,146
+143,144
+145,146
+146,147
+148,149
+148,150
+149,150
+152,153
+153,154
+153,155
+156,157
+157,158
+157,159
+157,160
+157,161
+158,159
+160,161
+161,162
+163,164
+163,165
+164,165
+164,166
+165,166
+168,169
+169,170
+169,171
+172,173
+173,174
+173,175
+176,177
+177,178
+177,179
+177,180
+177,181
+178,179
+180,181
+181,182
+183,184
+183,185
+184,185
+184,186
+185,186
+185,187
+186,187
+189,190
+190,191
+190,192
+193,194
+194,195
+194,196
+197,198
+198,199
+198,200
+201,202
+202,203
+202,204
+203,204
+203,205
+206,207
+206,208
+206,209
+206,210
+206,211
+206,212
+206,213
+207,208
+209,210
+211,212
+214,215
+216,217
+218,219
+220,221
+220,222
+221,222
+221,223
+222,223
+222,224
+222,225
+222,226
+223,224
+225,226
+227,228
+229,230
+232,233
+233,234
+234,235
+234,236
+235,236
+235,237
+238,239
+238,240
+238,241
+238,242
+238,243
+239,240
+241,242
+243,244
+246,247
+246,248
+247,248
+249,250
+251,252
+252,253
+252,254
+253,254
+255,256
+255,257
+255,258
+255,259
+255,260
+255,261
+256,257
+258,259
+260,261
+262,263
+264,265
+265,266
+267,268
+267,269
+268,269
+270,271
+272,273
+273,274
+273,275
+274,275
+276,277
+278,279
+278,280
+279,280
+279,281
+280,281
+280,282
+281,282
+284,285
+284,286
+285,286
+287,288
+289,290
+290,291
+292,293
+293,294
+-----nextToken-----
+2,4,6,8,12,14,16,20,22,24,28,30,31,35,37,43,44,47,48,51,52,56,59,65,66,68,73,74,78,80,86,89,91,93,97,100,102,104,106,109,112,114,118,119,123,125,128,130,132,136,140,144,147,150,151,154,155,159,162,166,167,170,171,174,175,179,182,187,188,191,192,195,196,199,200,204,205,208,210,212,213,215,217,219,224,226,228,230,231,236,237,240,242,244,245,248,250,254,257,259,261,263,266,269,271,275,277,282,283,286,288,291,294
+-----computeFrom-----
+39,40
+39,41
+40,41
+40,42
+54,55
+54,56
+60,61
+60,62
+61,62
+61,63
+76,77
+76,78
+95,96
+95,97
+110,111
+110,112
+116,117
+116,118
+163,164
+163,165
+183,184
+183,185
+184,185
+184,186
+221,222
+221,223
+252,253
+252,254
+267,268
+267,269
+279,280
+279,281
+280,281
+280,282
+284,285
+284,286
+-----guardedBy-----
+80,93
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;BinaryExpression;BinaryExpression;TypeIdExpression;TypeId;SimpleDeclSpecifier;Declarator;TypeIdExpression;TypeId;SimpleDeclSpecifier;Declarator;TypeIdExpression;TypeId;SimpleDeclSpecifier;Declarator;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;BinaryExpression;BinaryExpression;TypeIdExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;IdExpression;Name;UnaryExpression;UnaryExpression;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ProblemStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;WhileStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;Declarator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ExpressionStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;TypeIdExpression;TypeId;SimpleDeclSpecifier;Declarator;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;TypeIdExpression;TypeId;SimpleDeclSpecifier;Declarator;TypeIdExpression;TypeId;SimpleDeclSpecifier;Declarator;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;BinaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;TypeIdExpression;TypeId;SimpleDeclSpecifier;Declarator;TypeIdExpression;TypeId;SimpleDeclSpecifier;Declarator;TypeIdExpression;TypeId;SimpleDeclSpecifier;Declarator;ExpressionStatement;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;UnaryExpression;LiteralExpression;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+static int shaper_msg_recv(void) {  int nmsgs = 0;  ssize_t msglen = 0;  struct shaper_msg *msg;  /* The expected message length consists of a priority (the unsigned int),   * the new downrate (the long double), and the new uprate (another long   * double).   */  size_t msgsz = sizeof(unsigned int) + sizeof(long double) +    sizeof(long double);  msg = malloc(sizeof(struct shaper_msg) + msgsz - sizeof(msg->mtext));  if (msg == NULL) {    pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),      MOD_SHAPER_VERSION ": Out of memory!");    pr_session_disconnect(&shaper_module, PR_SESS_DISCONNECT_NOMEM, NULL);  }  msglen = msgrcv(shaper_qid, msg, msgsz, getpid(), IPC_NOWAIT|MSG_NOERROR);  while (msglen > 0) {    unsigned int prio;    long double downrate, uprate;    pr_signals_handle();    nmsgs++;    memcpy(&prio, msg->mtext, sizeof(unsigned int));    memcpy(&downrate, msg->mtext + sizeof(unsigned int), sizeof(long double));    memcpy(&uprate, msg->mtext + sizeof(unsigned int) + sizeof(long double),      sizeof(long double));    (void) pr_log_writefile(shaper_logfd, MOD_SHAPER_VERSION,      "received prio %u, rate %3.2Lf down, %3.2Lf up", prio, downrate,      uprate);    if (shaper_rate_alter(prio, downrate, uprate) < 0) {      (void) pr_log_writefile(shaper_logfd, MOD_SHAPER_VERSION,        "error altering rate for current session: %s", strerror(errno));    }    msglen = msgrcv(shaper_qid, msg, msgsz, getpid(), IPC_NOWAIT|MSG_NOERROR);  }  free(msg);  if (msglen < 0 &&#ifdef ENOMSG      errno != ENOMSG &&#endif /* ENOMSG */      errno != EAGAIN)    return -1;  return nmsgs;}
+static int
+shaper_msg_recv(void)
+shaper_msg_recv
+void
+void
+
+
+{  int nmsgs = 0;  ssize_t msglen = 0;  struct shaper_msg *msg;  /* The expected message length consists of a priority (the unsigned int),   * the new downrate (the long double), and the new uprate (another long   * double).   */  size_t msgsz = sizeof(unsigned int) + sizeof(long double) +    sizeof(long double);  msg = malloc(sizeof(struct shaper_msg) + msgsz - sizeof(msg->mtext));  if (msg == NULL) {    pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),      MOD_SHAPER_VERSION ": Out of memory!");    pr_session_disconnect(&shaper_module, PR_SESS_DISCONNECT_NOMEM, NULL);  }  msglen = msgrcv(shaper_qid, msg, msgsz, getpid(), IPC_NOWAIT|MSG_NOERROR);  while (msglen > 0) {    unsigned int prio;    long double downrate, uprate;    pr_signals_handle();    nmsgs++;    memcpy(&prio, msg->mtext, sizeof(unsigned int));    memcpy(&downrate, msg->mtext + sizeof(unsigned int), sizeof(long double));    memcpy(&uprate, msg->mtext + sizeof(unsigned int) + sizeof(long double),      sizeof(long double));    (void) pr_log_writefile(shaper_logfd, MOD_SHAPER_VERSION,      "received prio %u, rate %3.2Lf down, %3.2Lf up", prio, downrate,      uprate);    if (shaper_rate_alter(prio, downrate, uprate) < 0) {      (void) pr_log_writefile(shaper_logfd, MOD_SHAPER_VERSION,        "error altering rate for current session: %s", strerror(errno));    }    msglen = msgrcv(shaper_qid, msg, msgsz, getpid(), IPC_NOWAIT|MSG_NOERROR);  }  free(msg);  if (msglen < 0 &&#ifdef ENOMSG      errno != ENOMSG &&#endif /* ENOMSG */      errno != EAGAIN)    return -1;  return nmsgs;}
+int nmsgs = 0;
+int nmsgs = 0;
+int
+nmsgs = 0
+nmsgs
+= 0
+0
+ssize_t msglen = 0;
+ssize_t msglen = 0;
+ssize_t
+ssize_t
+msglen = 0
+msglen
+= 0
+0
+struct shaper_msg *msg;
+struct shaper_msg *msg;
+struct shaper_msg
+shaper_msg
+*msg
+*
+msg
+size_t msgsz = sizeof(unsigned int) + sizeof(long double) +    sizeof(long double);
+size_t msgsz = sizeof(unsigned int) + sizeof(long double) +    sizeof(long double);
+size_t
+size_t
+msgsz = sizeof(unsigned int) + sizeof(long double) +    sizeof(long double)
+msgsz
+= sizeof(unsigned int) + sizeof(long double) +    sizeof(long double)
+sizeof(unsigned int) + sizeof(long double) +    sizeof(long double)
+sizeof(unsigned int) + sizeof(long double)
+sizeof(unsigned int)
+unsigned int
+unsigned int
+
+sizeof(long double)
+long double
+long double
+
+sizeof(long double)
+long double
+long double
+
+msg = malloc(sizeof(struct shaper_msg) + msgsz - sizeof(msg->mtext));
+msg = malloc(sizeof(struct shaper_msg) + msgsz - sizeof(msg->mtext))
+msg
+msg
+malloc(sizeof(struct shaper_msg) + msgsz - sizeof(msg->mtext))
+malloc
+malloc
+sizeof(struct shaper_msg) + msgsz - sizeof(msg->mtext)
+sizeof(struct shaper_msg) + msgsz
+sizeof(struct shaper_msg)
+struct shaper_msg
+struct shaper_msg
+shaper_msg
+
+msgsz
+msgsz
+sizeof(msg->mtext)
+(msg->mtext)
+msg->mtext
+msg
+msg
+mtext
+if (msg == NULL) {    pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),      MOD_SHAPER_VERSION ": Out of memory!");    pr_session_disconnect(&shaper_module, PR_SESS_DISCONNECT_NOMEM, NULL);  }
+msg == NULL
+msg
+msg
+NULL
+NULL
+{    pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),      MOD_SHAPER_VERSION ": Out of memory!");    pr_session_disconnect(&shaper_module, PR_SESS_DISCONNECT_NOMEM, NULL);  }
+pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),      MOD_SHAPER_VERSION ": Out of memory!");
+pr_session_disconnect(&shaper_module, PR_SESS_DISCONNECT_NOMEM, NULL);
+pr_session_disconnect(&shaper_module, PR_SESS_DISCONNECT_NOMEM, NULL)
+pr_session_disconnect
+pr_session_disconnect
+&shaper_module
+shaper_module
+shaper_module
+PR_SESS_DISCONNECT_NOMEM
+PR_SESS_DISCONNECT_NOMEM
+NULL
+NULL
+msglen = msgrcv(shaper_qid, msg, msgsz, getpid(), IPC_NOWAIT|MSG_NOERROR);
+msglen = msgrcv(shaper_qid, msg, msgsz, getpid(), IPC_NOWAIT|MSG_NOERROR)
+msglen
+msglen
+msgrcv(shaper_qid, msg, msgsz, getpid(), IPC_NOWAIT|MSG_NOERROR)
+msgrcv
+msgrcv
+shaper_qid
+shaper_qid
+msg
+msg
+msgsz
+msgsz
+getpid()
+getpid
+getpid
+IPC_NOWAIT|MSG_NOERROR
+IPC_NOWAIT
+IPC_NOWAIT
+MSG_NOERROR
+MSG_NOERROR
+while (msglen > 0) {    unsigned int prio;    long double downrate, uprate;    pr_signals_handle();    nmsgs++;    memcpy(&prio, msg->mtext, sizeof(unsigned int));    memcpy(&downrate, msg->mtext + sizeof(unsigned int), sizeof(long double));    memcpy(&uprate, msg->mtext + sizeof(unsigned int) + sizeof(long double),      sizeof(long double));    (void) pr_log_writefile(shaper_logfd, MOD_SHAPER_VERSION,      "received prio %u, rate %3.2Lf down, %3.2Lf up", prio, downrate,      uprate);    if (shaper_rate_alter(prio, downrate, uprate) < 0) {      (void) pr_log_writefile(shaper_logfd, MOD_SHAPER_VERSION,        "error altering rate for current session: %s", strerror(errno));    }    msglen = msgrcv(shaper_qid, msg, msgsz, getpid(), IPC_NOWAIT|MSG_NOERROR);  }
+msglen > 0
+msglen
+msglen
+0
+{    unsigned int prio;    long double downrate, uprate;    pr_signals_handle();    nmsgs++;    memcpy(&prio, msg->mtext, sizeof(unsigned int));    memcpy(&downrate, msg->mtext + sizeof(unsigned int), sizeof(long double));    memcpy(&uprate, msg->mtext + sizeof(unsigned int) + sizeof(long double),      sizeof(long double));    (void) pr_log_writefile(shaper_logfd, MOD_SHAPER_VERSION,      "received prio %u, rate %3.2Lf down, %3.2Lf up", prio, downrate,      uprate);    if (shaper_rate_alter(prio, downrate, uprate) < 0) {      (void) pr_log_writefile(shaper_logfd, MOD_SHAPER_VERSION,        "error altering rate for current session: %s", strerror(errno));    }    msglen = msgrcv(shaper_qid, msg, msgsz, getpid(), IPC_NOWAIT|MSG_NOERROR);  }
+unsigned int prio;
+unsigned int prio;
+unsigned int
+prio
+prio
+long double downrate, uprate;
+long double downrate, uprate;
+long double
+downrate
+downrate
+uprate
+uprate
+pr_signals_handle();
+pr_signals_handle()
+pr_signals_handle
+pr_signals_handle
+nmsgs++;
+nmsgs++
+nmsgs
+nmsgs
+memcpy(&prio, msg->mtext, sizeof(unsigned int));
+memcpy(&prio, msg->mtext, sizeof(unsigned int))
+memcpy
+memcpy
+&prio
+prio
+prio
+msg->mtext
+msg
+msg
+mtext
+sizeof(unsigned int)
+unsigned int
+unsigned int
+
+memcpy(&downrate, msg->mtext + sizeof(unsigned int), sizeof(long double));
+memcpy(&downrate, msg->mtext + sizeof(unsigned int), sizeof(long double))
+memcpy
+memcpy
+&downrate
+downrate
+downrate
+msg->mtext + sizeof(unsigned int)
+msg->mtext
+msg
+msg
+mtext
+sizeof(unsigned int)
+unsigned int
+unsigned int
+
+sizeof(long double)
+long double
+long double
+
+memcpy(&uprate, msg->mtext + sizeof(unsigned int) + sizeof(long double),      sizeof(long double));
+memcpy(&uprate, msg->mtext + sizeof(unsigned int) + sizeof(long double),      sizeof(long double))
+memcpy
+memcpy
+&uprate
+uprate
+uprate
+msg->mtext + sizeof(unsigned int) + sizeof(long double)
+msg->mtext + sizeof(unsigned int)
+msg->mtext
+msg
+msg
+mtext
+sizeof(unsigned int)
+unsigned int
+unsigned int
+
+sizeof(long double)
+long double
+long double
+
+sizeof(long double)
+long double
+long double
+
+(void) pr_log_writefile(shaper_logfd, MOD_SHAPER_VERSION,      "received prio %u, rate %3.2Lf down, %3.2Lf up", prio, downrate,      uprate);
+(void) pr_log_writefile(shaper_logfd, MOD_SHAPER_VERSION,      "received prio %u, rate %3.2Lf down, %3.2Lf up", prio, downrate,      uprate)
+void
+void
+
+pr_log_writefile(shaper_logfd, MOD_SHAPER_VERSION,      "received prio %u, rate %3.2Lf down, %3.2Lf up", prio, downrate,      uprate)
+pr_log_writefile
+pr_log_writefile
+shaper_logfd
+shaper_logfd
+MOD_SHAPER_VERSION
+MOD_SHAPER_VERSION
+"received prio %u, rate %3.2Lf down, %3.2Lf up"
+prio
+prio
+downrate
+downrate
+uprate
+uprate
+if (shaper_rate_alter(prio, downrate, uprate) < 0) {      (void) pr_log_writefile(shaper_logfd, MOD_SHAPER_VERSION,        "error altering rate for current session: %s", strerror(errno));    }
+shaper_rate_alter(prio, downrate, uprate) < 0
+shaper_rate_alter(prio, downrate, uprate)
+shaper_rate_alter
+shaper_rate_alter
+prio
+prio
+downrate
+downrate
+uprate
+uprate
+0
+{      (void) pr_log_writefile(shaper_logfd, MOD_SHAPER_VERSION,        "error altering rate for current session: %s", strerror(errno));    }
+(void) pr_log_writefile(shaper_logfd, MOD_SHAPER_VERSION,        "error altering rate for current session: %s", strerror(errno));
+(void) pr_log_writefile(shaper_logfd, MOD_SHAPER_VERSION,        "error altering rate for current session: %s", strerror(errno))
+void
+void
+
+pr_log_writefile(shaper_logfd, MOD_SHAPER_VERSION,        "error altering rate for current session: %s", strerror(errno))
+pr_log_writefile
+pr_log_writefile
+shaper_logfd
+shaper_logfd
+MOD_SHAPER_VERSION
+MOD_SHAPER_VERSION
+"error altering rate for current session: %s"
+strerror(errno)
+strerror
+strerror
+errno
+errno
+msglen = msgrcv(shaper_qid, msg, msgsz, getpid(), IPC_NOWAIT|MSG_NOERROR);
+msglen = msgrcv(shaper_qid, msg, msgsz, getpid(), IPC_NOWAIT|MSG_NOERROR)
+msglen
+msglen
+msgrcv(shaper_qid, msg, msgsz, getpid(), IPC_NOWAIT|MSG_NOERROR)
+msgrcv
+msgrcv
+shaper_qid
+shaper_qid
+msg
+msg
+msgsz
+msgsz
+getpid()
+getpid
+getpid
+IPC_NOWAIT|MSG_NOERROR
+IPC_NOWAIT
+IPC_NOWAIT
+MSG_NOERROR
+MSG_NOERROR
+free(msg);
+free(msg)
+free
+free
+msg
+msg
+if (msglen < 0 &&#ifdef ENOMSG      errno != ENOMSG &&#endif /* ENOMSG */      errno != EAGAIN)    return -1;
+msglen < 0 &&#ifdef ENOMSG      errno != ENOMSG &&#endif /* ENOMSG */      errno != EAGAIN
+msglen < 0
+msglen
+msglen
+0
+errno != EAGAIN
+errno
+errno
+EAGAIN
+EAGAIN
+return -1;
+-1
+1
+return nmsgs;
+nmsgs
+nmsgs
+-----joern-----
+(73,122,0)
+(132,24,0)
+(134,80,0)
+(133,22,0)
+(43,5,0)
+(64,67,0)
+(122,5,0)
+(81,31,0)
+(59,52,0)
+(42,137,0)
+(94,137,0)
+(13,130,0)
+(112,136,0)
+(79,26,0)
+(29,139,0)
+(10,133,0)
+(67,64,0)
+(96,130,0)
+(54,80,0)
+(138,6,0)
+(47,8,0)
+(39,34,0)
+(83,78,0)
+(42,24,0)
+(124,14,0)
+(96,21,0)
+(104,106,0)
+(62,90,0)
+(10,20,0)
+(88,121,0)
+(101,8,0)
+(7,1,0)
+(90,123,0)
+(17,40,0)
+(33,5,0)
+(24,42,0)
+(58,90,0)
+(136,5,0)
+(19,62,0)
+(47,122,0)
+(118,83,0)
+(99,33,0)
+(26,128,0)
+(53,26,0)
+(83,118,0)
+(54,130,0)
+(12,34,0)
+(82,49,0)
+(5,1,0)
+(119,13,0)
+(126,5,0)
+(9,118,0)
+(127,67,0)
+(83,130,0)
+(63,34,0)
+(109,62,0)
+(96,102,0)
+(56,111,0)
+(66,90,0)
+(22,133,0)
+(133,10,0)
+(110,114,0)
+(35,130,0)
+(50,97,0)
+(126,1,0)
+(28,130,0)
+(31,81,0)
+(48,136,0)
+(103,42,0)
+(139,74,0)
+(123,90,0)
+(31,97,0)
+(104,129,0)
+(80,54,0)
+(71,108,0)
+(36,33,0)
+(100,129,0)
+(8,101,0)
+(125,65,0)
+(106,90,0)
+(111,24,0)
+(49,130,0)
+(97,10,0)
+(107,3,0)
+(40,17,0)
+(92,34,0)
+(90,5,0)
+(106,130,0)
+(103,1,0)
+(11,81,0)
+(115,132,0)
+(75,21,0)
+(102,96,0)
+(93,130,0)
+(129,34,0)
+(83,136,0)
+(132,115,0)
+(54,0,0)
+(78,83,0)
+(74,17,0)
+(18,80,0)
+(17,74,0)
+(90,103,0)
+(88,116,0)
+(34,129,0)
+(55,80,0)
+(57,1,0)
+(34,39,0)
+(105,1,0)
+(15,1,0)
+(5,20,0)
+(122,47,0)
+(51,1,0)
+(38,80,0)
+(86,114,0)
+(6,13,0)
+(139,29,0)
+(128,26,0)
+(102,74,0)
+(34,5,0)
+(77,1,0)
+(98,15,0)
+(4,106,0)
+(20,10,0)
+(65,1,0)
+(24,111,0)
+(13,119,0)
+(25,104,0)
+(45,12,0)
+(114,88,0)
+(131,122,0)
+(137,94,0)
+(10,97,0)
+(52,1,0)
+(136,83,0)
+(3,1,0)
+(111,56,0)
+(137,42,0)
+(33,102,0)
+(129,1,0)
+(24,132,0)
+(13,47,0)
+(6,138,0)
+(2,80,0)
+(34,103,0)
+(108,52,0)
+(61,81,0)
+(90,62,0)
+(97,103,0)
+(14,124,0)
+(16,126,0)
+(85,114,0)
+(97,31,0)
+(117,43,0)
+(74,102,0)
+(20,5,0)
+(114,85,0)
+(69,26,0)
+(47,13,0)
+(21,96,0)
+(135,119,0)
+(120,12,0)
+(44,1,0)
+(30,34,0)
+(89,43,0)
+(76,103,0)
+(74,139,0)
+(87,64,0)
+(59,65,0)
+(37,3,0)
+(102,33,0)
+(42,103,0)
+(78,113,0)
+(95,130,0)
+(113,78,0)
+(67,72,0)
+(60,90,0)
+(23,128,0)
+(41,104,0)
+(121,88,0)
+(0,54,0)
+(84,5,0)
+(13,6,0)
+(49,15,0)
+(14,96,0)
+(90,106,0)
+(91,130,0)
+(96,14,0)
+(68,15,0)
+(8,47,0)
+(88,114,0)
+(70,67,0)
+(32,85,0)
+(46,80,0)
+(34,12,0)
+(27,114,0)
+(39,63,1)
+(47,122,1)
+(34,103,1)
+(31,81,1)
+(18,134,1)
+(85,32,1)
+(71,126,1)
+(79,69,1)
+(63,30,1)
+(137,94,1)
+(127,70,1)
+(74,17,1)
+(67,64,1)
+(83,118,1)
+(133,22,1)
+(47,8,1)
+(32,86,1)
+(93,104,1)
+(3,107,1)
+(89,5,1)
+(111,137,1)
+(96,102,1)
+(64,87,1)
+(69,53,1)
+(25,129,1)
+(50,133,1)
+(104,106,1)
+(104,129,1)
+(26,79,1)
+(86,110,1)
+(117,89,1)
+(66,58,1)
+(2,55,1)
+(41,25,1)
+(15,98,1)
+(81,11,1)
+(59,65,1)
+(42,24,1)
+(131,73,1)
+(43,117,1)
+(24,132,1)
+(120,45,1)
+(78,136,1)
+(20,10,1)
+(58,4,1)
+(100,43,1)
+(6,138,1)
+(119,135,1)
+(37,15,1)
+(43,5,1)
+(11,61,1)
+(108,71,1)
+(30,92,1)
+(122,131,1)
+(103,42,1)
+(34,12,1)
+(34,39,1)
+(8,122,1)
+(139,29,1)
+(33,5,1)
+(53,54,1)
+(36,21,1)
+(25,106,1)
+(88,114,1)
+(74,139,1)
+(38,2,1)
+(13,47,1)
+(67,127,1)
+(90,5,1)
+(21,75,1)
+(118,9,1)
+(109,123,1)
+(123,60,1)
+(107,37,1)
+(90,103,1)
+(97,103,1)
+(5,20,1)
+(10,97,1)
+(102,33,1)
+(46,18,1)
+(17,139,1)
+(137,76,1)
+(97,31,1)
+(83,78,1)
+(4,128,1)
+(92,100,1)
+(19,109,1)
+(135,83,1)
+(16,104,1)
+(128,23,1)
+(136,112,1)
+(114,85,1)
+(14,102,1)
+(122,5,1)
+(88,121,1)
+(98,68,1)
+(17,40,1)
+(34,5,1)
+(80,46,1)
+(76,3,1)
+(49,82,1)
+(6,47,1)
+(134,38,1)
+(132,111,1)
+(132,115,1)
+(54,0,1)
+(10,133,1)
+(14,124,1)
+(133,84,1)
+(49,15,1)
+(4,88,1)
+(87,43,1)
+(61,50,1)
+(24,111,1)
+(84,103,1)
+(100,67,1)
+(60,66,1)
+(96,21,1)
+(75,13,1)
+(54,80,1)
+(99,36,1)
+(59,52,1)
+(9,49,1)
+(8,101,1)
+(82,93,1)
+(111,56,1)
+(96,14,1)
+(55,96,1)
+(23,26,1)
+(136,5,1)
+(42,137,1)
+(83,136,1)
+(128,26,1)
+(62,19,1)
+(70,64,1)
+(104,41,1)
+(13,6,1)
+(78,113,1)
+(110,27,1)
+(48,118,1)
+(126,5,1)
+(73,119,1)
+(65,125,1)
+(90,62,1)
+(112,48,1)
+(27,128,1)
+(52,108,1)
+(139,33,1)
+(45,39,1)
+(33,99,1)
+(106,90,1)
+(12,120,1)
+(13,119,1)
+(129,34,1)
+(90,123,1)
+(126,16,1)
+(102,74,1)
+(96,21,2)
+(14,124,2)
+(74,17,2)
+(96,14,2)
+(82,104,2)
+(93,104,2)
+(34,12,2)
+(111,56,2)
+(58,104,2)
+(78,104,2)
+(128,104,2)
+(126,5,2)
+(102,33,2)
+(97,103,2)
+(24,111,2)
+(119,104,2)
+(54,0,2)
+(99,104,2)
+(133,22,2)
+(47,122,2)
+(33,104,2)
+(131,104,2)
+(54,80,2)
+(10,97,2)
+(24,132,2)
+(69,104,2)
+(136,5,2)
+(13,104,2)
+(80,104,2)
+(31,81,2)
+(55,104,2)
+(34,5,2)
+(90,123,2)
+(41,104,2)
+(59,65,2)
+(21,104,2)
+(73,104,2)
+(4,104,2)
+(18,104,2)
+(97,31,2)
+(90,5,2)
+(122,104,2)
+(118,104,2)
+(8,104,2)
+(78,113,2)
+(139,104,2)
+(64,43,2)
+(70,43,2)
+(114,85,2)
+(13,119,2)
+(135,104,2)
+(34,103,2)
+(87,43,2)
+(88,128,2)
+(83,78,2)
+(106,104,2)
+(38,104,2)
+(60,104,2)
+(122,5,2)
+(104,129,2)
+(132,115,2)
+(85,128,2)
+(136,104,2)
+(110,128,2)
+(112,104,2)
+(32,128,2)
+(33,5,2)
+(103,42,2)
+(102,74,2)
+(19,104,2)
+(79,104,2)
+(42,137,2)
+(42,24,2)
+(104,104,2)
+(23,104,2)
+(86,128,2)
+(139,29,2)
+(20,10,2)
+(49,104,2)
+(6,104,2)
+(9,104,2)
+(17,40,2)
+(43,5,2)
+(27,128,2)
+(74,139,2)
+(13,6,2)
+(26,104,2)
+(53,104,2)
+(114,128,2)
+(74,104,2)
+(36,104,2)
+(49,15,2)
+(96,102,2)
+(90,62,2)
+(66,104,2)
+(2,104,2)
+(127,43,2)
+(75,104,2)
+(54,104,2)
+(59,52,2)
+(25,104,2)
+(83,104,2)
+(88,114,2)
+(102,104,2)
+(83,136,2)
+(104,106,2)
+(67,64,2)
+(47,104,2)
+(106,90,2)
+(17,104,2)
+(8,101,2)
+(5,20,2)
+(6,138,2)
+(128,26,2)
+(48,104,2)
+(67,43,2)
+(109,104,2)
+(90,104,2)
+(83,118,2)
+(96,104,2)
+(47,8,2)
+(14,104,2)
+(123,104,2)
+(46,104,2)
+(137,94,2)
+(10,133,2)
+(34,39,2)
+(13,47,2)
+(62,104,2)
+(90,103,2)
+(134,104,2)
+(129,34,2)
+(88,121,2)
+-----------------------------------
+(0,void)
+(1,)
+(2,MOD_SHAPER_VERSION)
+(3,msglen = 0)
+(4,msglen)
+(5,msg = malloc(sizeof(struct shaper_msg)
+(6,sizeof(long double)
+(7,if (msg == NULL)
+(8,sizeof(unsigned int)
+(9,prio)
+(10,sizeof(struct shaper_msg)
+(11,mtext)
+(12,IPC_NOWAIT|MSG_NOERROR)
+(13,memcpy(&downrate, msg->mtext + sizeof(unsigned int)
+(14,sizeof(long double)
+(15,nmsgs = 0)
+(16,msg)
+(17,sizeof(long double)
+(18,downrate)
+(19,MSG_NOERROR)
+(20,malloc(sizeof(struct shaper_msg)
+(21,&uprate)
+(22,struct shaper_msg)
+(23,0)
+(24,sizeof(long double)
+(25,msglen)
+(26,shaper_rate_alter(prio, downrate, uprate)
+(27,shaper_logfd)
+(28,if (shaper_rate_alter(prio, downrate, uprate)
+(29,unsigned int)
+(30,msg)
+(31,sizeof(msg->mtext)
+(32,errno)
+(33,msg->mtext)
+(34,msgrcv(shaper_qid, msg, msgsz, getpid()
+(35,downrate)
+(36,msg)
+(37,msglen)
+(38,"received prio %u, rate %3.2Lf down, %3.2Lf up")
+(39,getpid()
+(40,long double)
+(41,0)
+(42,sizeof(unsigned int)
+(43,msg == NULL)
+(44,msgsz)
+(45,IPC_NOWAIT)
+(46,uprate)
+(47,msg->mtext + sizeof(unsigned int)
+(48,msg)
+(49,nmsgs++)
+(50,msgsz)
+(51,msg)
+(52,return -1;)
+(53,prio)
+(54,(void)
+(55,shaper_logfd)
+(56,long double)
+(57,nmsgs)
+(58,shaper_qid)
+(59,RET)
+(60,msgsz)
+(61,msg)
+(62,IPC_NOWAIT|MSG_NOERROR)
+(63,msgsz)
+(64,&shaper_module)
+(65,return nmsgs;)
+(66,msg)
+(67,pr_session_disconnect(&shaper_module, PR_SESS_DISCONNECT_NOMEM, NULL)
+(68,nmsgs)
+(69,downrate)
+(70,PR_SESS_DISCONNECT_NOMEM)
+(71,1)
+(72,)
+(73,msg)
+(74,sizeof(unsigned int)
+(75,uprate)
+(76,msgsz)
+(77,msglen)
+(78,sizeof(unsigned int)
+(79,uprate)
+(80,pr_log_writefile(shaper_logfd, MOD_SHAPER_VERSION,\n\\n      "received prio %u, rate %3.2Lf down, %3.2Lf up", prio, downrate,\n\\n      uprate)
+(81,msg->mtext)
+(82,nmsgs)
+(83,memcpy(&prio, msg->mtext, sizeof(unsigned int)
+(84,msg)
+(85,strerror(errno)
+(86,"error altering rate for current session: %s")
+(87,shaper_module)
+(88,(void)
+(89,msg)
+(90,msgrcv(shaper_qid, msg, msgsz, getpid()
+(91,uprate)
+(92,shaper_qid)
+(93,pr_signals_handle()
+(94,unsigned int)
+(95,prio)
+(96,memcpy(&uprate, msg->mtext + sizeof(unsigned int)
+(97,msgsz - sizeof(msg->mtext)
+(98,0)
+(99,mtext)
+(100,msglen)
+(101,unsigned int)
+(102,msg->mtext + sizeof(unsigned int)
+(103,msgsz = sizeof(unsigned int)
+(104,msglen > 0)
+(105,while (msglen > 0)
+(106,msglen = msgrcv(shaper_qid, msg, msgsz, getpid()
+(107,0)
+(108,-1)
+(109,IPC_NOWAIT)
+(110,MOD_SHAPER_VERSION)
+(111,sizeof(long double)
+(112,mtext)
+(113,unsigned int)
+(114,pr_log_writefile(shaper_logfd, MOD_SHAPER_VERSION,\n\\n        "error altering rate for current session: %s", strerror(errno)
+(115,long double)
+(116,)
+(117,NULL)
+(118,&prio)
+(119,&downrate)
+(120,MSG_NOERROR)
+(121,void)
+(122,msg->mtext)
+(123,getpid()
+(124,long double)
+(125,nmsgs)
+(126,free(msg)
+(127,NULL)
+(128,shaper_rate_alter(prio, downrate, uprate)
+(129,msglen = msgrcv(shaper_qid, msg, msgsz, getpid()
+(130,)
+(131,mtext)
+(132,sizeof(long double)
+(133,sizeof(struct shaper_msg)
+(134,prio)
+(135,downrate)
+(136,msg->mtext)
+(137,sizeof(unsigned int)
+(138,long double)
+(139,sizeof(unsigned int)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

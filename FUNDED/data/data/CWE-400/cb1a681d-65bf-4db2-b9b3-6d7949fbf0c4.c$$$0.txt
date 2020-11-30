@@ -1,0 +1,2585 @@
+-----label-----
+0
+-----code-----
+vm_page_t
+vm_page_alloc(vm_object_t object, vm_pindex_t pindex, int req)
+{
+	vm_page_t m = NULL;
+	int color, flags, page_req;
+
+	page_req = req & VM_ALLOC_CLASS_MASK;
+	KASSERT(curthread->td_intr_nesting_level == 0 ||
+	    page_req == VM_ALLOC_INTERRUPT,
+	    ("vm_page_alloc(NORMAL|SYSTEM) in interrupt context"));
+
+	if ((req & VM_ALLOC_NOOBJ) == 0) {
+		KASSERT(object != NULL,
+		    ("vm_page_alloc: NULL object."));
+		VM_OBJECT_LOCK_ASSERT(object, MA_OWNED);
+		color = (pindex + object->pg_color) & PQ_COLORMASK;
+	} else
+		color = pindex & PQ_COLORMASK;
+
+	/*
+	 * The pager is allowed to eat deeper into the free page list.
+	 */
+	if ((curproc == pageproc) && (page_req != VM_ALLOC_INTERRUPT)) {
+		page_req = VM_ALLOC_SYSTEM;
+	};
+
+loop:
+	mtx_lock_spin(&vm_page_queue_free_mtx);
+	if (cnt.v_free_count > cnt.v_free_reserved ||
+	    (page_req == VM_ALLOC_SYSTEM && 
+	     cnt.v_cache_count == 0 && 
+	     cnt.v_free_count > cnt.v_interrupt_free_min) ||
+	    (page_req == VM_ALLOC_INTERRUPT && cnt.v_free_count > 0)) {
+		/*
+		 * Allocate from the free queue if the number of free pages
+		 * exceeds the minimum for the request class.
+		 */
+		m = vm_pageq_find(PQ_FREE, color, (req & VM_ALLOC_ZERO) != 0);
+	} else if (page_req != VM_ALLOC_INTERRUPT) {
+		mtx_unlock_spin(&vm_page_queue_free_mtx);
+		/*
+		 * Allocatable from cache (non-interrupt only).  On success,
+		 * we must free the page and try again, thus ensuring that
+		 * cnt.v_*_free_min counters are replenished.
+		 */
+		vm_page_lock_queues();
+		if ((m = vm_page_select_cache(color)) == NULL) {
+			KASSERT(cnt.v_cache_count == 0,
+			    ("vm_page_alloc: cache queue is missing %d pages",
+			    cnt.v_cache_count));
+			vm_page_unlock_queues();
+			atomic_add_int(&vm_pageout_deficit, 1);
+			pagedaemon_wakeup();
+			return (NULL);
+		}
+		vm_page_unlock_queues();
+		goto loop;
+	} else {
+		/*
+		 * Not allocatable from cache from interrupt, give up.
+		 */
+		mtx_unlock_spin(&vm_page_queue_free_mtx);
+		atomic_add_int(&vm_pageout_deficit, 1);
+		pagedaemon_wakeup();
+		return (NULL);
+	}
+
+	/*
+	 *  At this point we had better have found a good page.
+	 */
+
+	KASSERT(
+	    m != NULL,
+	    ("vm_page_alloc(): missing page on free queue")
+	);
+
+	/*
+	 * Remove from free queue
+	 */
+	vm_pageq_remove_nowakeup(m);
+
+	/*
+	 * Initialize structure.  Only the PG_ZERO flag is inherited.
+	 */
+	flags = PG_BUSY;
+	if (m->flags & PG_ZERO) {
+		vm_page_zero_count--;
+		if (req & VM_ALLOC_ZERO)
+			flags = PG_ZERO | PG_BUSY;
+	}
+	if (req & (VM_ALLOC_NOBUSY | VM_ALLOC_NOOBJ))
+		flags &= ~PG_BUSY;
+	m->flags = flags;
+	if (req & VM_ALLOC_WIRED) {
+		atomic_add_int(&cnt.v_wire_count, 1);
+		m->wire_count = 1;
+	} else
+		m->wire_count = 0;
+	m->hold_count = 0;
+	m->act_count = 0;
+	m->busy = 0;
+	m->valid = 0;
+	KASSERT(m->dirty == 0, ("vm_page_alloc: free/cache page %p was dirty", m));
+	mtx_unlock_spin(&vm_page_queue_free_mtx);
+
+	if ((req & VM_ALLOC_NOOBJ) == 0)
+		vm_page_insert(m, object, pindex);
+	else
+		m->pindex = pindex;
+
+	/*
+	 * Don't wakeup too often - wakeup the pageout daemon when
+	 * we would be nearly out of memory.
+	 */
+	if (vm_paging_needed())
+		pagedaemon_wakeup();
+
+	return (m);
+}
+-----children-----
+1,2
+1,3
+1,4
+2,3
+4,5
+4,6
+4,7
+4,8
+6,7
+6,8
+7,8
+9,10
+11,12
+11,13
+12,13
+14,15
+16,17
+16,18
+18,19
+20,21
+20,22
+20,23
+20,24
+20,25
+20,26
+20,27
+20,28
+20,29
+20,30
+20,31
+20,32
+20,33
+20,34
+20,35
+20,36
+20,37
+20,38
+20,39
+20,40
+20,41
+20,42
+20,43
+20,44
+20,45
+21,22
+22,23
+22,24
+23,24
+25,26
+25,27
+27,28
+28,29
+30,31
+31,32
+31,33
+31,34
+31,35
+33,34
+35,36
+37,38
+39,40
+40,41
+40,42
+41,42
+43,44
+43,45
+44,45
+46,47
+48,49
+49,50
+49,51
+49,52
+50,51
+52,53
+52,54
+53,54
+53,55
+54,55
+54,56
+55,56
+59,60
+59,61
+60,61
+62,63
+64,65
+66,67
+66,68
+66,69
+67,68
+67,69
+68,69
+69,70
+69,71
+70,71
+72,73
+75,76
+75,77
+75,78
+76,77
+77,78
+77,79
+77,80
+78,79
+80,81
+80,82
+81,82
+83,84
+85,86
+87,88
+88,89
+88,90
+88,91
+89,90
+91,92
+93,94
+95,96
+96,97
+96,98
+97,98
+99,100
+99,101
+100,101
+101,102
+101,103
+102,103
+104,105
+104,106
+105,106
+108,109
+110,111
+111,112
+111,113
+112,113
+114,115
+114,116
+115,116
+117,118
+119,120
+119,121
+120,121
+120,122
+121,122
+122,123
+122,124
+123,124
+125,126
+127,128
+128,129
+128,130
+129,130
+131,132
+133,134
+134,135
+135,136
+135,137
+136,137
+138,139
+141,142
+141,143
+143,144
+144,145
+144,146
+145,146
+147,148
+148,149
+148,150
+151,152
+151,153
+151,154
+152,153
+152,154
+153,154
+153,155
+154,155
+154,156
+155,156
+155,157
+156,157
+159,160
+159,161
+160,161
+163,164
+164,165
+164,166
+165,166
+165,167
+166,167
+166,168
+167,168
+169,170
+171,172
+171,173
+172,173
+172,174
+173,174
+177,178
+177,179
+178,179
+178,180
+179,180
+182,183
+182,184
+183,184
+186,187
+187,188
+187,189
+188,189
+188,190
+189,190
+191,192
+193,194
+193,195
+194,195
+194,196
+195,196
+199,200
+200,201
+201,202
+201,203
+202,203
+204,205
+204,206
+204,207
+204,208
+205,206
+207,208
+209,210
+211,212
+211,213
+212,213
+213,214
+213,215
+214,215
+216,217
+219,220
+219,221
+219,222
+220,221
+220,222
+221,222
+223,224
+225,226
+225,227
+225,228
+225,229
+225,230
+226,227
+227,228
+227,229
+228,229
+230,231
+231,232
+233,234
+234,235
+235,236
+237,238
+237,239
+238,239
+238,240
+239,240
+240,241
+240,242
+241,242
+243,244
+243,245
+244,245
+246,247
+248,249
+250,251
+250,252
+250,253
+250,254
+250,255
+251,252
+252,253
+252,254
+252,255
+253,254
+255,256
+255,257
+256,257
+256,258
+257,258
+261,262
+262,263
+262,264
+264,265
+264,266
+265,266
+268,269
+269,270
+270,271
+272,273
+273,274
+273,275
+273,276
+274,275
+276,277
+277,278
+280,281
+281,282
+282,283
+284,285
+285,286
+286,287
+288,289
+289,290
+290,291
+292,293
+294,295
+294,296
+294,297
+294,298
+295,296
+296,297
+296,298
+297,298
+299,300
+300,301
+302,303
+303,304
+303,305
+303,306
+304,305
+306,307
+307,308
+310,311
+311,312
+312,313
+314,315
+315,316
+316,317
+318,319
+319,320
+319,321
+319,322
+320,321
+322,323
+322,324
+323,324
+325,326
+327,328
+329,330
+330,331
+330,332
+331,332
+333,334
+335,336
+336,337
+336,338
+337,338
+339,340
+341,342
+341,343
+342,343
+342,344
+343,344
+343,345
+344,345
+347,348
+349,350
+349,351
+350,351
+351,352
+352,353
+354,355
+354,356
+355,356
+355,357
+356,357
+358,359
+360,361
+361,362
+361,363
+362,363
+364,365
+364,366
+365,366
+367,368
+369,370
+369,371
+370,371
+370,372
+371,372
+373,374
+374,375
+374,376
+375,376
+377,378
+379,380
+380,381
+380,382
+381,382
+383,384
+384,385
+386,387
+387,388
+387,389
+388,389
+388,390
+389,390
+392,393
+394,395
+394,396
+394,397
+395,396
+395,397
+396,397
+398,399
+400,401
+400,402
+401,402
+402,403
+402,404
+402,405
+403,404
+405,406
+406,407
+406,408
+407,408
+411,412
+412,413
+412,414
+413,414
+413,415
+414,415
+418,419
+419,420
+419,421
+420,421
+420,422
+421,422
+425,426
+426,427
+426,428
+427,428
+427,429
+428,429
+432,433
+433,434
+433,435
+434,435
+434,436
+435,436
+439,440
+440,441
+440,442
+441,442
+441,443
+442,443
+446,447
+447,448
+447,449
+448,449
+448,450
+449,450
+453,454
+454,455
+454,456
+454,457
+455,456
+457,458
+457,459
+458,459
+458,460
+459,460
+463,464
+464,465
+464,466
+466,467
+468,469
+469,470
+469,471
+470,471
+472,473
+473,474
+475,476
+475,477
+475,478
+476,477
+476,478
+477,478
+478,479
+478,480
+479,480
+481,482
+484,485
+485,486
+485,487
+485,488
+485,489
+486,487
+488,489
+490,491
+492,493
+494,495
+495,496
+495,497
+496,497
+496,498
+497,498
+500,501
+502,503
+502,504
+503,504
+504,505
+506,507
+507,508
+508,509
+510,511
+511,512
+512,513
+-----nextToken-----
+3,5,8,10,13,15,17,19,24,26,29,32,34,36,38,42,45,47,51,56,57,58,61,63,65,71,73,74,79,82,84,86,90,92,94,98,103,106,107,109,113,116,118,124,126,130,132,137,139,140,142,146,149,150,157,158,161,162,168,170,174,175,176,180,181,184,185,190,192,196,197,198,203,206,208,210,215,217,218,222,224,229,232,236,242,245,247,249,254,258,259,260,263,266,267,271,275,278,279,283,287,291,293,298,301,305,308,309,313,317,321,324,326,328,332,334,338,340,345,346,348,353,357,359,363,366,368,372,376,378,382,385,390,391,393,397,399,404,408,409,410,415,416,417,422,423,424,429,430,431,436,437,438,443,444,445,450,451,452,456,460,461,462,465,467,471,474,480,482,483,487,489,491,493,498,499,501,505,509,513
+-----computeFrom-----
+40,41
+40,42
+43,44
+43,45
+52,53
+52,54
+53,54
+53,55
+59,60
+59,61
+67,68
+67,69
+69,70
+69,71
+80,81
+80,82
+96,97
+96,98
+99,100
+99,101
+101,102
+101,103
+111,112
+111,113
+114,115
+114,116
+120,121
+120,122
+122,123
+122,124
+128,129
+128,130
+135,136
+135,137
+152,153
+152,154
+153,154
+153,155
+154,155
+154,156
+164,165
+164,166
+165,166
+165,167
+166,167
+166,168
+171,172
+171,173
+177,178
+177,179
+187,188
+187,189
+188,189
+188,190
+193,194
+193,195
+201,202
+201,203
+211,212
+211,213
+213,214
+213,215
+220,221
+220,222
+238,239
+238,240
+240,241
+240,242
+255,256
+255,257
+322,323
+322,324
+336,337
+336,338
+342,343
+342,344
+355,356
+355,357
+361,362
+361,363
+364,365
+364,366
+370,371
+370,372
+374,375
+374,376
+380,381
+380,382
+387,388
+387,389
+395,396
+395,397
+412,413
+412,414
+419,420
+419,421
+426,427
+426,428
+433,434
+433,435
+440,441
+440,442
+447,448
+447,449
+457,458
+457,459
+476,477
+476,478
+478,479
+478,480
+495,496
+495,497
+-----guardedBy-----
+130,137
+249,287
+346,363
+348,366
+-----guardedByNegation-----
+190,222
+196,266
+175,267
+192,224
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;NamedTypeSpecifier;Name;FunctionDeclarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;Declarator;Name;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;LiteralExpression;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;NullStatement;LabelStatement;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;ReferenceOperator;Name;IfStatement;BinaryExpression;BinaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;BinaryExpression;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;UnaryExpression;ExpressionList;LiteralExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ReturnStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;GotoStatement;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ReturnStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;UnaryExpression;ExpressionList;LiteralExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ReturnStatement;UnaryExpression;IdExpression;Name;
+-----ast_node-----
+vm_page_tvm_page_alloc(vm_object_t object, vm_pindex_t pindex, int req){	vm_page_t m = NULL;	int color, flags, page_req;	page_req = req & VM_ALLOC_CLASS_MASK;	KASSERT(curthread->td_intr_nesting_level == 0 ||	    page_req == VM_ALLOC_INTERRUPT,	    ("vm_page_alloc(NORMAL|SYSTEM) in interrupt context"));	if ((req & VM_ALLOC_NOOBJ) == 0) {		KASSERT(object != NULL,		    ("vm_page_alloc: NULL object."));		VM_OBJECT_LOCK_ASSERT(object, MA_OWNED);		color = (pindex + object->pg_color) & PQ_COLORMASK;	} else		color = pindex & PQ_COLORMASK;	/*	 * The pager is allowed to eat deeper into the free page list.	 */	if ((curproc == pageproc) && (page_req != VM_ALLOC_INTERRUPT)) {		page_req = VM_ALLOC_SYSTEM;	};loop:	mtx_lock_spin(&vm_page_queue_free_mtx);	if (cnt.v_free_count > cnt.v_free_reserved ||	    (page_req == VM_ALLOC_SYSTEM && 	     cnt.v_cache_count == 0 && 	     cnt.v_free_count > cnt.v_interrupt_free_min) ||	    (page_req == VM_ALLOC_INTERRUPT && cnt.v_free_count > 0)) {		/*		 * Allocate from the free queue if the number of free pages		 * exceeds the minimum for the request class.		 */		m = vm_pageq_find(PQ_FREE, color, (req & VM_ALLOC_ZERO) != 0);	} else if (page_req != VM_ALLOC_INTERRUPT) {		mtx_unlock_spin(&vm_page_queue_free_mtx);		/*		 * Allocatable from cache (non-interrupt only).  On success,		 * we must free the page and try again, thus ensuring that		 * cnt.v_*_free_min counters are replenished.		 */		vm_page_lock_queues();		if ((m = vm_page_select_cache(color)) == NULL) {			KASSERT(cnt.v_cache_count == 0,			    ("vm_page_alloc: cache queue is missing %d pages",			    cnt.v_cache_count));			vm_page_unlock_queues();			atomic_add_int(&vm_pageout_deficit, 1);			pagedaemon_wakeup();			return (NULL);		}		vm_page_unlock_queues();		goto loop;	} else {		/*		 * Not allocatable from cache from interrupt, give up.		 */		mtx_unlock_spin(&vm_page_queue_free_mtx);		atomic_add_int(&vm_pageout_deficit, 1);		pagedaemon_wakeup();		return (NULL);	}	/*	 *  At this point we had better have found a good page.	 */	KASSERT(	    m != NULL,	    ("vm_page_alloc(): missing page on free queue")	);	/*	 * Remove from free queue	 */	vm_pageq_remove_nowakeup(m);	/*	 * Initialize structure.  Only the PG_ZERO flag is inherited.	 */	flags = PG_BUSY;	if (m->flags & PG_ZERO) {		vm_page_zero_count--;		if (req & VM_ALLOC_ZERO)			flags = PG_ZERO | PG_BUSY;	}	if (req & (VM_ALLOC_NOBUSY | VM_ALLOC_NOOBJ))		flags &= ~PG_BUSY;	m->flags = flags;	if (req & VM_ALLOC_WIRED) {		atomic_add_int(&cnt.v_wire_count, 1);		m->wire_count = 1;	} else		m->wire_count = 0;	m->hold_count = 0;	m->act_count = 0;	m->busy = 0;	m->valid = 0;	KASSERT(m->dirty == 0, ("vm_page_alloc: free/cache page %p was dirty", m));	mtx_unlock_spin(&vm_page_queue_free_mtx);	if ((req & VM_ALLOC_NOOBJ) == 0)		vm_page_insert(m, object, pindex);	else		m->pindex = pindex;	/*	 * Don't wakeup too often - wakeup the pageout daemon when	 * we would be nearly out of memory.	 */	if (vm_paging_needed())		pagedaemon_wakeup();	return (m);}
+vm_page_t
+vm_page_t
+vm_page_alloc(vm_object_t object, vm_pindex_t pindex, int req)
+vm_page_alloc
+vm_object_t object
+vm_object_t
+vm_object_t
+object
+object
+vm_pindex_t pindex
+vm_pindex_t
+vm_pindex_t
+pindex
+pindex
+int req
+int
+req
+req
+{	vm_page_t m = NULL;	int color, flags, page_req;	page_req = req & VM_ALLOC_CLASS_MASK;	KASSERT(curthread->td_intr_nesting_level == 0 ||	    page_req == VM_ALLOC_INTERRUPT,	    ("vm_page_alloc(NORMAL|SYSTEM) in interrupt context"));	if ((req & VM_ALLOC_NOOBJ) == 0) {		KASSERT(object != NULL,		    ("vm_page_alloc: NULL object."));		VM_OBJECT_LOCK_ASSERT(object, MA_OWNED);		color = (pindex + object->pg_color) & PQ_COLORMASK;	} else		color = pindex & PQ_COLORMASK;	/*	 * The pager is allowed to eat deeper into the free page list.	 */	if ((curproc == pageproc) && (page_req != VM_ALLOC_INTERRUPT)) {		page_req = VM_ALLOC_SYSTEM;	};loop:	mtx_lock_spin(&vm_page_queue_free_mtx);	if (cnt.v_free_count > cnt.v_free_reserved ||	    (page_req == VM_ALLOC_SYSTEM && 	     cnt.v_cache_count == 0 && 	     cnt.v_free_count > cnt.v_interrupt_free_min) ||	    (page_req == VM_ALLOC_INTERRUPT && cnt.v_free_count > 0)) {		/*		 * Allocate from the free queue if the number of free pages		 * exceeds the minimum for the request class.		 */		m = vm_pageq_find(PQ_FREE, color, (req & VM_ALLOC_ZERO) != 0);	} else if (page_req != VM_ALLOC_INTERRUPT) {		mtx_unlock_spin(&vm_page_queue_free_mtx);		/*		 * Allocatable from cache (non-interrupt only).  On success,		 * we must free the page and try again, thus ensuring that		 * cnt.v_*_free_min counters are replenished.		 */		vm_page_lock_queues();		if ((m = vm_page_select_cache(color)) == NULL) {			KASSERT(cnt.v_cache_count == 0,			    ("vm_page_alloc: cache queue is missing %d pages",			    cnt.v_cache_count));			vm_page_unlock_queues();			atomic_add_int(&vm_pageout_deficit, 1);			pagedaemon_wakeup();			return (NULL);		}		vm_page_unlock_queues();		goto loop;	} else {		/*		 * Not allocatable from cache from interrupt, give up.		 */		mtx_unlock_spin(&vm_page_queue_free_mtx);		atomic_add_int(&vm_pageout_deficit, 1);		pagedaemon_wakeup();		return (NULL);	}	/*	 *  At this point we had better have found a good page.	 */	KASSERT(	    m != NULL,	    ("vm_page_alloc(): missing page on free queue")	);	/*	 * Remove from free queue	 */	vm_pageq_remove_nowakeup(m);	/*	 * Initialize structure.  Only the PG_ZERO flag is inherited.	 */	flags = PG_BUSY;	if (m->flags & PG_ZERO) {		vm_page_zero_count--;		if (req & VM_ALLOC_ZERO)			flags = PG_ZERO | PG_BUSY;	}	if (req & (VM_ALLOC_NOBUSY | VM_ALLOC_NOOBJ))		flags &= ~PG_BUSY;	m->flags = flags;	if (req & VM_ALLOC_WIRED) {		atomic_add_int(&cnt.v_wire_count, 1);		m->wire_count = 1;	} else		m->wire_count = 0;	m->hold_count = 0;	m->act_count = 0;	m->busy = 0;	m->valid = 0;	KASSERT(m->dirty == 0, ("vm_page_alloc: free/cache page %p was dirty", m));	mtx_unlock_spin(&vm_page_queue_free_mtx);	if ((req & VM_ALLOC_NOOBJ) == 0)		vm_page_insert(m, object, pindex);	else		m->pindex = pindex;	/*	 * Don't wakeup too often - wakeup the pageout daemon when	 * we would be nearly out of memory.	 */	if (vm_paging_needed())		pagedaemon_wakeup();	return (m);}
+vm_page_t m = NULL;
+vm_page_t m = NULL;
+vm_page_t
+vm_page_t
+m = NULL
+m
+= NULL
+NULL
+NULL
+int color, flags, page_req;
+int color, flags, page_req;
+int
+color
+color
+flags
+flags
+page_req
+page_req
+page_req = req & VM_ALLOC_CLASS_MASK;
+page_req = req & VM_ALLOC_CLASS_MASK
+page_req
+page_req
+req & VM_ALLOC_CLASS_MASK
+req
+req
+VM_ALLOC_CLASS_MASK
+VM_ALLOC_CLASS_MASK
+KASSERT(curthread->td_intr_nesting_level == 0 ||	    page_req == VM_ALLOC_INTERRUPT,	    ("vm_page_alloc(NORMAL|SYSTEM) in interrupt context"));
+KASSERT(curthread->td_intr_nesting_level == 0 ||	    page_req == VM_ALLOC_INTERRUPT,	    ("vm_page_alloc(NORMAL|SYSTEM) in interrupt context"))
+KASSERT
+KASSERT
+curthread->td_intr_nesting_level == 0 ||	    page_req == VM_ALLOC_INTERRUPT
+curthread->td_intr_nesting_level == 0
+curthread->td_intr_nesting_level
+curthread
+curthread
+td_intr_nesting_level
+0
+page_req == VM_ALLOC_INTERRUPT
+page_req
+page_req
+VM_ALLOC_INTERRUPT
+VM_ALLOC_INTERRUPT
+("vm_page_alloc(NORMAL|SYSTEM) in interrupt context")
+"vm_page_alloc(NORMAL|SYSTEM) in interrupt context"
+if ((req & VM_ALLOC_NOOBJ) == 0) {		KASSERT(object != NULL,		    ("vm_page_alloc: NULL object."));		VM_OBJECT_LOCK_ASSERT(object, MA_OWNED);		color = (pindex + object->pg_color) & PQ_COLORMASK;	} else		color = pindex & PQ_COLORMASK;
+(req & VM_ALLOC_NOOBJ) == 0
+(req & VM_ALLOC_NOOBJ)
+req & VM_ALLOC_NOOBJ
+req
+req
+VM_ALLOC_NOOBJ
+VM_ALLOC_NOOBJ
+0
+{		KASSERT(object != NULL,		    ("vm_page_alloc: NULL object."));		VM_OBJECT_LOCK_ASSERT(object, MA_OWNED);		color = (pindex + object->pg_color) & PQ_COLORMASK;	}
+KASSERT(object != NULL,		    ("vm_page_alloc: NULL object."));
+KASSERT(object != NULL,		    ("vm_page_alloc: NULL object."))
+KASSERT
+KASSERT
+object != NULL
+object
+object
+NULL
+NULL
+("vm_page_alloc: NULL object.")
+"vm_page_alloc: NULL object."
+VM_OBJECT_LOCK_ASSERT(object, MA_OWNED);
+VM_OBJECT_LOCK_ASSERT(object, MA_OWNED)
+VM_OBJECT_LOCK_ASSERT
+VM_OBJECT_LOCK_ASSERT
+object
+object
+MA_OWNED
+MA_OWNED
+color = (pindex + object->pg_color) & PQ_COLORMASK;
+color = (pindex + object->pg_color) & PQ_COLORMASK
+color
+color
+(pindex + object->pg_color) & PQ_COLORMASK
+(pindex + object->pg_color)
+pindex + object->pg_color
+pindex
+pindex
+object->pg_color
+object
+object
+pg_color
+PQ_COLORMASK
+PQ_COLORMASK
+color = pindex & PQ_COLORMASK;
+color = pindex & PQ_COLORMASK
+color
+color
+pindex & PQ_COLORMASK
+pindex
+pindex
+PQ_COLORMASK
+PQ_COLORMASK
+if ((curproc == pageproc) && (page_req != VM_ALLOC_INTERRUPT)) {		page_req = VM_ALLOC_SYSTEM;	}
+(curproc == pageproc) && (page_req != VM_ALLOC_INTERRUPT)
+(curproc == pageproc)
+curproc == pageproc
+curproc
+curproc
+pageproc
+pageproc
+(page_req != VM_ALLOC_INTERRUPT)
+page_req != VM_ALLOC_INTERRUPT
+page_req
+page_req
+VM_ALLOC_INTERRUPT
+VM_ALLOC_INTERRUPT
+{		page_req = VM_ALLOC_SYSTEM;	}
+page_req = VM_ALLOC_SYSTEM;
+page_req = VM_ALLOC_SYSTEM
+page_req
+page_req
+VM_ALLOC_SYSTEM
+VM_ALLOC_SYSTEM
+;
+loop:	mtx_lock_spin(&vm_page_queue_free_mtx);
+loop
+mtx_lock_spin(&vm_page_queue_free_mtx);
+mtx_lock_spin(&vm_page_queue_free_mtx);
+mtx_lock_spin
+mtx_lock_spin
+(&vm_page_queue_free_mtx)
+&vm_page_queue_free_mtx
+&
+vm_page_queue_free_mtx
+if (cnt.v_free_count > cnt.v_free_reserved ||	    (page_req == VM_ALLOC_SYSTEM && 	     cnt.v_cache_count == 0 && 	     cnt.v_free_count > cnt.v_interrupt_free_min) ||	    (page_req == VM_ALLOC_INTERRUPT && cnt.v_free_count > 0)) {		/*		 * Allocate from the free queue if the number of free pages		 * exceeds the minimum for the request class.		 */		m = vm_pageq_find(PQ_FREE, color, (req & VM_ALLOC_ZERO) != 0);	} else if (page_req != VM_ALLOC_INTERRUPT) {		mtx_unlock_spin(&vm_page_queue_free_mtx);		/*		 * Allocatable from cache (non-interrupt only).  On success,		 * we must free the page and try again, thus ensuring that		 * cnt.v_*_free_min counters are replenished.		 */		vm_page_lock_queues();		if ((m = vm_page_select_cache(color)) == NULL) {			KASSERT(cnt.v_cache_count == 0,			    ("vm_page_alloc: cache queue is missing %d pages",			    cnt.v_cache_count));			vm_page_unlock_queues();			atomic_add_int(&vm_pageout_deficit, 1);			pagedaemon_wakeup();			return (NULL);		}		vm_page_unlock_queues();		goto loop;	} else {		/*		 * Not allocatable from cache from interrupt, give up.		 */		mtx_unlock_spin(&vm_page_queue_free_mtx);		atomic_add_int(&vm_pageout_deficit, 1);		pagedaemon_wakeup();		return (NULL);	}
+cnt.v_free_count > cnt.v_free_reserved ||	    (page_req == VM_ALLOC_SYSTEM && 	     cnt.v_cache_count == 0 && 	     cnt.v_free_count > cnt.v_interrupt_free_min) ||	    (page_req == VM_ALLOC_INTERRUPT && cnt.v_free_count > 0)
+cnt.v_free_count > cnt.v_free_reserved ||	    (page_req == VM_ALLOC_SYSTEM && 	     cnt.v_cache_count == 0 && 	     cnt.v_free_count > cnt.v_interrupt_free_min)
+cnt.v_free_count > cnt.v_free_reserved
+cnt.v_free_count
+cnt
+cnt
+v_free_count
+cnt.v_free_reserved
+cnt
+cnt
+v_free_reserved
+(page_req == VM_ALLOC_SYSTEM && 	     cnt.v_cache_count == 0 && 	     cnt.v_free_count > cnt.v_interrupt_free_min)
+page_req == VM_ALLOC_SYSTEM && 	     cnt.v_cache_count == 0 && 	     cnt.v_free_count > cnt.v_interrupt_free_min
+page_req == VM_ALLOC_SYSTEM && 	     cnt.v_cache_count == 0
+page_req == VM_ALLOC_SYSTEM
+page_req
+page_req
+VM_ALLOC_SYSTEM
+VM_ALLOC_SYSTEM
+cnt.v_cache_count == 0
+cnt.v_cache_count
+cnt
+cnt
+v_cache_count
+0
+cnt.v_free_count > cnt.v_interrupt_free_min
+cnt.v_free_count
+cnt
+cnt
+v_free_count
+cnt.v_interrupt_free_min
+cnt
+cnt
+v_interrupt_free_min
+(page_req == VM_ALLOC_INTERRUPT && cnt.v_free_count > 0)
+page_req == VM_ALLOC_INTERRUPT && cnt.v_free_count > 0
+page_req == VM_ALLOC_INTERRUPT
+page_req
+page_req
+VM_ALLOC_INTERRUPT
+VM_ALLOC_INTERRUPT
+cnt.v_free_count > 0
+cnt.v_free_count
+cnt
+cnt
+v_free_count
+0
+{		/*		 * Allocate from the free queue if the number of free pages		 * exceeds the minimum for the request class.		 */		m = vm_pageq_find(PQ_FREE, color, (req & VM_ALLOC_ZERO) != 0);	}
+m = vm_pageq_find(PQ_FREE, color, (req & VM_ALLOC_ZERO) != 0);
+m = vm_pageq_find(PQ_FREE, color, (req & VM_ALLOC_ZERO) != 0)
+m
+m
+vm_pageq_find(PQ_FREE, color, (req & VM_ALLOC_ZERO) != 0)
+vm_pageq_find
+vm_pageq_find
+PQ_FREE
+PQ_FREE
+color
+color
+(req & VM_ALLOC_ZERO) != 0
+(req & VM_ALLOC_ZERO)
+req & VM_ALLOC_ZERO
+req
+req
+VM_ALLOC_ZERO
+VM_ALLOC_ZERO
+0
+if (page_req != VM_ALLOC_INTERRUPT) {		mtx_unlock_spin(&vm_page_queue_free_mtx);		/*		 * Allocatable from cache (non-interrupt only).  On success,		 * we must free the page and try again, thus ensuring that		 * cnt.v_*_free_min counters are replenished.		 */		vm_page_lock_queues();		if ((m = vm_page_select_cache(color)) == NULL) {			KASSERT(cnt.v_cache_count == 0,			    ("vm_page_alloc: cache queue is missing %d pages",			    cnt.v_cache_count));			vm_page_unlock_queues();			atomic_add_int(&vm_pageout_deficit, 1);			pagedaemon_wakeup();			return (NULL);		}		vm_page_unlock_queues();		goto loop;	} else {		/*		 * Not allocatable from cache from interrupt, give up.		 */		mtx_unlock_spin(&vm_page_queue_free_mtx);		atomic_add_int(&vm_pageout_deficit, 1);		pagedaemon_wakeup();		return (NULL);	}
+page_req != VM_ALLOC_INTERRUPT
+page_req
+page_req
+VM_ALLOC_INTERRUPT
+VM_ALLOC_INTERRUPT
+{		mtx_unlock_spin(&vm_page_queue_free_mtx);		/*		 * Allocatable from cache (non-interrupt only).  On success,		 * we must free the page and try again, thus ensuring that		 * cnt.v_*_free_min counters are replenished.		 */		vm_page_lock_queues();		if ((m = vm_page_select_cache(color)) == NULL) {			KASSERT(cnt.v_cache_count == 0,			    ("vm_page_alloc: cache queue is missing %d pages",			    cnt.v_cache_count));			vm_page_unlock_queues();			atomic_add_int(&vm_pageout_deficit, 1);			pagedaemon_wakeup();			return (NULL);		}		vm_page_unlock_queues();		goto loop;	}
+mtx_unlock_spin(&vm_page_queue_free_mtx);
+mtx_unlock_spin(&vm_page_queue_free_mtx)
+mtx_unlock_spin
+mtx_unlock_spin
+&vm_page_queue_free_mtx
+vm_page_queue_free_mtx
+vm_page_queue_free_mtx
+vm_page_lock_queues();
+vm_page_lock_queues()
+vm_page_lock_queues
+vm_page_lock_queues
+if ((m = vm_page_select_cache(color)) == NULL) {			KASSERT(cnt.v_cache_count == 0,			    ("vm_page_alloc: cache queue is missing %d pages",			    cnt.v_cache_count));			vm_page_unlock_queues();			atomic_add_int(&vm_pageout_deficit, 1);			pagedaemon_wakeup();			return (NULL);		}
+(m = vm_page_select_cache(color)) == NULL
+(m = vm_page_select_cache(color))
+m = vm_page_select_cache(color)
+m
+m
+vm_page_select_cache(color)
+vm_page_select_cache
+vm_page_select_cache
+color
+color
+NULL
+NULL
+{			KASSERT(cnt.v_cache_count == 0,			    ("vm_page_alloc: cache queue is missing %d pages",			    cnt.v_cache_count));			vm_page_unlock_queues();			atomic_add_int(&vm_pageout_deficit, 1);			pagedaemon_wakeup();			return (NULL);		}
+KASSERT(cnt.v_cache_count == 0,			    ("vm_page_alloc: cache queue is missing %d pages",			    cnt.v_cache_count));
+KASSERT(cnt.v_cache_count == 0,			    ("vm_page_alloc: cache queue is missing %d pages",			    cnt.v_cache_count))
+KASSERT
+KASSERT
+cnt.v_cache_count == 0
+cnt.v_cache_count
+cnt
+cnt
+v_cache_count
+0
+("vm_page_alloc: cache queue is missing %d pages",			    cnt.v_cache_count)
+"vm_page_alloc: cache queue is missing %d pages",			    cnt.v_cache_count
+"vm_page_alloc: cache queue is missing %d pages"
+cnt.v_cache_count
+cnt
+cnt
+v_cache_count
+vm_page_unlock_queues();
+vm_page_unlock_queues()
+vm_page_unlock_queues
+vm_page_unlock_queues
+atomic_add_int(&vm_pageout_deficit, 1);
+atomic_add_int(&vm_pageout_deficit, 1)
+atomic_add_int
+atomic_add_int
+&vm_pageout_deficit
+vm_pageout_deficit
+vm_pageout_deficit
+1
+pagedaemon_wakeup();
+pagedaemon_wakeup()
+pagedaemon_wakeup
+pagedaemon_wakeup
+return (NULL);
+(NULL)
+NULL
+NULL
+vm_page_unlock_queues();
+vm_page_unlock_queues()
+vm_page_unlock_queues
+vm_page_unlock_queues
+goto loop;
+loop
+{		/*		 * Not allocatable from cache from interrupt, give up.		 */		mtx_unlock_spin(&vm_page_queue_free_mtx);		atomic_add_int(&vm_pageout_deficit, 1);		pagedaemon_wakeup();		return (NULL);	}
+mtx_unlock_spin(&vm_page_queue_free_mtx);
+mtx_unlock_spin(&vm_page_queue_free_mtx)
+mtx_unlock_spin
+mtx_unlock_spin
+&vm_page_queue_free_mtx
+vm_page_queue_free_mtx
+vm_page_queue_free_mtx
+atomic_add_int(&vm_pageout_deficit, 1);
+atomic_add_int(&vm_pageout_deficit, 1)
+atomic_add_int
+atomic_add_int
+&vm_pageout_deficit
+vm_pageout_deficit
+vm_pageout_deficit
+1
+pagedaemon_wakeup();
+pagedaemon_wakeup()
+pagedaemon_wakeup
+pagedaemon_wakeup
+return (NULL);
+(NULL)
+NULL
+NULL
+KASSERT(	    m != NULL,	    ("vm_page_alloc(): missing page on free queue")	);
+KASSERT(	    m != NULL,	    ("vm_page_alloc(): missing page on free queue")	)
+KASSERT
+KASSERT
+m != NULL
+m
+m
+NULL
+NULL
+("vm_page_alloc(): missing page on free queue")
+"vm_page_alloc(): missing page on free queue"
+vm_pageq_remove_nowakeup(m);
+vm_pageq_remove_nowakeup(m)
+vm_pageq_remove_nowakeup
+vm_pageq_remove_nowakeup
+m
+m
+flags = PG_BUSY;
+flags = PG_BUSY
+flags
+flags
+PG_BUSY
+PG_BUSY
+if (m->flags & PG_ZERO) {		vm_page_zero_count--;		if (req & VM_ALLOC_ZERO)			flags = PG_ZERO | PG_BUSY;	}
+m->flags & PG_ZERO
+m->flags
+m
+m
+flags
+PG_ZERO
+PG_ZERO
+{		vm_page_zero_count--;		if (req & VM_ALLOC_ZERO)			flags = PG_ZERO | PG_BUSY;	}
+vm_page_zero_count--;
+vm_page_zero_count--
+vm_page_zero_count
+vm_page_zero_count
+if (req & VM_ALLOC_ZERO)			flags = PG_ZERO | PG_BUSY;
+req & VM_ALLOC_ZERO
+req
+req
+VM_ALLOC_ZERO
+VM_ALLOC_ZERO
+flags = PG_ZERO | PG_BUSY;
+flags = PG_ZERO | PG_BUSY
+flags
+flags
+PG_ZERO | PG_BUSY
+PG_ZERO
+PG_ZERO
+PG_BUSY
+PG_BUSY
+if (req & (VM_ALLOC_NOBUSY | VM_ALLOC_NOOBJ))		flags &= ~PG_BUSY;
+req & (VM_ALLOC_NOBUSY | VM_ALLOC_NOOBJ)
+req
+req
+(VM_ALLOC_NOBUSY | VM_ALLOC_NOOBJ)
+VM_ALLOC_NOBUSY | VM_ALLOC_NOOBJ
+VM_ALLOC_NOBUSY
+VM_ALLOC_NOBUSY
+VM_ALLOC_NOOBJ
+VM_ALLOC_NOOBJ
+flags &= ~PG_BUSY;
+flags &= ~PG_BUSY
+flags
+flags
+~PG_BUSY
+PG_BUSY
+PG_BUSY
+m->flags = flags;
+m->flags = flags
+m->flags
+m
+m
+flags
+flags
+flags
+if (req & VM_ALLOC_WIRED) {		atomic_add_int(&cnt.v_wire_count, 1);		m->wire_count = 1;	} else		m->wire_count = 0;
+req & VM_ALLOC_WIRED
+req
+req
+VM_ALLOC_WIRED
+VM_ALLOC_WIRED
+{		atomic_add_int(&cnt.v_wire_count, 1);		m->wire_count = 1;	}
+atomic_add_int(&cnt.v_wire_count, 1);
+atomic_add_int(&cnt.v_wire_count, 1)
+atomic_add_int
+atomic_add_int
+&cnt.v_wire_count
+cnt.v_wire_count
+cnt
+cnt
+v_wire_count
+1
+m->wire_count = 1;
+m->wire_count = 1
+m->wire_count
+m
+m
+wire_count
+1
+m->wire_count = 0;
+m->wire_count = 0
+m->wire_count
+m
+m
+wire_count
+0
+m->hold_count = 0;
+m->hold_count = 0
+m->hold_count
+m
+m
+hold_count
+0
+m->act_count = 0;
+m->act_count = 0
+m->act_count
+m
+m
+act_count
+0
+m->busy = 0;
+m->busy = 0
+m->busy
+m
+m
+busy
+0
+m->valid = 0;
+m->valid = 0
+m->valid
+m
+m
+valid
+0
+KASSERT(m->dirty == 0, ("vm_page_alloc: free/cache page %p was dirty", m));
+KASSERT(m->dirty == 0, ("vm_page_alloc: free/cache page %p was dirty", m))
+KASSERT
+KASSERT
+m->dirty == 0
+m->dirty
+m
+m
+dirty
+0
+("vm_page_alloc: free/cache page %p was dirty", m)
+"vm_page_alloc: free/cache page %p was dirty", m
+"vm_page_alloc: free/cache page %p was dirty"
+m
+m
+mtx_unlock_spin(&vm_page_queue_free_mtx);
+mtx_unlock_spin(&vm_page_queue_free_mtx)
+mtx_unlock_spin
+mtx_unlock_spin
+&vm_page_queue_free_mtx
+vm_page_queue_free_mtx
+vm_page_queue_free_mtx
+if ((req & VM_ALLOC_NOOBJ) == 0)		vm_page_insert(m, object, pindex);	else		m->pindex = pindex;
+(req & VM_ALLOC_NOOBJ) == 0
+(req & VM_ALLOC_NOOBJ)
+req & VM_ALLOC_NOOBJ
+req
+req
+VM_ALLOC_NOOBJ
+VM_ALLOC_NOOBJ
+0
+vm_page_insert(m, object, pindex);
+vm_page_insert(m, object, pindex)
+vm_page_insert
+vm_page_insert
+m
+m
+object
+object
+pindex
+pindex
+m->pindex = pindex;
+m->pindex = pindex
+m->pindex
+m
+m
+pindex
+pindex
+pindex
+if (vm_paging_needed())		pagedaemon_wakeup();
+vm_paging_needed()
+vm_paging_needed
+vm_paging_needed
+pagedaemon_wakeup();
+pagedaemon_wakeup()
+pagedaemon_wakeup
+pagedaemon_wakeup
+return (m);
+(m)
+m
+m
+-----joern-----
+(183,134,0)
+(216,30,0)
+(163,221,0)
+(179,19,0)
+(247,85,0)
+(200,17,0)
+(271,112,0)
+(268,270,0)
+(129,19,0)
+(159,85,0)
+(3,43,0)
+(245,185,0)
+(249,173,0)
+(84,112,0)
+(6,20,0)
+(169,85,0)
+(261,127,0)
+(110,56,0)
+(239,68,0)
+(8,251,0)
+(217,27,0)
+(246,271,0)
+(154,208,0)
+(161,47,0)
+(161,19,0)
+(58,179,0)
+(77,19,0)
+(104,19,0)
+(99,19,0)
+(220,85,0)
+(134,19,0)
+(138,132,0)
+(12,143,0)
+(230,193,0)
+(138,150,0)
+(235,58,0)
+(57,108,0)
+(142,152,0)
+(227,63,0)
+(280,137,0)
+(215,68,0)
+(76,211,0)
+(176,30,0)
+(59,115,0)
+(130,128,0)
+(227,158,0)
+(279,71,0)
+(221,258,0)
+(54,19,0)
+(150,28,0)
+(109,207,0)
+(13,270,0)
+(125,19,0)
+(272,257,0)
+(89,264,0)
+(168,47,0)
+(276,163,0)
+(248,187,0)
+(224,18,0)
+(53,56,0)
+(180,27,0)
+(79,85,0)
+(87,33,0)
+(170,19,0)
+(171,19,0)
+(2,19,0)
+(48,85,0)
+(257,211,0)
+(38,15,0)
+(199,76,0)
+(236,138,0)
+(122,43,0)
+(84,258,0)
+(163,267,0)
+(64,254,0)
+(195,84,0)
+(27,217,0)
+(73,70,0)
+(255,6,0)
+(76,199,0)
+(60,140,0)
+(72,222,0)
+(157,258,0)
+(182,196,0)
+(202,158,0)
+(253,19,0)
+(278,19,0)
+(119,32,0)
+(150,255,0)
+(106,164,0)
+(17,185,0)
+(225,79,0)
+(93,1,0)
+(128,130,0)
+(31,100,0)
+(118,271,0)
+(275,123,0)
+(135,19,0)
+(159,19,0)
+(14,19,0)
+(226,151,0)
+(219,108,0)
+(231,102,0)
+(233,227,0)
+(221,163,0)
+(62,257,0)
+(55,229,0)
+(137,254,0)
+(197,281,0)
+(255,150,0)
+(241,265,0)
+(172,173,0)
+(29,150,0)
+(139,127,0)
+(81,102,0)
+(46,265,0)
+(234,85,0)
+(133,84,0)
+(67,31,0)
+(93,109,0)
+(30,47,0)
+(140,174,0)
+(244,137,0)
+(124,135,0)
+(35,276,0)
+(18,85,0)
+(222,19,0)
+(40,25,0)
+(187,151,0)
+(265,132,0)
+(40,191,0)
+(252,130,0)
+(82,211,0)
+(109,254,0)
+(90,19,0)
+(175,171,0)
+(127,112,0)
+(42,100,0)
+(281,264,0)
+(152,112,0)
+(144,221,0)
+(56,53,0)
+(254,137,0)
+(33,115,0)
+(232,77,0)
+(171,234,0)
+(259,232,0)
+(140,196,0)
+(97,269,0)
+(243,234,0)
+(43,19,0)
+(250,233,0)
+(132,42,0)
+(229,78,0)
+(218,159,0)
+(198,48,0)
+(75,65,0)
+(63,227,0)
+(109,93,0)
+(207,229,0)
+(205,134,0)
+(7,17,0)
+(116,191,0)
+(18,19,0)
+(45,164,0)
+(164,135,0)
+(153,31,0)
+(156,242,0)
+(204,138,0)
+(188,212,0)
+(79,161,0)
+(131,152,0)
+(92,229,0)
+(27,151,0)
+(242,97,0)
+(22,136,0)
+(85,138,0)
+(36,242,0)
+(240,205,0)
+(164,85,0)
+(102,97,0)
+(141,157,0)
+(39,90,0)
+(108,219,0)
+(266,132,0)
+(173,19,0)
+(208,149,0)
+(63,1,0)
+(203,25,0)
+(94,19,0)
+(97,242,0)
+(247,192,0)
+(148,65,0)
+(15,267,0)
+(157,229,0)
+(267,15,0)
+(10,207,0)
+(69,198,0)
+(68,258,0)
+(177,220,0)
+(190,20,0)
+(258,19,0)
+(33,85,0)
+(26,188,0)
+(145,6,0)
+(20,6,0)
+(199,65,0)
+(160,20,0)
+(157,1,0)
+(68,34,0)
+(34,71,0)
+(166,232,0)
+(146,267,0)
+(273,127,0)
+(186,193,0)
+(23,108,0)
+(181,249,0)
+(198,90,0)
+(41,221,0)
+(227,233,0)
+(191,40,0)
+(271,118,0)
+(238,46,0)
+(264,112,0)
+(265,46,0)
+(96,182,0)
+(103,33,0)
+(85,88,0)
+(267,163,0)
+(138,85,0)
+(48,198,0)
+(163,276,0)
+(265,150,0)
+(264,281,0)
+(206,42,0)
+(228,12,0)
+(37,19,0)
+(47,30,0)
+(214,234,0)
+(213,53,0)
+(61,275,0)
+(136,46,0)
+(83,19,0)
+(121,70,0)
+(51,118,0)
+(179,58,0)
+(128,63,0)
+(63,128,0)
+(42,132,0)
+(74,177,0)
+(34,68,0)
+(256,128,0)
+(182,28,0)
+(251,222,0)
+(90,39,0)
+(5,39,0)
+(138,281,0)
+(270,229,0)
+(192,100,0)
+(201,25,0)
+(127,273,0)
+(126,233,0)
+(114,205,0)
+(0,273,0)
+(44,186,0)
+(282,32,0)
+(24,48,0)
+(93,269,0)
+(167,192,0)
+(107,39,0)
+(207,109,0)
+(143,12,0)
+(115,212,0)
+(31,85,0)
+(184,247,0)
+(20,196,0)
+(16,174,0)
+(178,140,0)
+(237,25,0)
+(49,247,0)
+(66,77,0)
+(263,249,0)
+(17,85,0)
+(147,31,0)
+(276,19,0)
+(205,47,0)
+(86,220,0)
+(174,28,0)
+(248,18,0)
+(52,258,0)
+(161,134,0)
+(111,264,0)
+(90,198,0)
+(120,12,0)
+(1,93,0)
+(149,19,0)
+(270,258,0)
+(249,85,0)
+(223,157,0)
+(71,34,0)
+(46,136,0)
+(80,199,0)
+(6,255,0)
+(274,158,0)
+(50,130,0)
+(4,251,0)
+(11,118,0)
+(1,63,0)
+(32,112,0)
+(97,102,0)
+(155,207,0)
+(53,193,0)
+(9,134,0)
+(117,187,0)
+(1,157,0)
+(189,71,0)
+(210,151,0)
+(232,85,0)
+(251,85,0)
+(248,186,0)
+(6,100,0)
+(220,177,0)
+(207,258,0)
+(12,112,0)
+(113,42,0)
+(209,15,0)
+(262,217,0)
+(260,182,0)
+(281,138,0)
+(65,199,0)
+(162,161,0)
+(31,196,0)
+(174,140,0)
+(70,73,0)
+(234,171,0)
+(269,93,0)
+(188,219,0)
+(21,143,0)
+(105,123,0)
+(158,227,0)
+(76,151,0)
+(277,79,0)
+(258,84,0)
+(149,208,0)
+(211,76,0)
+(254,109,0)
+(269,97,0)
+(95,48,0)
+(219,188,0)
+(165,25,0)
+(73,193,0)
+(101,220,0)
+(194,255,0)
+(234,214,1)
+(261,179,1)
+(45,106,1)
+(152,112,1)
+(163,267,1)
+(161,47,1)
+(207,258,1)
+(138,132,1)
+(30,176,1)
+(199,65,1)
+(269,97,1)
+(130,252,1)
+(249,85,1)
+(231,149,1)
+(69,48,1)
+(76,257,1)
+(56,110,1)
+(1,63,1)
+(218,171,1)
+(182,260,1)
+(31,67,1)
+(159,85,1)
+(115,59,1)
+(140,178,1)
+(114,271,1)
+(71,189,1)
+(90,39,1)
+(234,85,1)
+(31,85,1)
+(12,112,1)
+(157,258,1)
+(63,128,1)
+(150,255,1)
+(256,130,1)
+(270,258,1)
+(103,188,1)
+(235,90,1)
+(225,277,1)
+(270,229,1)
+(102,81,1)
+(7,32,1)
+(63,227,1)
+(75,136,1)
+(109,254,1)
+(202,274,1)
+(220,85,1)
+(214,243,1)
+(227,233,1)
+(282,161,1)
+(107,198,1)
+(32,112,1)
+(152,142,1)
+(97,242,1)
+(251,85,1)
+(49,273,1)
+(136,46,1)
+(34,71,1)
+(138,281,1)
+(154,229,1)
+(220,86,1)
+(240,114,1)
+(122,3,1)
+(95,77,1)
+(12,120,1)
+(271,118,1)
+(277,205,1)
+(51,11,1)
+(57,32,1)
+(260,96,1)
+(145,29,1)
+(44,230,1)
+(158,202,1)
+(38,258,1)
+(117,210,1)
+(250,126,1)
+(246,177,1)
+(18,85,1)
+(62,82,1)
+(187,117,1)
+(159,218,1)
+(246,47,1)
+(255,6,1)
+(120,228,1)
+(267,15,1)
+(87,103,1)
+(70,121,1)
+(232,259,1)
+(106,115,1)
+(119,282,1)
+(106,185,1)
+(268,269,1)
+(43,122,1)
+(263,222,1)
+(17,85,1)
+(221,144,1)
+(72,251,1)
+(251,4,1)
+(164,85,1)
+(238,165,1)
+(239,71,1)
+(185,245,1)
+(23,57,1)
+(154,237,1)
+(93,1,1)
+(6,20,1)
+(47,30,1)
+(59,33,1)
+(192,167,1)
+(149,208,1)
+(97,102,1)
+(157,223,1)
+(34,68,1)
+(266,143,1)
+(50,157,1)
+(223,141,1)
+(173,172,1)
+(171,234,1)
+(279,132,1)
+(276,35,1)
+(248,187,1)
+(73,70,1)
+(74,220,1)
+(175,234,1)
+(80,65,1)
+(26,219,1)
+(127,112,1)
+(273,0,1)
+(206,266,1)
+(244,207,1)
+(1,157,1)
+(22,46,1)
+(15,209,1)
+(154,34,1)
+(188,26,1)
+(132,42,1)
+(182,196,1)
+(205,240,1)
+(76,211,1)
+(31,196,1)
+(111,236,1)
+(168,152,1)
+(31,100,1)
+(255,194,1)
+(245,17,1)
+(272,62,1)
+(135,124,1)
+(36,156,1)
+(216,168,1)
+(124,164,1)
+(171,175,1)
+(108,23,1)
+(82,199,1)
+(128,130,1)
+(52,43,1)
+(140,196,1)
+(258,84,1)
+(77,66,1)
+(205,134,1)
+(21,12,1)
+(264,89,1)
+(222,72,1)
+(89,111,1)
+(141,97,1)
+(76,199,1)
+(96,174,1)
+(68,258,1)
+(280,244,1)
+(166,173,1)
+(192,100,1)
+(281,197,1)
+(155,1,1)
+(203,136,1)
+(276,163,1)
+(137,280,1)
+(184,49,1)
+(98,91,1)
+(116,270,1)
+(33,85,1)
+(213,56,1)
+(221,258,1)
+(55,34,1)
+(181,263,1)
+(262,226,1)
+(273,127,1)
+(163,221,1)
+(79,225,1)
+(209,38,1)
+(18,224,1)
+(20,160,1)
+(113,206,1)
+(267,146,1)
+(197,264,1)
+(178,60,1)
+(248,186,1)
+(48,85,1)
+(4,8,1)
+(118,51,1)
+(247,184,1)
+(81,231,1)
+(165,40,1)
+(215,239,1)
+(188,219,1)
+(35,163,1)
+(20,196,1)
+(40,191,1)
+(157,229,1)
+(204,169,1)
+(249,181,1)
+(177,74,1)
+(270,13,1)
+(42,100,1)
+(136,22,1)
+(248,18,1)
+(227,158,1)
+(164,45,1)
+(254,64,1)
+(144,41,1)
+(189,279,1)
+(109,207,1)
+(186,44,1)
+(147,153,1)
+(265,241,1)
+(191,116,1)
+(194,6,1)
+(161,134,1)
+(247,85,1)
+(274,128,1)
+(198,48,1)
+(179,58,1)
+(84,112,1)
+(41,267,1)
+(252,50,1)
+(127,139,1)
+(156,102,1)
+(143,21,1)
+(226,76,1)
+(241,238,1)
+(183,9,1)
+(172,249,1)
+(198,69,1)
+(13,268,1)
+(176,216,1)
+(246,152,1)
+(207,229,1)
+(265,132,1)
+(86,101,1)
+(142,131,1)
+(167,247,1)
+(208,154,1)
+(259,166,1)
+(9,159,1)
+(8,135,1)
+(242,36,1)
+(174,140,1)
+(27,180,1)
+(90,198,1)
+(232,85,1)
+(131,275,1)
+(281,264,1)
+(91,31,1)
+(16,140,1)
+(160,190,1)
+(90,5,1)
+(29,182,1)
+(5,107,1)
+(27,217,1)
+(0,127,1)
+(84,133,1)
+(265,150,1)
+(110,73,1)
+(61,177,1)
+(143,12,1)
+(6,100,1)
+(148,75,1)
+(174,16,1)
+(42,113,1)
+(85,138,1)
+(190,145,1)
+(161,162,1)
+(236,204,1)
+(210,27,1)
+(277,271,1)
+(32,119,1)
+(10,155,1)
+(177,220,1)
+(133,195,1)
+(199,80,1)
+(224,98,1)
+(53,56,1)
+(17,200,1)
+(217,262,1)
+(228,276,1)
+(224,91,1)
+(233,250,1)
+(153,273,1)
+(65,148,1)
+(229,92,1)
+(200,7,1)
+(243,85,1)
+(237,203,1)
+(11,246,1)
+(180,217,1)
+(207,10,1)
+(79,85,1)
+(91,192,1)
+(139,261,1)
+(271,112,1)
+(126,158,1)
+(275,61,1)
+(66,232,1)
+(146,15,1)
+(169,269,1)
+(24,95,1)
+(48,24,1)
+(195,52,1)
+(60,143,1)
+(92,55,1)
+(93,109,1)
+(101,134,1)
+(162,79,1)
+(219,108,1)
+(64,137,1)
+(134,183,1)
+(33,87,1)
+(205,47,1)
+(53,213,1)
+(46,265,1)
+(68,215,1)
+(279,150,1)
+(264,112,1)
+(138,150,1)
+(269,93,1)
+(121,270,1)
+(67,147,1)
+(58,235,1)
+(257,272,1)
+(230,53,1)
+(128,256,1)
+(254,137,1)
+(234,85,2)
+(127,269,2)
+(227,158,2)
+(134,269,2)
+(171,234,2)
+(150,255,2)
+(73,70,2)
+(271,112,2)
+(60,143,2)
+(208,136,2)
+(271,269,2)
+(263,269,2)
+(164,85,2)
+(187,136,2)
+(79,269,2)
+(185,32,2)
+(235,269,2)
+(261,269,2)
+(63,157,2)
+(219,32,2)
+(96,143,2)
+(221,258,2)
+(188,219,2)
+(59,32,2)
+(205,271,2)
+(180,136,2)
+(219,108,2)
+(47,30,2)
+(30,152,2)
+(142,177,2)
+(118,269,2)
+(93,109,2)
+(50,157,2)
+(210,136,2)
+(181,269,2)
+(217,136,2)
+(17,85,2)
+(155,1,2)
+(161,134,2)
+(163,267,2)
+(192,273,2)
+(197,269,2)
+(257,136,2)
+(42,100,2)
+(31,196,2)
+(109,1,2)
+(33,32,2)
+(4,269,2)
+(259,269,2)
+(149,208,2)
+(140,196,2)
+(51,269,2)
+(265,150,2)
+(103,32,2)
+(269,97,2)
+(69,269,2)
+(174,143,2)
+(179,269,2)
+(22,270,2)
+(234,269,2)
+(281,264,2)
+(86,269,2)
+(117,136,2)
+(274,128,2)
+(152,112,2)
+(138,132,2)
+(265,132,2)
+(246,269,2)
+(126,128,2)
+(20,196,2)
+(90,39,2)
+(32,269,2)
+(254,137,2)
+(248,18,2)
+(249,85,2)
+(270,229,2)
+(207,229,2)
+(152,177,2)
+(93,97,2)
+(11,269,2)
+(269,136,2)
+(12,112,2)
+(7,32,2)
+(34,68,2)
+(128,157,2)
+(6,100,2)
+(76,199,2)
+(89,269,2)
+(106,269,2)
+(68,258,2)
+(163,221,2)
+(262,136,2)
+(194,143,2)
+(41,267,2)
+(202,128,2)
+(127,112,2)
+(188,32,2)
+(17,32,2)
+(40,191,2)
+(213,270,2)
+(85,138,2)
+(77,269,2)
+(243,269,2)
+(95,269,2)
+(269,93,2)
+(49,273,2)
+(267,15,2)
+(264,112,2)
+(223,97,2)
+(68,71,2)
+(114,271,2)
+(222,269,2)
+(230,270,2)
+(156,136,2)
+(131,177,2)
+(101,269,2)
+(97,136,2)
+(182,143,2)
+(247,273,2)
+(92,34,2)
+(132,42,2)
+(75,136,2)
+(233,128,2)
+(128,130,2)
+(160,143,2)
+(248,186,2)
+(255,6,2)
+(84,112,2)
+(258,84,2)
+(177,220,2)
+(36,136,2)
+(130,157,2)
+(138,281,2)
+(157,97,2)
+(9,269,2)
+(249,269,2)
+(45,269,2)
+(164,269,2)
+(79,85,2)
+(206,143,2)
+(241,270,2)
+(97,242,2)
+(157,258,2)
+(273,127,2)
+(147,273,2)
+(244,207,2)
+(275,177,2)
+(176,152,2)
+(172,269,2)
+(87,32,2)
+(90,269,2)
+(27,217,2)
+(205,134,2)
+(215,71,2)
+(1,157,2)
+(198,48,2)
+(6,20,2)
+(158,128,2)
+(154,136,2)
+(85,269,2)
+(227,128,2)
+(48,269,2)
+(245,32,2)
+(57,32,2)
+(184,273,2)
+(229,34,2)
+(102,136,2)
+(44,270,2)
+(136,46,2)
+(16,143,2)
+(76,136,2)
+(276,163,2)
+(110,270,2)
+(18,85,2)
+(177,269,2)
+(277,269,2)
+(273,269,2)
+(161,47,2)
+(205,47,2)
+(10,1,2)
+(13,269,2)
+(270,269,2)
+(214,269,2)
+(132,143,2)
+(178,143,2)
+(124,269,2)
+(18,269,2)
+(165,270,2)
+(47,152,2)
+(66,269,2)
+(236,269,2)
+(1,97,2)
+(200,32,2)
+(40,270,2)
+(280,207,2)
+(119,269,2)
+(167,273,2)
+(26,32,2)
+(98,91,2)
+(111,269,2)
+(220,85,2)
+(32,112,2)
+(251,85,2)
+(226,136,2)
+(139,269,2)
+(227,233,2)
+(81,136,2)
+(64,207,2)
+(34,71,2)
+(144,267,2)
+(115,32,2)
+(265,270,2)
+(162,269,2)
+(80,136,2)
+(242,136,2)
+(221,267,2)
+(143,12,2)
+(76,211,2)
+(266,143,2)
+(247,85,2)
+(53,270,2)
+(150,143,2)
+(232,85,2)
+(264,269,2)
+(91,269,2)
+(145,143,2)
+(56,270,2)
+(53,56,2)
+(224,269,2)
+(141,97,2)
+(271,118,2)
+(31,100,2)
+(256,157,2)
+(270,258,2)
+(192,100,2)
+(97,102,2)
+(216,152,2)
+(116,270,2)
+(231,136,2)
+(62,136,2)
+(191,270,2)
+(199,136,2)
+(138,269,2)
+(260,143,2)
+(82,136,2)
+(255,143,2)
+(55,34,2)
+(159,85,2)
+(171,269,2)
+(148,136,2)
+(121,270,2)
+(282,269,2)
+(218,269,2)
+(207,258,2)
+(272,136,2)
+(225,269,2)
+(33,85,2)
+(250,128,2)
+(107,269,2)
+(5,269,2)
+(183,269,2)
+(239,71,2)
+(174,140,2)
+(0,269,2)
+(31,273,2)
+(190,143,2)
+(109,254,2)
+(149,136,2)
+(281,269,2)
+(109,207,2)
+(169,269,2)
+(20,143,2)
+(24,269,2)
+(63,227,2)
+(67,273,2)
+(153,273,2)
+(48,85,2)
+(254,207,2)
+(113,143,2)
+(140,143,2)
+(6,143,2)
+(74,269,2)
+(23,32,2)
+(27,136,2)
+(237,136,2)
+(63,128,2)
+(199,65,2)
+(138,150,2)
+(8,269,2)
+(238,270,2)
+(168,152,2)
+(70,270,2)
+(166,269,2)
+(93,1,2)
+(157,229,2)
+(179,58,2)
+(248,187,2)
+(46,265,2)
+(73,270,2)
+(161,269,2)
+(108,32,2)
+(240,271,2)
+(72,269,2)
+(1,63,2)
+(42,143,2)
+(135,269,2)
+(232,269,2)
+(58,269,2)
+(251,269,2)
+(29,143,2)
+(252,157,2)
+(61,177,2)
+(175,269,2)
+(65,136,2)
+(46,270,2)
+(204,269,2)
+(159,269,2)
+(203,136,2)
+(268,269,2)
+(186,270,2)
+(90,198,2)
+(198,269,2)
+(136,270,2)
+(220,269,2)
+(31,85,2)
+(137,207,2)
+(182,196,2)
+(207,1,2)
+(173,269,2)
+-----------------------------------
+(0,0)
+(1,page_req == VM_ALLOC_SYSTEM && \n\\n\\t     cnt.v_cache_count == 0 && \n\\n\\t     cnt.v_free_count > cnt.v_interrupt_free_min)
+(2,page_req)
+(3,m)
+(4,act_count)
+(5,m)
+(6,pindex + object->pg_color)
+(7,m)
+(8,m)
+(9,flags)
+(10,VM_ALLOC_INTERRUPT)
+(11,VM_ALLOC_NOBUSY)
+(12,req & VM_ALLOC_NOOBJ)
+(13,VM_ALLOC_INTERRUPT)
+(14,m)
+(15,curthread->td_intr_nesting_level)
+(16,"vm_page_alloc: NULL object.")
+(17,m->wire_count)
+(18,return (m)
+(19,)
+(20,object->pg_color)
+(21,0)
+(22,NULL)
+(23,v_wire_count)
+(24,dirty)
+(25,)
+(26,1)
+(27,atomic_add_int(&vm_pageout_deficit, 1)
+(28,)
+(29,color)
+(30,PG_ZERO | PG_BUSY)
+(31,vm_page_insert(m, object, pindex)
+(32,req & VM_ALLOC_WIRED)
+(33,m->wire_count)
+(34,(curproc == pageproc)
+(35,"vm_page_alloc(NORMAL|SYSTEM)
+(36,v_free_reserved)
+(37,if (cnt.v_free_count > cnt.v_free_reserved ||\n\\n\\t    (page_req == VM_ALLOC_SYSTEM && \n\\n\\t     cnt.v_cache_count == 0 && \n\\n\\t     cnt.v_free_count > cnt.v_interrupt_free_min)
+(38,curthread)
+(39,)
+(40,mtx_unlock_spin(&vm_page_queue_free_mtx)
+(41,page_req)
+(42,pindex & PQ_COLORMASK)
+(43,m = NULL)
+(44,NULL)
+(45,hold_count)
+(46,m = vm_page_select_cache(color)
+(47,flags = PG_ZERO | PG_BUSY)
+(48,m->dirty)
+(49,m)
+(50,cnt)
+(51,VM_ALLOC_NOOBJ)
+(52,page_req)
+(53,atomic_add_int(&vm_pageout_deficit, 1)
+(54,if (req & (VM_ALLOC_NOBUSY | VM_ALLOC_NOOBJ)
+(55,page_req)
+(56,&vm_pageout_deficit)
+(57,cnt)
+(58,&vm_page_queue_free_mtx)
+(59,1)
+(60,object)
+(61,vm_page_zero_count)
+(62,cnt)
+(63,cnt.v_cache_count == 0 && \n\\n\\t     cnt.v_free_count > cnt.v_interrupt_free_min)
+(64,0)
+(65,cnt.v_cache_count)
+(66,0)
+(67,pindex)
+(68,page_req != VM_ALLOC_INTERRUPT)
+(69,0)
+(70,&vm_page_queue_free_mtx)
+(71,curproc == pageproc)
+(72,0)
+(73,mtx_unlock_spin(&vm_page_queue_free_mtx)
+(74,PG_ZERO)
+(75,cnt)
+(76,KASSERT(cnt.v_cache_count == 0,\n\\n\\t\\t\\t    ("vm_page_alloc: cache queue is missing %d pages",\n\\n\\t\\t\\t    cnt.v_cache_count)
+(77,m->valid = 0)
+(78,)
+(79,m->flags)
+(80,0)
+(81,v_free_count)
+(82,"vm_page_alloc: cache queue is missing %d pages")
+(83,if ((curproc == pageproc)
+(84,req & VM_ALLOC_CLASS_MASK)
+(85,m = vm_pageq_find(PQ_FREE, color, (req & VM_ALLOC_ZERO)
+(86,flags)
+(87,wire_count)
+(88,)
+(89,VM_ALLOC_ZERO)
+(90,KASSERT(m->dirty == 0, ("vm_page_alloc: free/cache page %p was dirty", m)
+(91,vm_paging_needed()
+(92,VM_ALLOC_SYSTEM)
+(93,(page_req == VM_ALLOC_SYSTEM && \n\\n\\t     cnt.v_cache_count == 0 && \n\\n\\t     cnt.v_free_count > cnt.v_interrupt_free_min)
+(94,loop:)
+(95,m)
+(96,object)
+(97,cnt.v_free_count > cnt.v_free_reserved)
+(98,pagedaemon_wakeup()
+(99,if ((req & VM_ALLOC_NOOBJ)
+(100,vm_pindex_t pindex)
+(101,m)
+(102,cnt.v_free_count)
+(103,m)
+(104,if (m->flags & PG_ZERO)
+(105,if (req & VM_ALLOC_ZERO)
+(106,m)
+(107,"vm_page_alloc: free/cache page %p was dirty")
+(108,cnt.v_wire_count)
+(109,page_req == VM_ALLOC_INTERRUPT && cnt.v_free_count > 0)
+(110,vm_pageout_deficit)
+(111,req)
+(112,int req)
+(113,PQ_COLORMASK)
+(114,flags)
+(115,m->wire_count = 1)
+(116,vm_page_queue_free_mtx)
+(117,NULL)
+(118,VM_ALLOC_NOBUSY | VM_ALLOC_NOOBJ)
+(119,VM_ALLOC_WIRED)
+(120,VM_ALLOC_NOOBJ)
+(121,vm_page_queue_free_mtx)
+(122,NULL)
+(123,)
+(124,0)
+(125,flags)
+(126,cnt)
+(127,req & VM_ALLOC_NOOBJ)
+(128,cnt.v_cache_count == 0)
+(129,if ((req & VM_ALLOC_NOOBJ)
+(130,cnt.v_cache_count)
+(131,req)
+(132,color = pindex & PQ_COLORMASK)
+(133,VM_ALLOC_CLASS_MASK)
+(134,flags = PG_BUSY)
+(135,m->hold_count = 0)
+(136,(m = vm_page_select_cache(color)
+(137,cnt.v_free_count)
+(138,vm_pageq_find(PQ_FREE, color, (req & VM_ALLOC_ZERO)
+(139,VM_ALLOC_NOOBJ)
+(140,object != NULL)
+(141,page_req)
+(142,VM_ALLOC_ZERO)
+(143,(req & VM_ALLOC_NOOBJ)
+(144,VM_ALLOC_INTERRUPT)
+(145,pindex)
+(146,0)
+(147,object)
+(148,v_cache_count)
+(149,mtx_lock_spin(&vm_page_queue_free_mtx)
+(150,color = (pindex + object->pg_color)
+(151,)
+(152,req & VM_ALLOC_ZERO)
+(153,m)
+(154,vm_page_queue_free_mtx)
+(155,page_req)
+(156,cnt)
+(157,page_req == VM_ALLOC_SYSTEM)
+(158,cnt.v_free_count)
+(159,vm_pageq_remove_nowakeup(m)
+(160,pg_color)
+(161,m->flags = flags)
+(162,flags)
+(163,curthread->td_intr_nesting_level == 0 ||\n\\n\\t    page_req == VM_ALLOC_INTERRUPT)
+(164,m->hold_count)
+(165,vm_page_lock_queues()
+(166,m)
+(167,pindex)
+(168,flags)
+(169,m)
+(170,if (vm_paging_needed()
+(171,KASSERT(\n\\n\\t    m != NULL,\n\\n\\t    ("vm_page_alloc()
+(172,0)
+(173,m->busy = 0)
+(174,KASSERT(object != NULL,\n\\n\\t\\t    ("vm_page_alloc: NULL object.")
+(175,"vm_page_alloc()
+(176,PG_BUSY)
+(177,m->flags & PG_ZERO)
+(178,NULL)
+(179,mtx_unlock_spin(&vm_page_queue_free_mtx)
+(180,1)
+(181,busy)
+(182,VM_OBJECT_LOCK_ASSERT(object, MA_OWNED)
+(183,PG_BUSY)
+(184,pindex)
+(185,m->wire_count = 0)
+(186,return (NULL)
+(187,return (NULL)
+(188,atomic_add_int(&cnt.v_wire_count, 1)
+(189,pageproc)
+(190,object)
+(191,&vm_page_queue_free_mtx)
+(192,m->pindex = pindex)
+(193,)
+(194,PQ_COLORMASK)
+(195,req)
+(196,vm_object_t object)
+(197,0)
+(198,m->dirty == 0)
+(199,cnt.v_cache_count == 0)
+(200,wire_count)
+(201,if ((m = vm_page_select_cache(color)
+(202,v_free_count)
+(203,vm_page_unlock_queues()
+(204,PQ_FREE)
+(205,flags &= ~PG_BUSY)
+(206,pindex)
+(207,page_req == VM_ALLOC_INTERRUPT)
+(208,&vm_page_queue_free_mtx)
+(209,td_intr_nesting_level)
+(210,pagedaemon_wakeup()
+(211,)
+(212,)
+(213,1)
+(214,NULL)
+(215,VM_ALLOC_INTERRUPT)
+(216,PG_ZERO)
+(217,&vm_pageout_deficit)
+(218,m)
+(219,&cnt.v_wire_count)
+(220,m->flags)
+(221,page_req == VM_ALLOC_INTERRUPT)
+(222,m->act_count = 0)
+(223,VM_ALLOC_SYSTEM)
+(224,m)
+(225,flags)
+(226,vm_page_unlock_queues()
+(227,cnt.v_free_count > cnt.v_interrupt_free_min)
+(228,req)
+(229,page_req = VM_ALLOC_SYSTEM)
+(230,pagedaemon_wakeup()
+(231,cnt)
+(232,m->valid)
+(233,cnt.v_interrupt_free_min)
+(234,m != NULL)
+(235,vm_page_queue_free_mtx)
+(236,color)
+(237,goto loop;)
+(238,m)
+(239,page_req)
+(240,~PG_BUSY)
+(241,color)
+(242,cnt.v_free_reserved)
+(243,m)
+(244,cnt)
+(245,0)
+(246,req)
+(247,m->pindex)
+(248,RET)
+(249,m->busy)
+(250,v_interrupt_free_min)
+(251,m->act_count)
+(252,v_cache_count)
+(253,color)
+(254,cnt.v_free_count > 0)
+(255,(pindex + object->pg_color)
+(256,0)
+(257,cnt.v_cache_count)
+(258,page_req = req & VM_ALLOC_CLASS_MASK)
+(259,valid)
+(260,MA_OWNED)
+(261,req)
+(262,vm_pageout_deficit)
+(263,m)
+(264,req & VM_ALLOC_ZERO)
+(265,vm_page_select_cache(color)
+(266,color)
+(267,curthread->td_intr_nesting_level == 0)
+(268,page_req)
+(269,cnt.v_free_count > cnt.v_free_reserved ||\n\\n\\t    (page_req == VM_ALLOC_SYSTEM && \n\\n\\t     cnt.v_cache_count == 0 && \n\\n\\t     cnt.v_free_count > cnt.v_interrupt_free_min)
+(270,page_req != VM_ALLOC_INTERRUPT)
+(271,req & (VM_ALLOC_NOBUSY | VM_ALLOC_NOOBJ)
+(272,v_cache_count)
+(273,(req & VM_ALLOC_NOOBJ)
+(274,cnt)
+(275,vm_page_zero_count--)
+(276,KASSERT(curthread->td_intr_nesting_level == 0 ||\n\\n\\t    page_req == VM_ALLOC_INTERRUPT,\n\\n\\t    ("vm_page_alloc(NORMAL|SYSTEM)
+(277,m)
+(278,if (req & VM_ALLOC_WIRED)
+(279,curproc)
+(280,v_free_count)
+(281,(req & VM_ALLOC_ZERO)
+(282,req)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

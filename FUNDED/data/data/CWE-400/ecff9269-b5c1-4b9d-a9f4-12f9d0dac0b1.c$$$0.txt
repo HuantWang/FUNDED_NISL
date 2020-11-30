@@ -1,0 +1,1205 @@
+-----label-----
+0
+-----code-----
+static int __issue_discard_cmd(struct f2fs_sb_info *sbi,
+					struct discard_policy *dpolicy)
+{
+	struct discard_cmd_control *dcc = SM_I(sbi)->dcc_info;
+	struct list_head *pend_list;
+	struct discard_cmd *dc, *tmp;
+	struct blk_plug plug;
+	int i, iter = 0, issued = 0;
+	bool io_interrupted = false;
+
+	mutex_lock(&dcc->cmd_lock);
+	f2fs_bug_on(sbi,
+		!__check_rb_tree_consistence(sbi, &dcc->root));
+	blk_start_plug(&plug);
+	for (i = MAX_PLIST_NUM - 1; i >= 0; i--) {
+		if (i + 1 < dpolicy->granularity)
+			break;
+		pend_list = &dcc->pend_list[i];
+		list_for_each_entry_safe(dc, tmp, pend_list, list) {
+			f2fs_bug_on(sbi, dc->state != D_PREP);
+
+			if (dpolicy->io_aware && i < dpolicy->io_aware_gran &&
+								!is_idle(sbi)) {
+				io_interrupted = true;
+				goto skip;
+			}
+
+			__submit_discard_cmd(sbi, dpolicy, dc);
+			issued++;
+skip:
+			if (++iter >= dpolicy->max_requests)
+				goto out;
+		}
+	}
+out:
+	blk_finish_plug(&plug);
+	mutex_unlock(&dcc->cmd_lock);
+
+	if (!issued && io_interrupted)
+		issued = -1;
+
+	return issued;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+17,19
+17,20
+17,21
+17,22
+17,23
+17,24
+17,25
+17,26
+17,27
+17,28
+17,29
+17,30
+17,31
+18,19
+19,20
+19,21
+20,21
+22,23
+22,24
+22,25
+25,26
+26,27
+26,28
+27,28
+27,29
+28,29
+30,31
+33,34
+34,35
+34,36
+35,36
+37,38
+37,39
+40,41
+41,42
+41,43
+41,44
+42,43
+44,45
+44,46
+47,48
+47,49
+50,51
+51,52
+51,53
+52,53
+54,55
+56,57
+57,58
+57,59
+57,60
+57,61
+59,60
+61,62
+61,63
+63,64
+65,66
+65,67
+67,68
+69,70
+70,71
+70,72
+72,73
+72,74
+74,75
+76,77
+77,78
+77,79
+78,79
+80,81
+81,82
+81,83
+82,83
+85,86
+86,87
+86,88
+86,89
+87,88
+89,90
+91,92
+92,93
+92,94
+92,95
+93,94
+95,96
+97,98
+98,99
+98,100
+99,100
+102,103
+103,104
+103,105
+104,105
+106,107
+107,108
+109,110
+109,111
+109,112
+109,113
+110,111
+111,112
+111,113
+112,113
+114,115
+114,116
+115,116
+118,119
+118,120
+119,120
+122,123
+123,124
+125,126
+125,127
+125,128
+125,129
+125,130
+126,127
+126,128
+127,128
+127,129
+128,129
+128,130
+129,130
+132,133
+132,134
+133,134
+137,138
+138,139
+138,140
+139,140
+141,142
+142,143
+142,144
+143,144
+143,145
+144,145
+147,148
+149,150
+150,151
+150,152
+150,153
+150,154
+150,155
+151,152
+153,154
+155,156
+157,158
+159,160
+161,162
+162,163
+162,164
+162,165
+162,166
+162,167
+163,164
+164,165
+164,166
+164,167
+165,166
+167,168
+169,170
+169,171
+170,171
+170,172
+171,172
+174,175
+176,177
+176,178
+177,178
+177,179
+178,179
+178,180
+179,180
+179,181
+180,181
+183,184
+183,185
+184,185
+186,187
+186,188
+187,188
+190,191
+191,192
+191,193
+192,193
+194,195
+196,197
+196,198
+197,198
+198,199
+198,200
+199,200
+202,203
+204,205
+205,206
+205,207
+205,208
+205,209
+206,207
+208,209
+210,211
+212,213
+214,215
+215,216
+216,217
+218,219
+218,220
+220,221
+220,222
+221,222
+221,223
+222,223
+223,224
+225,226
+225,227
+226,227
+229,230
+231,232
+231,233
+233,234
+234,235
+234,236
+235,236
+237,238
+238,239
+240,241
+241,242
+241,243
+242,243
+244,245
+245,246
+245,247
+246,247
+249,250
+249,251
+250,251
+250,252
+251,252
+252,253
+254,255
+256,257
+257,258
+257,259
+258,259
+260,261
+262,263
+263,264
+-----nextToken-----
+2,4,7,9,10,13,15,16,21,23,24,29,31,32,36,38,39,43,45,46,48,49,53,55,58,60,62,64,66,68,71,73,75,79,83,84,88,90,94,96,100,101,105,108,113,116,117,120,121,124,130,131,134,135,136,140,145,146,148,152,154,156,158,160,166,168,172,173,175,181,182,185,188,189,193,195,200,201,203,207,209,211,213,217,219,224,227,228,230,232,236,239,243,247,248,253,255,259,261,264
+-----computeFrom-----
+111,112
+111,113
+114,115
+114,116
+118,119
+118,120
+127,128
+127,129
+128,129
+128,130
+138,139
+138,140
+169,170
+169,171
+177,178
+177,179
+178,179
+178,180
+183,184
+183,185
+198,199
+198,200
+221,222
+221,223
+250,251
+250,252
+257,258
+257,259
+-----guardedBy-----
+253,259
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FieldReference;FunctionCallExpression;IdExpression;Name;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;Declarator;Name;EqualsInitializer;LiteralExpression;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;LiteralExpression;UnaryExpression;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;BreakStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ProblemStatement;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;GotoStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;UnaryExpression;IdExpression;Name;LabelStatement;Name;IfStatement;BinaryExpression;UnaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;GotoStatement;Name;LabelStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;LiteralExpression;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+static int __issue_discard_cmd(struct f2fs_sb_info *sbi,					struct discard_policy *dpolicy){	struct discard_cmd_control *dcc = SM_I(sbi)->dcc_info;	struct list_head *pend_list;	struct discard_cmd *dc, *tmp;	struct blk_plug plug;	int i, iter = 0, issued = 0;	bool io_interrupted = false;	mutex_lock(&dcc->cmd_lock);	f2fs_bug_on(sbi,		!__check_rb_tree_consistence(sbi, &dcc->root));	blk_start_plug(&plug);	for (i = MAX_PLIST_NUM - 1; i >= 0; i--) {		if (i + 1 < dpolicy->granularity)			break;		pend_list = &dcc->pend_list[i];		list_for_each_entry_safe(dc, tmp, pend_list, list) {			f2fs_bug_on(sbi, dc->state != D_PREP);			if (dpolicy->io_aware && i < dpolicy->io_aware_gran &&								!is_idle(sbi)) {				io_interrupted = true;				goto skip;			}			__submit_discard_cmd(sbi, dpolicy, dc);			issued++;skip:			if (++iter >= dpolicy->max_requests)				goto out;		}	}out:	blk_finish_plug(&plug);	mutex_unlock(&dcc->cmd_lock);	if (!issued && io_interrupted)		issued = -1;	return issued;}
+static int
+__issue_discard_cmd(struct f2fs_sb_info *sbi,					struct discard_policy *dpolicy)
+__issue_discard_cmd
+struct f2fs_sb_info *sbi
+struct f2fs_sb_info
+f2fs_sb_info
+*sbi
+*
+sbi
+struct discard_policy *dpolicy
+struct discard_policy
+discard_policy
+*dpolicy
+*
+dpolicy
+{	struct discard_cmd_control *dcc = SM_I(sbi)->dcc_info;	struct list_head *pend_list;	struct discard_cmd *dc, *tmp;	struct blk_plug plug;	int i, iter = 0, issued = 0;	bool io_interrupted = false;	mutex_lock(&dcc->cmd_lock);	f2fs_bug_on(sbi,		!__check_rb_tree_consistence(sbi, &dcc->root));	blk_start_plug(&plug);	for (i = MAX_PLIST_NUM - 1; i >= 0; i--) {		if (i + 1 < dpolicy->granularity)			break;		pend_list = &dcc->pend_list[i];		list_for_each_entry_safe(dc, tmp, pend_list, list) {			f2fs_bug_on(sbi, dc->state != D_PREP);			if (dpolicy->io_aware && i < dpolicy->io_aware_gran &&								!is_idle(sbi)) {				io_interrupted = true;				goto skip;			}			__submit_discard_cmd(sbi, dpolicy, dc);			issued++;skip:			if (++iter >= dpolicy->max_requests)				goto out;		}	}out:	blk_finish_plug(&plug);	mutex_unlock(&dcc->cmd_lock);	if (!issued && io_interrupted)		issued = -1;	return issued;}
+struct discard_cmd_control *dcc = SM_I(sbi)->dcc_info;
+struct discard_cmd_control *dcc = SM_I(sbi)->dcc_info;
+struct discard_cmd_control
+discard_cmd_control
+*dcc = SM_I(sbi)->dcc_info
+*
+dcc
+= SM_I(sbi)->dcc_info
+SM_I(sbi)->dcc_info
+SM_I(sbi)
+SM_I
+SM_I
+sbi
+sbi
+dcc_info
+struct list_head *pend_list;
+struct list_head *pend_list;
+struct list_head
+list_head
+*pend_list
+*
+pend_list
+struct discard_cmd *dc, *tmp;
+struct discard_cmd *dc, *tmp;
+struct discard_cmd
+discard_cmd
+*dc
+*
+dc
+*tmp
+*
+tmp
+struct blk_plug plug;
+struct blk_plug plug;
+struct blk_plug
+blk_plug
+plug
+plug
+int i, iter = 0, issued = 0;
+int i, iter = 0, issued = 0;
+int
+i
+i
+iter = 0
+iter
+= 0
+0
+issued = 0
+issued
+= 0
+0
+bool io_interrupted = false;
+bool io_interrupted = false;
+bool
+io_interrupted = false
+io_interrupted
+= false
+false
+mutex_lock(&dcc->cmd_lock);
+mutex_lock(&dcc->cmd_lock)
+mutex_lock
+mutex_lock
+&dcc->cmd_lock
+dcc->cmd_lock
+dcc
+dcc
+cmd_lock
+f2fs_bug_on(sbi,		!__check_rb_tree_consistence(sbi, &dcc->root));
+f2fs_bug_on(sbi,		!__check_rb_tree_consistence(sbi, &dcc->root))
+f2fs_bug_on
+f2fs_bug_on
+sbi
+sbi
+!__check_rb_tree_consistence(sbi, &dcc->root)
+__check_rb_tree_consistence(sbi, &dcc->root)
+__check_rb_tree_consistence
+__check_rb_tree_consistence
+sbi
+sbi
+&dcc->root
+dcc->root
+dcc
+dcc
+root
+blk_start_plug(&plug);
+blk_start_plug(&plug)
+blk_start_plug
+blk_start_plug
+&plug
+plug
+plug
+for (i = MAX_PLIST_NUM - 1; i >= 0; i--) {		if (i + 1 < dpolicy->granularity)			break;		pend_list = &dcc->pend_list[i];		list_for_each_entry_safe(dc, tmp, pend_list, list) {			f2fs_bug_on(sbi, dc->state != D_PREP);			if (dpolicy->io_aware && i < dpolicy->io_aware_gran &&								!is_idle(sbi)) {				io_interrupted = true;				goto skip;			}			__submit_discard_cmd(sbi, dpolicy, dc);			issued++;skip:			if (++iter >= dpolicy->max_requests)				goto out;		}	}
+i = MAX_PLIST_NUM - 1;
+i = MAX_PLIST_NUM - 1
+i
+i
+MAX_PLIST_NUM - 1
+MAX_PLIST_NUM
+MAX_PLIST_NUM
+1
+i >= 0
+i
+i
+0
+i--
+i
+i
+{		if (i + 1 < dpolicy->granularity)			break;		pend_list = &dcc->pend_list[i];		list_for_each_entry_safe(dc, tmp, pend_list, list) {			f2fs_bug_on(sbi, dc->state != D_PREP);			if (dpolicy->io_aware && i < dpolicy->io_aware_gran &&								!is_idle(sbi)) {				io_interrupted = true;				goto skip;			}			__submit_discard_cmd(sbi, dpolicy, dc);			issued++;skip:			if (++iter >= dpolicy->max_requests)				goto out;		}	}
+if (i + 1 < dpolicy->granularity)			break;
+i + 1 < dpolicy->granularity
+i + 1
+i
+i
+1
+dpolicy->granularity
+dpolicy
+dpolicy
+granularity
+break;
+pend_list = &dcc->pend_list[i];
+pend_list = &dcc->pend_list[i]
+pend_list
+pend_list
+&dcc->pend_list[i]
+dcc->pend_list[i]
+dcc->pend_list
+dcc
+dcc
+pend_list
+i
+i
+list_for_each_entry_safe(dc, tmp, pend_list, list)
+list_for_each_entry_safe(dc, tmp, pend_list, list)
+list_for_each_entry_safe
+list_for_each_entry_safe
+dc
+dc
+tmp
+tmp
+pend_list
+pend_list
+list
+list
+)
+{			f2fs_bug_on(sbi, dc->state != D_PREP);			if (dpolicy->io_aware && i < dpolicy->io_aware_gran &&								!is_idle(sbi)) {				io_interrupted = true;				goto skip;			}			__submit_discard_cmd(sbi, dpolicy, dc);			issued++;skip:			if (++iter >= dpolicy->max_requests)				goto out;		}
+f2fs_bug_on(sbi, dc->state != D_PREP);
+f2fs_bug_on(sbi, dc->state != D_PREP)
+f2fs_bug_on
+f2fs_bug_on
+sbi
+sbi
+dc->state != D_PREP
+dc->state
+dc
+dc
+state
+D_PREP
+D_PREP
+if (dpolicy->io_aware && i < dpolicy->io_aware_gran &&								!is_idle(sbi)) {				io_interrupted = true;				goto skip;			}
+dpolicy->io_aware && i < dpolicy->io_aware_gran &&								!is_idle(sbi)
+dpolicy->io_aware && i < dpolicy->io_aware_gran
+dpolicy->io_aware
+dpolicy
+dpolicy
+io_aware
+i < dpolicy->io_aware_gran
+i
+i
+dpolicy->io_aware_gran
+dpolicy
+dpolicy
+io_aware_gran
+!is_idle(sbi)
+is_idle(sbi)
+is_idle
+is_idle
+sbi
+sbi
+{				io_interrupted = true;				goto skip;			}
+io_interrupted = true;
+io_interrupted = true
+io_interrupted
+io_interrupted
+true
+goto skip;
+skip
+__submit_discard_cmd(sbi, dpolicy, dc);
+__submit_discard_cmd(sbi, dpolicy, dc)
+__submit_discard_cmd
+__submit_discard_cmd
+sbi
+sbi
+dpolicy
+dpolicy
+dc
+dc
+issued++;
+issued++
+issued
+issued
+skip:			if (++iter >= dpolicy->max_requests)				goto out;
+skip
+if (++iter >= dpolicy->max_requests)				goto out;
+++iter >= dpolicy->max_requests
+++iter
+iter
+iter
+dpolicy->max_requests
+dpolicy
+dpolicy
+max_requests
+goto out;
+out
+out:	blk_finish_plug(&plug);
+out
+blk_finish_plug(&plug);
+blk_finish_plug(&plug)
+blk_finish_plug
+blk_finish_plug
+&plug
+plug
+plug
+mutex_unlock(&dcc->cmd_lock);
+mutex_unlock(&dcc->cmd_lock)
+mutex_unlock
+mutex_unlock
+&dcc->cmd_lock
+dcc->cmd_lock
+dcc
+dcc
+cmd_lock
+if (!issued && io_interrupted)		issued = -1;
+!issued && io_interrupted
+!issued
+issued
+issued
+io_interrupted
+io_interrupted
+issued = -1;
+issued = -1
+issued
+issued
+-1
+1
+return issued;
+issued
+issued
+-----joern-----
+(82,105,0)
+(75,118,0)
+(16,54,0)
+(91,63,0)
+(80,104,0)
+(98,79,0)
+(127,79,0)
+(22,104,0)
+(124,133,0)
+(111,25,0)
+(121,133,0)
+(125,113,0)
+(96,13,0)
+(52,1,0)
+(12,84,0)
+(84,133,0)
+(91,31,0)
+(99,79,0)
+(135,19,0)
+(106,62,0)
+(36,130,0)
+(130,86,0)
+(49,133,0)
+(31,91,0)
+(21,99,0)
+(132,88,0)
+(118,67,0)
+(13,31,0)
+(111,67,0)
+(76,128,0)
+(39,133,0)
+(69,127,0)
+(131,79,0)
+(118,126,0)
+(93,120,0)
+(59,133,0)
+(70,25,0)
+(89,53,0)
+(73,133,0)
+(98,80,0)
+(61,62,0)
+(127,69,0)
+(56,82,0)
+(21,129,0)
+(26,106,0)
+(83,63,0)
+(16,130,0)
+(42,111,0)
+(1,35,0)
+(19,135,0)
+(40,133,0)
+(41,91,0)
+(128,133,0)
+(107,131,0)
+(34,98,0)
+(101,67,0)
+(103,99,0)
+(88,133,0)
+(121,95,0)
+(134,133,0)
+(64,101,0)
+(9,88,0)
+(111,20,0)
+(116,20,0)
+(30,6,0)
+(114,93,0)
+(129,93,0)
+(29,116,0)
+(99,21,0)
+(100,111,0)
+(35,6,0)
+(27,3,0)
+(79,133,0)
+(44,131,0)
+(77,6,0)
+(69,37,0)
+(48,14,0)
+(68,63,0)
+(113,130,0)
+(45,86,0)
+(43,25,0)
+(37,69,0)
+(106,101,0)
+(123,40,0)
+(119,82,0)
+(31,13,0)
+(17,122,0)
+(86,130,0)
+(79,131,0)
+(122,17,0)
+(62,106,0)
+(105,135,0)
+(74,128,0)
+(53,10,0)
+(81,133,0)
+(13,20,0)
+(11,13,0)
+(87,134,0)
+(128,67,0)
+(105,82,0)
+(33,127,0)
+(84,12,0)
+(65,113,0)
+(88,122,0)
+(88,134,0)
+(32,111,0)
+(7,17,0)
+(101,106,0)
+(28,122,0)
+(135,126,0)
+(51,12,0)
+(5,16,0)
+(19,116,0)
+(10,53,0)
+(92,21,0)
+(54,16,0)
+(104,74,0)
+(131,44,0)
+(0,25,0)
+(19,130,0)
+(35,40,0)
+(1,134,0)
+(116,19,0)
+(95,121,0)
+(53,79,0)
+(71,79,0)
+(72,98,0)
+(54,3,0)
+(93,129,0)
+(2,133,0)
+(14,130,0)
+(8,134,0)
+(82,20,0)
+(3,20,0)
+(90,133,0)
+(104,80,0)
+(24,35,0)
+(58,133,0)
+(23,10,0)
+(4,50,0)
+(135,105,0)
+(55,127,0)
+(85,99,0)
+(47,133,0)
+(78,86,0)
+(115,19,0)
+(97,40,0)
+(18,43,0)
+(46,133,0)
+(117,95,0)
+(44,67,0)
+(129,21,0)
+(23,133,0)
+(94,133,0)
+(80,98,0)
+(126,135,0)
+(37,133,0)
+(35,1,0)
+(104,67,0)
+(6,50,0)
+(43,134,0)
+(57,16,0)
+(102,53,0)
+(126,118,0)
+(25,120,0)
+(108,120,0)
+(21,130,0)
+(112,62,0)
+(110,116,0)
+(74,104,0)
+(60,3,0)
+(15,25,0)
+(109,44,0)
+(3,54,0)
+(101,25,0)
+(10,23,0)
+(128,74,0)
+(63,133,0)
+(43,134,1)
+(54,3,1)
+(113,65,1)
+(131,44,1)
+(74,104,1)
+(115,82,1)
+(5,113,1)
+(12,51,1)
+(1,134,1)
+(85,103,1)
+(9,122,1)
+(88,122,1)
+(135,126,1)
+(111,20,1)
+(92,99,1)
+(37,69,1)
+(9,35,1)
+(28,35,1)
+(127,79,1)
+(135,19,1)
+(114,54,1)
+(10,53,1)
+(35,24,1)
+(6,77,1)
+(57,5,1)
+(89,84,1)
+(19,116,1)
+(128,67,1)
+(21,99,1)
+(130,86,1)
+(33,40,1)
+(107,44,1)
+(87,8,1)
+(106,26,1)
+(64,93,1)
+(56,101,1)
+(125,14,1)
+(35,1,1)
+(16,130,1)
+(36,121,1)
+(43,18,1)
+(99,79,1)
+(110,29,1)
+(119,56,1)
+(117,128,1)
+(35,40,1)
+(88,9,1)
+(123,97,1)
+(88,134,1)
+(60,16,1)
+(84,12,1)
+(54,16,1)
+(17,7,1)
+(14,48,1)
+(13,20,1)
+(30,105,1)
+(21,130,1)
+(98,79,1)
+(3,20,1)
+(116,20,1)
+(53,79,1)
+(52,23,1)
+(7,28,1)
+(96,91,1)
+(122,17,1)
+(27,60,1)
+(132,88,1)
+(72,34,1)
+(16,57,1)
+(126,118,1)
+(105,82,1)
+(44,67,1)
+(100,42,1)
+(19,130,1)
+(77,30,1)
+(102,89,1)
+(105,135,1)
+(128,74,1)
+(22,76,1)
+(66,54,1)
+(40,123,1)
+(76,37,1)
+(23,10,1)
+(104,80,1)
+(68,79,1)
+(98,72,1)
+(78,36,1)
+(63,83,1)
+(69,127,1)
+(129,21,1)
+(29,115,1)
+(38,31,1)
+(14,130,1)
+(111,67,1)
+(13,11,1)
+(51,66,1)
+(99,85,1)
+(45,78,1)
+(95,117,1)
+(65,125,1)
+(97,134,1)
+(51,38,1)
+(82,119,1)
+(31,13,1)
+(55,33,1)
+(101,106,1)
+(42,32,1)
+(91,63,1)
+(21,92,1)
+(91,41,1)
+(18,111,1)
+(131,107,1)
+(118,67,1)
+(121,95,1)
+(106,62,1)
+(32,105,1)
+(11,96,1)
+(24,1,1)
+(4,6,1)
+(79,131,1)
+(26,62,1)
+(116,110,1)
+(35,6,1)
+(127,55,1)
+(80,98,1)
+(41,4,1)
+(75,19,1)
+(118,75,1)
+(34,22,1)
+(53,102,1)
+(111,100,1)
+(112,61,1)
+(113,130,1)
+(44,109,1)
+(134,87,1)
+(104,67,1)
+(103,114,1)
+(93,129,1)
+(8,63,1)
+(101,67,1)
+(62,112,1)
+(61,64,1)
+(109,71,1)
+(3,27,1)
+(125,130,1)
+(48,31,1)
+(41,43,1)
+(51,113,1)
+(83,68,1)
+(82,20,1)
+(1,52,1)
+(31,91,1)
+(86,45,1)
+(56,54,2)
+(3,113,2)
+(80,98,2)
+(16,113,2)
+(85,54,2)
+(129,21,2)
+(121,95,2)
+(41,54,2)
+(99,79,2)
+(28,35,2)
+(69,127,2)
+(19,116,2)
+(104,67,2)
+(135,82,2)
+(99,54,2)
+(24,1,2)
+(14,130,2)
+(64,54,2)
+(127,79,2)
+(31,54,2)
+(31,13,2)
+(48,31,2)
+(13,20,2)
+(119,54,2)
+(101,106,2)
+(126,118,2)
+(111,105,2)
+(125,31,2)
+(75,19,2)
+(16,130,2)
+(82,54,2)
+(91,54,2)
+(3,20,2)
+(96,54,2)
+(129,54,2)
+(122,17,2)
+(88,122,2)
+(18,105,2)
+(60,113,2)
+(44,67,2)
+(54,113,2)
+(128,67,2)
+(105,54,2)
+(53,79,2)
+(93,54,2)
+(38,31,2)
+(35,1,2)
+(111,20,2)
+(101,54,2)
+(116,82,2)
+(122,35,2)
+(31,91,2)
+(103,54,2)
+(10,53,2)
+(105,135,2)
+(6,105,2)
+(118,67,2)
+(82,20,2)
+(14,31,2)
+(42,105,2)
+(21,130,2)
+(19,130,2)
+(105,82,2)
+(26,54,2)
+(112,54,2)
+(43,105,2)
+(54,16,2)
+(98,79,2)
+(110,82,2)
+(74,104,2)
+(27,113,2)
+(66,54,2)
+(35,6,2)
+(135,126,2)
+(100,105,2)
+(104,80,2)
+(132,88,2)
+(114,54,2)
+(29,82,2)
+(62,54,2)
+(21,54,2)
+(130,86,2)
+(106,62,2)
+(116,20,2)
+(13,54,2)
+(65,31,2)
+(61,54,2)
+(5,113,2)
+(92,54,2)
+(106,54,2)
+(21,99,2)
+(37,69,2)
+(84,12,2)
+(118,19,2)
+(93,129,2)
+(35,40,2)
+(113,130,2)
+(7,35,2)
+(77,105,2)
+(19,82,2)
+(115,82,2)
+(111,67,2)
+(88,134,2)
+(23,10,2)
+(4,105,2)
+(135,19,2)
+(57,113,2)
+(91,63,2)
+(131,44,2)
+(17,35,2)
+(113,31,2)
+(32,105,2)
+(126,19,2)
+(79,131,2)
+(128,74,2)
+(43,134,2)
+(30,105,2)
+(1,134,2)
+(101,67,2)
+(11,54,2)
+(54,3,2)
+-----------------------------------
+(0,if (++iter >= dpolicy->max_requests)
+(1,!issued)
+(2,tmp)
+(3,dpolicy->granularity)
+(4,goto skip;)
+(5,i)
+(6,io_interrupted = true)
+(7,1)
+(8,issued)
+(9,issued)
+(10,&dcc->cmd_lock)
+(11,max_requests)
+(12,&plug)
+(13,dpolicy->max_requests)
+(14,i--)
+(15,if (dpolicy->io_aware && i < dpolicy->io_aware_gran &&\n\\n\\t\\t\\t\\t\\t\\t\\t\\t!is_idle(sbi)
+(16,i + 1)
+(17,-1)
+(18,issued)
+(19,i < dpolicy->io_aware_gran)
+(20,struct discard_policy *dpolicy)
+(21,dcc->pend_list[i])
+(22,sbi)
+(23,mutex_unlock(&dcc->cmd_lock)
+(24,io_interrupted)
+(25,)
+(26,D_PREP)
+(27,granularity)
+(28,issued)
+(29,dpolicy)
+(30,io_interrupted)
+(31,++iter >= dpolicy->max_requests)
+(32,sbi)
+(33,dcc)
+(34,dcc)
+(35,!issued && io_interrupted)
+(36,i)
+(37,mutex_lock(&dcc->cmd_lock)
+(38,goto out;)
+(39,out:)
+(40,io_interrupted = false)
+(41,iter)
+(42,dpolicy)
+(43,issued++)
+(44,SM_I(sbi)
+(45,1)
+(46,iter)
+(47,dcc)
+(48,i)
+(49,for (i = MAX_PLIST_NUM - 1; i >= 0; i--)
+(50,)
+(51,plug)
+(52,issued)
+(53,dcc->cmd_lock)
+(54,i + 1 < dpolicy->granularity)
+(55,cmd_lock)
+(56,dpolicy)
+(57,1)
+(58,if (!issued && io_interrupted)
+(59,io_interrupted)
+(60,dpolicy)
+(61,dc)
+(62,dc->state)
+(63,iter = 0)
+(64,sbi)
+(65,0)
+(66,break;)
+(67,struct f2fs_sb_info *sbi)
+(68,iter)
+(69,&dcc->cmd_lock)
+(70,skip:)
+(71,dcc)
+(72,root)
+(73,pend_list)
+(74,!__check_rb_tree_consistence(sbi, &dcc->root)
+(75,sbi)
+(76,sbi)
+(77,true)
+(78,MAX_PLIST_NUM)
+(79,*dcc = SM_I(sbi)
+(80,&dcc->root)
+(81,dc)
+(82,dpolicy->io_aware)
+(83,0)
+(84,blk_finish_plug(&plug)
+(85,pend_list)
+(86,MAX_PLIST_NUM - 1)
+(87,0)
+(88,return issued;)
+(89,dcc)
+(90,i)
+(91,++iter)
+(92,i)
+(93,pend_list = &dcc->pend_list[i])
+(94,issued)
+(95,&plug)
+(96,dpolicy)
+(97,io_interrupted)
+(98,dcc->root)
+(99,dcc->pend_list)
+(100,dc)
+(101,f2fs_bug_on(sbi, dc->state != D_PREP)
+(102,cmd_lock)
+(103,dcc)
+(104,__check_rb_tree_consistence(sbi, &dcc->root)
+(105,dpolicy->io_aware && i < dpolicy->io_aware_gran &&\n\\n\\t\\t\\t\\t\\t\\t\\t\\t!is_idle(sbi)
+(106,dc->state != D_PREP)
+(107,dcc_info)
+(108,if (i + 1 < dpolicy->granularity)
+(109,sbi)
+(110,io_aware_gran)
+(111,__submit_discard_cmd(sbi, dpolicy, dc)
+(112,state)
+(113,i >= 0)
+(114,pend_list)
+(115,i)
+(116,dpolicy->io_aware_gran)
+(117,plug)
+(118,is_idle(sbi)
+(119,io_aware)
+(120,)
+(121,blk_start_plug(&plug)
+(122,issued = -1)
+(123,false)
+(124,plug)
+(125,i)
+(126,!is_idle(sbi)
+(127,dcc->cmd_lock)
+(128,f2fs_bug_on(sbi,\n\\n\\t\\t!__check_rb_tree_consistence(sbi, &dcc->root)
+(129,&dcc->pend_list[i])
+(130,i = MAX_PLIST_NUM - 1)
+(131,SM_I(sbi)
+(132,RET)
+(133,)
+(134,issued = 0)
+(135,i < dpolicy->io_aware_gran &&\n\\n\\t\\t\\t\\t\\t\\t\\t\\t!is_idle(sbi)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

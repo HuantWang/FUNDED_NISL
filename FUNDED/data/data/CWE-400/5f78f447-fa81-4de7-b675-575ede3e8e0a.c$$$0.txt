@@ -1,0 +1,1273 @@
+-----label-----
+0
+-----code-----
+int mca_btl_sm_component_open(void)
+{
+    /* register SM component parameters */
+    mca_btl_sm_component.sm_free_list_num =
+        mca_btl_sm_param_register_int("free_list_num", 8);
+    mca_btl_sm_component.sm_free_list_max =
+        mca_btl_sm_param_register_int("free_list_max", -1);
+    mca_btl_sm_component.sm_free_list_inc =
+        mca_btl_sm_param_register_int("free_list_inc", 64);
+    mca_btl_sm_component.sm_exclusivity =
+        mca_btl_sm_param_register_int("exclusivity", MCA_BTL_EXCLUSIVITY_HIGH-1);
+    mca_btl_sm_component.sm_latency =
+        mca_btl_sm_param_register_int("latency", 100);
+    mca_btl_sm_component.sm_max_procs =
+        mca_btl_sm_param_register_int("max_procs", -1);
+    mca_btl_sm_component.sm_extra_procs =
+        mca_btl_sm_param_register_int("sm_extra_procs", -1);
+    mca_btl_sm_component.sm_mpool_name =
+        mca_btl_sm_param_register_string("mpool", "sm");
+    mca_btl_sm_component.eager_limit =
+        mca_btl_sm_param_register_int("eager_limit", 4*1024);
+    mca_btl_sm_component.max_frag_size =
+        mca_btl_sm_param_register_int("max_frag_size", 32*1024);
+    mca_btl_sm_component.size_of_cb_queue =
+        mca_btl_sm_param_register_int("size_of_cb_queue", 128);
+    mca_btl_sm_component.cb_lazy_free_freq =
+        mca_btl_sm_param_register_int("cb_lazy_free_freq", 120);
+    /* make sure that queue size and lazy free frequency are consistent -
+     * want to make sure that slots are freed at a rate they can be
+     * reused, w/o allocating extra new circular buffer fifo arrays */
+    if( (float)(mca_btl_sm_component.cb_lazy_free_freq) >=
+            0.95*(float)(mca_btl_sm_component.size_of_cb_queue) ) {
+        /* upper limit */
+        mca_btl_sm_component.cb_lazy_free_freq=
+            (int)(0.95*(float)(mca_btl_sm_component.size_of_cb_queue));
+        /* lower limit */
+        if( 0>= mca_btl_sm_component.cb_lazy_free_freq ) {
+            mca_btl_sm_component.cb_lazy_free_freq=1;
+        }
+    }
+
+    /* default number of extra procs to allow for future growth */
+    mca_btl_sm_component.sm_extra_procs =
+        mca_btl_sm_param_register_int("sm_extra_procs", 2);
+
+    /* initialize objects */
+    OBJ_CONSTRUCT(&mca_btl_sm_component.sm_lock, opal_mutex_t);
+    OBJ_CONSTRUCT(&mca_btl_sm_component.sm_frags1, ompi_free_list_t);
+    OBJ_CONSTRUCT(&mca_btl_sm_component.sm_frags2, ompi_free_list_t);
+    return OMPI_SUCCESS;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+5,6
+5,7
+7,8
+9,10
+9,11
+9,12
+9,13
+9,14
+9,15
+9,16
+9,17
+9,18
+9,19
+9,20
+9,21
+9,22
+9,23
+9,24
+9,25
+9,26
+9,27
+10,11
+11,12
+11,13
+12,13
+12,14
+13,14
+16,17
+16,18
+16,19
+17,18
+21,22
+22,23
+22,24
+23,24
+23,25
+24,25
+27,28
+27,29
+27,30
+28,29
+31,32
+33,34
+34,35
+34,36
+35,36
+35,37
+36,37
+39,40
+39,41
+39,42
+40,41
+44,45
+45,46
+45,47
+46,47
+46,48
+47,48
+50,51
+50,52
+50,53
+51,52
+54,55
+54,56
+55,56
+58,59
+59,60
+59,61
+60,61
+60,62
+61,62
+64,65
+64,66
+64,67
+65,66
+69,70
+70,71
+70,72
+71,72
+71,73
+72,73
+75,76
+75,77
+75,78
+76,77
+79,80
+81,82
+82,83
+82,84
+83,84
+83,85
+84,85
+87,88
+87,89
+87,90
+88,89
+91,92
+93,94
+94,95
+94,96
+95,96
+95,97
+96,97
+99,100
+99,101
+99,102
+100,101
+104,105
+105,106
+105,107
+106,107
+106,108
+107,108
+110,111
+110,112
+110,113
+111,112
+114,115
+114,116
+117,118
+118,119
+118,120
+119,120
+119,121
+120,121
+123,124
+123,125
+123,126
+124,125
+127,128
+127,129
+130,131
+131,132
+131,133
+132,133
+132,134
+133,134
+136,137
+136,138
+136,139
+137,138
+141,142
+142,143
+142,144
+143,144
+143,145
+144,145
+147,148
+147,149
+147,150
+148,149
+152,153
+152,154
+153,154
+153,155
+154,155
+154,156
+155,156
+155,157
+158,159
+159,160
+159,161
+160,161
+163,164
+163,165
+165,166
+165,167
+166,167
+166,168
+169,170
+170,171
+170,172
+171,172
+174,175
+174,176
+175,176
+176,177
+176,178
+177,178
+177,179
+178,179
+181,182
+181,183
+182,183
+182,184
+185,186
+186,187
+186,188
+188,189
+188,190
+189,190
+189,191
+192,193
+193,194
+193,195
+194,195
+197,198
+197,199
+198,199
+198,200
+200,201
+200,202
+201,202
+204,205
+205,206
+206,207
+206,208
+207,208
+207,209
+208,209
+212,213
+213,214
+213,215
+214,215
+214,216
+215,216
+218,219
+218,220
+218,221
+219,220
+223,224
+224,225
+224,226
+224,227
+225,226
+227,228
+228,229
+228,230
+229,230
+232,233
+234,235
+235,236
+235,237
+235,238
+236,237
+238,239
+239,240
+239,241
+240,241
+243,244
+245,246
+246,247
+246,248
+246,249
+247,248
+249,250
+250,251
+250,252
+251,252
+254,255
+256,257
+257,258
+-----nextToken-----
+2,4,6,8,14,15,18,19,20,25,26,29,30,32,37,38,41,42,43,48,49,52,53,56,57,62,63,66,67,68,73,74,77,78,80,85,86,89,90,92,97,98,101,102,103,108,109,112,113,115,116,121,122,125,126,128,129,134,135,138,139,140,145,146,149,150,151,156,157,161,162,164,167,168,172,173,179,180,183,184,187,190,191,195,196,199,202,203,209,210,211,216,217,220,221,222,226,230,231,233,237,241,242,244,248,252,253,255,258
+-----computeFrom-----
+11,12
+11,13
+22,23
+22,24
+34,35
+34,36
+45,46
+45,47
+54,55
+54,56
+59,60
+59,61
+70,71
+70,72
+82,83
+82,84
+94,95
+94,96
+105,106
+105,107
+114,115
+114,116
+118,119
+118,120
+127,128
+127,129
+131,132
+131,133
+142,143
+142,144
+153,154
+153,155
+163,164
+163,165
+176,177
+176,178
+186,187
+186,188
+198,199
+198,200
+206,207
+206,208
+213,214
+213,215
+-----guardedBy-----
+162,210
+173,196
+172,209
+203,210
+202,209
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;UnaryExpression;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;UnaryExpression;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;UnaryExpression;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;BinaryExpression;LiteralExpression;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;BinaryExpression;LiteralExpression;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;LiteralExpression;IfStatement;BinaryExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;UnaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;LiteralExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;UnaryExpression;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;UnaryExpression;BinaryExpression;LiteralExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;UnaryExpression;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;LiteralExpression;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+int mca_btl_sm_component_open(void){    /* register SM component parameters */    mca_btl_sm_component.sm_free_list_num =        mca_btl_sm_param_register_int("free_list_num", 8);    mca_btl_sm_component.sm_free_list_max =        mca_btl_sm_param_register_int("free_list_max", -1);    mca_btl_sm_component.sm_free_list_inc =        mca_btl_sm_param_register_int("free_list_inc", 64);    mca_btl_sm_component.sm_exclusivity =        mca_btl_sm_param_register_int("exclusivity", MCA_BTL_EXCLUSIVITY_HIGH-1);    mca_btl_sm_component.sm_latency =        mca_btl_sm_param_register_int("latency", 100);    mca_btl_sm_component.sm_max_procs =        mca_btl_sm_param_register_int("max_procs", -1);    mca_btl_sm_component.sm_extra_procs =        mca_btl_sm_param_register_int("sm_extra_procs", -1);    mca_btl_sm_component.sm_mpool_name =        mca_btl_sm_param_register_string("mpool", "sm");    mca_btl_sm_component.eager_limit =        mca_btl_sm_param_register_int("eager_limit", 4*1024);    mca_btl_sm_component.max_frag_size =        mca_btl_sm_param_register_int("max_frag_size", 32*1024);    mca_btl_sm_component.size_of_cb_queue =        mca_btl_sm_param_register_int("size_of_cb_queue", 128);    mca_btl_sm_component.cb_lazy_free_freq =        mca_btl_sm_param_register_int("cb_lazy_free_freq", 120);    /* make sure that queue size and lazy free frequency are consistent -     * want to make sure that slots are freed at a rate they can be     * reused, w/o allocating extra new circular buffer fifo arrays */    if( (float)(mca_btl_sm_component.cb_lazy_free_freq) >=            0.95*(float)(mca_btl_sm_component.size_of_cb_queue) ) {        /* upper limit */        mca_btl_sm_component.cb_lazy_free_freq=            (int)(0.95*(float)(mca_btl_sm_component.size_of_cb_queue));        /* lower limit */        if( 0>= mca_btl_sm_component.cb_lazy_free_freq ) {            mca_btl_sm_component.cb_lazy_free_freq=1;        }    }    /* default number of extra procs to allow for future growth */    mca_btl_sm_component.sm_extra_procs =        mca_btl_sm_param_register_int("sm_extra_procs", 2);    /* initialize objects */    OBJ_CONSTRUCT(&mca_btl_sm_component.sm_lock, opal_mutex_t);    OBJ_CONSTRUCT(&mca_btl_sm_component.sm_frags1, ompi_free_list_t);    OBJ_CONSTRUCT(&mca_btl_sm_component.sm_frags2, ompi_free_list_t);    return OMPI_SUCCESS;}
+int
+mca_btl_sm_component_open(void)
+mca_btl_sm_component_open
+void
+void
+
+
+{    /* register SM component parameters */    mca_btl_sm_component.sm_free_list_num =        mca_btl_sm_param_register_int("free_list_num", 8);    mca_btl_sm_component.sm_free_list_max =        mca_btl_sm_param_register_int("free_list_max", -1);    mca_btl_sm_component.sm_free_list_inc =        mca_btl_sm_param_register_int("free_list_inc", 64);    mca_btl_sm_component.sm_exclusivity =        mca_btl_sm_param_register_int("exclusivity", MCA_BTL_EXCLUSIVITY_HIGH-1);    mca_btl_sm_component.sm_latency =        mca_btl_sm_param_register_int("latency", 100);    mca_btl_sm_component.sm_max_procs =        mca_btl_sm_param_register_int("max_procs", -1);    mca_btl_sm_component.sm_extra_procs =        mca_btl_sm_param_register_int("sm_extra_procs", -1);    mca_btl_sm_component.sm_mpool_name =        mca_btl_sm_param_register_string("mpool", "sm");    mca_btl_sm_component.eager_limit =        mca_btl_sm_param_register_int("eager_limit", 4*1024);    mca_btl_sm_component.max_frag_size =        mca_btl_sm_param_register_int("max_frag_size", 32*1024);    mca_btl_sm_component.size_of_cb_queue =        mca_btl_sm_param_register_int("size_of_cb_queue", 128);    mca_btl_sm_component.cb_lazy_free_freq =        mca_btl_sm_param_register_int("cb_lazy_free_freq", 120);    /* make sure that queue size and lazy free frequency are consistent -     * want to make sure that slots are freed at a rate they can be     * reused, w/o allocating extra new circular buffer fifo arrays */    if( (float)(mca_btl_sm_component.cb_lazy_free_freq) >=            0.95*(float)(mca_btl_sm_component.size_of_cb_queue) ) {        /* upper limit */        mca_btl_sm_component.cb_lazy_free_freq=            (int)(0.95*(float)(mca_btl_sm_component.size_of_cb_queue));        /* lower limit */        if( 0>= mca_btl_sm_component.cb_lazy_free_freq ) {            mca_btl_sm_component.cb_lazy_free_freq=1;        }    }    /* default number of extra procs to allow for future growth */    mca_btl_sm_component.sm_extra_procs =        mca_btl_sm_param_register_int("sm_extra_procs", 2);    /* initialize objects */    OBJ_CONSTRUCT(&mca_btl_sm_component.sm_lock, opal_mutex_t);    OBJ_CONSTRUCT(&mca_btl_sm_component.sm_frags1, ompi_free_list_t);    OBJ_CONSTRUCT(&mca_btl_sm_component.sm_frags2, ompi_free_list_t);    return OMPI_SUCCESS;}
+mca_btl_sm_component.sm_free_list_num =        mca_btl_sm_param_register_int("free_list_num", 8);
+mca_btl_sm_component.sm_free_list_num =        mca_btl_sm_param_register_int("free_list_num", 8)
+mca_btl_sm_component.sm_free_list_num
+mca_btl_sm_component
+mca_btl_sm_component
+sm_free_list_num
+mca_btl_sm_param_register_int("free_list_num", 8)
+mca_btl_sm_param_register_int
+mca_btl_sm_param_register_int
+"free_list_num"
+8
+mca_btl_sm_component.sm_free_list_max =        mca_btl_sm_param_register_int("free_list_max", -1);
+mca_btl_sm_component.sm_free_list_max =        mca_btl_sm_param_register_int("free_list_max", -1)
+mca_btl_sm_component.sm_free_list_max
+mca_btl_sm_component
+mca_btl_sm_component
+sm_free_list_max
+mca_btl_sm_param_register_int("free_list_max", -1)
+mca_btl_sm_param_register_int
+mca_btl_sm_param_register_int
+"free_list_max"
+-1
+1
+mca_btl_sm_component.sm_free_list_inc =        mca_btl_sm_param_register_int("free_list_inc", 64);
+mca_btl_sm_component.sm_free_list_inc =        mca_btl_sm_param_register_int("free_list_inc", 64)
+mca_btl_sm_component.sm_free_list_inc
+mca_btl_sm_component
+mca_btl_sm_component
+sm_free_list_inc
+mca_btl_sm_param_register_int("free_list_inc", 64)
+mca_btl_sm_param_register_int
+mca_btl_sm_param_register_int
+"free_list_inc"
+64
+mca_btl_sm_component.sm_exclusivity =        mca_btl_sm_param_register_int("exclusivity", MCA_BTL_EXCLUSIVITY_HIGH-1);
+mca_btl_sm_component.sm_exclusivity =        mca_btl_sm_param_register_int("exclusivity", MCA_BTL_EXCLUSIVITY_HIGH-1)
+mca_btl_sm_component.sm_exclusivity
+mca_btl_sm_component
+mca_btl_sm_component
+sm_exclusivity
+mca_btl_sm_param_register_int("exclusivity", MCA_BTL_EXCLUSIVITY_HIGH-1)
+mca_btl_sm_param_register_int
+mca_btl_sm_param_register_int
+"exclusivity"
+MCA_BTL_EXCLUSIVITY_HIGH-1
+MCA_BTL_EXCLUSIVITY_HIGH
+MCA_BTL_EXCLUSIVITY_HIGH
+1
+mca_btl_sm_component.sm_latency =        mca_btl_sm_param_register_int("latency", 100);
+mca_btl_sm_component.sm_latency =        mca_btl_sm_param_register_int("latency", 100)
+mca_btl_sm_component.sm_latency
+mca_btl_sm_component
+mca_btl_sm_component
+sm_latency
+mca_btl_sm_param_register_int("latency", 100)
+mca_btl_sm_param_register_int
+mca_btl_sm_param_register_int
+"latency"
+100
+mca_btl_sm_component.sm_max_procs =        mca_btl_sm_param_register_int("max_procs", -1);
+mca_btl_sm_component.sm_max_procs =        mca_btl_sm_param_register_int("max_procs", -1)
+mca_btl_sm_component.sm_max_procs
+mca_btl_sm_component
+mca_btl_sm_component
+sm_max_procs
+mca_btl_sm_param_register_int("max_procs", -1)
+mca_btl_sm_param_register_int
+mca_btl_sm_param_register_int
+"max_procs"
+-1
+1
+mca_btl_sm_component.sm_extra_procs =        mca_btl_sm_param_register_int("sm_extra_procs", -1);
+mca_btl_sm_component.sm_extra_procs =        mca_btl_sm_param_register_int("sm_extra_procs", -1)
+mca_btl_sm_component.sm_extra_procs
+mca_btl_sm_component
+mca_btl_sm_component
+sm_extra_procs
+mca_btl_sm_param_register_int("sm_extra_procs", -1)
+mca_btl_sm_param_register_int
+mca_btl_sm_param_register_int
+"sm_extra_procs"
+-1
+1
+mca_btl_sm_component.sm_mpool_name =        mca_btl_sm_param_register_string("mpool", "sm");
+mca_btl_sm_component.sm_mpool_name =        mca_btl_sm_param_register_string("mpool", "sm")
+mca_btl_sm_component.sm_mpool_name
+mca_btl_sm_component
+mca_btl_sm_component
+sm_mpool_name
+mca_btl_sm_param_register_string("mpool", "sm")
+mca_btl_sm_param_register_string
+mca_btl_sm_param_register_string
+"mpool"
+"sm"
+mca_btl_sm_component.eager_limit =        mca_btl_sm_param_register_int("eager_limit", 4*1024);
+mca_btl_sm_component.eager_limit =        mca_btl_sm_param_register_int("eager_limit", 4*1024)
+mca_btl_sm_component.eager_limit
+mca_btl_sm_component
+mca_btl_sm_component
+eager_limit
+mca_btl_sm_param_register_int("eager_limit", 4*1024)
+mca_btl_sm_param_register_int
+mca_btl_sm_param_register_int
+"eager_limit"
+4*1024
+4
+1024
+mca_btl_sm_component.max_frag_size =        mca_btl_sm_param_register_int("max_frag_size", 32*1024);
+mca_btl_sm_component.max_frag_size =        mca_btl_sm_param_register_int("max_frag_size", 32*1024)
+mca_btl_sm_component.max_frag_size
+mca_btl_sm_component
+mca_btl_sm_component
+max_frag_size
+mca_btl_sm_param_register_int("max_frag_size", 32*1024)
+mca_btl_sm_param_register_int
+mca_btl_sm_param_register_int
+"max_frag_size"
+32*1024
+32
+1024
+mca_btl_sm_component.size_of_cb_queue =        mca_btl_sm_param_register_int("size_of_cb_queue", 128);
+mca_btl_sm_component.size_of_cb_queue =        mca_btl_sm_param_register_int("size_of_cb_queue", 128)
+mca_btl_sm_component.size_of_cb_queue
+mca_btl_sm_component
+mca_btl_sm_component
+size_of_cb_queue
+mca_btl_sm_param_register_int("size_of_cb_queue", 128)
+mca_btl_sm_param_register_int
+mca_btl_sm_param_register_int
+"size_of_cb_queue"
+128
+mca_btl_sm_component.cb_lazy_free_freq =        mca_btl_sm_param_register_int("cb_lazy_free_freq", 120);
+mca_btl_sm_component.cb_lazy_free_freq =        mca_btl_sm_param_register_int("cb_lazy_free_freq", 120)
+mca_btl_sm_component.cb_lazy_free_freq
+mca_btl_sm_component
+mca_btl_sm_component
+cb_lazy_free_freq
+mca_btl_sm_param_register_int("cb_lazy_free_freq", 120)
+mca_btl_sm_param_register_int
+mca_btl_sm_param_register_int
+"cb_lazy_free_freq"
+120
+if( (float)(mca_btl_sm_component.cb_lazy_free_freq) >=            0.95*(float)(mca_btl_sm_component.size_of_cb_queue) ) {        /* upper limit */        mca_btl_sm_component.cb_lazy_free_freq=            (int)(0.95*(float)(mca_btl_sm_component.size_of_cb_queue));        /* lower limit */        if( 0>= mca_btl_sm_component.cb_lazy_free_freq ) {            mca_btl_sm_component.cb_lazy_free_freq=1;        }    }
+(float)(mca_btl_sm_component.cb_lazy_free_freq) >=            0.95*(float)(mca_btl_sm_component.size_of_cb_queue)
+(float)(mca_btl_sm_component.cb_lazy_free_freq)
+float
+float
+
+(mca_btl_sm_component.cb_lazy_free_freq)
+mca_btl_sm_component.cb_lazy_free_freq
+mca_btl_sm_component
+mca_btl_sm_component
+cb_lazy_free_freq
+0.95*(float)(mca_btl_sm_component.size_of_cb_queue)
+0.95
+(float)(mca_btl_sm_component.size_of_cb_queue)
+float
+float
+
+(mca_btl_sm_component.size_of_cb_queue)
+mca_btl_sm_component.size_of_cb_queue
+mca_btl_sm_component
+mca_btl_sm_component
+size_of_cb_queue
+{        /* upper limit */        mca_btl_sm_component.cb_lazy_free_freq=            (int)(0.95*(float)(mca_btl_sm_component.size_of_cb_queue));        /* lower limit */        if( 0>= mca_btl_sm_component.cb_lazy_free_freq ) {            mca_btl_sm_component.cb_lazy_free_freq=1;        }    }
+mca_btl_sm_component.cb_lazy_free_freq=            (int)(0.95*(float)(mca_btl_sm_component.size_of_cb_queue));
+mca_btl_sm_component.cb_lazy_free_freq=            (int)(0.95*(float)(mca_btl_sm_component.size_of_cb_queue))
+mca_btl_sm_component.cb_lazy_free_freq
+mca_btl_sm_component
+mca_btl_sm_component
+cb_lazy_free_freq
+(int)(0.95*(float)(mca_btl_sm_component.size_of_cb_queue))
+int
+int
+
+(0.95*(float)(mca_btl_sm_component.size_of_cb_queue))
+0.95*(float)(mca_btl_sm_component.size_of_cb_queue)
+0.95
+(float)(mca_btl_sm_component.size_of_cb_queue)
+float
+float
+
+(mca_btl_sm_component.size_of_cb_queue)
+mca_btl_sm_component.size_of_cb_queue
+mca_btl_sm_component
+mca_btl_sm_component
+size_of_cb_queue
+if( 0>= mca_btl_sm_component.cb_lazy_free_freq ) {            mca_btl_sm_component.cb_lazy_free_freq=1;        }
+0>= mca_btl_sm_component.cb_lazy_free_freq
+0
+mca_btl_sm_component.cb_lazy_free_freq
+mca_btl_sm_component
+mca_btl_sm_component
+cb_lazy_free_freq
+{            mca_btl_sm_component.cb_lazy_free_freq=1;        }
+mca_btl_sm_component.cb_lazy_free_freq=1;
+mca_btl_sm_component.cb_lazy_free_freq=1
+mca_btl_sm_component.cb_lazy_free_freq
+mca_btl_sm_component
+mca_btl_sm_component
+cb_lazy_free_freq
+1
+mca_btl_sm_component.sm_extra_procs =        mca_btl_sm_param_register_int("sm_extra_procs", 2);
+mca_btl_sm_component.sm_extra_procs =        mca_btl_sm_param_register_int("sm_extra_procs", 2)
+mca_btl_sm_component.sm_extra_procs
+mca_btl_sm_component
+mca_btl_sm_component
+sm_extra_procs
+mca_btl_sm_param_register_int("sm_extra_procs", 2)
+mca_btl_sm_param_register_int
+mca_btl_sm_param_register_int
+"sm_extra_procs"
+2
+OBJ_CONSTRUCT(&mca_btl_sm_component.sm_lock, opal_mutex_t);
+OBJ_CONSTRUCT(&mca_btl_sm_component.sm_lock, opal_mutex_t)
+OBJ_CONSTRUCT
+OBJ_CONSTRUCT
+&mca_btl_sm_component.sm_lock
+mca_btl_sm_component.sm_lock
+mca_btl_sm_component
+mca_btl_sm_component
+sm_lock
+opal_mutex_t
+opal_mutex_t
+OBJ_CONSTRUCT(&mca_btl_sm_component.sm_frags1, ompi_free_list_t);
+OBJ_CONSTRUCT(&mca_btl_sm_component.sm_frags1, ompi_free_list_t)
+OBJ_CONSTRUCT
+OBJ_CONSTRUCT
+&mca_btl_sm_component.sm_frags1
+mca_btl_sm_component.sm_frags1
+mca_btl_sm_component
+mca_btl_sm_component
+sm_frags1
+ompi_free_list_t
+ompi_free_list_t
+OBJ_CONSTRUCT(&mca_btl_sm_component.sm_frags2, ompi_free_list_t);
+OBJ_CONSTRUCT(&mca_btl_sm_component.sm_frags2, ompi_free_list_t)
+OBJ_CONSTRUCT
+OBJ_CONSTRUCT
+&mca_btl_sm_component.sm_frags2
+mca_btl_sm_component.sm_frags2
+mca_btl_sm_component
+mca_btl_sm_component
+sm_frags2
+ompi_free_list_t
+ompi_free_list_t
+return OMPI_SUCCESS;
+OMPI_SUCCESS
+OMPI_SUCCESS
+-----joern-----
+(153,50,0)
+(10,105,0)
+(157,134,0)
+(156,147,0)
+(78,124,0)
+(108,119,0)
+(155,141,0)
+(111,119,0)
+(40,123,0)
+(154,147,0)
+(7,107,0)
+(133,58,0)
+(44,32,0)
+(142,82,0)
+(158,34,0)
+(124,117,0)
+(128,120,0)
+(54,105,0)
+(30,29,0)
+(118,153,0)
+(147,143,0)
+(143,147,0)
+(109,46,0)
+(96,112,0)
+(161,126,0)
+(28,105,0)
+(140,23,0)
+(104,123,0)
+(102,25,0)
+(30,5,0)
+(5,143,0)
+(143,105,0)
+(20,101,0)
+(123,105,0)
+(71,46,0)
+(12,23,0)
+(61,130,0)
+(53,129,0)
+(30,144,0)
+(15,105,0)
+(81,59,0)
+(36,81,0)
+(73,90,0)
+(126,105,0)
+(64,84,0)
+(19,29,0)
+(38,22,0)
+(14,30,0)
+(161,149,0)
+(15,12,0)
+(63,145,0)
+(131,58,0)
+(55,22,0)
+(128,159,0)
+(97,5,0)
+(73,132,0)
+(83,40,0)
+(148,124,0)
+(37,73,0)
+(98,40,0)
+(93,28,0)
+(82,111,0)
+(30,76,0)
+(10,34,0)
+(13,89,0)
+(100,58,0)
+(114,59,0)
+(159,128,0)
+(94,76,0)
+(139,5,0)
+(126,161,0)
+(160,13,0)
+(79,120,0)
+(113,95,0)
+(101,132,0)
+(45,21,0)
+(41,29,0)
+(92,115,0)
+(90,73,0)
+(129,159,0)
+(31,135,0)
+(32,100,0)
+(60,42,0)
+(122,23,0)
+(145,63,0)
+(42,60,0)
+(119,111,0)
+(127,120,0)
+(45,51,0)
+(80,18,0)
+(109,137,0)
+(18,25,0)
+(34,10,0)
+(118,105,0)
+(30,13,0)
+(75,103,0)
+(30,130,0)
+(63,67,0)
+(103,117,0)
+(30,22,0)
+(51,45,0)
+(117,103,0)
+(142,42,0)
+(121,119,0)
+(59,105,0)
+(106,128,0)
+(117,105,0)
+(59,114,0)
+(57,33,0)
+(136,48,0)
+(115,28,0)
+(74,137,0)
+(89,105,0)
+(123,104,0)
+(24,115,0)
+(152,104,0)
+(138,49,0)
+(65,76,0)
+(64,105,0)
+(116,84,0)
+(25,99,0)
+(141,89,0)
+(6,81,0)
+(130,126,0)
+(69,15,0)
+(2,112,0)
+(159,105,0)
+(114,33,0)
+(99,105,0)
+(135,10,0)
+(30,129,0)
+(4,135,0)
+(67,63,0)
+(30,81,0)
+(21,45,0)
+(11,50,0)
+(99,25,0)
+(50,153,0)
+(144,49,0)
+(110,30,0)
+(17,13,0)
+(146,161,0)
+(132,73,0)
+(149,161,0)
+(56,103,0)
+(45,145,0)
+(145,45,0)
+(151,43,0)
+(82,142,0)
+(132,105,0)
+(137,109,0)
+(76,51,0)
+(30,32,0)
+(91,50,0)
+(47,144,0)
+(16,90,0)
+(115,51,0)
+(46,109,0)
+(46,105,0)
+(49,70,0)
+(35,34,0)
+(1,82,0)
+(8,33,0)
+(30,135,0)
+(84,64,0)
+(30,112,0)
+(42,93,0)
+(111,77,0)
+(100,105,0)
+(30,124,0)
+(72,84,0)
+(58,100,0)
+(111,82,0)
+(68,145,0)
+(134,28,0)
+(52,130,0)
+(115,107,0)
+(42,142,0)
+(12,15,0)
+(77,111,0)
+(22,64,0)
+(40,63,0)
+(48,99,0)
+(120,128,0)
+(51,43,0)
+(23,12,0)
+(33,114,0)
+(125,93,0)
+(107,115,0)
+(39,90,0)
+(28,134,0)
+(85,129,0)
+(153,118,0)
+(30,101,0)
+(89,141,0)
+(25,18,0)
+(112,123,0)
+(66,144,0)
+(119,123,0)
+(95,141,0)
+(30,48,0)
+(30,105,0)
+(62,137,0)
+(26,114,0)
+(63,40,0)
+(93,42,0)
+(3,104,0)
+(29,28,0)
+(87,149,0)
+(27,118,0)
+(141,95,0)
+(86,101,0)
+(9,93,0)
+(0,134,0)
+(150,48,0)
+(88,32,0)
+(65,142,1)
+(30,135,1)
+(72,116,1)
+(118,27,1)
+(86,100,1)
+(27,153,1)
+(5,139,1)
+(154,5,1)
+(160,10,1)
+(135,4,1)
+(89,141,1)
+(30,112,1)
+(30,13,1)
+(114,33,1)
+(14,118,1)
+(115,51,1)
+(145,63,1)
+(26,81,1)
+(142,82,1)
+(152,3,1)
+(159,128,1)
+(149,87,1)
+(84,72,1)
+(66,47,1)
+(132,73,1)
+(63,40,1)
+(22,55,1)
+(30,29,1)
+(78,142,1)
+(16,39,1)
+(140,46,1)
+(9,125,1)
+(127,106,1)
+(78,107,1)
+(158,135,1)
+(146,130,1)
+(20,86,1)
+(153,50,1)
+(87,146,1)
+(118,153,1)
+(69,12,1)
+(82,111,1)
+(121,108,1)
+(32,88,1)
+(23,122,1)
+(81,6,1)
+(139,97,1)
+(108,1,1)
+(80,102,1)
+(112,96,1)
+(157,0,1)
+(36,64,1)
+(134,157,1)
+(117,103,1)
+(29,41,1)
+(30,130,1)
+(101,20,1)
+(4,31,1)
+(45,145,1)
+(119,121,1)
+(56,124,1)
+(137,62,1)
+(95,113,1)
+(49,138,1)
+(34,35,1)
+(143,147,1)
+(76,94,1)
+(126,161,1)
+(50,11,1)
+(46,71,1)
+(30,22,1)
+(64,84,1)
+(46,109,1)
+(31,59,1)
+(30,32,1)
+(18,80,1)
+(13,17,1)
+(75,56,1)
+(110,30,1)
+(142,42,1)
+(7,51,1)
+(37,101,1)
+(19,123,1)
+(74,117,1)
+(148,78,1)
+(6,36,1)
+(15,12,1)
+(94,65,1)
+(150,136,1)
+(73,90,1)
+(83,68,1)
+(35,158,1)
+(30,129,1)
+(38,99,1)
+(123,104,1)
+(115,24,1)
+(52,61,1)
+(92,7,1)
+(155,13,1)
+(161,149,1)
+(98,83,1)
+(109,137,1)
+(130,52,1)
+(63,67,1)
+(58,131,1)
+(91,15,1)
+(8,57,1)
+(30,76,1)
+(30,14,1)
+(100,58,1)
+(41,19,1)
+(1,42,1)
+(30,101,1)
+(125,28,1)
+(136,143,1)
+(120,79,1)
+(12,23,1)
+(30,81,1)
+(24,92,1)
+(96,2,1)
+(17,160,1)
+(40,123,1)
+(51,45,1)
+(39,37,1)
+(48,150,1)
+(129,85,1)
+(78,49,1)
+(40,98,1)
+(119,123,1)
+(93,9,1)
+(3,112,1)
+(30,48,1)
+(144,66,1)
+(103,75,1)
+(116,22,1)
+(115,28,1)
+(25,18,1)
+(47,107,1)
+(102,48,1)
+(2,159,1)
+(138,144,1)
+(15,69,1)
+(10,34,1)
+(33,8,1)
+(106,129,1)
+(128,120,1)
+(30,5,1)
+(156,154,1)
+(104,152,1)
+(44,126,1)
+(62,74,1)
+(113,155,1)
+(71,109,1)
+(124,148,1)
+(93,28,1)
+(28,134,1)
+(107,115,1)
+(99,25,1)
+(30,144,1)
+(42,60,1)
+(133,32,1)
+(57,26,1)
+(131,133,1)
+(0,29,1)
+(45,21,1)
+(122,140,1)
+(11,91,1)
+(90,16,1)
+(68,76,1)
+(30,124,1)
+(42,93,1)
+(79,127,1)
+(85,53,1)
+(111,119,1)
+(147,156,1)
+(141,95,1)
+(88,44,1)
+(61,89,1)
+(53,132,1)
+(59,114,1)
+(55,38,1)
+(111,77,1)
+(63,40,2)
+(30,130,2)
+(30,144,2)
+(142,82,2)
+(115,28,2)
+(126,161,2)
+(46,109,2)
+(42,60,2)
+(107,115,2)
+(45,142,2)
+(141,95,2)
+(142,42,2)
+(114,33,2)
+(59,114,2)
+(65,142,2)
+(68,142,2)
+(30,81,2)
+(66,107,2)
+(119,123,2)
+(111,77,2)
+(93,28,2)
+(123,104,2)
+(51,45,2)
+(30,101,2)
+(92,142,2)
+(10,34,2)
+(25,18,2)
+(145,63,2)
+(30,112,2)
+(111,119,2)
+(45,21,2)
+(109,137,2)
+(30,129,2)
+(153,50,2)
+(117,103,2)
+(15,12,2)
+(64,84,2)
+(115,142,2)
+(63,67,2)
+(42,93,2)
+(83,142,2)
+(110,30,2)
+(30,13,2)
+(115,51,2)
+(30,22,2)
+(40,142,2)
+(161,149,2)
+(51,142,2)
+(28,134,2)
+(40,123,2)
+(30,76,2)
+(100,58,2)
+(30,5,2)
+(30,32,2)
+(118,153,2)
+(30,124,2)
+(30,135,2)
+(45,145,2)
+(145,142,2)
+(99,25,2)
+(159,128,2)
+(94,142,2)
+(89,141,2)
+(143,147,2)
+(76,142,2)
+(138,107,2)
+(128,120,2)
+(107,142,2)
+(63,142,2)
+(144,107,2)
+(30,48,2)
+(82,111,2)
+(7,142,2)
+(47,107,2)
+(30,29,2)
+(98,142,2)
+(49,107,2)
+(73,90,2)
+(12,23,2)
+(132,73,2)
+(24,142,2)
+-----------------------------------
+(0,"cb_lazy_free_freq")
+(1,0.95)
+(2,mca_btl_sm_component)
+(3,"size_of_cb_queue")
+(4,sm_latency)
+(5,mca_btl_sm_component.sm_free_list_num)
+(6,sm_exclusivity)
+(7,0)
+(8,1)
+(9,cb_lazy_free_freq)
+(10,mca_btl_sm_component.sm_latency =\n\\n        mca_btl_sm_param_register_int("latency", 100)
+(11,sm_frags2)
+(12,&mca_btl_sm_component.sm_frags1)
+(13,mca_btl_sm_component.sm_max_procs)
+(14,OMPI_SUCCESS)
+(15,OBJ_CONSTRUCT(&mca_btl_sm_component.sm_frags1, ompi_free_list_t)
+(16,1024)
+(17,sm_max_procs)
+(18,-1)
+(19,mca_btl_sm_component)
+(20,eager_limit)
+(21,int)
+(22,mca_btl_sm_component.sm_free_list_inc)
+(23,mca_btl_sm_component.sm_frags1)
+(24,cb_lazy_free_freq)
+(25,mca_btl_sm_param_register_int("free_list_max", -1)
+(26,"exclusivity")
+(27,ompi_free_list_t)
+(28,mca_btl_sm_component.cb_lazy_free_freq =\n\\n        mca_btl_sm_param_register_int("cb_lazy_free_freq", 120)
+(29,mca_btl_sm_component.cb_lazy_free_freq)
+(30,return OMPI_SUCCESS;)
+(31,mca_btl_sm_component)
+(32,mca_btl_sm_component.sm_mpool_name)
+(33,MCA_BTL_EXCLUSIVITY_HIGH-1)
+(34,mca_btl_sm_param_register_int("latency", 100)
+(35,100)
+(36,mca_btl_sm_component)
+(37,"eager_limit")
+(38,mca_btl_sm_component)
+(39,4)
+(40,mca_btl_sm_component.size_of_cb_queue)
+(41,cb_lazy_free_freq)
+(42,(float)
+(43,)
+(44,mca_btl_sm_component)
+(45,(int)
+(46,OBJ_CONSTRUCT(&mca_btl_sm_component.sm_lock, opal_mutex_t)
+(47,mca_btl_sm_component)
+(48,mca_btl_sm_component.sm_free_list_max)
+(49,mca_btl_sm_component.cb_lazy_free_freq=1)
+(50,mca_btl_sm_component.sm_frags2)
+(51,mca_btl_sm_component.cb_lazy_free_freq=\n\\n            (int)
+(52,sm_extra_procs)
+(53,mca_btl_sm_component)
+(54,if( (float)
+(55,sm_free_list_inc)
+(56,"sm_extra_procs")
+(57,MCA_BTL_EXCLUSIVITY_HIGH)
+(58,mca_btl_sm_param_register_string("mpool", "sm")
+(59,mca_btl_sm_component.sm_exclusivity =\n\\n        mca_btl_sm_param_register_int("exclusivity", MCA_BTL_EXCLUSIVITY_HIGH-1)
+(60,float)
+(61,mca_btl_sm_component)
+(62,sm_lock)
+(63,(float)
+(64,mca_btl_sm_component.sm_free_list_inc =\n\\n        mca_btl_sm_param_register_int("free_list_inc", 64)
+(65,mca_btl_sm_component)
+(66,cb_lazy_free_freq)
+(67,float)
+(68,0.95)
+(69,ompi_free_list_t)
+(70,)
+(71,opal_mutex_t)
+(72,64)
+(73,mca_btl_sm_param_register_int("eager_limit", 4*1024)
+(74,mca_btl_sm_component)
+(75,2)
+(76,mca_btl_sm_component.cb_lazy_free_freq)
+(77,float)
+(78,mca_btl_sm_component)
+(79,1024)
+(80,1)
+(81,mca_btl_sm_component.sm_exclusivity)
+(82,0.95*(float)
+(83,mca_btl_sm_component)
+(84,mca_btl_sm_param_register_int("free_list_inc", 64)
+(85,max_frag_size)
+(86,mca_btl_sm_component)
+(87,1)
+(88,sm_mpool_name)
+(89,mca_btl_sm_component.sm_max_procs =\n\\n        mca_btl_sm_param_register_int("max_procs", -1)
+(90,4*1024)
+(91,mca_btl_sm_component)
+(92,mca_btl_sm_component)
+(93,mca_btl_sm_component.cb_lazy_free_freq)
+(94,cb_lazy_free_freq)
+(95,-1)
+(96,size_of_cb_queue)
+(97,mca_btl_sm_component)
+(98,size_of_cb_queue)
+(99,mca_btl_sm_component.sm_free_list_max =\n\\n        mca_btl_sm_param_register_int("free_list_max", -1)
+(100,mca_btl_sm_component.sm_mpool_name =\n\\n        mca_btl_sm_param_register_string("mpool", "sm")
+(101,mca_btl_sm_component.eager_limit)
+(102,"free_list_max")
+(103,mca_btl_sm_param_register_int("sm_extra_procs", 2)
+(104,mca_btl_sm_param_register_int("size_of_cb_queue", 128)
+(105,)
+(106,"max_frag_size")
+(107,0>= mca_btl_sm_component.cb_lazy_free_freq)
+(108,mca_btl_sm_component)
+(109,&mca_btl_sm_component.sm_lock)
+(110,RET)
+(111,(float)
+(112,mca_btl_sm_component.size_of_cb_queue)
+(113,1)
+(114,mca_btl_sm_param_register_int("exclusivity", MCA_BTL_EXCLUSIVITY_HIGH-1)
+(115,mca_btl_sm_component.cb_lazy_free_freq)
+(116,"free_list_inc")
+(117,mca_btl_sm_component.sm_extra_procs =\n\\n        mca_btl_sm_param_register_int("sm_extra_procs", 2)
+(118,OBJ_CONSTRUCT(&mca_btl_sm_component.sm_frags2, ompi_free_list_t)
+(119,mca_btl_sm_component.size_of_cb_queue)
+(120,32*1024)
+(121,size_of_cb_queue)
+(122,sm_frags1)
+(123,mca_btl_sm_component.size_of_cb_queue =\n\\n        mca_btl_sm_param_register_int("size_of_cb_queue", 128)
+(124,mca_btl_sm_component.sm_extra_procs)
+(125,mca_btl_sm_component)
+(126,mca_btl_sm_component.sm_extra_procs =\n\\n        mca_btl_sm_param_register_int("sm_extra_procs", -1)
+(127,32)
+(128,mca_btl_sm_param_register_int("max_frag_size", 32*1024)
+(129,mca_btl_sm_component.max_frag_size)
+(130,mca_btl_sm_component.sm_extra_procs)
+(131,"sm")
+(132,mca_btl_sm_component.eager_limit =\n\\n        mca_btl_sm_param_register_int("eager_limit", 4*1024)
+(133,"mpool")
+(134,mca_btl_sm_param_register_int("cb_lazy_free_freq", 120)
+(135,mca_btl_sm_component.sm_latency)
+(136,mca_btl_sm_component)
+(137,mca_btl_sm_component.sm_lock)
+(138,1)
+(139,sm_free_list_num)
+(140,mca_btl_sm_component)
+(141,mca_btl_sm_param_register_int("max_procs", -1)
+(142,(float)
+(143,mca_btl_sm_component.sm_free_list_num =\n\\n        mca_btl_sm_param_register_int("free_list_num", 8)
+(144,mca_btl_sm_component.cb_lazy_free_freq)
+(145,0.95*(float)
+(146,"sm_extra_procs")
+(147,mca_btl_sm_param_register_int("free_list_num", 8)
+(148,sm_extra_procs)
+(149,-1)
+(150,sm_free_list_max)
+(151,if( 0>= mca_btl_sm_component.cb_lazy_free_freq )
+(152,128)
+(153,&mca_btl_sm_component.sm_frags2)
+(154,"free_list_num")
+(155,"max_procs")
+(156,8)
+(157,120)
+(158,"latency")
+(159,mca_btl_sm_component.max_frag_size =\n\\n        mca_btl_sm_param_register_int("max_frag_size", 32*1024)
+(160,mca_btl_sm_component)
+(161,mca_btl_sm_param_register_int("sm_extra_procs", -1)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

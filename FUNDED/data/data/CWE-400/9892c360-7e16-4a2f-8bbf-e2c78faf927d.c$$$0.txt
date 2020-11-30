@@ -1,0 +1,2039 @@
+-----label-----
+0
+-----code-----
+void
+tcp_init(void)
+{
+	const char *tcbhash_tuneable;
+	int hashsize;
+
+	tcbhash_tuneable = "net.inet.tcp.tcbhashsize";
+
+	if (hhook_head_register(HHOOK_TYPE_TCP, HHOOK_TCP_EST_IN,
+	    &V_tcp_hhh[HHOOK_TCP_EST_IN], HHOOK_NOWAIT|HHOOK_HEADISINVNET) != 0)
+		printf("%s: WARNING: unable to register helper hook\n", __func__);
+	if (hhook_head_register(HHOOK_TYPE_TCP, HHOOK_TCP_EST_OUT,
+	    &V_tcp_hhh[HHOOK_TCP_EST_OUT], HHOOK_NOWAIT|HHOOK_HEADISINVNET) != 0)
+		printf("%s: WARNING: unable to register helper hook\n", __func__);
+
+	hashsize = TCBHASHSIZE;
+	TUNABLE_INT_FETCH(tcbhash_tuneable, &hashsize);
+	if (hashsize == 0) {
+		/*
+		 * Auto tune the hash size based on maxsockets.
+		 * A perfect hash would have a 1:1 mapping
+		 * (hashsize = maxsockets) however it's been
+		 * suggested that O(2) average is better.
+		 */
+		hashsize = maketcp_hashsize(maxsockets / 4);
+		/*
+		 * Our historical default is 512,
+		 * do not autotune lower than this.
+		 */
+		if (hashsize < 512)
+			hashsize = 512;
+		if (bootverbose)
+			printf("%s: %s auto tuned to %d\n", __func__,
+			    tcbhash_tuneable, hashsize);
+	}
+	/*
+	 * We require a hashsize to be a power of two.
+	 * Previously if it was not a power of two we would just reset it
+	 * back to 512, which could be a nasty surprise if you did not notice
+	 * the error message.
+	 * Instead what we do is clip it to the closest power of two lower
+	 * than the specified hash value.
+	 */
+	if (!powerof2(hashsize)) {
+		int oldhashsize = hashsize;
+
+		hashsize = maketcp_hashsize(hashsize);
+		/* prevent absurdly low value */
+		if (hashsize < 16)
+			hashsize = 16;
+		printf("%s: WARNING: TCB hash size not a power of 2, "
+		    "clipped from %d to %d.\n", __func__, oldhashsize,
+		    hashsize);
+	}
+	in_pcbinfo_init(&V_tcbinfo, "tcp", &V_tcb, hashsize, hashsize,
+	    "tcp_inpcb", tcp_inpcb_init, NULL, UMA_ZONE_NOFREE,
+	    IPI_HASHFIELDS_4TUPLE);
+
+	/*
+	 * These have to be type stable for the benefit of the timers.
+	 */
+	V_tcpcb_zone = uma_zcreate("tcpcb", sizeof(struct tcpcb_mem),
+	    NULL, NULL, NULL, NULL, UMA_ALIGN_PTR, UMA_ZONE_NOFREE);
+	uma_zone_set_max(V_tcpcb_zone, maxsockets);
+	uma_zone_set_warning(V_tcpcb_zone, "kern.ipc.maxsockets limit reached");
+
+	tcp_tw_init();
+	syncache_init();
+	tcp_hc_init();
+	tcp_reass_init();
+
+	TUNABLE_INT_FETCH("net.inet.tcp.sack.enable", &V_tcp_do_sack);
+	V_sack_hole_zone = uma_zcreate("sackhole", sizeof(struct sackhole),
+	    NULL, NULL, NULL, NULL, UMA_ALIGN_PTR, UMA_ZONE_NOFREE);
+
+	/* Skip initialization of globals for non-default instances. */
+	if (!IS_DEFAULT_VNET(curvnet))
+		return;
+
+	/* XXX virtualize those bellow? */
+	tcp_delacktime = TCPTV_DELACK;
+	tcp_keepinit = TCPTV_KEEP_INIT;
+	tcp_keepidle = TCPTV_KEEP_IDLE;
+	tcp_keepintvl = TCPTV_KEEPINTVL;
+	tcp_maxpersistidle = TCPTV_KEEP_IDLE;
+	tcp_msl = TCPTV_MSL;
+	tcp_rexmit_min = TCPTV_MIN;
+	if (tcp_rexmit_min < 1)
+		tcp_rexmit_min = 1;
+	tcp_rexmit_slop = TCPTV_CPU_VAR;
+	tcp_finwait2_timeout = TCPTV_FINWAIT2_TIMEOUT;
+	tcp_tcbhashsize = hashsize;
+
+	TUNABLE_INT_FETCH("net.inet.tcp.soreceive_stream", &tcp_soreceive_stream);
+	if (tcp_soreceive_stream) {
+#ifdef INET
+		tcp_usrreqs.pru_soreceive = soreceive_stream;
+#endif
+#ifdef INET6
+		tcp6_usrreqs.pru_soreceive = soreceive_stream;
+#endif /* INET6 */
+	}
+
+#ifdef INET6
+#define TCP_MINPROTOHDR (sizeof(struct ip6_hdr) + sizeof(struct tcphdr))
+#else /* INET6 */
+#define TCP_MINPROTOHDR (sizeof(struct tcpiphdr))
+#endif /* INET6 */
+	if (max_protohdr < TCP_MINPROTOHDR)
+		max_protohdr = TCP_MINPROTOHDR;
+	if (max_linkhdr + TCP_MINPROTOHDR > MHLEN)
+		panic("tcp_init");
+#undef TCP_MINPROTOHDR
+
+	ISN_LOCK_INIT();
+	EVENTHANDLER_REGISTER(shutdown_pre_sync, tcp_fini, NULL,
+		SHUTDOWN_PRI_DEFAULT);
+	EVENTHANDLER_REGISTER(maxsockets_change, tcp_zone_change, NULL,
+		EVENTHANDLER_PRI_ANY);
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+5,6
+5,7
+7,8
+9,10
+9,11
+9,12
+9,13
+9,14
+9,15
+9,16
+9,17
+9,18
+9,19
+9,20
+9,21
+9,22
+9,23
+9,24
+9,25
+9,26
+9,27
+9,28
+9,29
+9,30
+9,31
+9,32
+9,33
+9,34
+9,35
+9,36
+9,37
+9,38
+9,39
+9,40
+9,41
+9,42
+9,43
+9,44
+9,45
+9,46
+9,47
+10,11
+11,12
+11,13
+13,14
+13,15
+16,17
+17,18
+17,19
+19,20
+21,22
+22,23
+22,24
+23,24
+26,27
+26,28
+27,28
+27,29
+28,29
+28,30
+28,31
+28,32
+28,33
+29,30
+31,32
+33,34
+35,36
+36,37
+36,38
+37,38
+39,40
+41,42
+41,43
+42,43
+44,45
+47,48
+48,49
+48,50
+48,51
+49,50
+52,53
+54,55
+54,56
+55,56
+55,57
+56,57
+56,58
+56,59
+56,60
+56,61
+57,58
+59,60
+61,62
+63,64
+64,65
+64,66
+65,66
+67,68
+69,70
+69,71
+70,71
+72,73
+75,76
+76,77
+76,78
+76,79
+77,78
+80,81
+82,83
+83,84
+83,85
+84,85
+86,87
+88,89
+89,90
+89,91
+89,92
+90,91
+92,93
+94,95
+95,96
+97,98
+97,99
+98,99
+98,100
+99,100
+102,103
+102,104
+102,105
+103,104
+104,105
+104,106
+105,106
+107,108
+107,109
+108,109
+110,111
+110,112
+111,112
+114,115
+114,116
+115,116
+115,117
+116,117
+119,120
+120,121
+120,122
+121,122
+124,125
+124,126
+125,126
+127,128
+128,129
+128,130
+128,131
+128,132
+128,133
+129,130
+132,133
+134,135
+136,137
+138,139
+138,140
+139,140
+140,141
+140,142
+141,142
+143,144
+145,146
+145,147
+145,148
+145,149
+146,147
+147,148
+147,149
+149,150
+149,151
+151,152
+152,153
+154,155
+155,156
+155,157
+156,157
+158,159
+158,160
+159,160
+161,162
+163,164
+163,165
+164,165
+164,166
+165,166
+168,169
+169,170
+169,171
+170,171
+173,174
+174,175
+174,176
+174,177
+174,178
+174,179
+175,176
+178,179
+180,181
+182,183
+184,185
+185,186
+185,187
+185,188
+185,189
+185,190
+185,191
+185,192
+185,193
+185,194
+185,195
+185,196
+186,187
+188,189
+189,190
+192,193
+193,194
+195,196
+197,198
+200,201
+202,203
+204,205
+206,207
+208,209
+209,210
+209,211
+210,211
+212,213
+212,214
+212,215
+212,216
+212,217
+212,218
+212,219
+212,220
+212,221
+213,214
+216,217
+217,218
+217,219
+218,219
+221,222
+223,224
+225,226
+227,228
+229,230
+231,232
+233,234
+234,235
+234,236
+234,237
+235,236
+237,238
+239,240
+241,242
+242,243
+242,244
+242,245
+243,244
+245,246
+248,249
+249,250
+250,251
+252,253
+253,254
+254,255
+256,257
+257,258
+258,259
+260,261
+261,262
+262,263
+264,265
+265,266
+265,267
+265,268
+266,267
+269,270
+270,271
+272,273
+273,274
+273,275
+274,275
+276,277
+276,278
+276,279
+276,280
+276,281
+276,282
+276,283
+276,284
+276,285
+277,278
+280,281
+281,282
+281,283
+282,283
+285,286
+287,288
+289,290
+291,292
+293,294
+295,296
+297,298
+297,299
+298,299
+299,300
+299,301
+300,301
+302,303
+305,306
+306,307
+306,308
+307,308
+309,310
+311,312
+312,313
+312,314
+313,314
+315,316
+317,318
+318,319
+318,320
+319,320
+321,322
+323,324
+324,325
+324,326
+325,326
+327,328
+329,330
+330,331
+330,332
+331,332
+333,334
+335,336
+336,337
+336,338
+337,338
+339,340
+341,342
+342,343
+342,344
+343,344
+345,346
+347,348
+347,349
+348,349
+348,350
+349,350
+352,353
+353,354
+353,355
+354,355
+357,358
+358,359
+358,360
+359,360
+361,362
+363,364
+364,365
+364,366
+365,366
+367,368
+369,370
+370,371
+370,372
+371,372
+373,374
+375,376
+376,377
+376,378
+376,379
+377,378
+380,381
+381,382
+383,384
+383,385
+384,385
+387,388
+387,389
+388,389
+388,390
+389,390
+391,392
+392,393
+393,394
+393,395
+394,395
+397,398
+398,399
+398,400
+399,400
+401,402
+402,403
+403,404
+403,405
+404,405
+407,408
+407,409
+408,409
+408,410
+409,410
+409,411
+410,411
+412,413
+413,414
+414,415
+414,416
+415,416
+418,419
+420,421
+421,422
+421,423
+422,423
+425,426
+426,427
+427,428
+429,430
+430,431
+430,432
+430,433
+430,434
+430,435
+431,432
+433,434
+435,436
+437,438
+439,440
+441,442
+442,443
+442,444
+442,445
+442,446
+442,447
+443,444
+445,446
+447,448
+449,450
+451,452
+-----nextToken-----
+2,4,6,8,12,14,15,18,20,24,25,30,32,34,38,40,43,45,46,50,51,53,58,60,62,66,68,71,73,74,78,79,81,85,87,91,93,96,100,101,106,109,112,113,117,118,122,123,126,130,131,133,135,137,142,144,148,150,153,157,160,162,166,167,171,172,176,177,179,181,183,187,190,191,194,196,198,199,201,203,205,207,211,214,215,219,220,222,224,226,228,230,232,236,238,240,244,246,247,251,255,259,263,267,268,271,275,278,279,283,284,286,288,290,292,294,296,301,303,304,308,310,314,316,320,322,326,328,332,334,338,340,344,346,350,351,355,356,360,362,366,368,372,374,378,379,382,385,386,390,395,396,400,405,406,411,416,417,419,423,424,428,432,434,436,438,440,444,446,448,450,452
+-----computeFrom-----
+22,23
+22,24
+27,28
+27,29
+41,42
+41,43
+55,56
+55,57
+69,70
+69,71
+83,84
+83,85
+98,99
+98,100
+104,105
+104,106
+110,111
+110,112
+115,116
+115,117
+120,121
+120,122
+155,156
+155,157
+164,165
+164,166
+169,170
+169,171
+209,210
+209,211
+273,274
+273,275
+306,307
+306,308
+312,313
+312,314
+318,319
+318,320
+324,325
+324,326
+330,331
+330,332
+336,337
+336,338
+342,343
+342,344
+348,349
+348,350
+353,354
+353,355
+358,359
+358,360
+364,365
+364,366
+370,371
+370,372
+388,389
+388,390
+398,399
+398,400
+408,409
+408,410
+409,410
+409,411
+-----guardedBy-----
+100,137
+117,122
+166,171
+350,355
+395,405
+390,400
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;UnaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;UnaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;TypeIdExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;TypeIdExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;UnaryExpression;IdExpression;Name;IfStatement;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;IdExpression;Name;UnaryExpression;TypeIdExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;TypeIdExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;UnaryExpression;TypeIdExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;
+-----ast_node-----
+voidtcp_init(void){	const char *tcbhash_tuneable;	int hashsize;	tcbhash_tuneable = "net.inet.tcp.tcbhashsize";	if (hhook_head_register(HHOOK_TYPE_TCP, HHOOK_TCP_EST_IN,	    &V_tcp_hhh[HHOOK_TCP_EST_IN], HHOOK_NOWAIT|HHOOK_HEADISINVNET) != 0)		printf("%s: WARNING: unable to register helper hook\n", __func__);	if (hhook_head_register(HHOOK_TYPE_TCP, HHOOK_TCP_EST_OUT,	    &V_tcp_hhh[HHOOK_TCP_EST_OUT], HHOOK_NOWAIT|HHOOK_HEADISINVNET) != 0)		printf("%s: WARNING: unable to register helper hook\n", __func__);	hashsize = TCBHASHSIZE;	TUNABLE_INT_FETCH(tcbhash_tuneable, &hashsize);	if (hashsize == 0) {		/*		 * Auto tune the hash size based on maxsockets.		 * A perfect hash would have a 1:1 mapping		 * (hashsize = maxsockets) however it's been		 * suggested that O(2) average is better.		 */		hashsize = maketcp_hashsize(maxsockets / 4);		/*		 * Our historical default is 512,		 * do not autotune lower than this.		 */		if (hashsize < 512)			hashsize = 512;		if (bootverbose)			printf("%s: %s auto tuned to %d\n", __func__,			    tcbhash_tuneable, hashsize);	}	/*	 * We require a hashsize to be a power of two.	 * Previously if it was not a power of two we would just reset it	 * back to 512, which could be a nasty surprise if you did not notice	 * the error message.	 * Instead what we do is clip it to the closest power of two lower	 * than the specified hash value.	 */	if (!powerof2(hashsize)) {		int oldhashsize = hashsize;		hashsize = maketcp_hashsize(hashsize);		/* prevent absurdly low value */		if (hashsize < 16)			hashsize = 16;		printf("%s: WARNING: TCB hash size not a power of 2, "		    "clipped from %d to %d.\n", __func__, oldhashsize,		    hashsize);	}	in_pcbinfo_init(&V_tcbinfo, "tcp", &V_tcb, hashsize, hashsize,	    "tcp_inpcb", tcp_inpcb_init, NULL, UMA_ZONE_NOFREE,	    IPI_HASHFIELDS_4TUPLE);	/*	 * These have to be type stable for the benefit of the timers.	 */	V_tcpcb_zone = uma_zcreate("tcpcb", sizeof(struct tcpcb_mem),	    NULL, NULL, NULL, NULL, UMA_ALIGN_PTR, UMA_ZONE_NOFREE);	uma_zone_set_max(V_tcpcb_zone, maxsockets);	uma_zone_set_warning(V_tcpcb_zone, "kern.ipc.maxsockets limit reached");	tcp_tw_init();	syncache_init();	tcp_hc_init();	tcp_reass_init();	TUNABLE_INT_FETCH("net.inet.tcp.sack.enable", &V_tcp_do_sack);	V_sack_hole_zone = uma_zcreate("sackhole", sizeof(struct sackhole),	    NULL, NULL, NULL, NULL, UMA_ALIGN_PTR, UMA_ZONE_NOFREE);	/* Skip initialization of globals for non-default instances. */	if (!IS_DEFAULT_VNET(curvnet))		return;	/* XXX virtualize those bellow? */	tcp_delacktime = TCPTV_DELACK;	tcp_keepinit = TCPTV_KEEP_INIT;	tcp_keepidle = TCPTV_KEEP_IDLE;	tcp_keepintvl = TCPTV_KEEPINTVL;	tcp_maxpersistidle = TCPTV_KEEP_IDLE;	tcp_msl = TCPTV_MSL;	tcp_rexmit_min = TCPTV_MIN;	if (tcp_rexmit_min < 1)		tcp_rexmit_min = 1;	tcp_rexmit_slop = TCPTV_CPU_VAR;	tcp_finwait2_timeout = TCPTV_FINWAIT2_TIMEOUT;	tcp_tcbhashsize = hashsize;	TUNABLE_INT_FETCH("net.inet.tcp.soreceive_stream", &tcp_soreceive_stream);	if (tcp_soreceive_stream) {#ifdef INET		tcp_usrreqs.pru_soreceive = soreceive_stream;#endif#ifdef INET6		tcp6_usrreqs.pru_soreceive = soreceive_stream;#endif /* INET6 */	}#ifdef INET6#define TCP_MINPROTOHDR (sizeof(struct ip6_hdr) + sizeof(struct tcphdr))#else /* INET6 */#define TCP_MINPROTOHDR (sizeof(struct tcpiphdr))#endif /* INET6 */	if (max_protohdr < TCP_MINPROTOHDR)		max_protohdr = TCP_MINPROTOHDR;	if (max_linkhdr + TCP_MINPROTOHDR > MHLEN)		panic("tcp_init");#undef TCP_MINPROTOHDR	ISN_LOCK_INIT();	EVENTHANDLER_REGISTER(shutdown_pre_sync, tcp_fini, NULL,		SHUTDOWN_PRI_DEFAULT);	EVENTHANDLER_REGISTER(maxsockets_change, tcp_zone_change, NULL,		EVENTHANDLER_PRI_ANY);}
+void
+tcp_init(void)
+tcp_init
+void
+void
+
+
+{	const char *tcbhash_tuneable;	int hashsize;	tcbhash_tuneable = "net.inet.tcp.tcbhashsize";	if (hhook_head_register(HHOOK_TYPE_TCP, HHOOK_TCP_EST_IN,	    &V_tcp_hhh[HHOOK_TCP_EST_IN], HHOOK_NOWAIT|HHOOK_HEADISINVNET) != 0)		printf("%s: WARNING: unable to register helper hook\n", __func__);	if (hhook_head_register(HHOOK_TYPE_TCP, HHOOK_TCP_EST_OUT,	    &V_tcp_hhh[HHOOK_TCP_EST_OUT], HHOOK_NOWAIT|HHOOK_HEADISINVNET) != 0)		printf("%s: WARNING: unable to register helper hook\n", __func__);	hashsize = TCBHASHSIZE;	TUNABLE_INT_FETCH(tcbhash_tuneable, &hashsize);	if (hashsize == 0) {		/*		 * Auto tune the hash size based on maxsockets.		 * A perfect hash would have a 1:1 mapping		 * (hashsize = maxsockets) however it's been		 * suggested that O(2) average is better.		 */		hashsize = maketcp_hashsize(maxsockets / 4);		/*		 * Our historical default is 512,		 * do not autotune lower than this.		 */		if (hashsize < 512)			hashsize = 512;		if (bootverbose)			printf("%s: %s auto tuned to %d\n", __func__,			    tcbhash_tuneable, hashsize);	}	/*	 * We require a hashsize to be a power of two.	 * Previously if it was not a power of two we would just reset it	 * back to 512, which could be a nasty surprise if you did not notice	 * the error message.	 * Instead what we do is clip it to the closest power of two lower	 * than the specified hash value.	 */	if (!powerof2(hashsize)) {		int oldhashsize = hashsize;		hashsize = maketcp_hashsize(hashsize);		/* prevent absurdly low value */		if (hashsize < 16)			hashsize = 16;		printf("%s: WARNING: TCB hash size not a power of 2, "		    "clipped from %d to %d.\n", __func__, oldhashsize,		    hashsize);	}	in_pcbinfo_init(&V_tcbinfo, "tcp", &V_tcb, hashsize, hashsize,	    "tcp_inpcb", tcp_inpcb_init, NULL, UMA_ZONE_NOFREE,	    IPI_HASHFIELDS_4TUPLE);	/*	 * These have to be type stable for the benefit of the timers.	 */	V_tcpcb_zone = uma_zcreate("tcpcb", sizeof(struct tcpcb_mem),	    NULL, NULL, NULL, NULL, UMA_ALIGN_PTR, UMA_ZONE_NOFREE);	uma_zone_set_max(V_tcpcb_zone, maxsockets);	uma_zone_set_warning(V_tcpcb_zone, "kern.ipc.maxsockets limit reached");	tcp_tw_init();	syncache_init();	tcp_hc_init();	tcp_reass_init();	TUNABLE_INT_FETCH("net.inet.tcp.sack.enable", &V_tcp_do_sack);	V_sack_hole_zone = uma_zcreate("sackhole", sizeof(struct sackhole),	    NULL, NULL, NULL, NULL, UMA_ALIGN_PTR, UMA_ZONE_NOFREE);	/* Skip initialization of globals for non-default instances. */	if (!IS_DEFAULT_VNET(curvnet))		return;	/* XXX virtualize those bellow? */	tcp_delacktime = TCPTV_DELACK;	tcp_keepinit = TCPTV_KEEP_INIT;	tcp_keepidle = TCPTV_KEEP_IDLE;	tcp_keepintvl = TCPTV_KEEPINTVL;	tcp_maxpersistidle = TCPTV_KEEP_IDLE;	tcp_msl = TCPTV_MSL;	tcp_rexmit_min = TCPTV_MIN;	if (tcp_rexmit_min < 1)		tcp_rexmit_min = 1;	tcp_rexmit_slop = TCPTV_CPU_VAR;	tcp_finwait2_timeout = TCPTV_FINWAIT2_TIMEOUT;	tcp_tcbhashsize = hashsize;	TUNABLE_INT_FETCH("net.inet.tcp.soreceive_stream", &tcp_soreceive_stream);	if (tcp_soreceive_stream) {#ifdef INET		tcp_usrreqs.pru_soreceive = soreceive_stream;#endif#ifdef INET6		tcp6_usrreqs.pru_soreceive = soreceive_stream;#endif /* INET6 */	}#ifdef INET6#define TCP_MINPROTOHDR (sizeof(struct ip6_hdr) + sizeof(struct tcphdr))#else /* INET6 */#define TCP_MINPROTOHDR (sizeof(struct tcpiphdr))#endif /* INET6 */	if (max_protohdr < TCP_MINPROTOHDR)		max_protohdr = TCP_MINPROTOHDR;	if (max_linkhdr + TCP_MINPROTOHDR > MHLEN)		panic("tcp_init");#undef TCP_MINPROTOHDR	ISN_LOCK_INIT();	EVENTHANDLER_REGISTER(shutdown_pre_sync, tcp_fini, NULL,		SHUTDOWN_PRI_DEFAULT);	EVENTHANDLER_REGISTER(maxsockets_change, tcp_zone_change, NULL,		EVENTHANDLER_PRI_ANY);}
+const char *tcbhash_tuneable;
+const char *tcbhash_tuneable;
+const char
+*tcbhash_tuneable
+*
+tcbhash_tuneable
+int hashsize;
+int hashsize;
+int
+hashsize
+hashsize
+tcbhash_tuneable = "net.inet.tcp.tcbhashsize";
+tcbhash_tuneable = "net.inet.tcp.tcbhashsize"
+tcbhash_tuneable
+tcbhash_tuneable
+"net.inet.tcp.tcbhashsize"
+if (hhook_head_register(HHOOK_TYPE_TCP, HHOOK_TCP_EST_IN,	    &V_tcp_hhh[HHOOK_TCP_EST_IN], HHOOK_NOWAIT|HHOOK_HEADISINVNET) != 0)		printf("%s: WARNING: unable to register helper hook\n", __func__);
+hhook_head_register(HHOOK_TYPE_TCP, HHOOK_TCP_EST_IN,	    &V_tcp_hhh[HHOOK_TCP_EST_IN], HHOOK_NOWAIT|HHOOK_HEADISINVNET) != 0
+hhook_head_register(HHOOK_TYPE_TCP, HHOOK_TCP_EST_IN,	    &V_tcp_hhh[HHOOK_TCP_EST_IN], HHOOK_NOWAIT|HHOOK_HEADISINVNET)
+hhook_head_register
+hhook_head_register
+HHOOK_TYPE_TCP
+HHOOK_TYPE_TCP
+HHOOK_TCP_EST_IN
+HHOOK_TCP_EST_IN
+&V_tcp_hhh[HHOOK_TCP_EST_IN]
+V_tcp_hhh[HHOOK_TCP_EST_IN]
+V_tcp_hhh
+V_tcp_hhh
+HHOOK_TCP_EST_IN
+HHOOK_TCP_EST_IN
+HHOOK_NOWAIT|HHOOK_HEADISINVNET
+HHOOK_NOWAIT
+HHOOK_NOWAIT
+HHOOK_HEADISINVNET
+HHOOK_HEADISINVNET
+0
+printf("%s: WARNING: unable to register helper hook\n", __func__);
+printf("%s: WARNING: unable to register helper hook\n", __func__)
+printf
+printf
+"%s: WARNING: unable to register helper hook\n"
+__func__
+__func__
+if (hhook_head_register(HHOOK_TYPE_TCP, HHOOK_TCP_EST_OUT,	    &V_tcp_hhh[HHOOK_TCP_EST_OUT], HHOOK_NOWAIT|HHOOK_HEADISINVNET) != 0)		printf("%s: WARNING: unable to register helper hook\n", __func__);
+hhook_head_register(HHOOK_TYPE_TCP, HHOOK_TCP_EST_OUT,	    &V_tcp_hhh[HHOOK_TCP_EST_OUT], HHOOK_NOWAIT|HHOOK_HEADISINVNET) != 0
+hhook_head_register(HHOOK_TYPE_TCP, HHOOK_TCP_EST_OUT,	    &V_tcp_hhh[HHOOK_TCP_EST_OUT], HHOOK_NOWAIT|HHOOK_HEADISINVNET)
+hhook_head_register
+hhook_head_register
+HHOOK_TYPE_TCP
+HHOOK_TYPE_TCP
+HHOOK_TCP_EST_OUT
+HHOOK_TCP_EST_OUT
+&V_tcp_hhh[HHOOK_TCP_EST_OUT]
+V_tcp_hhh[HHOOK_TCP_EST_OUT]
+V_tcp_hhh
+V_tcp_hhh
+HHOOK_TCP_EST_OUT
+HHOOK_TCP_EST_OUT
+HHOOK_NOWAIT|HHOOK_HEADISINVNET
+HHOOK_NOWAIT
+HHOOK_NOWAIT
+HHOOK_HEADISINVNET
+HHOOK_HEADISINVNET
+0
+printf("%s: WARNING: unable to register helper hook\n", __func__);
+printf("%s: WARNING: unable to register helper hook\n", __func__)
+printf
+printf
+"%s: WARNING: unable to register helper hook\n"
+__func__
+__func__
+hashsize = TCBHASHSIZE;
+hashsize = TCBHASHSIZE
+hashsize
+hashsize
+TCBHASHSIZE
+TCBHASHSIZE
+TUNABLE_INT_FETCH(tcbhash_tuneable, &hashsize);
+TUNABLE_INT_FETCH(tcbhash_tuneable, &hashsize)
+TUNABLE_INT_FETCH
+TUNABLE_INT_FETCH
+tcbhash_tuneable
+tcbhash_tuneable
+&hashsize
+hashsize
+hashsize
+if (hashsize == 0) {		/*		 * Auto tune the hash size based on maxsockets.		 * A perfect hash would have a 1:1 mapping		 * (hashsize = maxsockets) however it's been		 * suggested that O(2) average is better.		 */		hashsize = maketcp_hashsize(maxsockets / 4);		/*		 * Our historical default is 512,		 * do not autotune lower than this.		 */		if (hashsize < 512)			hashsize = 512;		if (bootverbose)			printf("%s: %s auto tuned to %d\n", __func__,			    tcbhash_tuneable, hashsize);	}
+hashsize == 0
+hashsize
+hashsize
+0
+{		/*		 * Auto tune the hash size based on maxsockets.		 * A perfect hash would have a 1:1 mapping		 * (hashsize = maxsockets) however it's been		 * suggested that O(2) average is better.		 */		hashsize = maketcp_hashsize(maxsockets / 4);		/*		 * Our historical default is 512,		 * do not autotune lower than this.		 */		if (hashsize < 512)			hashsize = 512;		if (bootverbose)			printf("%s: %s auto tuned to %d\n", __func__,			    tcbhash_tuneable, hashsize);	}
+hashsize = maketcp_hashsize(maxsockets / 4);
+hashsize = maketcp_hashsize(maxsockets / 4)
+hashsize
+hashsize
+maketcp_hashsize(maxsockets / 4)
+maketcp_hashsize
+maketcp_hashsize
+maxsockets / 4
+maxsockets
+maxsockets
+4
+if (hashsize < 512)			hashsize = 512;
+hashsize < 512
+hashsize
+hashsize
+512
+hashsize = 512;
+hashsize = 512
+hashsize
+hashsize
+512
+if (bootverbose)			printf("%s: %s auto tuned to %d\n", __func__,			    tcbhash_tuneable, hashsize);
+bootverbose
+bootverbose
+printf("%s: %s auto tuned to %d\n", __func__,			    tcbhash_tuneable, hashsize);
+printf("%s: %s auto tuned to %d\n", __func__,			    tcbhash_tuneable, hashsize)
+printf
+printf
+"%s: %s auto tuned to %d\n"
+__func__
+__func__
+tcbhash_tuneable
+tcbhash_tuneable
+hashsize
+hashsize
+if (!powerof2(hashsize)) {		int oldhashsize = hashsize;		hashsize = maketcp_hashsize(hashsize);		/* prevent absurdly low value */		if (hashsize < 16)			hashsize = 16;		printf("%s: WARNING: TCB hash size not a power of 2, "		    "clipped from %d to %d.\n", __func__, oldhashsize,		    hashsize);	}
+!powerof2(hashsize)
+powerof2(hashsize)
+powerof2
+powerof2
+hashsize
+hashsize
+{		int oldhashsize = hashsize;		hashsize = maketcp_hashsize(hashsize);		/* prevent absurdly low value */		if (hashsize < 16)			hashsize = 16;		printf("%s: WARNING: TCB hash size not a power of 2, "		    "clipped from %d to %d.\n", __func__, oldhashsize,		    hashsize);	}
+int oldhashsize = hashsize;
+int oldhashsize = hashsize;
+int
+oldhashsize = hashsize
+oldhashsize
+= hashsize
+hashsize
+hashsize
+hashsize = maketcp_hashsize(hashsize);
+hashsize = maketcp_hashsize(hashsize)
+hashsize
+hashsize
+maketcp_hashsize(hashsize)
+maketcp_hashsize
+maketcp_hashsize
+hashsize
+hashsize
+if (hashsize < 16)			hashsize = 16;
+hashsize < 16
+hashsize
+hashsize
+16
+hashsize = 16;
+hashsize = 16
+hashsize
+hashsize
+16
+printf("%s: WARNING: TCB hash size not a power of 2, "		    "clipped from %d to %d.\n", __func__, oldhashsize,		    hashsize);
+printf("%s: WARNING: TCB hash size not a power of 2, "		    "clipped from %d to %d.\n", __func__, oldhashsize,		    hashsize)
+printf
+printf
+"%s: WARNING: TCB hash size not a power of 2, "		    "clipped from %d to %d.\n"
+__func__
+__func__
+oldhashsize
+oldhashsize
+hashsize
+hashsize
+in_pcbinfo_init(&V_tcbinfo, "tcp", &V_tcb, hashsize, hashsize,	    "tcp_inpcb", tcp_inpcb_init, NULL, UMA_ZONE_NOFREE,	    IPI_HASHFIELDS_4TUPLE);
+in_pcbinfo_init(&V_tcbinfo, "tcp", &V_tcb, hashsize, hashsize,	    "tcp_inpcb", tcp_inpcb_init, NULL, UMA_ZONE_NOFREE,	    IPI_HASHFIELDS_4TUPLE)
+in_pcbinfo_init
+in_pcbinfo_init
+&V_tcbinfo
+V_tcbinfo
+V_tcbinfo
+"tcp"
+&V_tcb
+V_tcb
+V_tcb
+hashsize
+hashsize
+hashsize
+hashsize
+"tcp_inpcb"
+tcp_inpcb_init
+tcp_inpcb_init
+NULL
+NULL
+UMA_ZONE_NOFREE
+UMA_ZONE_NOFREE
+IPI_HASHFIELDS_4TUPLE
+IPI_HASHFIELDS_4TUPLE
+V_tcpcb_zone = uma_zcreate("tcpcb", sizeof(struct tcpcb_mem),	    NULL, NULL, NULL, NULL, UMA_ALIGN_PTR, UMA_ZONE_NOFREE);
+V_tcpcb_zone = uma_zcreate("tcpcb", sizeof(struct tcpcb_mem),	    NULL, NULL, NULL, NULL, UMA_ALIGN_PTR, UMA_ZONE_NOFREE)
+V_tcpcb_zone
+V_tcpcb_zone
+uma_zcreate("tcpcb", sizeof(struct tcpcb_mem),	    NULL, NULL, NULL, NULL, UMA_ALIGN_PTR, UMA_ZONE_NOFREE)
+uma_zcreate
+uma_zcreate
+"tcpcb"
+sizeof(struct tcpcb_mem)
+struct tcpcb_mem
+struct tcpcb_mem
+tcpcb_mem
+
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+UMA_ALIGN_PTR
+UMA_ALIGN_PTR
+UMA_ZONE_NOFREE
+UMA_ZONE_NOFREE
+uma_zone_set_max(V_tcpcb_zone, maxsockets);
+uma_zone_set_max(V_tcpcb_zone, maxsockets)
+uma_zone_set_max
+uma_zone_set_max
+V_tcpcb_zone
+V_tcpcb_zone
+maxsockets
+maxsockets
+uma_zone_set_warning(V_tcpcb_zone, "kern.ipc.maxsockets limit reached");
+uma_zone_set_warning(V_tcpcb_zone, "kern.ipc.maxsockets limit reached")
+uma_zone_set_warning
+uma_zone_set_warning
+V_tcpcb_zone
+V_tcpcb_zone
+"kern.ipc.maxsockets limit reached"
+tcp_tw_init();
+tcp_tw_init()
+tcp_tw_init
+tcp_tw_init
+syncache_init();
+syncache_init()
+syncache_init
+syncache_init
+tcp_hc_init();
+tcp_hc_init()
+tcp_hc_init
+tcp_hc_init
+tcp_reass_init();
+tcp_reass_init()
+tcp_reass_init
+tcp_reass_init
+TUNABLE_INT_FETCH("net.inet.tcp.sack.enable", &V_tcp_do_sack);
+TUNABLE_INT_FETCH("net.inet.tcp.sack.enable", &V_tcp_do_sack)
+TUNABLE_INT_FETCH
+TUNABLE_INT_FETCH
+"net.inet.tcp.sack.enable"
+&V_tcp_do_sack
+V_tcp_do_sack
+V_tcp_do_sack
+V_sack_hole_zone = uma_zcreate("sackhole", sizeof(struct sackhole),	    NULL, NULL, NULL, NULL, UMA_ALIGN_PTR, UMA_ZONE_NOFREE);
+V_sack_hole_zone = uma_zcreate("sackhole", sizeof(struct sackhole),	    NULL, NULL, NULL, NULL, UMA_ALIGN_PTR, UMA_ZONE_NOFREE)
+V_sack_hole_zone
+V_sack_hole_zone
+uma_zcreate("sackhole", sizeof(struct sackhole),	    NULL, NULL, NULL, NULL, UMA_ALIGN_PTR, UMA_ZONE_NOFREE)
+uma_zcreate
+uma_zcreate
+"sackhole"
+sizeof(struct sackhole)
+struct sackhole
+struct sackhole
+sackhole
+
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+UMA_ALIGN_PTR
+UMA_ALIGN_PTR
+UMA_ZONE_NOFREE
+UMA_ZONE_NOFREE
+if (!IS_DEFAULT_VNET(curvnet))		return;
+!IS_DEFAULT_VNET(curvnet)
+IS_DEFAULT_VNET(curvnet)
+IS_DEFAULT_VNET
+IS_DEFAULT_VNET
+curvnet
+curvnet
+return;
+tcp_delacktime = TCPTV_DELACK;
+tcp_delacktime = TCPTV_DELACK
+tcp_delacktime
+tcp_delacktime
+TCPTV_DELACK
+TCPTV_DELACK
+tcp_keepinit = TCPTV_KEEP_INIT;
+tcp_keepinit = TCPTV_KEEP_INIT
+tcp_keepinit
+tcp_keepinit
+TCPTV_KEEP_INIT
+TCPTV_KEEP_INIT
+tcp_keepidle = TCPTV_KEEP_IDLE;
+tcp_keepidle = TCPTV_KEEP_IDLE
+tcp_keepidle
+tcp_keepidle
+TCPTV_KEEP_IDLE
+TCPTV_KEEP_IDLE
+tcp_keepintvl = TCPTV_KEEPINTVL;
+tcp_keepintvl = TCPTV_KEEPINTVL
+tcp_keepintvl
+tcp_keepintvl
+TCPTV_KEEPINTVL
+TCPTV_KEEPINTVL
+tcp_maxpersistidle = TCPTV_KEEP_IDLE;
+tcp_maxpersistidle = TCPTV_KEEP_IDLE
+tcp_maxpersistidle
+tcp_maxpersistidle
+TCPTV_KEEP_IDLE
+TCPTV_KEEP_IDLE
+tcp_msl = TCPTV_MSL;
+tcp_msl = TCPTV_MSL
+tcp_msl
+tcp_msl
+TCPTV_MSL
+TCPTV_MSL
+tcp_rexmit_min = TCPTV_MIN;
+tcp_rexmit_min = TCPTV_MIN
+tcp_rexmit_min
+tcp_rexmit_min
+TCPTV_MIN
+TCPTV_MIN
+if (tcp_rexmit_min < 1)		tcp_rexmit_min = 1;
+tcp_rexmit_min < 1
+tcp_rexmit_min
+tcp_rexmit_min
+1
+tcp_rexmit_min = 1;
+tcp_rexmit_min = 1
+tcp_rexmit_min
+tcp_rexmit_min
+1
+tcp_rexmit_slop = TCPTV_CPU_VAR;
+tcp_rexmit_slop = TCPTV_CPU_VAR
+tcp_rexmit_slop
+tcp_rexmit_slop
+TCPTV_CPU_VAR
+TCPTV_CPU_VAR
+tcp_finwait2_timeout = TCPTV_FINWAIT2_TIMEOUT;
+tcp_finwait2_timeout = TCPTV_FINWAIT2_TIMEOUT
+tcp_finwait2_timeout
+tcp_finwait2_timeout
+TCPTV_FINWAIT2_TIMEOUT
+TCPTV_FINWAIT2_TIMEOUT
+tcp_tcbhashsize = hashsize;
+tcp_tcbhashsize = hashsize
+tcp_tcbhashsize
+tcp_tcbhashsize
+hashsize
+hashsize
+TUNABLE_INT_FETCH("net.inet.tcp.soreceive_stream", &tcp_soreceive_stream);
+TUNABLE_INT_FETCH("net.inet.tcp.soreceive_stream", &tcp_soreceive_stream)
+TUNABLE_INT_FETCH
+TUNABLE_INT_FETCH
+"net.inet.tcp.soreceive_stream"
+&tcp_soreceive_stream
+tcp_soreceive_stream
+tcp_soreceive_stream
+if (tcp_soreceive_stream) {#ifdef INET		tcp_usrreqs.pru_soreceive = soreceive_stream;#endif#ifdef INET6		tcp6_usrreqs.pru_soreceive = soreceive_stream;#endif /* INET6 */	}
+tcp_soreceive_stream
+tcp_soreceive_stream
+{#ifdef INET		tcp_usrreqs.pru_soreceive = soreceive_stream;#endif#ifdef INET6		tcp6_usrreqs.pru_soreceive = soreceive_stream;#endif /* INET6 */	}
+if (max_protohdr < TCP_MINPROTOHDR)		max_protohdr = TCP_MINPROTOHDR;
+max_protohdr < TCP_MINPROTOHDR
+max_protohdr
+max_protohdr
+TCP_MINPROTOHDR
+TCP_MINPROTOHDR
+TCP_MINPROTOHDR
+TCP_MINPROTOHDR
+TCP_MINPROTOHDR
+TCP_MINPROTOHDR
+max_protohdr = TCP_MINPROTOHDR;
+max_protohdr = TCP_MINPROTOHDR
+max_protohdr
+max_protohdr
+TCP_MINPROTOHDR
+TCP_MINPROTOHDR
+TCP_MINPROTOHDR
+TCP_MINPROTOHDR
+TCP_MINPROTOHDR
+TCP_MINPROTOHDR
+if (max_linkhdr + TCP_MINPROTOHDR > MHLEN)		panic("tcp_init");
+max_linkhdr + TCP_MINPROTOHDR > MHLEN
+max_linkhdr + TCP_MINPROTOHDR
+max_linkhdr
+max_linkhdr
+TCP_MINPROTOHDR
+TCP_MINPROTOHDR
+TCP_MINPROTOHDR
+TCP_MINPROTOHDR
+TCP_MINPROTOHDR
+TCP_MINPROTOHDR
+MHLEN
+MHLEN
+panic("tcp_init");
+panic("tcp_init")
+panic
+panic
+"tcp_init"
+ISN_LOCK_INIT();
+ISN_LOCK_INIT()
+ISN_LOCK_INIT
+ISN_LOCK_INIT
+EVENTHANDLER_REGISTER(shutdown_pre_sync, tcp_fini, NULL,		SHUTDOWN_PRI_DEFAULT);
+EVENTHANDLER_REGISTER(shutdown_pre_sync, tcp_fini, NULL,		SHUTDOWN_PRI_DEFAULT)
+EVENTHANDLER_REGISTER
+EVENTHANDLER_REGISTER
+shutdown_pre_sync
+shutdown_pre_sync
+tcp_fini
+tcp_fini
+NULL
+NULL
+SHUTDOWN_PRI_DEFAULT
+SHUTDOWN_PRI_DEFAULT
+EVENTHANDLER_REGISTER(maxsockets_change, tcp_zone_change, NULL,		EVENTHANDLER_PRI_ANY);
+EVENTHANDLER_REGISTER(maxsockets_change, tcp_zone_change, NULL,		EVENTHANDLER_PRI_ANY)
+EVENTHANDLER_REGISTER
+EVENTHANDLER_REGISTER
+maxsockets_change
+maxsockets_change
+tcp_zone_change
+tcp_zone_change
+NULL
+NULL
+EVENTHANDLER_PRI_ANY
+EVENTHANDLER_PRI_ANY
+-----joern-----
+(215,207,0)
+(44,159,0)
+(7,37,0)
+(227,92,0)
+(47,83,0)
+(89,172,0)
+(135,83,0)
+(61,159,0)
+(157,59,0)
+(94,37,0)
+(122,216,0)
+(229,195,0)
+(206,59,0)
+(159,180,0)
+(120,53,0)
+(28,177,0)
+(149,59,0)
+(86,154,0)
+(4,194,0)
+(191,57,0)
+(181,158,0)
+(93,194,0)
+(90,141,0)
+(198,59,0)
+(111,59,0)
+(64,195,0)
+(5,59,0)
+(131,134,0)
+(216,122,0)
+(54,116,0)
+(133,159,0)
+(179,57,0)
+(217,122,0)
+(205,87,0)
+(173,182,0)
+(70,189,0)
+(162,203,0)
+(53,225,0)
+(148,59,0)
+(29,57,0)
+(39,155,0)
+(24,65,0)
+(39,81,0)
+(183,73,0)
+(57,170,0)
+(228,87,0)
+(106,190,0)
+(131,59,0)
+(159,167,0)
+(101,80,0)
+(171,65,0)
+(163,145,0)
+(186,209,0)
+(172,89,0)
+(16,59,0)
+(95,35,0)
+(145,81,0)
+(159,158,0)
+(112,72,0)
+(56,192,0)
+(132,96,0)
+(36,75,0)
+(107,10,0)
+(83,195,0)
+(34,96,0)
+(177,76,0)
+(113,57,0)
+(219,16,0)
+(213,59,0)
+(141,134,0)
+(139,32,0)
+(122,59,0)
+(203,189,0)
+(3,83,0)
+(190,59,0)
+(31,188,0)
+(74,229,0)
+(52,145,0)
+(8,21,0)
+(165,171,0)
+(134,172,0)
+(176,192,0)
+(204,195,0)
+(82,159,0)
+(150,159,0)
+(155,195,0)
+(63,203,0)
+(221,59,0)
+(229,65,0)
+(102,123,0)
+(14,194,0)
+(172,134,0)
+(187,127,0)
+(140,138,0)
+(230,76,0)
+(202,138,0)
+(178,59,0)
+(203,80,0)
+(192,59,0)
+(25,59,0)
+(220,89,0)
+(226,212,0)
+(110,131,0)
+(45,59,0)
+(117,192,0)
+(21,177,0)
+(126,59,0)
+(229,134,0)
+(114,10,0)
+(205,59,0)
+(151,206,0)
+(96,59,0)
+(184,57,0)
+(154,59,0)
+(129,164,0)
+(223,109,0)
+(218,194,0)
+(170,57,0)
+(22,225,0)
+(91,75,0)
+(49,123,0)
+(85,205,0)
+(35,116,0)
+(65,59,0)
+(57,41,0)
+(169,158,0)
+(121,208,0)
+(167,159,0)
+(174,92,0)
+(138,59,0)
+(189,203,0)
+(78,194,0)
+(154,55,0)
+(84,170,0)
+(166,159,0)
+(185,190,0)
+(32,59,0)
+(128,53,0)
+(67,145,0)
+(159,39,0)
+(98,72,0)
+(20,59,0)
+(152,210,0)
+(27,26,0)
+(194,93,0)
+(11,42,0)
+(41,59,0)
+(6,16,0)
+(200,157,0)
+(1,192,0)
+(60,81,0)
+(222,145,0)
+(116,35,0)
+(159,134,0)
+(147,78,0)
+(196,41,0)
+(159,195,0)
+(115,57,0)
+(143,194,0)
+(159,59,0)
+(88,16,0)
+(71,80,0)
+(211,89,0)
+(225,53,0)
+(50,127,0)
+(180,159,0)
+(131,39,0)
+(53,209,0)
+(131,65,0)
+(153,93,0)
+(131,158,0)
+(15,109,0)
+(79,26,0)
+(13,210,0)
+(53,156,0)
+(171,195,0)
+(209,53,0)
+(136,229,0)
+(43,59,0)
+(93,59,0)
+(51,21,0)
+(10,39,0)
+(37,7,0)
+(62,55,0)
+(123,59,0)
+(210,59,0)
+(58,73,0)
+(156,53,0)
+(48,159,0)
+(0,159,0)
+(97,59,0)
+(38,131,0)
+(145,229,0)
+(130,105,0)
+(119,206,0)
+(197,32,0)
+(92,65,0)
+(142,59,0)
+(214,194,0)
+(231,188,0)
+(193,59,0)
+(156,75,0)
+(124,57,0)
+(118,155,0)
+(201,194,0)
+(145,39,0)
+(109,59,0)
+(203,7,0)
+(131,195,0)
+(75,156,0)
+(78,147,0)
+(104,230,0)
+(145,158,0)
+(155,39,0)
+(229,81,0)
+(207,205,0)
+(160,16,0)
+(26,59,0)
+(199,46,0)
+(134,188,0)
+(9,105,0)
+(69,77,0)
+(155,134,0)
+(194,78,0)
+(127,230,0)
+(175,208,0)
+(100,87,0)
+(40,65,0)
+(205,207,0)
+(17,209,0)
+(159,65,0)
+(83,87,0)
+(18,83,0)
+(41,57,0)
+(144,171,0)
+(207,65,0)
+(80,203,0)
+(146,46,0)
+(171,134,0)
+(33,164,0)
+(30,141,0)
+(83,134,0)
+(7,203,0)
+(55,154,0)
+(19,194,0)
+(66,42,0)
+(99,157,0)
+(12,216,0)
+(182,173,0)
+(208,59,0)
+(171,144,0)
+(137,39,0)
+(103,37,0)
+(68,116,0)
+(87,59,0)
+(23,180,0)
+(161,134,0)
+(125,182,0)
+(2,167,0)
+(170,84,0)
+(155,65,0)
+(108,81,0)
+(119,208,1)
+(171,165,1)
+(50,187,1)
+(15,223,1)
+(77,173,1)
+(164,33,1)
+(71,7,1)
+(48,167,1)
+(143,214,1)
+(131,65,1)
+(13,152,1)
+(72,98,1)
+(130,138,1)
+(223,157,1)
+(184,113,1)
+(161,92,1)
+(30,134,1)
+(0,61,1)
+(10,114,1)
+(24,73,1)
+(159,180,1)
+(57,170,1)
+(159,39,1)
+(151,119,1)
+(95,116,1)
+(185,93,1)
+(206,151,1)
+(189,203,1)
+(63,162,1)
+(230,104,1)
+(145,39,1)
+(20,178,1)
+(68,42,1)
+(80,101,1)
+(26,79,1)
+(118,137,1)
+(203,7,1)
+(3,168,1)
+(200,99,1)
+(92,227,1)
+(195,64,1)
+(145,229,1)
+(16,6,1)
+(66,224,1)
+(194,143,1)
+(157,200,1)
+(179,115,1)
+(22,53,1)
+(107,39,1)
+(174,205,1)
+(83,195,1)
+(82,48,1)
+(229,134,1)
+(46,146,1)
+(8,224,1)
+(167,2,1)
+(183,58,1)
+(169,10,1)
+(132,109,1)
+(94,103,1)
+(225,53,1)
+(51,8,1)
+(137,229,1)
+(90,30,1)
+(121,173,1)
+(150,82,1)
+(52,163,1)
+(127,50,1)
+(120,87,1)
+(222,10,1)
+(178,43,1)
+(138,140,1)
+(229,195,1)
+(83,87,1)
+(92,65,1)
+(159,134,1)
+(159,167,1)
+(44,180,1)
+(196,122,1)
+(207,65,1)
+(128,120,1)
+(226,35,1)
+(89,211,1)
+(199,105,1)
+(190,106,1)
+(57,191,1)
+(74,136,1)
+(33,129,1)
+(68,72,1)
+(7,37,1)
+(36,128,1)
+(209,186,1)
+(23,145,1)
+(99,210,1)
+(61,166,1)
+(24,189,1)
+(134,172,1)
+(17,156,1)
+(91,36,1)
+(49,102,1)
+(40,24,1)
+(83,135,1)
+(43,26,1)
+(32,139,1)
+(131,110,1)
+(112,42,1)
+(106,185,1)
+(155,195,1)
+(176,56,1)
+(23,144,1)
+(155,118,1)
+(116,54,1)
+(131,39,1)
+(2,44,1)
+(203,80,1)
+(210,13,1)
+(201,78,1)
+(35,95,1)
+(207,215,1)
+(114,107,1)
+(37,94,1)
+(96,34,1)
+(215,85,1)
+(27,190,1)
+(113,170,1)
+(79,27,1)
+(211,220,1)
+(204,141,1)
+(165,83,1)
+(181,169,1)
+(197,123,1)
+(208,175,1)
+(159,65,1)
+(170,124,1)
+(125,41,1)
+(182,125,1)
+(78,4,1)
+(102,105,1)
+(227,174,1)
+(21,51,1)
+(4,153,1)
+(146,199,1)
+(56,117,1)
+(122,216,1)
+(163,222,1)
+(115,29,1)
+(140,202,1)
+(224,154,1)
+(19,218,1)
+(145,67,1)
+(205,207,1)
+(155,134,1)
+(111,20,1)
+(165,92,1)
+(171,134,1)
+(131,158,1)
+(205,87,1)
+(129,225,1)
+(220,161,1)
+(62,86,1)
+(39,155,1)
+(212,226,1)
+(1,176,1)
+(180,23,1)
+(70,203,1)
+(216,12,1)
+(10,39,1)
+(189,70,1)
+(53,209,1)
+(104,127,1)
+(171,65,1)
+(192,1,1)
+(29,184,1)
+(135,47,1)
+(156,75,1)
+(145,158,1)
+(55,62,1)
+(110,38,1)
+(162,164,1)
+(35,116,1)
+(218,201,1)
+(173,182,1)
+(131,134,1)
+(12,217,1)
+(141,90,1)
+(64,204,1)
+(168,195,1)
+(6,219,1)
+(75,91,1)
+(133,150,1)
+(175,121,1)
+(41,57,1)
+(98,112,1)
+(53,156,1)
+(18,3,1)
+(67,52,1)
+(170,84,1)
+(136,144,1)
+(78,147,1)
+(42,11,1)
+(47,18,1)
+(34,132,1)
+(11,66,1)
+(28,21,1)
+(214,14,1)
+(123,49,1)
+(83,134,1)
+(191,179,1)
+(158,181,1)
+(14,19,1)
+(54,68,1)
+(58,189,1)
+(85,65,1)
+(117,16,1)
+(186,17,1)
+(187,177,1)
+(229,65,1)
+(222,158,1)
+(202,96,1)
+(131,195,1)
+(159,158,1)
+(152,206,1)
+(194,78,1)
+(109,15,1)
+(86,131,1)
+(69,77,1)
+(141,134,1)
+(124,196,1)
+(160,35,1)
+(165,168,1)
+(153,159,1)
+(159,0,1)
+(217,111,1)
+(66,230,1)
+(159,195,1)
+(154,55,1)
+(38,32,1)
+(102,46,1)
+(73,183,1)
+(101,71,1)
+(225,22,1)
+(177,28,1)
+(172,89,1)
+(65,40,1)
+(155,65,1)
+(160,212,1)
+(166,133,1)
+(219,88,1)
+(87,100,1)
+(144,171,1)
+(171,195,1)
+(139,197,1)
+(100,228,1)
+(168,141,1)
+(88,160,1)
+(162,225,1)
+(103,63,1)
+(229,74,1)
+(9,130,1)
+(69,192,1)
+(93,194,1)
+(105,9,1)
+(52,144,2)
+(99,173,2)
+(130,173,2)
+(121,173,2)
+(159,167,2)
+(159,134,2)
+(173,182,2)
+(230,224,2)
+(86,173,2)
+(172,89,2)
+(177,224,2)
+(89,92,2)
+(66,173,2)
+(146,105,2)
+(206,173,2)
+(145,229,2)
+(156,75,2)
+(49,173,2)
+(55,173,2)
+(140,173,2)
+(222,144,2)
+(47,168,2)
+(9,173,2)
+(1,173,2)
+(11,173,2)
+(34,173,2)
+(159,180,2)
+(58,189,2)
+(123,173,2)
+(104,224,2)
+(203,80,2)
+(161,92,2)
+(139,173,2)
+(116,173,2)
+(172,92,2)
+(176,173,2)
+(141,92,2)
+(131,134,2)
+(208,173,2)
+(46,105,2)
+(10,39,2)
+(223,173,2)
+(57,170,2)
+(39,155,2)
+(35,173,2)
+(78,147,2)
+(8,224,2)
+(135,168,2)
+(200,173,2)
+(35,116,2)
+(141,134,2)
+(205,207,2)
+(39,144,2)
+(138,173,2)
+(92,65,2)
+(155,195,2)
+(74,144,2)
+(159,39,2)
+(212,35,2)
+(131,65,2)
+(51,224,2)
+(158,10,2)
+(118,144,2)
+(18,168,2)
+(155,134,2)
+(73,189,2)
+(98,42,2)
+(15,173,2)
+(122,216,2)
+(169,10,2)
+(145,158,2)
+(109,173,2)
+(96,173,2)
+(203,7,2)
+(224,173,2)
+(171,195,2)
+(28,224,2)
+(151,173,2)
+(102,173,2)
+(164,225,2)
+(16,173,2)
+(145,39,2)
+(114,144,2)
+(205,87,2)
+(155,65,2)
+(50,224,2)
+(88,173,2)
+(134,172,2)
+(220,92,2)
+(168,92,2)
+(53,156,2)
+(144,171,2)
+(54,173,2)
+(64,141,2)
+(159,158,2)
+(83,168,2)
+(159,195,2)
+(159,65,2)
+(171,134,2)
+(110,173,2)
+(145,144,2)
+(229,195,2)
+(41,57,2)
+(53,209,2)
+(117,173,2)
+(204,141,2)
+(155,144,2)
+(90,92,2)
+(68,173,2)
+(211,92,2)
+(6,173,2)
+(112,42,2)
+(72,42,2)
+(33,225,2)
+(132,173,2)
+(194,78,2)
+(129,225,2)
+(83,134,2)
+(199,105,2)
+(187,224,2)
+(131,195,2)
+(154,173,2)
+(93,194,2)
+(67,144,2)
+(10,144,2)
+(195,141,2)
+(136,144,2)
+(131,158,2)
+(13,173,2)
+(134,92,2)
+(171,65,2)
+(163,144,2)
+(77,173,2)
+(42,173,2)
+(154,55,2)
+(207,65,2)
+(175,173,2)
+(183,189,2)
+(225,53,2)
+(3,168,2)
+(105,173,2)
+(119,173,2)
+(197,173,2)
+(192,173,2)
+(219,173,2)
+(30,92,2)
+(137,144,2)
+(83,195,2)
+(202,173,2)
+(229,65,2)
+(69,77,2)
+(95,173,2)
+(127,224,2)
+(210,173,2)
+(152,173,2)
+(226,35,2)
+(170,84,2)
+(32,173,2)
+(21,224,2)
+(131,39,2)
+(160,173,2)
+(229,144,2)
+(107,144,2)
+(157,173,2)
+(56,173,2)
+(83,87,2)
+(229,134,2)
+(7,37,2)
+(131,173,2)
+(62,173,2)
+(189,203,2)
+(181,10,2)
+(38,173,2)
+-----------------------------------
+(0,IPI_HASHFIELDS_4TUPLE)
+(1,EVENTHANDLER_PRI_ANY)
+(2,V_tcb)
+(3,"%s: %s auto tuned to %d\\n")
+(4,"tcpcb")
+(5,if (hhook_head_register(HHOOK_TYPE_TCP, HHOOK_TCP_EST_OUT,\n\\n\\t    &V_tcp_hhh[HHOOK_TCP_EST_OUT], HHOOK_NOWAIT|HHOOK_HEADISINVNET)
+(6,SHUTDOWN_PRI_DEFAULT)
+(7,&V_tcp_hhh[HHOOK_TCP_EST_OUT])
+(8,tcp_usrreqs)
+(9,1)
+(10,hashsize < 16)
+(11,TCP_MINPROTOHDR)
+(12,V_tcp_do_sack)
+(13,TCPTV_KEEP_IDLE)
+(14,NULL)
+(15,TCPTV_KEEP_IDLE)
+(16,EVENTHANDLER_REGISTER(shutdown_pre_sync, tcp_fini, NULL,\n\\n\\t\\tSHUTDOWN_PRI_DEFAULT)
+(17,HHOOK_NOWAIT)
+(18,__func__)
+(19,NULL)
+(20,tcp_hc_init()
+(21,tcp_usrreqs.pru_soreceive)
+(22,0)
+(23,V_tcbinfo)
+(24,hashsize)
+(25,if (tcp_rexmit_min < 1)
+(26,uma_zone_set_warning(V_tcpcb_zone, "kern.ipc.maxsockets limit reached")
+(27,V_tcpcb_zone)
+(28,soreceive_stream)
+(29,NULL)
+(30,hashsize)
+(31,if (hashsize < 512)
+(32,tcp_finwait2_timeout = TCPTV_FINWAIT2_TIMEOUT)
+(33,__func__)
+(34,TCPTV_MSL)
+(35,max_linkhdr + TCP_MINPROTOHDR > MHLEN)
+(36,V_tcp_hhh)
+(37,V_tcp_hhh[HHOOK_TCP_EST_OUT])
+(38,tcp_tcbhashsize)
+(39,hashsize = maketcp_hashsize(hashsize)
+(40,TCBHASHSIZE)
+(41,V_sack_hole_zone = uma_zcreate("sackhole", sizeof(struct sackhole)
+(42,max_protohdr < TCP_MINPROTOHDR)
+(43,tcp_tw_init()
+(44,"tcp")
+(45,ISN_LOCK_INIT)
+(46,tcp_rexmit_min = 1)
+(47,tcbhash_tuneable)
+(48,hashsize)
+(49,TCPTV_CPU_VAR)
+(50,pru_soreceive)
+(51,pru_soreceive)
+(52,oldhashsize)
+(53,hhook_head_register(HHOOK_TYPE_TCP, HHOOK_TCP_EST_IN,\n\\n\\t    &V_tcp_hhh[HHOOK_TCP_EST_IN], HHOOK_NOWAIT|HHOOK_HEADISINVNET)
+(54,TCP_MINPROTOHDR)
+(55,&tcp_soreceive_stream)
+(56,tcp_zone_change)
+(57,uma_zcreate("sackhole", sizeof(struct sackhole)
+(58,"%s: WARNING: unable to register helper hook\\n")
+(59,)
+(60,oldhashsize)
+(61,UMA_ZONE_NOFREE)
+(62,tcp_soreceive_stream)
+(63,HHOOK_TCP_EST_OUT)
+(64,512)
+(65,hashsize = TCBHASHSIZE)
+(66,max_protohdr)
+(67,hashsize)
+(68,max_linkhdr)
+(69,RET)
+(70,0)
+(71,HHOOK_NOWAIT)
+(72,max_protohdr = TCP_MINPROTOHDR)
+(73,printf("%s: WARNING: unable to register helper hook\\n", __func__)
+(74,hashsize)
+(75,V_tcp_hhh[HHOOK_TCP_EST_IN])
+(76,)
+(77,return;)
+(78,sizeof(struct tcpcb_mem)
+(79,"kern.ipc.maxsockets limit reached")
+(80,HHOOK_NOWAIT|HHOOK_HEADISINVNET)
+(81,)
+(82,hashsize)
+(83,printf("%s: %s auto tuned to %d\\n", __func__,\n\\n\\t\\t\\t    tcbhash_tuneable, hashsize)
+(84,struct sackhole)
+(85,tcbhash_tuneable)
+(86,"net.inet.tcp.soreceive_stream")
+(87,tcbhash_tuneable = "net.inet.tcp.tcbhashsize")
+(88,tcp_fini)
+(89,maxsockets / 4)
+(90,512)
+(91,HHOOK_TCP_EST_IN)
+(92,hashsize == 0)
+(93,V_tcpcb_zone = uma_zcreate("tcpcb", sizeof(struct tcpcb_mem)
+(94,HHOOK_TCP_EST_OUT)
+(95,MHLEN)
+(96,tcp_msl = TCPTV_MSL)
+(97,hashsize)
+(98,TCP_MINPROTOHDR)
+(99,tcp_keepintvl)
+(100,"net.inet.tcp.tcbhashsize")
+(101,HHOOK_HEADISINVNET)
+(102,tcp_rexmit_slop)
+(103,V_tcp_hhh)
+(104,soreceive_stream)
+(105,tcp_rexmit_min < 1)
+(106,maxsockets)
+(107,hashsize)
+(108,if (hashsize < 16)
+(109,tcp_maxpersistidle = TCPTV_KEEP_IDLE)
+(110,hashsize)
+(111,tcp_reass_init()
+(112,max_protohdr)
+(113,NULL)
+(114,16)
+(115,NULL)
+(116,max_linkhdr + TCP_MINPROTOHDR)
+(117,maxsockets_change)
+(118,hashsize)
+(119,tcp_keepinit)
+(120,HHOOK_TYPE_TCP)
+(121,tcp_delacktime)
+(122,TUNABLE_INT_FETCH("net.inet.tcp.sack.enable", &V_tcp_do_sack)
+(123,tcp_rexmit_slop = TCPTV_CPU_VAR)
+(124,"sackhole")
+(125,curvnet)
+(126,if (max_protohdr < TCP_MINPROTOHDR)
+(127,tcp6_usrreqs.pru_soreceive)
+(128,HHOOK_TCP_EST_IN)
+(129,"%s: WARNING: unable to register helper hook\\n")
+(130,tcp_rexmit_min)
+(131,tcp_tcbhashsize = hashsize)
+(132,tcp_msl)
+(133,tcp_inpcb_init)
+(134,hashsize = maketcp_hashsize(maxsockets / 4)
+(135,hashsize)
+(136,oldhashsize)
+(137,hashsize)
+(138,tcp_rexmit_min = TCPTV_MIN)
+(139,TCPTV_FINWAIT2_TIMEOUT)
+(140,TCPTV_MIN)
+(141,hashsize < 512)
+(142,if (hashsize == 0)
+(143,UMA_ZONE_NOFREE)
+(144,!powerof2(hashsize)
+(145,printf("%s: WARNING: TCB hash size not a power of 2, "\n\\n\\t\\t    "clipped from %d to %d.\\n", __func__, oldhashsize,\n\\n\\t\\t    hashsize)
+(146,1)
+(147,struct tcpcb_mem)
+(148,if (hhook_head_register(HHOOK_TYPE_TCP, HHOOK_TCP_EST_IN,\n\\n\\t    &V_tcp_hhh[HHOOK_TCP_EST_IN], HHOOK_NOWAIT|HHOOK_HEADISINVNET)
+(149,if (!IS_DEFAULT_VNET(curvnet)
+(150,"tcp_inpcb")
+(151,TCPTV_KEEP_INIT)
+(152,tcp_keepidle)
+(153,V_tcpcb_zone)
+(154,TUNABLE_INT_FETCH("net.inet.tcp.soreceive_stream", &tcp_soreceive_stream)
+(155,maketcp_hashsize(hashsize)
+(156,&V_tcp_hhh[HHOOK_TCP_EST_IN])
+(157,tcp_keepintvl = TCPTV_KEEPINTVL)
+(158,hashsize = 16)
+(159,in_pcbinfo_init(&V_tcbinfo, "tcp", &V_tcb, hashsize, hashsize,\n\\n\\t    "tcp_inpcb", tcp_inpcb_init, NULL, UMA_ZONE_NOFREE,\n\\n\\t    IPI_HASHFIELDS_4TUPLE)
+(160,shutdown_pre_sync)
+(161,hashsize)
+(162,HHOOK_TYPE_TCP)
+(163,__func__)
+(164,printf("%s: WARNING: unable to register helper hook\\n", __func__)
+(165,hashsize)
+(166,NULL)
+(167,&V_tcb)
+(168,bootverbose)
+(169,hashsize)
+(170,sizeof(struct sackhole)
+(171,powerof2(hashsize)
+(172,maketcp_hashsize(maxsockets / 4)
+(173,!IS_DEFAULT_VNET(curvnet)
+(174,hashsize)
+(175,TCPTV_DELACK)
+(176,NULL)
+(177,tcp_usrreqs.pru_soreceive = soreceive_stream)
+(178,syncache_init()
+(179,UMA_ALIGN_PTR)
+(180,&V_tcbinfo)
+(181,16)
+(182,IS_DEFAULT_VNET(curvnet)
+(183,__func__)
+(184,NULL)
+(185,V_tcpcb_zone)
+(186,HHOOK_HEADISINVNET)
+(187,tcp6_usrreqs)
+(188,)
+(189,hhook_head_register(HHOOK_TYPE_TCP, HHOOK_TCP_EST_OUT,\n\\n\\t    &V_tcp_hhh[HHOOK_TCP_EST_OUT], HHOOK_NOWAIT|HHOOK_HEADISINVNET)
+(190,uma_zone_set_max(V_tcpcb_zone, maxsockets)
+(191,UMA_ZONE_NOFREE)
+(192,EVENTHANDLER_REGISTER(maxsockets_change, tcp_zone_change, NULL,\n\\n\\t\\tEVENTHANDLER_PRI_ANY)
+(193,tcbhash_tuneable)
+(194,uma_zcreate("tcpcb", sizeof(struct tcpcb_mem)
+(195,hashsize = 512)
+(196,V_sack_hole_zone)
+(197,tcp_finwait2_timeout)
+(198,if (max_linkhdr + TCP_MINPROTOHDR > MHLEN)
+(199,tcp_rexmit_min)
+(200,TCPTV_KEEPINTVL)
+(201,NULL)
+(202,tcp_rexmit_min)
+(203,hhook_head_register(HHOOK_TYPE_TCP, HHOOK_TCP_EST_OUT,\n\\n\\t    &V_tcp_hhh[HHOOK_TCP_EST_OUT], HHOOK_NOWAIT|HHOOK_HEADISINVNET)
+(204,hashsize)
+(205,TUNABLE_INT_FETCH(tcbhash_tuneable, &hashsize)
+(206,tcp_keepinit = TCPTV_KEEP_INIT)
+(207,&hashsize)
+(208,tcp_delacktime = TCPTV_DELACK)
+(209,HHOOK_NOWAIT|HHOOK_HEADISINVNET)
+(210,tcp_keepidle = TCPTV_KEEP_IDLE)
+(211,4)
+(212,panic("tcp_init")
+(213,if (tcp_soreceive_stream)
+(214,UMA_ALIGN_PTR)
+(215,hashsize)
+(216,&V_tcp_do_sack)
+(217,"net.inet.tcp.sack.enable")
+(218,NULL)
+(219,NULL)
+(220,maxsockets)
+(221,if (!powerof2(hashsize)
+(222,"%s: WARNING: TCB hash size not a power of 2, "\n\\n\\t\\t    "clipped from %d to %d.\\n")
+(223,tcp_maxpersistidle)
+(224,tcp_soreceive_stream)
+(225,hhook_head_register(HHOOK_TYPE_TCP, HHOOK_TCP_EST_IN,\n\\n\\t    &V_tcp_hhh[HHOOK_TCP_EST_IN], HHOOK_NOWAIT|HHOOK_HEADISINVNET)
+(226,"tcp_init")
+(227,0)
+(228,tcbhash_tuneable)
+(229,oldhashsize = hashsize)
+(230,tcp6_usrreqs.pru_soreceive = soreceive_stream)
+(231,if (bootverbose)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

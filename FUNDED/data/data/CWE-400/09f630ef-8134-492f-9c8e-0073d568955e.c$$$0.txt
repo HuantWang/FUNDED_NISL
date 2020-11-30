@@ -1,0 +1,1388 @@
+-----label-----
+1
+-----code-----
+static int controller_handle_method(const ControllerMethod *method, Bus *bus, const char *path, uint32_t serial, const char *signature_in, Message *message_in) {
+        _c_cleanup_(c_dvar_deinitp) CDVar var_in = C_DVAR_INIT, var_out = C_DVAR_INIT;
+        _c_cleanup_(message_unrefp) Message *message_out = NULL;
+        void *data;
+        size_t n_data;
+        int r;
+
+        /*
+         * Verify the input signature and prepare the input & output variants
+         * for input parsing and output marshaling.
+         */
+
+        r = controller_dvar_verify_signature_in(method->in, signature_in);
+        if (r)
+                return error_trace(r);
+
+        c_dvar_begin_read(&var_in, message_in->big_endian, method->in, 1, message_in->body, message_in->n_body);
+        c_dvar_begin_write(&var_out, method->out, 1);
+
+        /*
+         * Write the generic reply-header and then call into the method-handler
+         * of the specific controller method. Note that the controller-methods are
+         * responsible to call controller_end_read(var_in), to verify all read data
+         * was correct.
+         */
+
+        c_dvar_write(&var_out, "(");
+        controller_write_reply_header(&var_out, serial, method->out);
+
+        r = method->fn(bus, path, &var_in, message_in->fds, &var_out);
+        if (r)
+                return error_trace(r);
+
+        c_dvar_write(&var_out, ")");
+
+        /*
+         * The message was correctly handled and the reply is serialized in
+         * @var_out. Lets finish it up and queue the reply on the destination.
+         * Note that any failure in doing so must be a fatal error, so there is
+         * no point in reverting the operation on failure.
+         */
+
+        r = c_dvar_end_write(&var_out, &data, &n_data);
+        if (r)
+                return error_origin(r);
+
+        r = message_new_outgoing(&message_out, data, n_data);
+        if (r)
+                return error_fold(r);
+
+        r = connection_queue(bus->controller, NULL, 0, message_out);
+        if (r) {
+                if (r == CONNECTION_E_QUOTA)
+                        connection_close(bus->controller);
+                else
+                        return error_fold(r);
+        }
+
+        return 0;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+3,8
+3,9
+3,10
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+17,19
+19,20
+19,21
+22,23
+22,24
+23,24
+25,26
+27,28
+27,29
+29,30
+29,31
+32,33
+32,34
+33,34
+35,36
+35,37
+38,39
+38,40
+38,41
+38,42
+38,43
+38,44
+38,45
+38,46
+38,47
+38,48
+38,49
+38,50
+38,51
+38,52
+38,53
+38,54
+38,55
+38,56
+38,57
+38,58
+38,59
+38,60
+38,61
+38,62
+38,63
+39,40
+40,41
+40,42
+41,42
+43,44
+44,45
+46,47
+47,48
+48,49
+48,50
+48,51
+49,50
+51,52
+51,53
+53,54
+54,55
+56,57
+56,58
+58,59
+59,60
+61,62
+62,63
+62,64
+63,64
+65,66
+66,67
+68,69
+69,70
+70,71
+70,72
+71,72
+73,74
+73,75
+73,76
+76,77
+77,78
+79,80
+80,81
+80,82
+82,83
+82,84
+85,86
+86,87
+86,88
+87,88
+89,90
+91,92
+92,93
+92,94
+94,95
+96,97
+97,98
+97,99
+98,99
+100,101
+100,102
+100,103
+101,102
+103,104
+103,105
+104,105
+107,108
+109,110
+109,111
+110,111
+112,113
+113,114
+113,115
+114,115
+116,117
+118,119
+119,120
+119,121
+119,122
+119,123
+119,124
+119,125
+119,126
+120,121
+122,123
+123,124
+125,126
+125,127
+126,127
+129,130
+129,131
+130,131
+134,135
+134,136
+135,136
+138,139
+138,140
+139,140
+142,143
+143,144
+143,145
+143,146
+143,147
+144,145
+146,147
+147,148
+149,150
+149,151
+150,151
+154,155
+155,156
+155,157
+155,158
+156,157
+158,159
+159,160
+162,163
+163,164
+163,165
+163,166
+163,167
+164,165
+166,167
+167,168
+169,170
+171,172
+171,173
+172,173
+175,176
+176,177
+176,178
+177,178
+179,180
+179,181
+179,182
+179,183
+179,184
+179,185
+180,181
+180,182
+181,182
+184,185
+186,187
+188,189
+189,190
+191,192
+191,193
+192,193
+195,196
+196,197
+198,199
+198,200
+199,200
+201,202
+202,203
+202,204
+203,204
+205,206
+207,208
+208,209
+208,210
+208,211
+209,210
+211,212
+212,213
+215,216
+216,217
+216,218
+217,218
+219,220
+219,221
+219,222
+219,223
+220,221
+222,223
+223,224
+225,226
+226,227
+228,229
+229,230
+231,232
+231,233
+232,233
+234,235
+235,236
+235,237
+236,237
+238,239
+240,241
+241,242
+241,243
+242,243
+244,245
+244,246
+244,247
+244,248
+245,246
+247,248
+248,249
+250,251
+252,253
+254,255
+254,256
+255,256
+257,258
+258,259
+258,260
+259,260
+261,262
+263,264
+264,265
+264,266
+265,266
+267,268
+267,269
+267,270
+267,271
+267,272
+268,269
+270,271
+270,272
+271,272
+274,275
+277,278
+279,280
+279,281
+280,281
+282,283
+283,284
+283,285
+283,286
+284,285
+284,286
+285,286
+287,288
+289,290
+290,291
+290,292
+291,292
+293,294
+293,295
+294,295
+297,298
+298,299
+298,300
+299,300
+301,302
+303,304
+-----nextToken-----
+2,4,7,9,10,13,15,16,18,20,21,24,26,28,30,31,34,36,37,42,45,50,52,55,57,60,64,67,72,74,75,78,81,83,84,88,90,93,95,99,102,105,106,108,111,115,117,121,124,127,128,131,132,133,136,137,140,141,145,148,151,152,153,157,160,161,165,168,170,173,174,178,182,183,185,187,190,193,194,197,200,204,206,210,213,214,218,221,224,227,230,233,237,239,243,246,249,251,253,256,260,262,266,269,272,273,275,276,278,281,286,288,292,295,296,300,302,304
+-----computeFrom-----
+97,98
+97,99
+176,177
+176,178
+216,217
+216,218
+241,242
+241,243
+264,265
+264,266
+284,285
+284,286
+-----guardedBy-----
+-----guardedByNegation-----
+286,302
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;ProblemStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;IdExpression;Name;Declarator;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;ProblemStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;IdExpression;Name;ReturnStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;IfStatement;IdExpression;Name;ReturnStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;IdExpression;Name;ReturnStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;IdExpression;Name;ReturnStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;IfStatement;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ReturnStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;LiteralExpression;
+-----ast_node-----
+static int controller_handle_method(const ControllerMethod *method, Bus *bus, const char *path, uint32_t serial, const char *signature_in, Message *message_in) {        _c_cleanup_(c_dvar_deinitp) CDVar var_in = C_DVAR_INIT, var_out = C_DVAR_INIT;        _c_cleanup_(message_unrefp) Message *message_out = NULL;        void *data;        size_t n_data;        int r;        /*         * Verify the input signature and prepare the input & output variants         * for input parsing and output marshaling.         */        r = controller_dvar_verify_signature_in(method->in, signature_in);        if (r)                return error_trace(r);        c_dvar_begin_read(&var_in, message_in->big_endian, method->in, 1, message_in->body, message_in->n_body);        c_dvar_begin_write(&var_out, method->out, 1);        /*         * Write the generic reply-header and then call into the method-handler         * of the specific controller method. Note that the controller-methods are         * responsible to call controller_end_read(var_in), to verify all read data         * was correct.         */        c_dvar_write(&var_out, "(");        controller_write_reply_header(&var_out, serial, method->out);        r = method->fn(bus, path, &var_in, message_in->fds, &var_out);        if (r)                return error_trace(r);        c_dvar_write(&var_out, ")");        /*         * The message was correctly handled and the reply is serialized in         * @var_out. Lets finish it up and queue the reply on the destination.         * Note that any failure in doing so must be a fatal error, so there is         * no point in reverting the operation on failure.         */        r = c_dvar_end_write(&var_out, &data, &n_data);        if (r)                return error_origin(r);        r = message_new_outgoing(&message_out, data, n_data);        if (r)                return error_fold(r);        r = connection_queue(bus->controller, NULL, 0, message_out);        if (r) {                if (r == CONNECTION_E_QUOTA)                        connection_close(bus->controller);                else                        return error_fold(r);        }        return 0;}
+static int
+controller_handle_method(const ControllerMethod *method, Bus *bus, const char *path, uint32_t serial, const char *signature_in, Message *message_in)
+controller_handle_method
+const ControllerMethod *method
+const ControllerMethod
+ControllerMethod
+*method
+*
+method
+Bus *bus
+Bus
+Bus
+*bus
+*
+bus
+const char *path
+const char
+*path
+*
+path
+uint32_t serial
+uint32_t
+uint32_t
+serial
+serial
+const char *signature_in
+const char
+*signature_in
+*
+signature_in
+Message *message_in
+Message
+Message
+*message_in
+*
+message_in
+{        _c_cleanup_(c_dvar_deinitp) CDVar var_in = C_DVAR_INIT, var_out = C_DVAR_INIT;        _c_cleanup_(message_unrefp) Message *message_out = NULL;        void *data;        size_t n_data;        int r;        /*         * Verify the input signature and prepare the input & output variants         * for input parsing and output marshaling.         */        r = controller_dvar_verify_signature_in(method->in, signature_in);        if (r)                return error_trace(r);        c_dvar_begin_read(&var_in, message_in->big_endian, method->in, 1, message_in->body, message_in->n_body);        c_dvar_begin_write(&var_out, method->out, 1);        /*         * Write the generic reply-header and then call into the method-handler         * of the specific controller method. Note that the controller-methods are         * responsible to call controller_end_read(var_in), to verify all read data         * was correct.         */        c_dvar_write(&var_out, "(");        controller_write_reply_header(&var_out, serial, method->out);        r = method->fn(bus, path, &var_in, message_in->fds, &var_out);        if (r)                return error_trace(r);        c_dvar_write(&var_out, ")");        /*         * The message was correctly handled and the reply is serialized in         * @var_out. Lets finish it up and queue the reply on the destination.         * Note that any failure in doing so must be a fatal error, so there is         * no point in reverting the operation on failure.         */        r = c_dvar_end_write(&var_out, &data, &n_data);        if (r)                return error_origin(r);        r = message_new_outgoing(&message_out, data, n_data);        if (r)                return error_fold(r);        r = connection_queue(bus->controller, NULL, 0, message_out);        if (r) {                if (r == CONNECTION_E_QUOTA)                        connection_close(bus->controller);                else                        return error_fold(r);        }        return 0;}
+_c_cleanup_(c_dvar_deinitp)
+_c_cleanup_(c_dvar_deinitp)
+_c_cleanup_
+_c_cleanup_
+(c_dvar_deinitp)
+c_dvar_deinitp
+c_dvar_deinitp
+)
+CDVar var_in = C_DVAR_INIT, var_out = C_DVAR_INIT;
+CDVar var_in = C_DVAR_INIT, var_out = C_DVAR_INIT;
+CDVar
+CDVar
+var_in = C_DVAR_INIT
+var_in
+= C_DVAR_INIT
+C_DVAR_INIT
+C_DVAR_INIT
+var_out = C_DVAR_INIT
+var_out
+= C_DVAR_INIT
+C_DVAR_INIT
+C_DVAR_INIT
+_c_cleanup_(message_unrefp)
+_c_cleanup_(message_unrefp)
+_c_cleanup_
+_c_cleanup_
+(message_unrefp)
+message_unrefp
+message_unrefp
+)
+Message *message_out = NULL;
+Message *message_out = NULL;
+Message
+Message
+*message_out = NULL
+*
+message_out
+= NULL
+NULL
+NULL
+void *data;
+void *data;
+void
+*data
+*
+data
+size_t n_data;
+size_t n_data;
+size_t
+size_t
+n_data
+n_data
+int r;
+int r;
+int
+r
+r
+r = controller_dvar_verify_signature_in(method->in, signature_in);
+r = controller_dvar_verify_signature_in(method->in, signature_in)
+r
+r
+controller_dvar_verify_signature_in(method->in, signature_in)
+controller_dvar_verify_signature_in
+controller_dvar_verify_signature_in
+method->in
+method
+method
+in
+signature_in
+signature_in
+if (r)                return error_trace(r);
+r
+r
+return error_trace(r);
+error_trace(r)
+error_trace
+error_trace
+r
+r
+c_dvar_begin_read(&var_in, message_in->big_endian, method->in, 1, message_in->body, message_in->n_body);
+c_dvar_begin_read(&var_in, message_in->big_endian, method->in, 1, message_in->body, message_in->n_body)
+c_dvar_begin_read
+c_dvar_begin_read
+&var_in
+var_in
+var_in
+message_in->big_endian
+message_in
+message_in
+big_endian
+method->in
+method
+method
+in
+1
+message_in->body
+message_in
+message_in
+body
+message_in->n_body
+message_in
+message_in
+n_body
+c_dvar_begin_write(&var_out, method->out, 1);
+c_dvar_begin_write(&var_out, method->out, 1)
+c_dvar_begin_write
+c_dvar_begin_write
+&var_out
+var_out
+var_out
+method->out
+method
+method
+out
+1
+c_dvar_write(&var_out, "(");
+c_dvar_write(&var_out, "(")
+c_dvar_write
+c_dvar_write
+&var_out
+var_out
+var_out
+"("
+controller_write_reply_header(&var_out, serial, method->out);
+controller_write_reply_header(&var_out, serial, method->out)
+controller_write_reply_header
+controller_write_reply_header
+&var_out
+var_out
+var_out
+serial
+serial
+method->out
+method
+method
+out
+r = method->fn(bus, path, &var_in, message_in->fds, &var_out);
+r = method->fn(bus, path, &var_in, message_in->fds, &var_out)
+r
+r
+method->fn(bus, path, &var_in, message_in->fds, &var_out)
+method->fn
+method
+method
+fn
+bus
+bus
+path
+path
+&var_in
+var_in
+var_in
+message_in->fds
+message_in
+message_in
+fds
+&var_out
+var_out
+var_out
+if (r)                return error_trace(r);
+r
+r
+return error_trace(r);
+error_trace(r)
+error_trace
+error_trace
+r
+r
+c_dvar_write(&var_out, ")");
+c_dvar_write(&var_out, ")")
+c_dvar_write
+c_dvar_write
+&var_out
+var_out
+var_out
+")"
+r = c_dvar_end_write(&var_out, &data, &n_data);
+r = c_dvar_end_write(&var_out, &data, &n_data)
+r
+r
+c_dvar_end_write(&var_out, &data, &n_data)
+c_dvar_end_write
+c_dvar_end_write
+&var_out
+var_out
+var_out
+&data
+data
+data
+&n_data
+n_data
+n_data
+if (r)                return error_origin(r);
+r
+r
+return error_origin(r);
+error_origin(r)
+error_origin
+error_origin
+r
+r
+r = message_new_outgoing(&message_out, data, n_data);
+r = message_new_outgoing(&message_out, data, n_data)
+r
+r
+message_new_outgoing(&message_out, data, n_data)
+message_new_outgoing
+message_new_outgoing
+&message_out
+message_out
+message_out
+data
+data
+n_data
+n_data
+if (r)                return error_fold(r);
+r
+r
+return error_fold(r);
+error_fold(r)
+error_fold
+error_fold
+r
+r
+r = connection_queue(bus->controller, NULL, 0, message_out);
+r = connection_queue(bus->controller, NULL, 0, message_out)
+r
+r
+connection_queue(bus->controller, NULL, 0, message_out)
+connection_queue
+connection_queue
+bus->controller
+bus
+bus
+controller
+NULL
+NULL
+0
+message_out
+message_out
+if (r) {                if (r == CONNECTION_E_QUOTA)                        connection_close(bus->controller);                else                        return error_fold(r);        }
+r
+r
+{                if (r == CONNECTION_E_QUOTA)                        connection_close(bus->controller);                else                        return error_fold(r);        }
+if (r == CONNECTION_E_QUOTA)                        connection_close(bus->controller);                else                        return error_fold(r);
+r == CONNECTION_E_QUOTA
+r
+r
+CONNECTION_E_QUOTA
+CONNECTION_E_QUOTA
+connection_close(bus->controller);
+connection_close(bus->controller)
+connection_close
+connection_close
+bus->controller
+bus
+bus
+controller
+return error_fold(r);
+error_fold(r)
+error_fold
+error_fold
+r
+r
+return 0;
+0
+-----joern-----
+(137,2,0)
+(103,118,0)
+(105,102,0)
+(56,21,0)
+(102,73,0)
+(119,90,0)
+(119,13,0)
+(7,66,0)
+(128,69,0)
+(7,35,0)
+(2,48,0)
+(9,106,0)
+(104,90,0)
+(90,119,0)
+(10,48,0)
+(28,130,0)
+(7,20,0)
+(112,48,0)
+(40,51,0)
+(83,12,0)
+(20,130,0)
+(139,63,0)
+(127,98,0)
+(119,101,0)
+(0,119,0)
+(126,15,0)
+(140,95,0)
+(10,118,0)
+(80,51,0)
+(32,102,0)
+(33,11,0)
+(140,40,0)
+(26,130,0)
+(124,133,0)
+(10,56,0)
+(140,18,0)
+(134,12,0)
+(63,40,0)
+(140,80,0)
+(17,32,0)
+(142,77,0)
+(66,7,0)
+(14,115,0)
+(109,35,0)
+(115,130,0)
+(108,77,0)
+(44,101,0)
+(101,86,0)
+(28,117,0)
+(112,115,0)
+(85,10,0)
+(2,137,0)
+(84,8,0)
+(141,62,0)
+(24,51,0)
+(69,86,0)
+(137,79,0)
+(21,48,0)
+(26,81,0)
+(125,73,0)
+(132,114,0)
+(19,12,0)
+(73,102,0)
+(46,48,0)
+(10,8,0)
+(116,26,0)
+(43,48,0)
+(143,48,0)
+(77,117,0)
+(130,48,0)
+(140,11,0)
+(6,33,0)
+(57,17,0)
+(8,10,0)
+(137,106,0)
+(101,119,0)
+(81,61,0)
+(38,8,0)
+(15,51,0)
+(117,48,0)
+(33,66,0)
+(91,80,0)
+(90,21,0)
+(46,119,0)
+(39,132,0)
+(138,106,0)
+(82,130,0)
+(24,47,0)
+(97,48,0)
+(66,48,0)
+(119,46,0)
+(89,48,0)
+(10,69,0)
+(25,91,0)
+(20,7,0)
+(140,15,0)
+(23,56,0)
+(16,81,0)
+(41,12,0)
+(133,19,0)
+(41,122,0)
+(22,118,0)
+(99,130,0)
+(132,122,0)
+(64,48,0)
+(74,32,0)
+(81,16,0)
+(120,102,0)
+(17,95,0)
+(98,10,0)
+(131,20,0)
+(136,101,0)
+(37,119,0)
+(121,16,0)
+(111,7,0)
+(47,24,0)
+(12,41,0)
+(18,51,0)
+(107,94,0)
+(106,137,0)
+(71,48,0)
+(36,69,0)
+(95,51,0)
+(110,130,0)
+(42,117,0)
+(96,28,0)
+(115,112,0)
+(56,10,0)
+(98,30,0)
+(11,51,0)
+(31,16,0)
+(113,48,0)
+(119,122,0)
+(49,132,0)
+(32,48,0)
+(8,86,0)
+(65,21,0)
+(118,10,0)
+(69,10,0)
+(18,48,0)
+(76,99,0)
+(5,21,0)
+(92,126,0)
+(10,98,0)
+(118,86,0)
+(35,7,0)
+(77,30,0)
+(91,2,0)
+(78,12,0)
+(34,111,0)
+(102,32,0)
+(50,119,0)
+(7,111,0)
+(75,112,0)
+(51,62,0)
+(12,19,0)
+(106,30,0)
+(117,77,0)
+(94,48,0)
+(94,99,0)
+(63,46,0)
+(126,19,0)
+(58,81,0)
+(129,41,0)
+(59,41,0)
+(37,130,0)
+(100,19,0)
+(27,37,0)
+(52,66,0)
+(51,24,0)
+(119,37,0)
+(99,94,0)
+(53,2,0)
+(29,133,0)
+(114,132,0)
+(68,46,0)
+(72,48,0)
+(16,30,0)
+(62,48,0)
+(3,48,0)
+(1,48,0)
+(117,28,0)
+(88,24,0)
+(81,48,0)
+(60,51,0)
+(19,48,0)
+(81,26,0)
+(55,137,0)
+(45,98,0)
+(135,70,0)
+(123,18,0)
+(14,117,1)
+(11,51,1)
+(24,88,1)
+(119,90,1)
+(26,130,1)
+(21,65,1)
+(84,38,1)
+(7,35,1)
+(123,93,1)
+(126,92,1)
+(112,75,1)
+(112,115,1)
+(10,56,1)
+(140,15,1)
+(17,32,1)
+(11,33,1)
+(35,109,1)
+(117,28,1)
+(129,59,1)
+(51,60,1)
+(132,49,1)
+(119,122,1)
+(134,78,1)
+(19,12,1)
+(34,35,1)
+(0,68,1)
+(103,22,1)
+(58,26,1)
+(22,8,1)
+(119,101,1)
+(142,28,1)
+(127,45,1)
+(133,29,1)
+(80,91,1)
+(125,74,1)
+(121,31,1)
+(116,112,1)
+(123,114,1)
+(9,138,1)
+(137,79,1)
+(45,69,1)
+(80,51,1)
+(101,86,1)
+(83,41,1)
+(104,50,1)
+(137,55,1)
+(46,119,1)
+(31,58,1)
+(20,131,1)
+(63,139,1)
+(65,5,1)
+(12,41,1)
+(49,39,1)
+(95,51,1)
+(81,16,1)
+(110,82,1)
+(115,130,1)
+(109,20,1)
+(117,77,1)
+(54,66,1)
+(102,105,1)
+(138,53,1)
+(16,121,1)
+(132,122,1)
+(140,18,1)
+(124,93,1)
+(140,95,1)
+(32,102,1)
+(74,54,1)
+(115,14,1)
+(77,108,1)
+(76,87,1)
+(57,4,1)
+(102,73,1)
+(87,46,1)
+(8,86,1)
+(85,98,1)
+(94,107,1)
+(140,40,1)
+(128,56,1)
+(131,52,1)
+(10,8,1)
+(63,46,1)
+(78,83,1)
+(69,86,1)
+(59,100,1)
+(120,73,1)
+(23,67,1)
+(133,19,1)
+(29,124,1)
+(16,30,1)
+(50,0,1)
+(55,106,1)
+(130,110,1)
+(137,106,1)
+(139,87,1)
+(98,30,1)
+(93,19,1)
+(7,20,1)
+(92,133,1)
+(28,130,1)
+(88,130,1)
+(15,126,1)
+(67,2,1)
+(75,115,1)
+(141,51,1)
+(20,130,1)
+(42,77,1)
+(91,25,1)
+(73,125,1)
+(33,6,1)
+(26,116,1)
+(98,127,1)
+(41,129,1)
+(2,137,1)
+(107,99,1)
+(10,69,1)
+(100,4,1)
+(24,47,1)
+(90,21,1)
+(118,103,1)
+(40,51,1)
+(91,2,1)
+(81,26,1)
+(52,94,1)
+(33,66,1)
+(114,132,1)
+(136,44,1)
+(39,133,1)
+(105,120,1)
+(6,54,1)
+(111,34,1)
+(90,104,1)
+(101,136,1)
+(96,10,1)
+(99,130,1)
+(68,81,1)
+(53,62,1)
+(77,30,1)
+(4,32,1)
+(56,23,1)
+(117,42,1)
+(66,7,1)
+(62,141,1)
+(108,142,1)
+(38,85,1)
+(99,76,1)
+(15,51,1)
+(56,21,1)
+(81,61,1)
+(36,128,1)
+(28,96,1)
+(25,67,1)
+(40,63,1)
+(44,90,1)
+(95,17,1)
+(7,111,1)
+(10,118,1)
+(106,30,1)
+(119,13,1)
+(10,98,1)
+(140,80,1)
+(8,84,1)
+(69,36,1)
+(140,11,1)
+(12,134,1)
+(126,19,1)
+(106,9,1)
+(41,122,1)
+(94,99,1)
+(51,24,1)
+(118,86,1)
+(27,101,1)
+(37,27,1)
+(18,123,1)
+(17,57,1)
+(18,51,1)
+(82,21,1)
+(60,24,1)
+(119,37,1)
+(37,130,1)
+(117,67,2)
+(33,66,2)
+(128,67,2)
+(69,67,2)
+(94,99,2)
+(77,67,2)
+(8,67,2)
+(129,4,2)
+(78,4,2)
+(73,54,2)
+(140,11,2)
+(16,30,2)
+(96,67,2)
+(119,13,2)
+(31,67,2)
+(69,86,2)
+(120,54,2)
+(34,87,2)
+(114,132,2)
+(112,67,2)
+(40,87,2)
+(41,122,2)
+(2,137,2)
+(19,4,2)
+(50,67,2)
+(112,115,2)
+(140,95,2)
+(95,4,2)
+(99,87,2)
+(109,87,2)
+(54,87,2)
+(118,86,2)
+(90,21,2)
+(46,119,2)
+(28,130,2)
+(42,67,2)
+(24,47,2)
+(66,87,2)
+(10,56,2)
+(81,67,2)
+(90,67,2)
+(119,122,2)
+(10,69,2)
+(136,67,2)
+(18,133,2)
+(104,67,2)
+(12,4,2)
+(124,93,2)
+(32,54,2)
+(68,67,2)
+(22,67,2)
+(25,67,2)
+(28,67,2)
+(14,67,2)
+(29,93,2)
+(38,67,2)
+(7,111,2)
+(57,4,2)
+(105,54,2)
+(99,130,2)
+(7,35,2)
+(127,67,2)
+(23,67,2)
+(101,86,2)
+(84,67,2)
+(85,67,2)
+(98,30,2)
+(119,101,2)
+(63,87,2)
+(106,30,2)
+(137,106,2)
+(119,67,2)
+(39,133,2)
+(37,130,2)
+(115,67,2)
+(81,61,2)
+(123,133,2)
+(118,67,2)
+(41,4,2)
+(111,87,2)
+(44,67,2)
+(56,21,2)
+(116,67,2)
+(119,37,2)
+(91,67,2)
+(26,67,2)
+(101,67,2)
+(142,67,2)
+(26,130,2)
+(49,133,2)
+(83,4,2)
+(115,130,2)
+(123,93,2)
+(134,4,2)
+(15,133,2)
+(27,67,2)
+(12,41,2)
+(7,87,2)
+(17,32,2)
+(117,77,2)
+(131,87,2)
+(11,51,2)
+(76,87,2)
+(114,133,2)
+(51,24,2)
+(133,19,2)
+(7,20,2)
+(92,133,2)
+(36,67,2)
+(18,51,2)
+(45,67,2)
+(80,51,2)
+(137,79,2)
+(100,4,2)
+(20,87,2)
+(10,118,2)
+(52,87,2)
+(117,28,2)
+(132,122,2)
+(80,67,2)
+(74,54,2)
+(140,80,2)
+(32,102,2)
+(63,46,2)
+(119,90,2)
+(40,51,2)
+(19,12,2)
+(139,87,2)
+(102,54,2)
+(46,67,2)
+(16,67,2)
+(140,40,2)
+(8,86,2)
+(133,93,2)
+(81,26,2)
+(15,51,2)
+(140,15,2)
+(77,30,2)
+(107,87,2)
+(0,67,2)
+(95,51,2)
+(121,67,2)
+(35,87,2)
+(37,67,2)
+(59,4,2)
+(6,54,2)
+(10,67,2)
+(11,54,2)
+(103,67,2)
+(66,7,2)
+(93,4,2)
+(4,54,2)
+(17,4,2)
+(140,18,2)
+(10,98,2)
+(58,67,2)
+(18,93,2)
+(108,67,2)
+(98,67,2)
+(33,54,2)
+(125,54,2)
+(94,87,2)
+(91,2,2)
+(132,133,2)
+(126,133,2)
+(56,67,2)
+(10,8,2)
+(75,67,2)
+(20,130,2)
+(126,19,2)
+(87,67,2)
+(81,16,2)
+(102,73,2)
+-----------------------------------
+(0,bus)
+(1,if (r)
+(2,r = controller_dvar_verify_signature_in(method->in, signature_in)
+(3,n_data)
+(4,r)
+(5,var_in)
+(6,r)
+(7,c_dvar_end_write(&var_out, &data, &n_data)
+(8,message_in->body)
+(9,in)
+(10,c_dvar_begin_read(&var_in, message_in->big_endian, method->in, 1, message_in->body, message_in->n_body)
+(11,return error_origin(r)
+(12,connection_queue(bus->controller, NULL, 0, message_out)
+(13,const char *path)
+(14,var_out)
+(15,return error_fold(r)
+(16,method->out)
+(17,error_fold(r)
+(18,return 0;)
+(19,r = connection_queue(bus->controller, NULL, 0, message_out)
+(20,&var_out)
+(21,var_in = C_DVAR_INIT)
+(22,message_in)
+(23,var_in)
+(24,(message_unrefp)
+(25,r)
+(26,&var_out)
+(27,var_out)
+(28,&var_out)
+(29,CONNECTION_E_QUOTA)
+(30,const ControllerMethod *method)
+(31,method)
+(32,r = message_new_outgoing(&message_out, data, n_data)
+(33,error_origin(r)
+(34,n_data)
+(35,&data)
+(36,big_endian)
+(37,&var_out)
+(38,message_in)
+(39,bus)
+(40,return error_trace(r)
+(41,bus->controller)
+(42,1)
+(43,var_in)
+(44,message_in)
+(45,method)
+(46,r = method->fn(bus, path, &var_in, message_in->fds, &var_out)
+(47,message_unrefp)
+(48,)
+(49,controller)
+(50,path)
+(51,(message_unrefp)
+(52,r)
+(53,r)
+(54,r)
+(55,signature_in)
+(56,&var_in)
+(57,r)
+(58,serial)
+(59,bus)
+(60,message_out)
+(61,uint32_t serial)
+(62,(message_unrefp)
+(63,error_trace(r)
+(64,if (r)
+(65,C_DVAR_INIT)
+(66,r = c_dvar_end_write(&var_out, &data, &n_data)
+(67,r)
+(68,r)
+(69,message_in->big_endian)
+(70,)
+(71,data)
+(72,r)
+(73,&message_out)
+(74,r)
+(75,"(")
+(76,var_out)
+(77,method->out)
+(78,0)
+(79,const char *signature_in)
+(80,return error_trace(r)
+(81,controller_write_reply_header(&var_out, serial, method->out)
+(82,var_out)
+(83,NULL)
+(84,body)
+(85,1)
+(86,Message *message_in)
+(87,r)
+(88,Message)
+(89,if (r)
+(90,&var_in)
+(91,error_trace(r)
+(92,r)
+(93,r)
+(94,c_dvar_write(&var_out, ")
+(95,return error_fold(r)
+(96,var_out)
+(97,if (r)
+(98,method->in)
+(99,&var_out)
+(100,r)
+(101,message_in->fds)
+(102,message_new_outgoing(&message_out, data, n_data)
+(103,n_body)
+(104,var_in)
+(105,n_data)
+(106,method->in)
+(107,")
+(108,out)
+(109,data)
+(110,C_DVAR_INIT)
+(111,&n_data)
+(112,c_dvar_write(&var_out, "(")
+(113,if (r)
+(114,connection_close(bus->controller)
+(115,&var_out)
+(116,var_out)
+(117,c_dvar_begin_write(&var_out, method->out, 1)
+(118,message_in->n_body)
+(119,method->fn(bus, path, &var_in, message_in->fds, &var_out)
+(120,data)
+(121,out)
+(122,Bus *bus)
+(123,0)
+(124,r)
+(125,message_out)
+(126,error_fold(r)
+(127,in)
+(128,message_in)
+(129,controller)
+(130,var_out = C_DVAR_INIT)
+(131,var_out)
+(132,bus->controller)
+(133,r == CONNECTION_E_QUOTA)
+(134,message_out)
+(135,if (r == CONNECTION_E_QUOTA)
+(136,fds)
+(137,controller_dvar_verify_signature_in(method->in, signature_in)
+(138,method)
+(139,r)
+(140,RET)
+(141,NULL)
+(142,method)
+(143,var_out)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

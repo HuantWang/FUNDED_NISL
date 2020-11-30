@@ -1,0 +1,2487 @@
+-----label-----
+1
+-----code-----
+static char **sreaddir(const char *dirname, const int sort) {
+  DIR *d;
+  struct dirent *de;
+  struct stat st;
+  int i, dir_fd;
+  char **p;
+  size_t ssize, dsize;
+
+  if (pr_fsio_stat(dirname, &st) < 0)
+    return NULL;
+
+  if (!S_ISDIR(st.st_mode)) {
+    errno = ENOTDIR;
+    return NULL;
+  }
+
+  d = pr_fsio_opendir(dirname);
+  if (d == NULL)
+    return NULL;
+
+  /* It doesn't matter if the following guesses are wrong, but it slows
+   * the system a bit and wastes some memory if they are wrong, so
+   * don't guess *too* naively!
+   *
+   * 'dsize' must be greater than zero or we loop forever.
+   * 'ssize' must be at least big enough to hold a maximum-length name.
+   */
+
+  /* Guess the number of entries in the directory. */
+  dsize = (((size_t) st.st_size) / 4) + 10;
+
+  /* The directory has been opened already, but portably accessing the file
+   * descriptor inside the DIR struct isn't easy.  Some systems use "dd_fd" or
+   * "__dd_fd" rather than "d_fd".  Still others work really hard at opacity.
+   */
+#if defined(HAVE_DIRFD)
+  dir_fd = dirfd(d);
+#elif defined(HAVE_STRUCT_DIR_D_FD)
+  dir_fd = d->d_fd;
+#elif defined(HAVE_STRUCT_DIR_DD_FD)
+  dir_fd = d->dd_fd;
+#elif defined(HAVE_STRUCT_DIR___DD_FD)
+  dir_fd = d->__dd_fd;
+#else
+  dir_fd = 0;
+#endif
+
+  ssize = get_name_max((char *) dirname, dir_fd);
+  if (ssize < 1) {
+    pr_log_debug(DEBUG1, "get_name_max(%s, %d) = %lu, using %d", dirname,
+      dir_fd, (unsigned long) ssize, NAME_MAX_GUESS);
+    ssize = NAME_MAX_GUESS;
+  }
+
+  ssize *= ((dsize / 4) + 1);
+
+  /* Allocate first block for holding filenames.  Yes, we are explicitly using
+   * malloc (and realloc, and calloc, later) rather than the memory pools.
+   * Recursive directory listings would eat up a lot of pool memory that is
+   * only freed when the _entire_ directory structure has been parsed.  Also,
+   * this helps to keep the memory footprint a little smaller.
+   */
+  pr_trace_msg("data", 8, "allocating readdir buffer of %lu bytes",
+    (unsigned long) (dsize * sizeof(char *)));
+
+  p = malloc(dsize * sizeof(char *));
+  if (p == NULL) {
+    pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),
+      "Out of memory!");
+    exit(1);
+  }
+
+  i = 0;
+
+  while ((de = pr_fsio_readdir(d)) != NULL) {
+    pr_signals_handle();
+
+    if (i >= dsize - 1) {
+      char **newp;
+
+      /* The test above goes off one item early in case this is the last item
+       * in the directory and thus next time we will want to NULL-terminate
+       * the array.
+       */
+      pr_log_debug(DEBUG0, "Reallocating sreaddir buffer from %lu entries to "
+        "%lu entries", (unsigned long) dsize, (unsigned long) dsize * 2);
+
+      /* Allocate bigger array for pointers to filenames */
+      pr_trace_msg("data", 8, "allocating readdir buffer of %lu bytes",
+        (unsigned long) (2 * dsize * sizeof(char *)));
+
+      newp = (char **) realloc(p, 2 * dsize * sizeof(char *));
+      if (newp == NULL) {
+        pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),
+          "Out of memory!");
+        exit(1);
+      }
+      p = newp;
+      dsize *= 2;
+    }
+
+    /* Append the filename to the block. */
+    p[i] = (char *) calloc(strlen(de->d_name) + 1, sizeof(char));
+    if (p[i] == NULL) {
+      pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),
+        "Out of memory!");
+      exit(1);
+    }
+    sstrncpy(p[i++], de->d_name, strlen(de->d_name) + 1);
+  }
+
+  pr_fsio_closedir(d);
+
+  /* This is correct, since the above is off by one element.
+   */
+  p[i] = NULL;
+
+  if (sort) {
+    PR_DEVEL_CLOCK(qsort(p, i, sizeof(char *), dircmp));
+  }
+
+  return p;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+3,8
+7,8
+7,9
+9,10
+9,11
+12,13
+12,14
+14,15
+16,17
+16,18
+16,19
+16,20
+16,21
+16,22
+16,23
+16,24
+16,25
+16,26
+16,27
+16,28
+16,29
+16,30
+16,31
+16,32
+16,33
+16,34
+16,35
+16,36
+16,37
+16,38
+16,39
+16,40
+17,18
+18,19
+18,20
+19,20
+21,22
+21,23
+24,25
+25,26
+25,27
+26,27
+28,29
+28,30
+31,32
+32,33
+32,34
+33,34
+35,36
+37,38
+38,39
+38,40
+38,41
+40,41
+42,43
+44,45
+45,46
+45,47
+47,48
+47,49
+47,50
+51,52
+52,53
+52,54
+52,55
+53,54
+55,56
+57,58
+59,60
+59,61
+60,61
+60,62
+61,62
+61,63
+61,64
+62,63
+64,65
+66,67
+67,68
+70,71
+71,72
+73,74
+73,75
+74,75
+75,76
+75,77
+76,77
+78,79
+78,80
+79,80
+82,83
+82,84
+83,84
+84,85
+84,86
+85,86
+87,88
+89,90
+90,91
+92,93
+93,94
+93,95
+94,95
+96,97
+96,98
+97,98
+99,100
+101,102
+101,103
+102,103
+102,104
+103,104
+105,106
+107,108
+108,109
+110,111
+111,112
+111,113
+112,113
+114,115
+114,116
+115,116
+116,117
+116,118
+117,118
+118,119
+118,120
+119,120
+119,121
+120,121
+123,124
+123,125
+124,125
+129,130
+130,131
+130,132
+131,132
+134,135
+135,136
+135,137
+136,137
+138,139
+138,140
+138,141
+139,140
+141,142
+141,143
+142,143
+142,144
+144,145
+146,147
+148,149
+150,151
+150,152
+151,152
+151,153
+152,153
+155,156
+155,157
+156,157
+157,158
+157,159
+157,160
+157,161
+157,162
+157,163
+157,164
+158,159
+160,161
+163,164
+165,166
+167,168
+167,169
+168,169
+168,170
+171,172
+173,174
+175,176
+176,177
+176,178
+177,178
+179,180
+181,182
+182,183
+182,184
+183,184
+185,186
+186,187
+186,188
+187,188
+188,189
+188,190
+189,190
+193,194
+194,195
+194,196
+194,197
+194,198
+194,199
+195,196
+200,201
+200,202
+201,202
+201,203
+204,205
+205,206
+205,207
+206,207
+208,209
+209,210
+209,211
+211,212
+213,214
+214,215
+214,216
+215,216
+217,218
+217,219
+218,219
+220,221
+220,222
+221,222
+223,224
+224,225
+224,226
+226,227
+228,229
+228,230
+229,230
+229,231
+230,231
+232,233
+234,235
+234,236
+235,236
+236,237
+236,238
+236,239
+237,238
+239,240
+239,241
+239,242
+240,241
+242,243
+246,247
+247,248
+247,249
+248,249
+251,252
+252,253
+252,254
+253,254
+256,257
+256,258
+257,258
+257,259
+258,259
+259,260
+259,261
+260,261
+262,263
+262,264
+263,264
+265,266
+267,268
+269,270
+269,271
+269,272
+269,273
+269,274
+270,271
+271,272
+272,273
+274,275
+274,276
+275,276
+275,277
+276,277
+278,279
+278,280
+279,280
+282,283
+282,284
+282,285
+282,286
+282,287
+282,288
+282,289
+283,284
+284,285
+284,286
+286,287
+286,288
+286,289
+290,291
+291,292
+291,293
+291,294
+291,295
+291,296
+292,293
+294,295
+297,298
+297,299
+298,299
+298,300
+301,302
+303,304
+303,305
+304,305
+304,306
+305,306
+305,307
+308,309
+311,312
+312,313
+312,314
+312,315
+312,316
+312,317
+313,314
+318,319
+318,320
+319,320
+319,321
+322,323
+323,324
+323,325
+324,325
+324,326
+326,327
+328,329
+329,330
+329,331
+331,332
+333,334
+334,335
+334,336
+335,336
+337,338
+337,339
+338,339
+338,340
+340,341
+340,342
+343,344
+343,345
+343,346
+344,345
+346,347
+348,349
+348,350
+349,350
+349,351
+351,352
+353,354
+354,355
+354,356
+356,357
+358,359
+358,360
+359,360
+359,361
+360,361
+362,363
+364,365
+364,366
+365,366
+366,367
+366,368
+366,369
+367,368
+369,370
+369,371
+369,372
+370,371
+372,373
+376,377
+377,378
+377,379
+378,379
+381,382
+382,383
+382,384
+383,384
+385,386
+387,388
+388,389
+388,390
+389,390
+392,393
+393,394
+393,395
+394,395
+394,396
+395,396
+397,398
+399,400
+399,401
+400,401
+400,402
+402,403
+404,405
+404,406
+404,407
+405,406
+407,408
+407,409
+408,409
+408,410
+409,410
+411,412
+411,413
+412,413
+416,417
+417,418
+417,419
+420,421
+420,422
+421,422
+421,423
+422,423
+422,424
+423,424
+425,426
+427,428
+429,430
+429,431
+430,431
+431,432
+431,433
+431,434
+432,433
+434,435
+434,436
+434,437
+435,436
+437,438
+441,442
+442,443
+442,444
+443,444
+446,447
+447,448
+447,449
+447,450
+447,451
+448,449
+450,451
+450,452
+451,452
+453,454
+454,455
+456,457
+456,458
+457,458
+460,461
+460,462
+461,462
+461,463
+462,463
+464,465
+464,466
+465,466
+469,470
+470,471
+470,472
+471,472
+473,474
+475,476
+476,477
+476,478
+477,478
+477,479
+478,479
+480,481
+482,483
+484,485
+484,486
+485,486
+487,488
+488,489
+489,490
+489,491
+490,491
+492,493
+492,494
+492,495
+492,496
+492,497
+493,494
+495,496
+497,498
+499,500
+500,501
+500,502
+502,503
+504,505
+506,507
+507,508
+-----nextToken-----
+2,4,5,6,8,10,11,13,15,20,22,23,27,29,30,34,36,39,41,43,46,48,49,50,54,56,58,63,65,68,69,72,77,80,81,86,88,91,95,98,100,104,106,109,113,121,122,125,126,127,128,132,133,137,140,143,145,147,149,153,154,159,161,162,164,166,169,170,172,174,178,180,184,190,191,192,196,197,198,199,202,203,207,210,212,216,219,222,225,227,231,233,238,241,243,244,245,249,250,254,255,261,264,266,268,273,277,280,281,285,287,288,289,293,295,296,299,300,302,306,307,309,310,314,315,316,317,320,321,325,327,330,332,336,339,341,342,345,347,350,352,355,357,361,363,368,371,373,374,375,379,380,384,386,390,391,396,398,401,403,406,410,413,414,415,418,419,424,426,428,433,436,438,439,440,444,445,449,452,455,458,459,463,466,467,468,472,474,479,481,483,486,491,494,496,498,501,503,505,508
+-----computeFrom-----
+60,61
+60,62
+84,85
+84,86
+93,94
+93,95
+102,103
+102,104
+111,112
+111,113
+114,115
+114,116
+116,117
+116,118
+130,131
+130,132
+135,136
+135,137
+151,152
+151,153
+176,177
+176,178
+182,183
+182,184
+186,187
+186,188
+188,189
+188,190
+205,206
+205,207
+214,215
+214,216
+220,221
+220,222
+229,230
+229,231
+252,253
+252,254
+257,258
+257,259
+259,260
+259,261
+275,276
+275,277
+278,279
+278,280
+303,304
+303,305
+323,324
+323,325
+324,325
+324,326
+334,335
+334,336
+348,349
+348,350
+349,350
+349,351
+359,360
+359,361
+382,383
+382,384
+388,389
+388,390
+393,394
+393,395
+407,408
+407,409
+421,422
+421,423
+460,461
+460,462
+476,477
+476,478
+-----guardedBy-----
+106,109
+153,178
+280,390
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Pointer;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;Declarator;Name;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;ReturnStatement;IdExpression;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;UnaryExpression;BinaryExpression;UnaryExpression;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;FieldReference;IdExpression;Name;Name;LiteralExpression;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;LiteralExpression;LiteralExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;UnaryExpression;BinaryExpression;IdExpression;Name;TypeIdExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;TypeIdExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;WhileStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Pointer;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;IdExpression;Name;BinaryExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;LiteralExpression;LiteralExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;UnaryExpression;BinaryExpression;BinaryExpression;LiteralExpression;IdExpression;Name;TypeIdExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;Pointer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;BinaryExpression;LiteralExpression;IdExpression;Name;TypeIdExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;FunctionCallExpression;IdExpression;Name;BinaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;TypeIdExpression;TypeId;SimpleDeclSpecifier;Declarator;IfStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;TypeIdExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;IdExpression;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+static char **sreaddir(const char *dirname, const int sort) {  DIR *d;  struct dirent *de;  struct stat st;  int i, dir_fd;  char **p;  size_t ssize, dsize;  if (pr_fsio_stat(dirname, &st) < 0)    return NULL;  if (!S_ISDIR(st.st_mode)) {    errno = ENOTDIR;    return NULL;  }  d = pr_fsio_opendir(dirname);  if (d == NULL)    return NULL;  /* It doesn't matter if the following guesses are wrong, but it slows   * the system a bit and wastes some memory if they are wrong, so   * don't guess *too* naively!   *   * 'dsize' must be greater than zero or we loop forever.   * 'ssize' must be at least big enough to hold a maximum-length name.   */  /* Guess the number of entries in the directory. */  dsize = (((size_t) st.st_size) / 4) + 10;  /* The directory has been opened already, but portably accessing the file   * descriptor inside the DIR struct isn't easy.  Some systems use "dd_fd" or   * "__dd_fd" rather than "d_fd".  Still others work really hard at opacity.   */#if defined(HAVE_DIRFD)  dir_fd = dirfd(d);#elif defined(HAVE_STRUCT_DIR_D_FD)  dir_fd = d->d_fd;#elif defined(HAVE_STRUCT_DIR_DD_FD)  dir_fd = d->dd_fd;#elif defined(HAVE_STRUCT_DIR___DD_FD)  dir_fd = d->__dd_fd;#else  dir_fd = 0;#endif  ssize = get_name_max((char *) dirname, dir_fd);  if (ssize < 1) {    pr_log_debug(DEBUG1, "get_name_max(%s, %d) = %lu, using %d", dirname,      dir_fd, (unsigned long) ssize, NAME_MAX_GUESS);    ssize = NAME_MAX_GUESS;  }  ssize *= ((dsize / 4) + 1);  /* Allocate first block for holding filenames.  Yes, we are explicitly using   * malloc (and realloc, and calloc, later) rather than the memory pools.   * Recursive directory listings would eat up a lot of pool memory that is   * only freed when the _entire_ directory structure has been parsed.  Also,   * this helps to keep the memory footprint a little smaller.   */  pr_trace_msg("data", 8, "allocating readdir buffer of %lu bytes",    (unsigned long) (dsize * sizeof(char *)));  p = malloc(dsize * sizeof(char *));  if (p == NULL) {    pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),      "Out of memory!");    exit(1);  }  i = 0;  while ((de = pr_fsio_readdir(d)) != NULL) {    pr_signals_handle();    if (i >= dsize - 1) {      char **newp;      /* The test above goes off one item early in case this is the last item       * in the directory and thus next time we will want to NULL-terminate       * the array.       */      pr_log_debug(DEBUG0, "Reallocating sreaddir buffer from %lu entries to "        "%lu entries", (unsigned long) dsize, (unsigned long) dsize * 2);      /* Allocate bigger array for pointers to filenames */      pr_trace_msg("data", 8, "allocating readdir buffer of %lu bytes",        (unsigned long) (2 * dsize * sizeof(char *)));      newp = (char **) realloc(p, 2 * dsize * sizeof(char *));      if (newp == NULL) {        pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),          "Out of memory!");        exit(1);      }      p = newp;      dsize *= 2;    }    /* Append the filename to the block. */    p[i] = (char *) calloc(strlen(de->d_name) + 1, sizeof(char));    if (p[i] == NULL) {      pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),        "Out of memory!");      exit(1);    }    sstrncpy(p[i++], de->d_name, strlen(de->d_name) + 1);  }  pr_fsio_closedir(d);  /* This is correct, since the above is off by one element.   */  p[i] = NULL;  if (sort) {    PR_DEVEL_CLOCK(qsort(p, i, sizeof(char *), dircmp));  }  return p;}
+static char
+**sreaddir(const char *dirname, const int sort)
+*
+*
+sreaddir
+const char *dirname
+const char
+*dirname
+*
+dirname
+const int sort
+const int
+sort
+sort
+{  DIR *d;  struct dirent *de;  struct stat st;  int i, dir_fd;  char **p;  size_t ssize, dsize;  if (pr_fsio_stat(dirname, &st) < 0)    return NULL;  if (!S_ISDIR(st.st_mode)) {    errno = ENOTDIR;    return NULL;  }  d = pr_fsio_opendir(dirname);  if (d == NULL)    return NULL;  /* It doesn't matter if the following guesses are wrong, but it slows   * the system a bit and wastes some memory if they are wrong, so   * don't guess *too* naively!   *   * 'dsize' must be greater than zero or we loop forever.   * 'ssize' must be at least big enough to hold a maximum-length name.   */  /* Guess the number of entries in the directory. */  dsize = (((size_t) st.st_size) / 4) + 10;  /* The directory has been opened already, but portably accessing the file   * descriptor inside the DIR struct isn't easy.  Some systems use "dd_fd" or   * "__dd_fd" rather than "d_fd".  Still others work really hard at opacity.   */#if defined(HAVE_DIRFD)  dir_fd = dirfd(d);#elif defined(HAVE_STRUCT_DIR_D_FD)  dir_fd = d->d_fd;#elif defined(HAVE_STRUCT_DIR_DD_FD)  dir_fd = d->dd_fd;#elif defined(HAVE_STRUCT_DIR___DD_FD)  dir_fd = d->__dd_fd;#else  dir_fd = 0;#endif  ssize = get_name_max((char *) dirname, dir_fd);  if (ssize < 1) {    pr_log_debug(DEBUG1, "get_name_max(%s, %d) = %lu, using %d", dirname,      dir_fd, (unsigned long) ssize, NAME_MAX_GUESS);    ssize = NAME_MAX_GUESS;  }  ssize *= ((dsize / 4) + 1);  /* Allocate first block for holding filenames.  Yes, we are explicitly using   * malloc (and realloc, and calloc, later) rather than the memory pools.   * Recursive directory listings would eat up a lot of pool memory that is   * only freed when the _entire_ directory structure has been parsed.  Also,   * this helps to keep the memory footprint a little smaller.   */  pr_trace_msg("data", 8, "allocating readdir buffer of %lu bytes",    (unsigned long) (dsize * sizeof(char *)));  p = malloc(dsize * sizeof(char *));  if (p == NULL) {    pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),      "Out of memory!");    exit(1);  }  i = 0;  while ((de = pr_fsio_readdir(d)) != NULL) {    pr_signals_handle();    if (i >= dsize - 1) {      char **newp;      /* The test above goes off one item early in case this is the last item       * in the directory and thus next time we will want to NULL-terminate       * the array.       */      pr_log_debug(DEBUG0, "Reallocating sreaddir buffer from %lu entries to "        "%lu entries", (unsigned long) dsize, (unsigned long) dsize * 2);      /* Allocate bigger array for pointers to filenames */      pr_trace_msg("data", 8, "allocating readdir buffer of %lu bytes",        (unsigned long) (2 * dsize * sizeof(char *)));      newp = (char **) realloc(p, 2 * dsize * sizeof(char *));      if (newp == NULL) {        pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),          "Out of memory!");        exit(1);      }      p = newp;      dsize *= 2;    }    /* Append the filename to the block. */    p[i] = (char *) calloc(strlen(de->d_name) + 1, sizeof(char));    if (p[i] == NULL) {      pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),        "Out of memory!");      exit(1);    }    sstrncpy(p[i++], de->d_name, strlen(de->d_name) + 1);  }  pr_fsio_closedir(d);  /* This is correct, since the above is off by one element.   */  p[i] = NULL;  if (sort) {    PR_DEVEL_CLOCK(qsort(p, i, sizeof(char *), dircmp));  }  return p;}
+DIR *d;
+DIR *d;
+DIR
+DIR
+*d
+*
+d
+struct dirent *de;
+struct dirent *de;
+struct dirent
+dirent
+*de
+*
+de
+struct stat st;
+struct stat st;
+struct stat
+stat
+st
+st
+int i, dir_fd;
+int i, dir_fd;
+int
+i
+i
+dir_fd
+dir_fd
+char **p;
+char **p;
+char
+**p
+*
+*
+p
+size_t ssize, dsize;
+size_t ssize, dsize;
+size_t
+size_t
+ssize
+ssize
+dsize
+dsize
+if (pr_fsio_stat(dirname, &st) < 0)    return NULL;
+pr_fsio_stat(dirname, &st) < 0
+pr_fsio_stat(dirname, &st)
+pr_fsio_stat
+pr_fsio_stat
+dirname
+dirname
+&st
+st
+st
+0
+return NULL;
+NULL
+NULL
+if (!S_ISDIR(st.st_mode)) {    errno = ENOTDIR;    return NULL;  }
+!S_ISDIR(st.st_mode)
+S_ISDIR(st.st_mode)
+S_ISDIR
+S_ISDIR
+st.st_mode
+st
+st
+st_mode
+{    errno = ENOTDIR;    return NULL;  }
+errno = ENOTDIR;
+errno = ENOTDIR
+errno
+errno
+ENOTDIR
+ENOTDIR
+return NULL;
+NULL
+NULL
+d = pr_fsio_opendir(dirname);
+d = pr_fsio_opendir(dirname)
+d
+d
+pr_fsio_opendir(dirname)
+pr_fsio_opendir
+pr_fsio_opendir
+dirname
+dirname
+if (d == NULL)    return NULL;
+d == NULL
+d
+d
+NULL
+NULL
+return NULL;
+NULL
+NULL
+dsize = (((size_t) st.st_size) / 4) + 10;
+dsize = (((size_t) st.st_size) / 4) + 10
+dsize
+dsize
+(((size_t) st.st_size) / 4) + 10
+(((size_t) st.st_size) / 4)
+((size_t) st.st_size) / 4
+((size_t) st.st_size)
+(size_t) st.st_size
+size_t
+size_t
+size_t
+
+st.st_size
+st
+st
+st_size
+4
+10
+dir_fd = 0;
+dir_fd = 0
+dir_fd
+dir_fd
+0
+ssize = get_name_max((char *) dirname, dir_fd);
+ssize = get_name_max((char *) dirname, dir_fd)
+ssize
+ssize
+get_name_max((char *) dirname, dir_fd)
+get_name_max
+get_name_max
+(char *) dirname
+char *
+char
+*
+*
+dirname
+dirname
+dir_fd
+dir_fd
+if (ssize < 1) {    pr_log_debug(DEBUG1, "get_name_max(%s, %d) = %lu, using %d", dirname,      dir_fd, (unsigned long) ssize, NAME_MAX_GUESS);    ssize = NAME_MAX_GUESS;  }
+ssize < 1
+ssize
+ssize
+1
+{    pr_log_debug(DEBUG1, "get_name_max(%s, %d) = %lu, using %d", dirname,      dir_fd, (unsigned long) ssize, NAME_MAX_GUESS);    ssize = NAME_MAX_GUESS;  }
+pr_log_debug(DEBUG1, "get_name_max(%s, %d) = %lu, using %d", dirname,      dir_fd, (unsigned long) ssize, NAME_MAX_GUESS);
+pr_log_debug(DEBUG1, "get_name_max(%s, %d) = %lu, using %d", dirname,      dir_fd, (unsigned long) ssize, NAME_MAX_GUESS)
+pr_log_debug
+pr_log_debug
+DEBUG1
+DEBUG1
+"get_name_max(%s, %d) = %lu, using %d"
+dirname
+dirname
+dir_fd
+dir_fd
+(unsigned long) ssize
+unsigned long
+unsigned long
+
+ssize
+ssize
+NAME_MAX_GUESS
+NAME_MAX_GUESS
+ssize = NAME_MAX_GUESS;
+ssize = NAME_MAX_GUESS
+ssize
+ssize
+NAME_MAX_GUESS
+NAME_MAX_GUESS
+ssize *= ((dsize / 4) + 1);
+ssize *= ((dsize / 4) + 1)
+ssize
+ssize
+((dsize / 4) + 1)
+(dsize / 4) + 1
+(dsize / 4)
+dsize / 4
+dsize
+dsize
+4
+1
+pr_trace_msg("data", 8, "allocating readdir buffer of %lu bytes",    (unsigned long) (dsize * sizeof(char *)));
+pr_trace_msg("data", 8, "allocating readdir buffer of %lu bytes",    (unsigned long) (dsize * sizeof(char *)))
+pr_trace_msg
+pr_trace_msg
+"data"
+8
+"allocating readdir buffer of %lu bytes"
+(unsigned long) (dsize * sizeof(char *))
+unsigned long
+unsigned long
+
+(dsize * sizeof(char *))
+dsize * sizeof(char *)
+dsize
+dsize
+sizeof(char *)
+char *
+char
+*
+*
+p = malloc(dsize * sizeof(char *));
+p = malloc(dsize * sizeof(char *))
+p
+p
+malloc(dsize * sizeof(char *))
+malloc
+malloc
+dsize * sizeof(char *)
+dsize
+dsize
+sizeof(char *)
+char *
+char
+*
+*
+if (p == NULL) {    pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),      "Out of memory!");    exit(1);  }
+p == NULL
+p
+p
+NULL
+NULL
+{    pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),      "Out of memory!");    exit(1);  }
+pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),      "Out of memory!");
+pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),      "Out of memory!")
+pr_log_pri
+pr_log_pri
+pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0)
+pr_log_level_exhausted_rsrc
+pr_log_level_exhausted_rsrc
+PR_LOG_RSRC_MEM
+PR_LOG_RSRC_MEM
+0
+"Out of memory!"
+exit(1);
+exit(1)
+exit
+exit
+1
+i = 0;
+i = 0
+i
+i
+0
+while ((de = pr_fsio_readdir(d)) != NULL) {    pr_signals_handle();    if (i >= dsize - 1) {      char **newp;      /* The test above goes off one item early in case this is the last item       * in the directory and thus next time we will want to NULL-terminate       * the array.       */      pr_log_debug(DEBUG0, "Reallocating sreaddir buffer from %lu entries to "        "%lu entries", (unsigned long) dsize, (unsigned long) dsize * 2);      /* Allocate bigger array for pointers to filenames */      pr_trace_msg("data", 8, "allocating readdir buffer of %lu bytes",        (unsigned long) (2 * dsize * sizeof(char *)));      newp = (char **) realloc(p, 2 * dsize * sizeof(char *));      if (newp == NULL) {        pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),          "Out of memory!");        exit(1);      }      p = newp;      dsize *= 2;    }    /* Append the filename to the block. */    p[i] = (char *) calloc(strlen(de->d_name) + 1, sizeof(char));    if (p[i] == NULL) {      pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),        "Out of memory!");      exit(1);    }    sstrncpy(p[i++], de->d_name, strlen(de->d_name) + 1);  }
+(de = pr_fsio_readdir(d)) != NULL
+(de = pr_fsio_readdir(d))
+de = pr_fsio_readdir(d)
+de
+de
+pr_fsio_readdir(d)
+pr_fsio_readdir
+pr_fsio_readdir
+d
+d
+NULL
+NULL
+{    pr_signals_handle();    if (i >= dsize - 1) {      char **newp;      /* The test above goes off one item early in case this is the last item       * in the directory and thus next time we will want to NULL-terminate       * the array.       */      pr_log_debug(DEBUG0, "Reallocating sreaddir buffer from %lu entries to "        "%lu entries", (unsigned long) dsize, (unsigned long) dsize * 2);      /* Allocate bigger array for pointers to filenames */      pr_trace_msg("data", 8, "allocating readdir buffer of %lu bytes",        (unsigned long) (2 * dsize * sizeof(char *)));      newp = (char **) realloc(p, 2 * dsize * sizeof(char *));      if (newp == NULL) {        pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),          "Out of memory!");        exit(1);      }      p = newp;      dsize *= 2;    }    /* Append the filename to the block. */    p[i] = (char *) calloc(strlen(de->d_name) + 1, sizeof(char));    if (p[i] == NULL) {      pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),        "Out of memory!");      exit(1);    }    sstrncpy(p[i++], de->d_name, strlen(de->d_name) + 1);  }
+pr_signals_handle();
+pr_signals_handle()
+pr_signals_handle
+pr_signals_handle
+if (i >= dsize - 1) {      char **newp;      /* The test above goes off one item early in case this is the last item       * in the directory and thus next time we will want to NULL-terminate       * the array.       */      pr_log_debug(DEBUG0, "Reallocating sreaddir buffer from %lu entries to "        "%lu entries", (unsigned long) dsize, (unsigned long) dsize * 2);      /* Allocate bigger array for pointers to filenames */      pr_trace_msg("data", 8, "allocating readdir buffer of %lu bytes",        (unsigned long) (2 * dsize * sizeof(char *)));      newp = (char **) realloc(p, 2 * dsize * sizeof(char *));      if (newp == NULL) {        pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),          "Out of memory!");        exit(1);      }      p = newp;      dsize *= 2;    }
+i >= dsize - 1
+i
+i
+dsize - 1
+dsize
+dsize
+1
+{      char **newp;      /* The test above goes off one item early in case this is the last item       * in the directory and thus next time we will want to NULL-terminate       * the array.       */      pr_log_debug(DEBUG0, "Reallocating sreaddir buffer from %lu entries to "        "%lu entries", (unsigned long) dsize, (unsigned long) dsize * 2);      /* Allocate bigger array for pointers to filenames */      pr_trace_msg("data", 8, "allocating readdir buffer of %lu bytes",        (unsigned long) (2 * dsize * sizeof(char *)));      newp = (char **) realloc(p, 2 * dsize * sizeof(char *));      if (newp == NULL) {        pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),          "Out of memory!");        exit(1);      }      p = newp;      dsize *= 2;    }
+char **newp;
+char **newp;
+char
+**newp
+*
+*
+newp
+pr_log_debug(DEBUG0, "Reallocating sreaddir buffer from %lu entries to "        "%lu entries", (unsigned long) dsize, (unsigned long) dsize * 2);
+pr_log_debug(DEBUG0, "Reallocating sreaddir buffer from %lu entries to "        "%lu entries", (unsigned long) dsize, (unsigned long) dsize * 2)
+pr_log_debug
+pr_log_debug
+DEBUG0
+DEBUG0
+"Reallocating sreaddir buffer from %lu entries to "        "%lu entries"
+(unsigned long) dsize
+unsigned long
+unsigned long
+
+dsize
+dsize
+(unsigned long) dsize * 2
+(unsigned long) dsize
+unsigned long
+unsigned long
+
+dsize
+dsize
+2
+pr_trace_msg("data", 8, "allocating readdir buffer of %lu bytes",        (unsigned long) (2 * dsize * sizeof(char *)));
+pr_trace_msg("data", 8, "allocating readdir buffer of %lu bytes",        (unsigned long) (2 * dsize * sizeof(char *)))
+pr_trace_msg
+pr_trace_msg
+"data"
+8
+"allocating readdir buffer of %lu bytes"
+(unsigned long) (2 * dsize * sizeof(char *))
+unsigned long
+unsigned long
+
+(2 * dsize * sizeof(char *))
+2 * dsize * sizeof(char *)
+2 * dsize
+2
+dsize
+dsize
+sizeof(char *)
+char *
+char
+*
+*
+newp = (char **) realloc(p, 2 * dsize * sizeof(char *));
+newp = (char **) realloc(p, 2 * dsize * sizeof(char *))
+newp
+newp
+(char **) realloc(p, 2 * dsize * sizeof(char *))
+char **
+char
+**
+*
+*
+realloc(p, 2 * dsize * sizeof(char *))
+realloc
+realloc
+p
+p
+2 * dsize * sizeof(char *)
+2 * dsize
+2
+dsize
+dsize
+sizeof(char *)
+char *
+char
+*
+*
+if (newp == NULL) {        pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),          "Out of memory!");        exit(1);      }
+newp == NULL
+newp
+newp
+NULL
+NULL
+{        pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),          "Out of memory!");        exit(1);      }
+pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),          "Out of memory!");
+pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),          "Out of memory!")
+pr_log_pri
+pr_log_pri
+pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0)
+pr_log_level_exhausted_rsrc
+pr_log_level_exhausted_rsrc
+PR_LOG_RSRC_MEM
+PR_LOG_RSRC_MEM
+0
+"Out of memory!"
+exit(1);
+exit(1)
+exit
+exit
+1
+p = newp;
+p = newp
+p
+p
+newp
+newp
+dsize *= 2;
+dsize *= 2
+dsize
+dsize
+2
+p[i] = (char *) calloc(strlen(de->d_name) + 1, sizeof(char));
+p[i] = (char *) calloc(strlen(de->d_name) + 1, sizeof(char))
+p[i]
+p
+p
+i
+i
+(char *) calloc(strlen(de->d_name) + 1, sizeof(char))
+char *
+char
+*
+*
+calloc(strlen(de->d_name) + 1, sizeof(char))
+calloc
+calloc
+strlen(de->d_name) + 1
+strlen(de->d_name)
+strlen
+strlen
+de->d_name
+de
+de
+d_name
+1
+sizeof(char)
+char
+char
+
+if (p[i] == NULL) {      pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),        "Out of memory!");      exit(1);    }
+p[i] == NULL
+p[i]
+p
+p
+i
+i
+NULL
+NULL
+{      pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),        "Out of memory!");      exit(1);    }
+pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),        "Out of memory!");
+pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0),        "Out of memory!")
+pr_log_pri
+pr_log_pri
+pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0)
+pr_log_level_exhausted_rsrc
+pr_log_level_exhausted_rsrc
+PR_LOG_RSRC_MEM
+PR_LOG_RSRC_MEM
+0
+"Out of memory!"
+exit(1);
+exit(1)
+exit
+exit
+1
+sstrncpy(p[i++], de->d_name, strlen(de->d_name) + 1);
+sstrncpy(p[i++], de->d_name, strlen(de->d_name) + 1)
+sstrncpy
+sstrncpy
+p[i++]
+p
+p
+i++
+i
+i
+de->d_name
+de
+de
+d_name
+strlen(de->d_name) + 1
+strlen(de->d_name)
+strlen
+strlen
+de->d_name
+de
+de
+d_name
+1
+pr_fsio_closedir(d);
+pr_fsio_closedir(d)
+pr_fsio_closedir
+pr_fsio_closedir
+d
+d
+p[i] = NULL;
+p[i] = NULL
+p[i]
+p
+p
+i
+i
+NULL
+NULL
+if (sort) {    PR_DEVEL_CLOCK(qsort(p, i, sizeof(char *), dircmp));  }
+sort
+sort
+{    PR_DEVEL_CLOCK(qsort(p, i, sizeof(char *), dircmp));  }
+PR_DEVEL_CLOCK(qsort(p, i, sizeof(char *), dircmp));
+PR_DEVEL_CLOCK(qsort(p, i, sizeof(char *), dircmp))
+PR_DEVEL_CLOCK
+PR_DEVEL_CLOCK
+qsort(p, i, sizeof(char *), dircmp)
+qsort
+qsort
+p
+p
+i
+i
+sizeof(char *)
+char *
+char
+*
+*
+dircmp
+dircmp
+return p;
+p
+p
+-----joern-----
+(24,217,0)
+(55,31,0)
+(125,161,0)
+(58,186,0)
+(176,186,0)
+(26,6,0)
+(7,186,0)
+(54,223,0)
+(240,62,0)
+(105,112,0)
+(141,167,0)
+(170,224,0)
+(241,249,0)
+(96,105,0)
+(123,234,0)
+(53,11,0)
+(231,156,0)
+(242,112,0)
+(77,202,0)
+(229,80,0)
+(17,185,0)
+(16,155,0)
+(21,141,0)
+(175,157,0)
+(89,31,0)
+(199,64,0)
+(210,80,0)
+(244,2,0)
+(151,186,0)
+(244,186,0)
+(193,235,0)
+(156,231,0)
+(29,130,0)
+(232,194,0)
+(155,28,0)
+(246,110,0)
+(230,71,0)
+(71,230,0)
+(109,141,0)
+(171,9,0)
+(110,31,0)
+(204,105,0)
+(5,250,0)
+(44,74,0)
+(73,91,0)
+(180,79,0)
+(61,171,0)
+(138,146,0)
+(204,157,0)
+(8,196,0)
+(22,55,0)
+(42,228,0)
+(60,18,0)
+(185,45,0)
+(248,7,0)
+(40,234,0)
+(145,31,0)
+(62,70,0)
+(52,72,0)
+(99,204,0)
+(188,202,0)
+(87,74,0)
+(30,133,0)
+(33,250,0)
+(135,11,0)
+(167,141,0)
+(196,112,0)
+(149,119,0)
+(84,10,0)
+(105,218,0)
+(224,170,0)
+(93,135,0)
+(209,186,0)
+(161,80,0)
+(94,126,0)
+(141,186,0)
+(49,121,0)
+(236,186,0)
+(157,204,0)
+(168,121,0)
+(46,90,0)
+(213,251,0)
+(133,31,0)
+(51,110,0)
+(83,59,0)
+(147,240,0)
+(98,159,0)
+(31,133,0)
+(120,249,0)
+(185,17,0)
+(202,218,0)
+(177,90,0)
+(157,250,0)
+(9,179,0)
+(71,213,0)
+(179,157,0)
+(163,137,0)
+(123,152,0)
+(39,10,0)
+(202,103,0)
+(5,101,0)
+(74,167,0)
+(38,244,0)
+(138,11,0)
+(118,6,0)
+(1,34,0)
+(183,186,0)
+(132,109,0)
+(156,191,0)
+(64,123,0)
+(214,83,0)
+(212,243,0)
+(122,11,0)
+(130,29,0)
+(247,186,0)
+(161,160,0)
+(64,186,0)
+(172,138,0)
+(223,45,0)
+(75,187,0)
+(0,109,0)
+(71,200,0)
+(185,186,0)
+(102,59,0)
+(76,223,0)
+(72,56,0)
+(157,179,0)
+(34,1,0)
+(33,186,0)
+(167,74,0)
+(27,243,0)
+(88,145,0)
+(4,148,0)
+(10,39,0)
+(187,160,0)
+(158,155,0)
+(188,251,0)
+(55,70,0)
+(50,213,0)
+(128,186,0)
+(198,128,0)
+(146,134,0)
+(243,217,0)
+(74,44,0)
+(249,11,0)
+(67,64,0)
+(123,64,0)
+(109,11,0)
+(143,250,0)
+(206,213,0)
+(242,218,0)
+(92,147,0)
+(95,128,0)
+(37,200,0)
+(146,29,0)
+(6,72,0)
+(149,128,0)
+(68,138,0)
+(159,98,0)
+(70,93,0)
+(127,192,0)
+(165,134,0)
+(33,141,0)
+(195,17,0)
+(235,45,0)
+(97,96,0)
+(28,225,0)
+(202,188,0)
+(202,112,0)
+(181,224,0)
+(59,83,0)
+(20,44,0)
+(5,141,0)
+(191,156,0)
+(174,105,0)
+(104,188,0)
+(91,235,0)
+(81,41,0)
+(105,204,0)
+(249,146,0)
+(4,112,0)
+(218,218,0)
+(69,109,0)
+(72,6,0)
+(218,112,0)
+(250,251,0)
+(43,118,0)
+(228,121,0)
+(78,251,0)
+(216,186,0)
+(90,79,0)
+(200,71,0)
+(106,64,0)
+(15,109,0)
+(56,72,0)
+(23,186,0)
+(138,141,0)
+(224,218,0)
+(12,198,0)
+(109,159,0)
+(11,186,0)
+(221,147,0)
+(31,145,0)
+(184,56,0)
+(243,119,0)
+(197,243,0)
+(140,243,0)
+(234,123,0)
+(226,91,0)
+(222,35,0)
+(72,52,0)
+(70,62,0)
+(191,100,0)
+(112,186,0)
+(215,63,0)
+(44,20,0)
+(2,128,0)
+(170,11,0)
+(70,55,0)
+(227,194,0)
+(109,15,0)
+(238,45,0)
+(118,112,0)
+(101,186,0)
+(131,231,0)
+(196,17,0)
+(57,213,0)
+(219,188,0)
+(243,244,0)
+(93,70,0)
+(178,83,0)
+(121,117,0)
+(113,135,0)
+(234,112,0)
+(233,186,0)
+(65,243,0)
+(188,137,0)
+(28,155,0)
+(6,118,0)
+(63,14,0)
+(154,185,0)
+(25,55,0)
+(105,96,0)
+(91,73,0)
+(217,243,0)
+(225,28,0)
+(190,62,0)
+(48,218,0)
+(217,24,0)
+(138,250,0)
+(36,2,0)
+(114,5,0)
+(249,141,0)
+(82,93,0)
+(29,146,0)
+(90,119,0)
+(19,5,0)
+(208,186,0)
+(173,124,0)
+(218,251,0)
+(109,250,0)
+(227,228,0)
+(235,244,0)
+(239,191,0)
+(18,60,0)
+(235,91,0)
+(93,250,0)
+(110,100,0)
+(147,31,0)
+(128,149,0)
+(164,192,0)
+(243,14,0)
+(150,186,0)
+(144,222,0)
+(29,156,0)
+(39,35,0)
+(224,112,0)
+(66,149,0)
+(203,63,0)
+(192,141,0)
+(85,33,0)
+(179,182,0)
+(80,161,0)
+(111,9,0)
+(145,128,0)
+(9,251,0)
+(34,234,0)
+(142,134,0)
+(169,186,0)
+(227,33,0)
+(227,124,0)
+(179,9,0)
+(70,134,0)
+(201,218,0)
+(47,81,0)
+(240,147,0)
+(182,179,0)
+(45,186,0)
+(152,123,0)
+(129,224,0)
+(189,196,0)
+(250,9,0)
+(96,97,0)
+(242,18,0)
+(249,250,0)
+(237,112,0)
+(157,141,0)
+(79,90,0)
+(100,110,0)
+(74,112,0)
+(4,218,0)
+(15,207,0)
+(137,4,0)
+(59,41,0)
+(126,249,0)
+(108,101,0)
+(148,4,0)
+(103,202,0)
+(3,171,0)
+(166,242,0)
+(100,191,0)
+(217,45,0)
+(115,4,0)
+(136,170,0)
+(90,177,0)
+(2,244,0)
+(211,198,0)
+(5,11,0)
+(159,109,0)
+(220,217,0)
+(112,118,0)
+(156,29,0)
+(139,10,0)
+(200,242,0)
+(32,250,0)
+(93,141,0)
+(228,117,0)
+(45,235,0)
+(135,93,0)
+(13,186,0)
+(185,63,0)
+(4,137,0)
+(116,56,0)
+(249,126,0)
+(245,177,0)
+(7,128,0)
+(91,119,0)
+(162,39,0)
+(234,34,0)
+(153,251,0)
+(62,240,0)
+(17,196,0)
+(213,71,0)
+(137,188,0)
+(205,134,0)
+(242,200,0)
+(18,242,0)
+(86,186,0)
+(112,118,1)
+(155,158,1)
+(6,26,1)
+(36,38,1)
+(221,92,1)
+(226,238,1)
+(93,135,1)
+(42,121,1)
+(188,137,1)
+(218,218,1)
+(244,2,1)
+(5,19,1)
+(195,196,1)
+(12,128,1)
+(248,133,1)
+(145,88,1)
+(90,119,1)
+(25,93,1)
+(7,128,1)
+(9,179,1)
+(239,100,1)
+(75,161,1)
+(249,120,1)
+(138,250,1)
+(109,11,1)
+(57,206,1)
+(243,217,1)
+(105,112,1)
+(202,77,1)
+(202,218,1)
+(92,55,1)
+(110,51,1)
+(250,9,1)
+(241,146,1)
+(185,45,1)
+(190,240,1)
+(85,107,1)
+(34,1,1)
+(162,10,1)
+(29,156,1)
+(87,21,1)
+(74,44,1)
+(243,27,1)
+(4,218,1)
+(27,217,1)
+(69,0,1)
+(122,187,1)
+(126,249,1)
+(123,234,1)
+(170,224,1)
+(109,132,1)
+(213,71,1)
+(51,246,1)
+(173,177,1)
+(218,112,1)
+(18,60,1)
+(7,248,1)
+(161,125,1)
+(227,124,1)
+(157,141,1)
+(2,128,1)
+(47,59,1)
+(61,9,1)
+(40,199,1)
+(6,72,1)
+(114,7,1)
+(200,242,1)
+(115,202,1)
+(8,154,1)
+(64,123,1)
+(192,141,1)
+(243,119,1)
+(49,168,1)
+(245,90,1)
+(174,99,1)
+(5,11,1)
+(222,144,1)
+(243,244,1)
+(220,212,1)
+(157,250,1)
+(164,141,1)
+(203,243,1)
+(0,107,1)
+(185,63,1)
+(95,225,1)
+(53,122,1)
+(168,225,1)
+(145,128,1)
+(118,6,1)
+(143,171,1)
+(136,142,1)
+(180,46,1)
+(133,31,1)
+(224,112,1)
+(249,146,1)
+(68,172,1)
+(147,221,1)
+(215,203,1)
+(32,143,1)
+(56,116,1)
+(171,9,1)
+(67,185,1)
+(159,98,1)
+(90,79,1)
+(193,91,1)
+(91,226,1)
+(88,89,1)
+(18,166,1)
+(76,45,1)
+(158,16,1)
+(101,108,1)
+(227,194,1)
+(192,127,1)
+(187,75,1)
+(240,147,1)
+(179,157,1)
+(44,20,1)
+(93,141,1)
+(223,54,1)
+(120,241,1)
+(21,64,1)
+(242,218,1)
+(4,112,1)
+(172,170,1)
+(89,11,1)
+(178,214,1)
+(17,195,1)
+(94,249,1)
+(3,61,1)
+(89,70,1)
+(194,232,1)
+(250,32,1)
+(184,237,1)
+(93,250,1)
+(170,11,1)
+(55,22,1)
+(72,56,1)
+(149,66,1)
+(189,8,1)
+(156,231,1)
+(135,11,1)
+(26,72,1)
+(227,228,1)
+(154,63,1)
+(227,33,1)
+(44,87,1)
+(214,171,1)
+(191,100,1)
+(82,222,1)
+(156,191,1)
+(175,111,1)
+(91,73,1)
+(84,126,1)
+(234,112,1)
+(219,170,1)
+(33,141,1)
+(143,81,1)
+(121,49,1)
+(122,192,1)
+(159,69,1)
+(105,218,1)
+(71,230,1)
+(66,95,1)
+(72,52,1)
+(161,80,1)
+(34,40,1)
+(198,128,1)
+(132,159,1)
+(154,223,1)
+(83,178,1)
+(197,223,1)
+(48,201,1)
+(39,10,1)
+(65,140,1)
+(59,83,1)
+(99,175,1)
+(38,112,1)
+(232,198,1)
+(217,45,1)
+(138,68,1)
+(202,103,1)
+(85,15,1)
+(235,193,1)
+(163,4,1)
+(249,141,1)
+(111,213,1)
+(17,196,1)
+(55,31,1)
+(70,62,1)
+(206,188,1)
+(43,6,1)
+(185,17,1)
+(45,235,1)
+(212,65,1)
+(225,28,1)
+(228,121,1)
+(167,74,1)
+(171,3,1)
+(15,109,1)
+(11,53,1)
+(234,34,1)
+(29,130,1)
+(118,43,1)
+(125,80,1)
+(224,129,1)
+(50,57,1)
+(33,85,1)
+(2,36,1)
+(104,219,1)
+(74,112,1)
+(124,173,1)
+(62,190,1)
+(113,82,1)
+(109,159,1)
+(77,104,1)
+(147,31,1)
+(4,115,1)
+(71,200,1)
+(138,141,1)
+(217,220,1)
+(196,189,1)
+(140,197,1)
+(249,11,1)
+(177,245,1)
+(211,12,1)
+(179,182,1)
+(128,149,1)
+(238,244,1)
+(139,84,1)
+(149,119,1)
+(172,218,1)
+(246,138,1)
+(70,93,1)
+(96,97,1)
+(4,148,1)
+(210,229,1)
+(5,141,1)
+(102,83,1)
+(54,76,1)
+(138,11,1)
+(224,218,1)
+(31,145,1)
+(107,101,1)
+(142,133,1)
+(231,131,1)
+(79,180,1)
+(242,18,1)
+(181,136,1)
+(110,31,1)
+(229,192,1)
+(191,239,1)
+(105,96,1)
+(37,50,1)
+(135,113,1)
+(228,42,1)
+(81,47,1)
+(5,250,1)
+(223,45,1)
+(204,105,1)
+(196,112,1)
+(62,240,1)
+(217,24,1)
+(96,174,1)
+(146,29,1)
+(131,191,1)
+(188,202,1)
+(177,90,1)
+(237,198,1)
+(39,162,1)
+(33,250,1)
+(201,250,1)
+(218,48,1)
+(80,210,1)
+(249,250,1)
+(59,102,1)
+(108,5,1)
+(198,211,1)
+(28,155,1)
+(70,55,1)
+(109,141,1)
+(106,67,1)
+(91,119,1)
+(127,164,1)
+(199,106,1)
+(141,167,1)
+(100,110,1)
+(129,181,1)
+(10,139,1)
+(166,37,1)
+(133,30,1)
+(123,152,1)
+(82,126,1)
+(16,177,1)
+(144,39,1)
+(242,112,1)
+(137,4,1)
+(63,215,1)
+(22,25,1)
+(116,184,1)
+(19,114,1)
+(30,31,1)
+(109,250,1)
+(235,91,1)
+(126,94,1)
+(137,163,1)
+(157,204,1)
+(235,244,1)
+(202,112,1)
+(249,141,2)
+(64,198,2)
+(106,198,2)
+(122,198,2)
+(166,170,2)
+(18,60,2)
+(34,1,2)
+(137,4,2)
+(4,148,2)
+(195,198,2)
+(70,55,2)
+(171,9,2)
+(57,170,2)
+(44,20,2)
+(6,198,2)
+(202,112,2)
+(65,223,2)
+(124,177,2)
+(4,218,2)
+(243,223,2)
+(71,170,2)
+(179,157,2)
+(234,34,2)
+(22,133,2)
+(250,170,2)
+(55,133,2)
+(156,191,2)
+(174,170,2)
+(77,170,2)
+(179,170,2)
+(90,79,2)
+(132,107,2)
+(157,141,2)
+(133,133,2)
+(40,198,2)
+(105,218,2)
+(109,107,2)
+(62,240,2)
+(161,192,2)
+(2,128,2)
+(5,141,2)
+(242,170,2)
+(70,62,2)
+(164,198,2)
+(242,18,2)
+(70,133,2)
+(74,112,2)
+(213,71,2)
+(81,171,2)
+(200,242,2)
+(19,198,2)
+(175,170,2)
+(105,96,2)
+(161,80,2)
+(185,17,2)
+(29,130,2)
+(184,198,2)
+(167,74,2)
+(204,170,2)
+(145,198,2)
+(71,230,2)
+(235,91,2)
+(85,198,2)
+(8,198,2)
+(105,112,2)
+(202,103,2)
+(93,141,2)
+(32,170,2)
+(75,192,2)
+(235,198,2)
+(29,156,2)
+(170,133,2)
+(168,225,2)
+(227,228,2)
+(48,170,2)
+(66,225,2)
+(44,198,2)
+(49,225,2)
+(137,170,2)
+(88,198,2)
+(224,218,2)
+(191,100,2)
+(163,170,2)
+(5,198,2)
+(88,133,2)
+(4,170,2)
+(138,133,2)
+(218,170,2)
+(93,135,2)
+(63,223,2)
+(244,2,2)
+(138,11,2)
+(141,167,2)
+(118,6,2)
+(109,250,2)
+(89,133,2)
+(135,11,2)
+(217,223,2)
+(188,170,2)
+(4,112,2)
+(178,171,2)
+(15,109,2)
+(25,133,2)
+(228,225,2)
+(204,105,2)
+(5,11,2)
+(221,133,2)
+(227,194,2)
+(143,170,2)
+(69,107,2)
+(109,11,2)
+(170,11,2)
+(235,244,2)
+(238,198,2)
+(72,198,2)
+(27,223,2)
+(196,198,2)
+(96,170,2)
+(62,133,2)
+(177,90,2)
+(194,198,2)
+(70,93,2)
+(210,192,2)
+(2,198,2)
+(91,198,2)
+(201,170,2)
+(241,133,2)
+(94,133,2)
+(118,198,2)
+(190,133,2)
+(128,225,2)
+(104,170,2)
+(220,223,2)
+(199,198,2)
+(128,149,2)
+(225,177,2)
+(226,198,2)
+(133,31,2)
+(16,177,2)
+(21,198,2)
+(42,225,2)
+(218,218,2)
+(0,107,2)
+(93,133,2)
+(50,170,2)
+(193,198,2)
+(140,223,2)
+(185,63,2)
+(159,107,2)
+(159,98,2)
+(59,171,2)
+(188,202,2)
+(192,198,2)
+(109,141,2)
+(223,45,2)
+(80,192,2)
+(197,223,2)
+(109,159,2)
+(242,112,2)
+(200,170,2)
+(102,171,2)
+(173,177,2)
+(45,235,2)
+(249,146,2)
+(248,198,2)
+(39,126,2)
+(198,128,2)
+(37,170,2)
+(249,133,2)
+(64,123,2)
+(146,29,2)
+(142,133,2)
+(212,223,2)
+(84,126,2)
+(203,223,2)
+(113,133,2)
+(231,133,2)
+(189,198,2)
+(68,133,2)
+(82,133,2)
+(157,204,2)
+(227,33,2)
+(228,121,2)
+(3,170,2)
+(126,249,2)
+(116,198,2)
+(187,192,2)
+(89,198,2)
+(185,45,2)
+(192,141,2)
+(144,126,2)
+(129,133,2)
+(133,198,2)
+(240,147,2)
+(51,133,2)
+(101,198,2)
+(17,196,2)
+(59,83,2)
+(111,170,2)
+(224,133,2)
+(125,192,2)
+(107,198,2)
+(123,234,2)
+(147,31,2)
+(72,52,2)
+(224,112,2)
+(26,198,2)
+(61,170,2)
+(155,177,2)
+(141,198,2)
+(120,133,2)
+(12,225,2)
+(18,170,2)
+(90,119,2)
+(211,225,2)
+(156,231,2)
+(232,198,2)
+(167,198,2)
+(7,198,2)
+(243,244,2)
+(38,198,2)
+(215,223,2)
+(95,225,2)
+(92,133,2)
+(185,198,2)
+(6,72,2)
+(56,198,2)
+(9,179,2)
+(100,110,2)
+(139,126,2)
+(138,141,2)
+(10,126,2)
+(31,133,2)
+(55,31,2)
+(29,133,2)
+(188,137,2)
+(28,177,2)
+(96,97,2)
+(87,198,2)
+(214,171,2)
+(83,171,2)
+(36,198,2)
+(249,250,2)
+(30,198,2)
+(239,133,2)
+(33,141,2)
+(162,126,2)
+(229,192,2)
+(145,128,2)
+(91,73,2)
+(149,119,2)
+(100,133,2)
+(7,128,2)
+(112,198,2)
+(39,10,2)
+(243,217,2)
+(93,250,2)
+(158,177,2)
+(110,133,2)
+(33,198,2)
+(249,11,2)
+(108,198,2)
+(126,133,2)
+(202,170,2)
+(105,170,2)
+(123,152,2)
+(31,145,2)
+(172,133,2)
+(110,31,2)
+(242,218,2)
+(225,28,2)
+(54,198,2)
+(114,198,2)
+(227,124,2)
+(112,118,2)
+(138,250,2)
+(28,155,2)
+(47,171,2)
+(76,198,2)
+(72,56,2)
+(237,198,2)
+(234,198,2)
+(170,224,2)
+(9,170,2)
+(223,198,2)
+(136,133,2)
+(74,198,2)
+(181,133,2)
+(15,107,2)
+(217,45,2)
+(222,126,2)
+(219,170,2)
+(11,198,2)
+(71,200,2)
+(234,112,2)
+(147,133,2)
+(206,170,2)
+(123,198,2)
+(31,198,2)
+(33,250,2)
+(17,198,2)
+(191,133,2)
+(157,250,2)
+(244,198,2)
+(131,133,2)
+(34,198,2)
+(135,133,2)
+(240,133,2)
+(67,198,2)
+(53,198,2)
+(146,133,2)
+(243,119,2)
+(202,218,2)
+(250,9,2)
+(171,170,2)
+(5,250,2)
+(156,133,2)
+(154,198,2)
+(179,182,2)
+(121,225,2)
+(91,119,2)
+(127,198,2)
+(145,133,2)
+(198,225,2)
+(43,198,2)
+(115,170,2)
+(213,170,2)
+(30,133,2)
+(246,133,2)
+(217,24,2)
+(149,225,2)
+(45,198,2)
+(157,170,2)
+(74,44,2)
+(196,112,2)
+(218,112,2)
+(99,170,2)
+-----------------------------------
+(0,p)
+(1,char *)
+(2,dirfd(d)
+(3,NULL)
+(4,(unsigned long)
+(5,p[i])
+(6,((size_t)
+(7,pr_fsio_closedir(d)
+(8,dsize)
+(9,newp = (char **)
+(10,pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0)
+(11,i = 0)
+(12,d)
+(13,if (p == NULL)
+(14,)
+(15,PR_DEVEL_CLOCK(qsort(p, i, sizeof(char *)
+(16,st)
+(17,(dsize / 4)
+(18,sizeof(char *)
+(19,i)
+(20,char *)
+(21,p)
+(22,d_name)
+(23,st)
+(24,unsigned long)
+(25,de)
+(26,4)
+(27,NAME_MAX_GUESS)
+(28,S_ISDIR(st.st_mode)
+(29,(char *)
+(30,NULL)
+(31,de = pr_fsio_readdir(d)
+(32,newp)
+(33,return p;)
+(34,sizeof(char *)
+(35,)
+(36,d)
+(37,2)
+(38,dir_fd)
+(39,pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0)
+(40,dsize)
+(41,)
+(42,NULL)
+(43,10)
+(44,sizeof(char *)
+(45,ssize = get_name_max((char *)
+(46,dirname)
+(47,1)
+(48,2)
+(49,ENOTDIR)
+(50,"allocating readdir buffer of %lu bytes")
+(51,d_name)
+(52,size_t)
+(53,0)
+(54,1)
+(55,de->d_name)
+(56,st.st_size)
+(57,8)
+(58,p)
+(59,pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0)
+(60,char *)
+(61,newp)
+(62,strlen(de->d_name)
+(63,ssize = NAME_MAX_GUESS)
+(64,pr_trace_msg("data", 8, "allocating readdir buffer of %lu bytes",\n\\n    (unsigned long)
+(65,dirname)
+(66,dirname)
+(67,"data")
+(68,i)
+(69,i)
+(70,sstrncpy(p[i++], de->d_name, strlen(de->d_name)
+(71,(unsigned long)
+(72,(size_t)
+(73,char *)
+(74,dsize * sizeof(char *)
+(75,1)
+(76,ssize)
+(77,dsize)
+(78,newp)
+(79,&st)
+(80,pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0)
+(81,exit(1)
+(82,p)
+(83,pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0)
+(84,PR_LOG_RSRC_MEM)
+(85,p)
+(86,if (sort)
+(87,dsize)
+(88,d)
+(89,de)
+(90,pr_fsio_stat(dirname, &st)
+(91,(char *)
+(92,de)
+(93,p[i++])
+(94,NULL)
+(95,d)
+(96,sizeof(char *)
+(97,char *)
+(98,char *)
+(99,2)
+(100,strlen(de->d_name)
+(101,p[i] = NULL)
+(102,"Out of memory!")
+(103,unsigned long)
+(104,"Reallocating sreaddir buffer from %lu entries to "\n\\n        "%lu entries")
+(105,dsize * sizeof(char *)
+(106,8)
+(107,sort)
+(108,NULL)
+(109,qsort(p, i, sizeof(char *)
+(110,de->d_name)
+(111,newp)
+(112,dsize = (((size_t)
+(113,i)
+(114,p)
+(115,dsize)
+(116,st_size)
+(117,)
+(118,(((size_t)
+(119,const char *dirname)
+(120,i)
+(121,errno = ENOTDIR)
+(122,i)
+(123,(unsigned long)
+(124,return NULL;)
+(125,"Out of memory!")
+(126,p[i] == NULL)
+(127,NULL)
+(128,d = pr_fsio_opendir(dirname)
+(129,1)
+(130,char *)
+(131,char)
+(132,dircmp)
+(133,(de = pr_fsio_readdir(d)
+(134,)
+(135,i++)
+(136,i)
+(137,(unsigned long)
+(138,p[i])
+(139,0)
+(140,"get_name_max(%s, %d)
+(141,p = malloc(dsize * sizeof(char *)
+(142,pr_signals_handle()
+(143,p)
+(144,1)
+(145,pr_fsio_readdir(d)
+(146,p[i] = (char *)
+(147,de->d_name)
+(148,unsigned long)
+(149,pr_fsio_opendir(dirname)
+(150,while ((de = pr_fsio_readdir(d)
+(151,de)
+(152,unsigned long)
+(153,if (newp == NULL)
+(154,ssize)
+(155,st.st_mode)
+(156,calloc(strlen(de->d_name)
+(157,realloc(p, 2 * dsize * sizeof(char *)
+(158,st_mode)
+(159,sizeof(char *)
+(160,)
+(161,pr_log_pri(pr_log_level_exhausted_rsrc(PR_LOG_RSRC_MEM, 0)
+(162,"Out of memory!")
+(163,2)
+(164,p)
+(165,if (i >= dsize - 1)
+(166,dsize)
+(167,malloc(dsize * sizeof(char *)
+(168,errno)
+(169,d)
+(170,i >= dsize - 1)
+(171,newp == NULL)
+(172,p)
+(173,NULL)
+(174,dsize)
+(175,p)
+(176,if (!S_ISDIR(st.st_mode)
+(177,pr_fsio_stat(dirname, &st)
+(178,0)
+(179,(char **)
+(180,st)
+(181,dsize)
+(182,char **)
+(183,if (d == NULL)
+(184,st)
+(185,ssize *= ((dsize / 4)
+(186,)
+(187,exit(1)
+(188,pr_log_debug(DEBUG0, "Reallocating sreaddir buffer from %lu entries to "\n\\n        "%lu entries", (unsigned long)
+(189,4)
+(190,1)
+(191,strlen(de->d_name)
+(192,p == NULL)
+(193,dir_fd)
+(194,return NULL;)
+(195,1)
+(196,dsize / 4)
+(197,DEBUG1)
+(198,d == NULL)
+(199,"allocating readdir buffer of %lu bytes")
+(200,2 * dsize * sizeof(char *)
+(201,dsize)
+(202,(unsigned long)
+(203,ssize)
+(204,2 * dsize * sizeof(char *)
+(205,if (p[i] == NULL)
+(206,"data")
+(207,)
+(208,if (ssize < 1)
+(209,ssize)
+(210,0)
+(211,NULL)
+(212,dir_fd)
+(213,pr_trace_msg("data", 8, "allocating readdir buffer of %lu bytes",\n\\n        (unsigned long)
+(214,PR_LOG_RSRC_MEM)
+(215,NAME_MAX_GUESS)
+(216,i)
+(217,(unsigned long)
+(218,dsize *= 2)
+(219,DEBUG0)
+(220,ssize)
+(221,d_name)
+(222,exit(1)
+(223,ssize < 1)
+(224,dsize - 1)
+(225,!S_ISDIR(st.st_mode)
+(226,dirname)
+(227,RET)
+(228,return NULL;)
+(229,PR_LOG_RSRC_MEM)
+(230,unsigned long)
+(231,sizeof(char)
+(232,NULL)
+(233,if (pr_fsio_stat(dirname, &st)
+(234,dsize * sizeof(char *)
+(235,get_name_max((char *)
+(236,dir_fd)
+(237,dsize)
+(238,ssize)
+(239,1)
+(240,strlen(de->d_name)
+(241,p)
+(242,dsize * sizeof(char *)
+(243,pr_log_debug(DEBUG1, "get_name_max(%s, %d)
+(244,dir_fd = dirfd(d)
+(245,0)
+(246,de)
+(247,dsize)
+(248,d)
+(249,p[i])
+(250,p = newp)
+(251,)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

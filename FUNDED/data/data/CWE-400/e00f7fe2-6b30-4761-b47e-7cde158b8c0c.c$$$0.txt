@@ -1,0 +1,1085 @@
+-----label-----
+0
+-----code-----
+static int tcp_wait_for_events(tcp_context_t *tcp)
+{
+	/* Wait for events. */
+	fdset_t *set = &tcp->set;
+	int nfds = poll(set->pfd, set->n, TCP_SWEEP_INTERVAL * 1000);
+
+	/* Mark the time of last poll call. */
+	time_now(&tcp->last_poll_time);
+
+	/* Process events. */
+	unsigned i = 0;
+	while (nfds > 0 && i < set->n) {
+
+		/* Terminate faulty connections. */
+		int fd = set->pfd[i].fd;
+
+		/* Active sockets. */
+		if (set->pfd[i].revents & POLLIN) {
+			--nfds; /* One less active event. */
+
+			/* Indexes <0, client_threshold) are master sockets. */
+			if (i < tcp->client_threshold) {
+				/* Faulty master sockets shall be sorted later. */
+				(void) tcp_event_accept(tcp, i);
+			} else {
+				if (tcp_event_serve(tcp, i) != KNOT_EOK) {
+					fdset_remove(set, i);
+					close(fd);
+					continue; /* Stay on the same index. */
+				}
+			}
+
+		}
+
+		if (set->pfd[i].revents & (POLLERR|POLLHUP|POLLNVAL)) {
+			--nfds; /* One less active event. */
+			fdset_remove(set, i);
+			close(fd);
+			continue; /* Stay on the same index. */
+		}
+
+		/* Next socket. */
+		++i;
+	}
+
+	return nfds;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+11,14
+11,15
+11,16
+11,17
+12,13
+13,14
+13,15
+14,15
+16,17
+16,18
+16,19
+19,20
+20,21
+21,22
+21,23
+22,23
+25,26
+26,27
+26,28
+28,29
+28,30
+30,31
+31,32
+31,33
+31,34
+31,35
+32,33
+34,35
+34,36
+35,36
+38,39
+38,40
+39,40
+42,43
+42,44
+43,44
+46,47
+47,48
+47,49
+48,49
+50,51
+51,52
+51,53
+52,53
+55,56
+56,57
+56,58
+58,59
+58,60
+60,61
+62,63
+62,64
+63,64
+63,65
+64,65
+64,66
+65,66
+68,69
+68,70
+69,70
+71,72
+71,73
+72,73
+75,76
+75,77
+75,78
+75,79
+76,77
+77,78
+77,79
+79,80
+79,81
+81,82
+82,83
+82,84
+83,84
+83,85
+84,85
+84,86
+85,86
+88,89
+91,92
+91,93
+92,93
+92,94
+93,94
+93,95
+94,95
+94,96
+95,96
+95,97
+96,97
+99,100
+102,103
+104,105
+104,106
+105,106
+106,107
+107,108
+109,110
+109,111
+109,112
+110,111
+110,112
+111,112
+113,114
+113,115
+114,115
+117,118
+118,119
+119,120
+119,121
+120,121
+120,122
+123,124
+123,125
+123,126
+124,125
+126,127
+128,129
+130,131
+131,132
+131,133
+132,133
+132,134
+133,134
+133,135
+133,136
+134,135
+136,137
+138,139
+140,141
+142,143
+142,144
+142,145
+143,144
+144,145
+144,146
+144,147
+145,146
+147,148
+149,150
+151,152
+152,153
+152,154
+153,154
+155,156
+158,159
+158,160
+159,160
+159,161
+160,161
+160,162
+161,162
+161,163
+162,163
+162,164
+163,164
+166,167
+169,170
+170,171
+170,172
+171,172
+171,173
+172,173
+174,175
+176,177
+178,179
+178,180
+178,181
+178,182
+179,180
+180,181
+181,182
+183,184
+184,185
+184,186
+184,187
+185,186
+187,188
+189,190
+191,192
+192,193
+192,194
+193,194
+195,196
+198,199
+199,200
+200,201
+202,203
+203,204
+-----nextToken-----
+2,4,7,9,10,15,17,18,23,24,27,29,33,36,37,40,41,44,45,49,53,54,57,59,61,66,67,70,73,74,78,80,86,87,89,90,97,98,100,101,103,108,112,115,116,121,122,125,127,129,135,137,139,141,146,148,150,154,156,157,164,165,167,168,173,175,177,182,186,188,190,194,196,197,201,204
+-----computeFrom-----
+42,43
+42,44
+63,64
+63,65
+64,65
+64,66
+68,69
+68,70
+92,93
+92,94
+110,111
+110,112
+132,133
+132,134
+159,160
+159,161
+170,171
+170,172
+171,172
+171,173
+-----guardedBy-----
+97,148
+100,150
+115,127
+112,129
+139,150
+164,188
+167,190
+-----guardedByNegation-----
+115,137
+112,150
+-----lastLexicalUse-----
+115,137
+112,150
+-----jump-----
+115,137
+112,150
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;UnaryExpression;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;WhileStatement;BinaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;FieldReference;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;Name;IfStatement;BinaryExpression;FieldReference;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ContinueStatement;IfStatement;BinaryExpression;FieldReference;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;Name;UnaryExpression;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ContinueStatement;ExpressionStatement;UnaryExpression;IdExpression;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+static int tcp_wait_for_events(tcp_context_t *tcp){	/* Wait for events. */	fdset_t *set = &tcp->set;	int nfds = poll(set->pfd, set->n, TCP_SWEEP_INTERVAL * 1000);	/* Mark the time of last poll call. */	time_now(&tcp->last_poll_time);	/* Process events. */	unsigned i = 0;	while (nfds > 0 && i < set->n) {		/* Terminate faulty connections. */		int fd = set->pfd[i].fd;		/* Active sockets. */		if (set->pfd[i].revents & POLLIN) {			--nfds; /* One less active event. */			/* Indexes <0, client_threshold) are master sockets. */			if (i < tcp->client_threshold) {				/* Faulty master sockets shall be sorted later. */				(void) tcp_event_accept(tcp, i);			} else {				if (tcp_event_serve(tcp, i) != KNOT_EOK) {					fdset_remove(set, i);					close(fd);					continue; /* Stay on the same index. */				}			}		}		if (set->pfd[i].revents & (POLLERR|POLLHUP|POLLNVAL)) {			--nfds; /* One less active event. */			fdset_remove(set, i);			close(fd);			continue; /* Stay on the same index. */		}		/* Next socket. */		++i;	}	return nfds;}
+static int
+tcp_wait_for_events(tcp_context_t *tcp)
+tcp_wait_for_events
+tcp_context_t *tcp
+tcp_context_t
+tcp_context_t
+*tcp
+*
+tcp
+{	/* Wait for events. */	fdset_t *set = &tcp->set;	int nfds = poll(set->pfd, set->n, TCP_SWEEP_INTERVAL * 1000);	/* Mark the time of last poll call. */	time_now(&tcp->last_poll_time);	/* Process events. */	unsigned i = 0;	while (nfds > 0 && i < set->n) {		/* Terminate faulty connections. */		int fd = set->pfd[i].fd;		/* Active sockets. */		if (set->pfd[i].revents & POLLIN) {			--nfds; /* One less active event. */			/* Indexes <0, client_threshold) are master sockets. */			if (i < tcp->client_threshold) {				/* Faulty master sockets shall be sorted later. */				(void) tcp_event_accept(tcp, i);			} else {				if (tcp_event_serve(tcp, i) != KNOT_EOK) {					fdset_remove(set, i);					close(fd);					continue; /* Stay on the same index. */				}			}		}		if (set->pfd[i].revents & (POLLERR|POLLHUP|POLLNVAL)) {			--nfds; /* One less active event. */			fdset_remove(set, i);			close(fd);			continue; /* Stay on the same index. */		}		/* Next socket. */		++i;	}	return nfds;}
+fdset_t *set = &tcp->set;
+fdset_t *set = &tcp->set;
+fdset_t
+fdset_t
+*set = &tcp->set
+*
+set
+= &tcp->set
+&tcp->set
+tcp->set
+tcp
+tcp
+set
+int nfds = poll(set->pfd, set->n, TCP_SWEEP_INTERVAL * 1000);
+int nfds = poll(set->pfd, set->n, TCP_SWEEP_INTERVAL * 1000);
+int
+nfds = poll(set->pfd, set->n, TCP_SWEEP_INTERVAL * 1000)
+nfds
+= poll(set->pfd, set->n, TCP_SWEEP_INTERVAL * 1000)
+poll(set->pfd, set->n, TCP_SWEEP_INTERVAL * 1000)
+poll
+poll
+set->pfd
+set
+set
+pfd
+set->n
+set
+set
+n
+TCP_SWEEP_INTERVAL * 1000
+TCP_SWEEP_INTERVAL
+TCP_SWEEP_INTERVAL
+1000
+time_now(&tcp->last_poll_time);
+time_now(&tcp->last_poll_time)
+time_now
+time_now
+&tcp->last_poll_time
+tcp->last_poll_time
+tcp
+tcp
+last_poll_time
+unsigned i = 0;
+unsigned i = 0;
+unsigned
+i = 0
+i
+= 0
+0
+while (nfds > 0 && i < set->n) {		/* Terminate faulty connections. */		int fd = set->pfd[i].fd;		/* Active sockets. */		if (set->pfd[i].revents & POLLIN) {			--nfds; /* One less active event. */			/* Indexes <0, client_threshold) are master sockets. */			if (i < tcp->client_threshold) {				/* Faulty master sockets shall be sorted later. */				(void) tcp_event_accept(tcp, i);			} else {				if (tcp_event_serve(tcp, i) != KNOT_EOK) {					fdset_remove(set, i);					close(fd);					continue; /* Stay on the same index. */				}			}		}		if (set->pfd[i].revents & (POLLERR|POLLHUP|POLLNVAL)) {			--nfds; /* One less active event. */			fdset_remove(set, i);			close(fd);			continue; /* Stay on the same index. */		}		/* Next socket. */		++i;	}
+nfds > 0 && i < set->n
+nfds > 0
+nfds
+nfds
+0
+i < set->n
+i
+i
+set->n
+set
+set
+n
+{		/* Terminate faulty connections. */		int fd = set->pfd[i].fd;		/* Active sockets. */		if (set->pfd[i].revents & POLLIN) {			--nfds; /* One less active event. */			/* Indexes <0, client_threshold) are master sockets. */			if (i < tcp->client_threshold) {				/* Faulty master sockets shall be sorted later. */				(void) tcp_event_accept(tcp, i);			} else {				if (tcp_event_serve(tcp, i) != KNOT_EOK) {					fdset_remove(set, i);					close(fd);					continue; /* Stay on the same index. */				}			}		}		if (set->pfd[i].revents & (POLLERR|POLLHUP|POLLNVAL)) {			--nfds; /* One less active event. */			fdset_remove(set, i);			close(fd);			continue; /* Stay on the same index. */		}		/* Next socket. */		++i;	}
+int fd = set->pfd[i].fd;
+int fd = set->pfd[i].fd;
+int
+fd = set->pfd[i].fd
+fd
+= set->pfd[i].fd
+set->pfd[i].fd
+set->pfd[i]
+set->pfd
+set
+set
+pfd
+i
+i
+fd
+if (set->pfd[i].revents & POLLIN) {			--nfds; /* One less active event. */			/* Indexes <0, client_threshold) are master sockets. */			if (i < tcp->client_threshold) {				/* Faulty master sockets shall be sorted later. */				(void) tcp_event_accept(tcp, i);			} else {				if (tcp_event_serve(tcp, i) != KNOT_EOK) {					fdset_remove(set, i);					close(fd);					continue; /* Stay on the same index. */				}			}		}
+set->pfd[i].revents & POLLIN
+set->pfd[i].revents
+set->pfd[i]
+set->pfd
+set
+set
+pfd
+i
+i
+revents
+POLLIN
+POLLIN
+{			--nfds; /* One less active event. */			/* Indexes <0, client_threshold) are master sockets. */			if (i < tcp->client_threshold) {				/* Faulty master sockets shall be sorted later. */				(void) tcp_event_accept(tcp, i);			} else {				if (tcp_event_serve(tcp, i) != KNOT_EOK) {					fdset_remove(set, i);					close(fd);					continue; /* Stay on the same index. */				}			}		}
+--nfds;
+--nfds
+nfds
+nfds
+if (i < tcp->client_threshold) {				/* Faulty master sockets shall be sorted later. */				(void) tcp_event_accept(tcp, i);			} else {				if (tcp_event_serve(tcp, i) != KNOT_EOK) {					fdset_remove(set, i);					close(fd);					continue; /* Stay on the same index. */				}			}
+i < tcp->client_threshold
+i
+i
+tcp->client_threshold
+tcp
+tcp
+client_threshold
+{				/* Faulty master sockets shall be sorted later. */				(void) tcp_event_accept(tcp, i);			}
+(void) tcp_event_accept(tcp, i);
+(void) tcp_event_accept(tcp, i)
+void
+void
+
+tcp_event_accept(tcp, i)
+tcp_event_accept
+tcp_event_accept
+tcp
+tcp
+i
+i
+{				if (tcp_event_serve(tcp, i) != KNOT_EOK) {					fdset_remove(set, i);					close(fd);					continue; /* Stay on the same index. */				}			}
+if (tcp_event_serve(tcp, i) != KNOT_EOK) {					fdset_remove(set, i);					close(fd);					continue; /* Stay on the same index. */				}
+tcp_event_serve(tcp, i) != KNOT_EOK
+tcp_event_serve(tcp, i)
+tcp_event_serve
+tcp_event_serve
+tcp
+tcp
+i
+i
+KNOT_EOK
+KNOT_EOK
+{					fdset_remove(set, i);					close(fd);					continue; /* Stay on the same index. */				}
+fdset_remove(set, i);
+fdset_remove(set, i)
+fdset_remove
+fdset_remove
+set
+set
+i
+i
+close(fd);
+close(fd)
+close
+close
+fd
+fd
+continue;
+if (set->pfd[i].revents & (POLLERR|POLLHUP|POLLNVAL)) {			--nfds; /* One less active event. */			fdset_remove(set, i);			close(fd);			continue; /* Stay on the same index. */		}
+set->pfd[i].revents & (POLLERR|POLLHUP|POLLNVAL)
+set->pfd[i].revents
+set->pfd[i]
+set->pfd
+set
+set
+pfd
+i
+i
+revents
+(POLLERR|POLLHUP|POLLNVAL)
+POLLERR|POLLHUP|POLLNVAL
+POLLERR|POLLHUP
+POLLERR
+POLLERR
+POLLHUP
+POLLHUP
+POLLNVAL
+POLLNVAL
+{			--nfds; /* One less active event. */			fdset_remove(set, i);			close(fd);			continue; /* Stay on the same index. */		}
+--nfds;
+--nfds
+nfds
+nfds
+fdset_remove(set, i);
+fdset_remove(set, i)
+fdset_remove
+fdset_remove
+set
+set
+i
+i
+close(fd);
+close(fd)
+close
+close
+fd
+fd
+continue;
+++i;
+++i
+i
+i
+return nfds;
+nfds
+nfds
+-----joern-----
+(22,43,0)
+(71,108,0)
+(76,90,0)
+(46,12,0)
+(45,108,0)
+(107,53,0)
+(51,45,0)
+(37,54,0)
+(70,6,0)
+(101,103,0)
+(73,23,0)
+(31,115,0)
+(65,107,0)
+(112,80,0)
+(40,57,0)
+(108,14,0)
+(41,8,0)
+(60,97,0)
+(93,1,0)
+(39,16,0)
+(7,98,0)
+(37,8,0)
+(24,114,0)
+(89,11,0)
+(28,14,0)
+(2,14,0)
+(59,72,0)
+(33,114,0)
+(114,14,0)
+(25,14,0)
+(16,97,0)
+(109,24,0)
+(56,69,0)
+(43,22,0)
+(105,58,0)
+(63,113,0)
+(30,57,0)
+(64,59,0)
+(20,114,0)
+(41,114,0)
+(72,59,0)
+(91,69,0)
+(103,1,0)
+(92,84,0)
+(111,41,0)
+(65,24,0)
+(82,71,0)
+(61,14,0)
+(106,98,0)
+(29,24,0)
+(86,78,0)
+(38,33,0)
+(82,114,0)
+(67,72,0)
+(84,11,0)
+(75,78,0)
+(13,8,0)
+(17,54,0)
+(31,84,0)
+(23,97,0)
+(6,88,0)
+(58,80,0)
+(26,75,0)
+(55,76,0)
+(88,61,0)
+(16,8,0)
+(83,31,0)
+(108,71,0)
+(48,59,0)
+(12,71,0)
+(85,9,0)
+(106,97,0)
+(102,54,0)
+(61,88,0)
+(90,76,0)
+(42,35,0)
+(50,1,0)
+(23,79,0)
+(45,1,0)
+(27,22,0)
+(57,108,0)
+(93,114,0)
+(98,7,0)
+(11,84,0)
+(9,71,0)
+(32,41,0)
+(99,76,0)
+(90,69,0)
+(71,12,0)
+(21,115,0)
+(90,8,0)
+(57,14,0)
+(117,8,0)
+(93,8,0)
+(5,14,0)
+(69,91,0)
+(71,9,0)
+(94,107,0)
+(36,54,0)
+(115,54,0)
+(53,72,0)
+(79,114,0)
+(117,33,0)
+(84,8,0)
+(47,82,0)
+(117,43,0)
+(110,9,0)
+(69,90,0)
+(3,23,0)
+(16,35,0)
+(75,115,0)
+(104,8,0)
+(8,14,0)
+(114,79,0)
+(62,11,0)
+(66,8,0)
+(98,100,0)
+(44,16,0)
+(103,115,0)
+(72,53,0)
+(19,91,0)
+(53,107,0)
+(6,97,0)
+(77,12,0)
+(88,6,0)
+(95,60,0)
+(81,117,0)
+(87,33,0)
+(58,108,0)
+(4,82,0)
+(34,93,0)
+(0,108,0)
+(79,23,0)
+(71,82,0)
+(107,65,0)
+(65,8,0)
+(96,65,0)
+(106,8,0)
+(68,60,0)
+(52,6,0)
+(118,104,0)
+(35,16,0)
+(84,31,0)
+(18,22,0)
+(41,78,0)
+(33,117,0)
+(15,106,0)
+(60,104,0)
+(43,117,0)
+(98,106,0)
+(49,90,0)
+(116,93,0)
+(22,108,0)
+(76,114,0)
+(104,60,0)
+(10,106,0)
+(11,114,0)
+(12,114,0)
+(115,31,0)
+(24,65,0)
+(74,37,0)
+(98,106,1)
+(37,74,1)
+(55,115,1)
+(64,48,1)
+(58,105,1)
+(96,24,1)
+(16,39,1)
+(65,8,1)
+(114,79,1)
+(106,10,1)
+(49,76,1)
+(87,38,1)
+(81,22,1)
+(70,108,1)
+(13,61,1)
+(21,43,1)
+(77,0,1)
+(65,96,1)
+(115,31,1)
+(9,85,1)
+(51,53,1)
+(99,55,1)
+(32,35,1)
+(69,56,1)
+(67,107,1)
+(11,114,1)
+(33,87,1)
+(93,116,1)
+(90,49,1)
+(8,66,1)
+(53,107,1)
+(82,47,1)
+(6,52,1)
+(71,9,1)
+(68,95,1)
+(0,114,1)
+(84,11,1)
+(106,97,1)
+(84,8,1)
+(41,111,1)
+(111,32,1)
+(44,104,1)
+(39,44,1)
+(71,12,1)
+(3,20,1)
+(60,68,1)
+(109,91,1)
+(98,7,1)
+(88,6,1)
+(16,8,1)
+(6,97,1)
+(90,8,1)
+(116,34,1)
+(48,67,1)
+(71,82,1)
+(34,45,1)
+(109,98,1)
+(93,8,1)
+(18,37,1)
+(85,110,1)
+(29,109,1)
+(61,88,1)
+(106,8,1)
+(52,70,1)
+(104,60,1)
+(75,26,1)
+(38,81,1)
+(19,69,1)
+(82,114,1)
+(41,8,1)
+(90,76,1)
+(24,114,1)
+(103,115,1)
+(79,23,1)
+(84,92,1)
+(42,16,1)
+(107,94,1)
+(43,117,1)
+(91,19,1)
+(16,97,1)
+(35,16,1)
+(101,93,1)
+(69,90,1)
+(65,24,1)
+(60,97,1)
+(45,51,1)
+(66,13,1)
+(76,114,1)
+(92,11,1)
+(12,46,1)
+(40,57,1)
+(12,114,1)
+(11,89,1)
+(43,22,1)
+(110,82,1)
+(18,50,1)
+(74,53,1)
+(118,58,1)
+(59,64,1)
+(15,104,1)
+(75,115,1)
+(18,8,1)
+(45,108,1)
+(104,8,1)
+(105,91,1)
+(27,18,1)
+(86,75,1)
+(23,97,1)
+(72,59,1)
+(73,3,1)
+(57,30,1)
+(76,99,1)
+(37,8,1)
+(41,114,1)
+(26,41,1)
+(108,71,1)
+(94,65,1)
+(103,101,1)
+(4,12,1)
+(24,29,1)
+(56,90,1)
+(89,62,1)
+(57,108,1)
+(47,4,1)
+(83,84,1)
+(117,33,1)
+(18,86,1)
+(23,73,1)
+(58,108,1)
+(62,21,1)
+(53,72,1)
+(117,8,1)
+(107,65,1)
+(35,42,1)
+(22,27,1)
+(95,118,1)
+(31,84,1)
+(22,108,1)
+(10,15,1)
+(91,69,1)
+(46,77,1)
+(33,114,1)
+(109,35,1)
+(30,43,1)
+(50,103,1)
+(31,83,1)
+(93,114,1)
+(45,53,2)
+(62,43,2)
+(69,90,2)
+(24,114,2)
+(84,8,2)
+(22,108,2)
+(104,8,2)
+(19,43,2)
+(16,97,2)
+(44,104,2)
+(117,8,2)
+(29,35,2)
+(65,104,2)
+(31,84,2)
+(107,35,2)
+(82,114,2)
+(94,91,2)
+(55,43,2)
+(89,43,2)
+(107,104,2)
+(111,35,2)
+(29,104,2)
+(34,53,2)
+(38,22,2)
+(24,35,2)
+(59,91,2)
+(31,43,2)
+(65,8,2)
+(118,91,2)
+(117,33,2)
+(41,8,2)
+(51,53,2)
+(108,71,2)
+(83,43,2)
+(64,35,2)
+(58,91,2)
+(65,35,2)
+(10,104,2)
+(90,8,2)
+(106,104,2)
+(81,22,2)
+(76,114,2)
+(93,8,2)
+(109,35,2)
+(64,91,2)
+(84,11,2)
+(71,82,2)
+(103,115,2)
+(93,53,2)
+(91,43,2)
+(67,104,2)
+(65,24,2)
+(72,35,2)
+(57,108,2)
+(37,53,2)
+(98,7,2)
+(11,114,2)
+(32,35,2)
+(79,23,2)
+(21,43,2)
+(53,72,2)
+(67,91,2)
+(84,43,2)
+(60,91,2)
+(94,104,2)
+(96,104,2)
+(72,104,2)
+(115,31,2)
+(104,91,2)
+(16,104,2)
+(105,91,2)
+(96,35,2)
+(43,117,2)
+(53,91,2)
+(27,43,2)
+(59,35,2)
+(18,43,2)
+(64,104,2)
+(16,8,2)
+(53,104,2)
+(39,104,2)
+(29,91,2)
+(56,43,2)
+(22,43,2)
+(101,53,2)
+(103,53,2)
+(24,91,2)
+(43,22,2)
+(35,104,2)
+(71,9,2)
+(92,43,2)
+(75,115,2)
+(72,91,2)
+(45,108,2)
+(40,57,2)
+(106,97,2)
+(94,35,2)
+(60,97,2)
+(117,22,2)
+(24,104,2)
+(91,69,2)
+(114,79,2)
+(99,43,2)
+(15,104,2)
+(41,35,2)
+(90,43,2)
+(93,114,2)
+(53,35,2)
+(37,8,2)
+(95,91,2)
+(72,59,2)
+(59,104,2)
+(87,22,2)
+(90,76,2)
+(12,114,2)
+(116,53,2)
+(33,114,2)
+(71,12,2)
+(98,104,2)
+(49,43,2)
+(104,60,2)
+(115,43,2)
+(53,107,2)
+(98,106,2)
+(76,43,2)
+(69,43,2)
+(107,91,2)
+(65,91,2)
+(96,91,2)
+(86,35,2)
+(107,65,2)
+(67,35,2)
+(74,53,2)
+(109,91,2)
+(41,114,2)
+(109,104,2)
+(42,104,2)
+(33,22,2)
+(11,43,2)
+(48,91,2)
+(58,108,2)
+(68,91,2)
+(106,8,2)
+(6,97,2)
+(75,35,2)
+(43,43,2)
+(26,35,2)
+(48,35,2)
+(88,6,2)
+(61,88,2)
+(35,16,2)
+(48,104,2)
+(50,53,2)
+(23,97,2)
+-----------------------------------
+(0,nfds)
+(1,)
+(2,while (nfds > 0 && i < set->n)
+(3,tcp)
+(4,set)
+(5,nfds)
+(6,tcp->last_poll_time)
+(7,void)
+(8,i = 0)
+(9,TCP_SWEEP_INTERVAL * 1000)
+(10,i)
+(11,set->pfd)
+(12,set->pfd)
+(13,i)
+(14,)
+(15,tcp)
+(16,tcp_event_serve(tcp, i)
+(17,if (set->pfd[i].revents & (POLLERR|POLLHUP|POLLNVAL)
+(18,nfds)
+(19,POLLIN)
+(20,set)
+(21,fd)
+(22,nfds > 0)
+(23,tcp->set)
+(24,set->pfd)
+(25,set)
+(26,fd)
+(27,0)
+(28,i)
+(29,pfd)
+(30,nfds)
+(31,set->pfd[i].fd)
+(32,set)
+(33,set->n)
+(34,set)
+(35,tcp_event_serve(tcp, i)
+(36,if (set->pfd[i].revents & POLLIN)
+(37,++i)
+(38,set)
+(39,i)
+(40,RET)
+(41,fdset_remove(set, i)
+(42,KNOT_EOK)
+(43,nfds > 0 && i < set->n)
+(44,tcp)
+(45,--nfds)
+(46,pfd)
+(47,n)
+(48,POLLHUP)
+(49,i)
+(50,continue;)
+(51,nfds)
+(52,last_poll_time)
+(53,set->pfd[i].revents & (POLLERR|POLLHUP|POLLNVAL)
+(54,)
+(55,set)
+(56,revents)
+(57,return nfds;)
+(58,--nfds)
+(59,POLLHUP|POLLNVAL)
+(60,tcp->client_threshold)
+(61,time_now(&tcp->last_poll_time)
+(62,set)
+(63,if (tcp_event_serve(tcp, i)
+(64,POLLNVAL)
+(65,set->pfd[i])
+(66,0)
+(67,POLLERR)
+(68,client_threshold)
+(69,set->pfd[i].revents)
+(70,tcp)
+(71,poll(set->pfd, set->n, TCP_SWEEP_INTERVAL * 1000)
+(72,POLLERR|POLLHUP|POLLNVAL)
+(73,set)
+(74,i)
+(75,close(fd)
+(76,set->pfd)
+(77,set)
+(78,)
+(79,&tcp->set)
+(80,)
+(81,i)
+(82,set->n)
+(83,fd)
+(84,set->pfd[i])
+(85,1000)
+(86,continue;)
+(87,n)
+(88,&tcp->last_poll_time)
+(89,pfd)
+(90,set->pfd[i])
+(91,set->pfd[i].revents & POLLIN)
+(92,i)
+(93,fdset_remove(set, i)
+(94,revents)
+(95,tcp)
+(96,i)
+(97,tcp_context_t *tcp)
+(98,(void)
+(99,pfd)
+(100,)
+(101,fd)
+(102,fd)
+(103,close(fd)
+(104,i < tcp->client_threshold)
+(105,nfds)
+(106,tcp_event_accept(tcp, i)
+(107,set->pfd[i].revents)
+(108,nfds = poll(set->pfd, set->n, TCP_SWEEP_INTERVAL * 1000)
+(109,set)
+(110,TCP_SWEEP_INTERVAL)
+(111,i)
+(112,if (i < tcp->client_threshold)
+(113,)
+(114,*set = &tcp->set)
+(115,fd = set->pfd[i].fd)
+(116,i)
+(117,i < set->n)
+(118,i)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,2333 @@
+-----label-----
+1
+-----code-----
+struct work_queue_task *work_queue_wait_internal(struct work_queue *q, int timeout, struct link *foreman_uplink, int *foreman_uplink_active)
+/*
+	  --------------------
+	 |  compute stoptime  |
+	  --------------------
+			   |
+			   v
+		 --------------
++------>|  poll links  |
+|        --------------
+|              |
+|              v
+|        -------------
+|       |transfer task|<----------------+
+|        -------------                  |
+|              |                    yes |
+|              v                        |
+|     ------------------  yes   -----------------
+|    | tasks remaining? |----->| time remaining? |
+|     ------------------        -----------------
+|           no |                    no |
+|              v                       |
+|     ------------------               |
+|    |fast abort workers|              |
+|     ------------------               |
+|              |                       |
+|              v                       |
+| yes  -----------------               |
++-----| time remaining? |              |
+	   -----------------               |
+			no |                       |
+			   |-----------------------+
+			   v
+		   ----------
+		  |  return  |
+		   ----------
+*/
+{
+	struct work_queue_task *t;
+	time_t stoptime;
+	int    tasks_transfered = 0;
+
+	static timestamp_t last_left_time = 0;
+	if(last_left_time!=0) {
+		q->total_app_time += timestamp_get() - last_left_time;
+	}
+
+	print_password_warning(q);
+
+	if(timeout == WORK_QUEUE_WAITFORTASK) {
+		stoptime = 0;
+	} else {
+		stoptime = time(0) + timeout;
+	}
+
+	while(1) {
+		if(q->name) {
+			update_catalog(q, foreman_uplink, 0);
+		}
+
+		if(q->monitor_mode)
+			update_resource_report(q);
+
+		ask_for_workers_updates(q);
+
+		t = task_state_any(q, WORK_QUEUE_TASK_RETRIEVED);
+		if(t) {
+			change_task_state(q, t, WORK_QUEUE_TASK_DONE);
+
+			last_left_time = timestamp_get();
+
+			if( t->result != WORK_QUEUE_RESULT_SUCCESS )
+			{
+				q->stats->total_tasks_failed++;
+			}
+
+			return t;
+
+		}
+
+		if( q->process_pending_check && process_pending() )
+			break;
+
+		if(!task_state_any(q, WORK_QUEUE_TASK_RUNNING) && !task_state_any(q, WORK_QUEUE_TASK_READY) && !task_state_any(q, WORK_QUEUE_TASK_WAITING_RETRIEVAL) && !(foreman_uplink))
+			break;
+
+		wait_loop_poll_links(q, stoptime, foreman_uplink, foreman_uplink_active, tasks_transfered);
+
+		expire_waiting_tasks(q);
+
+		//Re-enqueue the tasks that workers labeled for resubmission.
+		while((t = task_state_any(q, WORK_QUEUE_TASK_WAITING_RESUBMISSION))) {
+
+			if(t->result == WORK_QUEUE_RESULT_RESOURCE_EXHAUSTION) {
+				category_allocation_t next = category_next_label(q->categories, t->category, t->resource_request, /* resource overflow */ 1);
+				if(next == CATEGORY_ALLOCATION_AUTO_ZERO || next == CATEGORY_ALLOCATION_AUTO_FIRST || next == CATEGORY_ALLOCATION_AUTO_MAX) {
+					debug(D_WQ, "Task %d resubmitted using new resource allocation.\n", t->taskid);
+					t->resource_request = next;
+					cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY);
+				} else {
+					debug(D_WQ, "Task %d failed given max resource exhaustion.\n", t->taskid);
+					change_task_state(q, t, WORK_QUEUE_TASK_WAITING_RETRIEVAL);
+				}
+			} else {
+				cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY);
+			}
+		}
+
+		//We have the resources we have been waiting for; start task transfers
+		int known = known_workers(q);
+		if(known > 0 && known >= q->workers_to_wait) {
+			tasks_transfered = wait_loop_transfer_tasks(q, stoptime);
+			q->workers_to_wait = 0; //disable it after we started dipatching tasks
+		}
+
+		// If fast abort is enabled, kill off slow workers.
+		abort_slow_workers(q);
+
+		// If the foreman_uplink is active then break so the caller can handle it.
+		if(foreman_uplink) {
+			break;
+		}
+
+		// If nothing was awake, restart the loop or return without a task.
+		if(stoptime && time(0) >= stoptime) {
+			break;
+		} else {
+			continue;
+		}
+	}
+
+	last_left_time = timestamp_get();
+
+	return 0;
+}
+-----children-----
+1,2
+1,3
+1,4
+2,3
+4,5
+4,6
+4,7
+4,8
+4,9
+4,10
+7,8
+7,9
+8,9
+10,11
+10,12
+13,14
+13,15
+15,16
+17,18
+17,19
+18,19
+20,21
+20,22
+23,24
+23,25
+25,26
+25,27
+28,29
+28,30
+28,31
+28,32
+28,33
+28,34
+28,35
+28,36
+28,37
+28,38
+29,30
+30,31
+30,32
+31,32
+33,34
+33,35
+36,37
+37,38
+37,39
+38,39
+40,41
+42,43
+43,44
+43,45
+45,46
+45,47
+47,48
+49,50
+50,51
+50,52
+51,52
+53,54
+53,55
+55,56
+57,58
+57,59
+58,59
+58,60
+59,60
+62,63
+63,64
+64,65
+64,66
+65,66
+65,67
+66,67
+69,70
+69,71
+70,71
+71,72
+73,74
+75,76
+76,77
+76,78
+77,78
+79,80
+81,82
+81,83
+81,84
+82,83
+82,84
+83,84
+85,86
+87,88
+88,89
+89,90
+89,91
+90,91
+93,94
+94,95
+95,96
+95,97
+96,97
+98,99
+98,100
+99,100
+99,101
+100,101
+103,104
+105,106
+105,107
+107,108
+107,109
+107,110
+107,111
+107,112
+107,113
+107,114
+107,115
+107,116
+107,117
+107,118
+107,119
+107,120
+107,121
+107,122
+108,109
+108,110
+109,110
+109,111
+110,111
+113,114
+114,115
+115,116
+115,117
+115,118
+115,119
+116,117
+118,119
+120,121
+123,124
+123,125
+124,125
+124,126
+125,126
+128,129
+129,130
+129,131
+130,131
+132,133
+134,135
+135,136
+135,137
+136,137
+138,139
+140,141
+141,142
+141,143
+142,143
+144,145
+144,146
+144,147
+145,146
+147,148
+149,150
+151,152
+151,153
+152,153
+154,155
+154,156
+154,157
+154,158
+155,156
+156,157
+156,158
+156,159
+156,160
+157,158
+159,160
+161,162
+163,164
+165,166
+166,167
+166,168
+167,168
+169,170
+170,171
+172,173
+172,174
+173,174
+173,175
+174,175
+174,176
+175,176
+178,179
+180,181
+181,182
+182,183
+183,184
+183,185
+184,185
+184,186
+185,186
+189,190
+190,191
+192,193
+192,194
+193,194
+193,195
+194,195
+194,196
+195,196
+198,199
+199,200
+202,203
+202,204
+203,204
+203,205
+204,205
+204,206
+205,206
+205,207
+206,207
+207,208
+207,209
+207,210
+208,209
+210,211
+212,213
+214,215
+215,216
+215,217
+215,218
+216,217
+218,219
+220,221
+222,223
+223,224
+223,225
+223,226
+224,225
+226,227
+228,229
+230,231
+231,232
+232,233
+235,236
+236,237
+236,238
+236,239
+236,240
+236,241
+236,242
+237,238
+239,240
+241,242
+243,244
+245,246
+247,248
+249,250
+250,251
+250,252
+251,252
+253,254
+255,256
+255,257
+256,257
+257,258
+257,259
+258,259
+260,261
+260,262
+260,263
+261,262
+263,264
+265,266
+267,268
+268,269
+268,270
+268,271
+269,270
+269,271
+270,271
+270,272
+271,272
+274,275
+276,277
+276,278
+277,278
+278,279
+278,280
+279,280
+281,282
+281,283
+283,284
+284,285
+284,286
+284,287
+284,288
+284,289
+285,286
+287,288
+287,289
+288,289
+291,292
+291,293
+292,293
+295,296
+295,297
+296,297
+300,301
+300,302
+300,303
+301,302
+301,303
+302,303
+302,304
+303,304
+303,305
+304,305
+306,307
+308,309
+308,310
+309,310
+311,312
+313,314
+313,315
+314,315
+316,317
+318,319
+318,320
+318,321
+319,320
+320,321
+320,322
+320,323
+320,324
+321,322
+323,324
+326,327
+326,328
+327,328
+330,331
+331,332
+331,333
+332,333
+332,334
+333,334
+336,337
+338,339
+339,340
+339,341
+339,342
+339,343
+340,341
+342,343
+344,345
+346,347
+348,349
+348,350
+349,350
+350,351
+350,352
+350,353
+350,354
+351,352
+353,354
+356,357
+356,358
+357,358
+360,361
+361,362
+361,363
+361,364
+361,365
+362,363
+364,365
+366,367
+368,369
+370,371
+371,372
+372,373
+372,374
+372,375
+372,376
+373,374
+375,376
+377,378
+379,380
+381,382
+382,383
+382,384
+384,385
+384,386
+386,387
+387,388
+387,389
+388,389
+390,391
+392,393
+392,394
+393,394
+393,395
+394,395
+394,396
+395,396
+398,399
+398,400
+399,400
+401,402
+401,403
+402,403
+405,406
+405,407
+406,407
+407,408
+407,409
+408,409
+410,411
+410,412
+410,413
+411,412
+413,414
+415,416
+417,418
+418,419
+418,420
+419,420
+419,421
+420,421
+424,425
+425,426
+425,427
+426,427
+428,429
+430,431
+430,432
+431,432
+433,434
+435,436
+435,437
+435,438
+436,437
+436,438
+437,438
+439,440
+439,441
+440,441
+440,442
+441,442
+444,445
+446,447
+448,449
+450,451
+451,452
+451,453
+452,453
+454,455
+455,456
+457,458
+-----nextToken-----
+3,5,6,9,11,12,14,16,19,21,22,24,26,27,32,34,35,39,41,44,46,48,52,54,56,60,61,67,68,72,74,78,80,84,86,91,92,97,101,102,104,106,111,112,117,119,121,122,126,127,131,133,137,139,143,146,148,150,153,158,160,162,164,168,171,176,177,179,186,187,188,191,196,197,200,201,209,211,213,217,219,221,225,227,229,233,234,238,240,242,244,246,248,252,254,259,262,264,266,272,273,275,280,282,286,289,290,293,294,297,298,299,305,307,310,312,315,317,322,324,325,328,329,334,335,337,341,343,345,347,352,354,355,358,359,363,365,367,369,374,376,378,380,383,385,389,391,396,397,400,403,404,409,412,414,416,421,422,423,427,429,432,434,438,442,443,445,447,449,453,456,458
+-----computeFrom-----
+58,59
+58,60
+64,65
+64,66
+69,70
+69,71
+82,83
+82,84
+89,90
+89,91
+95,96
+95,97
+98,99
+98,100
+141,142
+141,143
+166,167
+166,168
+173,174
+173,175
+193,194
+193,195
+203,204
+203,205
+204,205
+204,206
+205,206
+205,207
+257,258
+257,259
+269,270
+269,271
+301,302
+301,303
+302,303
+302,304
+303,304
+303,305
+308,309
+308,310
+313,314
+313,315
+331,332
+331,333
+393,394
+393,395
+394,395
+394,396
+398,399
+398,400
+407,408
+407,409
+418,419
+418,420
+436,437
+436,438
+439,440
+439,441
+451,452
+451,453
+-----guardedBy-----
+60,74
+272,367
+315,337
+403,421
+404,422
+-----guardedByNegation-----
+84,104
+272,378
+-----lastLexicalUse-----
+272,378
+-----jump-----
+272,378
+-----attribute-----
+FunctionDefinition;ElaboratedTypeSpecifier;Name;FunctionDeclarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;WhileStatement;LiteralExpression;CompoundStatement;IfStatement;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;IfStatement;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;UnaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;ReturnStatement;IdExpression;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;BreakStatement;IfStatement;BinaryExpression;BinaryExpression;BinaryExpression;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;UnaryExpression;UnaryExpression;IdExpression;Name;BreakStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;WhileStatement;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;IfStatement;BinaryExpression;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;IdExpression;Name;CompoundStatement;BreakStatement;IfStatement;BinaryExpression;IdExpression;Name;BinaryExpression;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;CompoundStatement;BreakStatement;CompoundStatement;ContinueStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;ReturnStatement;LiteralExpression;
+-----ast_node-----
+struct work_queue_task *work_queue_wait_internal(struct work_queue *q, int timeout, struct link *foreman_uplink, int *foreman_uplink_active)/*	  --------------------	 |  compute stoptime  |	  --------------------			   |			   v		 --------------+------>|  poll links  ||        --------------|              ||              v|        -------------|       |transfer task|<----------------+|        -------------                  ||              |                    yes ||              v                        ||     ------------------  yes   -----------------|    | tasks remaining? |----->| time remaining? ||     ------------------        -----------------|           no |                    no ||              v                       ||     ------------------               ||    |fast abort workers|              ||     ------------------               ||              |                       ||              v                       || yes  -----------------               |+-----| time remaining? |              |	   -----------------               |			no |                       |			   |-----------------------+			   v		   ----------		  |  return  |		   ----------*/{	struct work_queue_task *t;	time_t stoptime;	int    tasks_transfered = 0;	static timestamp_t last_left_time = 0;	if(last_left_time!=0) {		q->total_app_time += timestamp_get() - last_left_time;	}	print_password_warning(q);	if(timeout == WORK_QUEUE_WAITFORTASK) {		stoptime = 0;	} else {		stoptime = time(0) + timeout;	}	while(1) {		if(q->name) {			update_catalog(q, foreman_uplink, 0);		}		if(q->monitor_mode)			update_resource_report(q);		ask_for_workers_updates(q);		t = task_state_any(q, WORK_QUEUE_TASK_RETRIEVED);		if(t) {			change_task_state(q, t, WORK_QUEUE_TASK_DONE);			last_left_time = timestamp_get();			if( t->result != WORK_QUEUE_RESULT_SUCCESS )			{				q->stats->total_tasks_failed++;			}			return t;		}		if( q->process_pending_check && process_pending() )			break;		if(!task_state_any(q, WORK_QUEUE_TASK_RUNNING) && !task_state_any(q, WORK_QUEUE_TASK_READY) && !task_state_any(q, WORK_QUEUE_TASK_WAITING_RETRIEVAL) && !(foreman_uplink))			break;		wait_loop_poll_links(q, stoptime, foreman_uplink, foreman_uplink_active, tasks_transfered);		expire_waiting_tasks(q);		//Re-enqueue the tasks that workers labeled for resubmission.		while((t = task_state_any(q, WORK_QUEUE_TASK_WAITING_RESUBMISSION))) {			if(t->result == WORK_QUEUE_RESULT_RESOURCE_EXHAUSTION) {				category_allocation_t next = category_next_label(q->categories, t->category, t->resource_request, /* resource overflow */ 1);				if(next == CATEGORY_ALLOCATION_AUTO_ZERO || next == CATEGORY_ALLOCATION_AUTO_FIRST || next == CATEGORY_ALLOCATION_AUTO_MAX) {					debug(D_WQ, "Task %d resubmitted using new resource allocation.\n", t->taskid);					t->resource_request = next;					cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY);				} else {					debug(D_WQ, "Task %d failed given max resource exhaustion.\n", t->taskid);					change_task_state(q, t, WORK_QUEUE_TASK_WAITING_RETRIEVAL);				}			} else {				cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY);			}		}		//We have the resources we have been waiting for; start task transfers		int known = known_workers(q);		if(known > 0 && known >= q->workers_to_wait) {			tasks_transfered = wait_loop_transfer_tasks(q, stoptime);			q->workers_to_wait = 0; //disable it after we started dipatching tasks		}		// If fast abort is enabled, kill off slow workers.		abort_slow_workers(q);		// If the foreman_uplink is active then break so the caller can handle it.		if(foreman_uplink) {			break;		}		// If nothing was awake, restart the loop or return without a task.		if(stoptime && time(0) >= stoptime) {			break;		} else {			continue;		}	}	last_left_time = timestamp_get();	return 0;}
+struct work_queue_task
+work_queue_task
+*work_queue_wait_internal(struct work_queue *q, int timeout, struct link *foreman_uplink, int *foreman_uplink_active)
+*
+work_queue_wait_internal
+struct work_queue *q
+struct work_queue
+work_queue
+*q
+*
+q
+int timeout
+int
+timeout
+timeout
+struct link *foreman_uplink
+struct link
+link
+*foreman_uplink
+*
+foreman_uplink
+int *foreman_uplink_active
+int
+*foreman_uplink_active
+*
+foreman_uplink_active
+{	struct work_queue_task *t;	time_t stoptime;	int    tasks_transfered = 0;	static timestamp_t last_left_time = 0;	if(last_left_time!=0) {		q->total_app_time += timestamp_get() - last_left_time;	}	print_password_warning(q);	if(timeout == WORK_QUEUE_WAITFORTASK) {		stoptime = 0;	} else {		stoptime = time(0) + timeout;	}	while(1) {		if(q->name) {			update_catalog(q, foreman_uplink, 0);		}		if(q->monitor_mode)			update_resource_report(q);		ask_for_workers_updates(q);		t = task_state_any(q, WORK_QUEUE_TASK_RETRIEVED);		if(t) {			change_task_state(q, t, WORK_QUEUE_TASK_DONE);			last_left_time = timestamp_get();			if( t->result != WORK_QUEUE_RESULT_SUCCESS )			{				q->stats->total_tasks_failed++;			}			return t;		}		if( q->process_pending_check && process_pending() )			break;		if(!task_state_any(q, WORK_QUEUE_TASK_RUNNING) && !task_state_any(q, WORK_QUEUE_TASK_READY) && !task_state_any(q, WORK_QUEUE_TASK_WAITING_RETRIEVAL) && !(foreman_uplink))			break;		wait_loop_poll_links(q, stoptime, foreman_uplink, foreman_uplink_active, tasks_transfered);		expire_waiting_tasks(q);		//Re-enqueue the tasks that workers labeled for resubmission.		while((t = task_state_any(q, WORK_QUEUE_TASK_WAITING_RESUBMISSION))) {			if(t->result == WORK_QUEUE_RESULT_RESOURCE_EXHAUSTION) {				category_allocation_t next = category_next_label(q->categories, t->category, t->resource_request, /* resource overflow */ 1);				if(next == CATEGORY_ALLOCATION_AUTO_ZERO || next == CATEGORY_ALLOCATION_AUTO_FIRST || next == CATEGORY_ALLOCATION_AUTO_MAX) {					debug(D_WQ, "Task %d resubmitted using new resource allocation.\n", t->taskid);					t->resource_request = next;					cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY);				} else {					debug(D_WQ, "Task %d failed given max resource exhaustion.\n", t->taskid);					change_task_state(q, t, WORK_QUEUE_TASK_WAITING_RETRIEVAL);				}			} else {				cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY);			}		}		//We have the resources we have been waiting for; start task transfers		int known = known_workers(q);		if(known > 0 && known >= q->workers_to_wait) {			tasks_transfered = wait_loop_transfer_tasks(q, stoptime);			q->workers_to_wait = 0; //disable it after we started dipatching tasks		}		// If fast abort is enabled, kill off slow workers.		abort_slow_workers(q);		// If the foreman_uplink is active then break so the caller can handle it.		if(foreman_uplink) {			break;		}		// If nothing was awake, restart the loop or return without a task.		if(stoptime && time(0) >= stoptime) {			break;		} else {			continue;		}	}	last_left_time = timestamp_get();	return 0;}
+struct work_queue_task *t;
+struct work_queue_task *t;
+struct work_queue_task
+work_queue_task
+*t
+*
+t
+time_t stoptime;
+time_t stoptime;
+time_t
+time_t
+stoptime
+stoptime
+int    tasks_transfered = 0;
+int    tasks_transfered = 0;
+int
+tasks_transfered = 0
+tasks_transfered
+= 0
+0
+static timestamp_t last_left_time = 0;
+static timestamp_t last_left_time = 0;
+static timestamp_t
+timestamp_t
+last_left_time = 0
+last_left_time
+= 0
+0
+if(last_left_time!=0) {		q->total_app_time += timestamp_get() - last_left_time;	}
+last_left_time!=0
+last_left_time
+last_left_time
+0
+{		q->total_app_time += timestamp_get() - last_left_time;	}
+q->total_app_time += timestamp_get() - last_left_time;
+q->total_app_time += timestamp_get() - last_left_time
+q->total_app_time
+q
+q
+total_app_time
+timestamp_get() - last_left_time
+timestamp_get()
+timestamp_get
+timestamp_get
+last_left_time
+last_left_time
+print_password_warning(q);
+print_password_warning(q)
+print_password_warning
+print_password_warning
+q
+q
+if(timeout == WORK_QUEUE_WAITFORTASK) {		stoptime = 0;	} else {		stoptime = time(0) + timeout;	}
+timeout == WORK_QUEUE_WAITFORTASK
+timeout
+timeout
+WORK_QUEUE_WAITFORTASK
+WORK_QUEUE_WAITFORTASK
+{		stoptime = 0;	}
+stoptime = 0;
+stoptime = 0
+stoptime
+stoptime
+0
+{		stoptime = time(0) + timeout;	}
+stoptime = time(0) + timeout;
+stoptime = time(0) + timeout
+stoptime
+stoptime
+time(0) + timeout
+time(0)
+time
+time
+0
+timeout
+timeout
+while(1) {		if(q->name) {			update_catalog(q, foreman_uplink, 0);		}		if(q->monitor_mode)			update_resource_report(q);		ask_for_workers_updates(q);		t = task_state_any(q, WORK_QUEUE_TASK_RETRIEVED);		if(t) {			change_task_state(q, t, WORK_QUEUE_TASK_DONE);			last_left_time = timestamp_get();			if( t->result != WORK_QUEUE_RESULT_SUCCESS )			{				q->stats->total_tasks_failed++;			}			return t;		}		if( q->process_pending_check && process_pending() )			break;		if(!task_state_any(q, WORK_QUEUE_TASK_RUNNING) && !task_state_any(q, WORK_QUEUE_TASK_READY) && !task_state_any(q, WORK_QUEUE_TASK_WAITING_RETRIEVAL) && !(foreman_uplink))			break;		wait_loop_poll_links(q, stoptime, foreman_uplink, foreman_uplink_active, tasks_transfered);		expire_waiting_tasks(q);		//Re-enqueue the tasks that workers labeled for resubmission.		while((t = task_state_any(q, WORK_QUEUE_TASK_WAITING_RESUBMISSION))) {			if(t->result == WORK_QUEUE_RESULT_RESOURCE_EXHAUSTION) {				category_allocation_t next = category_next_label(q->categories, t->category, t->resource_request, /* resource overflow */ 1);				if(next == CATEGORY_ALLOCATION_AUTO_ZERO || next == CATEGORY_ALLOCATION_AUTO_FIRST || next == CATEGORY_ALLOCATION_AUTO_MAX) {					debug(D_WQ, "Task %d resubmitted using new resource allocation.\n", t->taskid);					t->resource_request = next;					cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY);				} else {					debug(D_WQ, "Task %d failed given max resource exhaustion.\n", t->taskid);					change_task_state(q, t, WORK_QUEUE_TASK_WAITING_RETRIEVAL);				}			} else {				cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY);			}		}		//We have the resources we have been waiting for; start task transfers		int known = known_workers(q);		if(known > 0 && known >= q->workers_to_wait) {			tasks_transfered = wait_loop_transfer_tasks(q, stoptime);			q->workers_to_wait = 0; //disable it after we started dipatching tasks		}		// If fast abort is enabled, kill off slow workers.		abort_slow_workers(q);		// If the foreman_uplink is active then break so the caller can handle it.		if(foreman_uplink) {			break;		}		// If nothing was awake, restart the loop or return without a task.		if(stoptime && time(0) >= stoptime) {			break;		} else {			continue;		}	}
+1
+{		if(q->name) {			update_catalog(q, foreman_uplink, 0);		}		if(q->monitor_mode)			update_resource_report(q);		ask_for_workers_updates(q);		t = task_state_any(q, WORK_QUEUE_TASK_RETRIEVED);		if(t) {			change_task_state(q, t, WORK_QUEUE_TASK_DONE);			last_left_time = timestamp_get();			if( t->result != WORK_QUEUE_RESULT_SUCCESS )			{				q->stats->total_tasks_failed++;			}			return t;		}		if( q->process_pending_check && process_pending() )			break;		if(!task_state_any(q, WORK_QUEUE_TASK_RUNNING) && !task_state_any(q, WORK_QUEUE_TASK_READY) && !task_state_any(q, WORK_QUEUE_TASK_WAITING_RETRIEVAL) && !(foreman_uplink))			break;		wait_loop_poll_links(q, stoptime, foreman_uplink, foreman_uplink_active, tasks_transfered);		expire_waiting_tasks(q);		//Re-enqueue the tasks that workers labeled for resubmission.		while((t = task_state_any(q, WORK_QUEUE_TASK_WAITING_RESUBMISSION))) {			if(t->result == WORK_QUEUE_RESULT_RESOURCE_EXHAUSTION) {				category_allocation_t next = category_next_label(q->categories, t->category, t->resource_request, /* resource overflow */ 1);				if(next == CATEGORY_ALLOCATION_AUTO_ZERO || next == CATEGORY_ALLOCATION_AUTO_FIRST || next == CATEGORY_ALLOCATION_AUTO_MAX) {					debug(D_WQ, "Task %d resubmitted using new resource allocation.\n", t->taskid);					t->resource_request = next;					cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY);				} else {					debug(D_WQ, "Task %d failed given max resource exhaustion.\n", t->taskid);					change_task_state(q, t, WORK_QUEUE_TASK_WAITING_RETRIEVAL);				}			} else {				cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY);			}		}		//We have the resources we have been waiting for; start task transfers		int known = known_workers(q);		if(known > 0 && known >= q->workers_to_wait) {			tasks_transfered = wait_loop_transfer_tasks(q, stoptime);			q->workers_to_wait = 0; //disable it after we started dipatching tasks		}		// If fast abort is enabled, kill off slow workers.		abort_slow_workers(q);		// If the foreman_uplink is active then break so the caller can handle it.		if(foreman_uplink) {			break;		}		// If nothing was awake, restart the loop or return without a task.		if(stoptime && time(0) >= stoptime) {			break;		} else {			continue;		}	}
+if(q->name) {			update_catalog(q, foreman_uplink, 0);		}
+q->name
+q
+q
+name
+{			update_catalog(q, foreman_uplink, 0);		}
+update_catalog(q, foreman_uplink, 0);
+update_catalog(q, foreman_uplink, 0)
+update_catalog
+update_catalog
+q
+q
+foreman_uplink
+foreman_uplink
+0
+if(q->monitor_mode)			update_resource_report(q);
+q->monitor_mode
+q
+q
+monitor_mode
+update_resource_report(q);
+update_resource_report(q)
+update_resource_report
+update_resource_report
+q
+q
+ask_for_workers_updates(q);
+ask_for_workers_updates(q)
+ask_for_workers_updates
+ask_for_workers_updates
+q
+q
+t = task_state_any(q, WORK_QUEUE_TASK_RETRIEVED);
+t = task_state_any(q, WORK_QUEUE_TASK_RETRIEVED)
+t
+t
+task_state_any(q, WORK_QUEUE_TASK_RETRIEVED)
+task_state_any
+task_state_any
+q
+q
+WORK_QUEUE_TASK_RETRIEVED
+WORK_QUEUE_TASK_RETRIEVED
+if(t) {			change_task_state(q, t, WORK_QUEUE_TASK_DONE);			last_left_time = timestamp_get();			if( t->result != WORK_QUEUE_RESULT_SUCCESS )			{				q->stats->total_tasks_failed++;			}			return t;		}
+t
+t
+{			change_task_state(q, t, WORK_QUEUE_TASK_DONE);			last_left_time = timestamp_get();			if( t->result != WORK_QUEUE_RESULT_SUCCESS )			{				q->stats->total_tasks_failed++;			}			return t;		}
+change_task_state(q, t, WORK_QUEUE_TASK_DONE);
+change_task_state(q, t, WORK_QUEUE_TASK_DONE)
+change_task_state
+change_task_state
+q
+q
+t
+t
+WORK_QUEUE_TASK_DONE
+WORK_QUEUE_TASK_DONE
+last_left_time = timestamp_get();
+last_left_time = timestamp_get()
+last_left_time
+last_left_time
+timestamp_get()
+timestamp_get
+timestamp_get
+if( t->result != WORK_QUEUE_RESULT_SUCCESS )			{				q->stats->total_tasks_failed++;			}
+t->result != WORK_QUEUE_RESULT_SUCCESS
+t->result
+t
+t
+result
+WORK_QUEUE_RESULT_SUCCESS
+WORK_QUEUE_RESULT_SUCCESS
+{				q->stats->total_tasks_failed++;			}
+q->stats->total_tasks_failed++;
+q->stats->total_tasks_failed++
+q->stats->total_tasks_failed
+q->stats
+q
+q
+stats
+total_tasks_failed
+return t;
+t
+t
+if( q->process_pending_check && process_pending() )			break;
+q->process_pending_check && process_pending()
+q->process_pending_check
+q
+q
+process_pending_check
+process_pending()
+process_pending
+process_pending
+break;
+if(!task_state_any(q, WORK_QUEUE_TASK_RUNNING) && !task_state_any(q, WORK_QUEUE_TASK_READY) && !task_state_any(q, WORK_QUEUE_TASK_WAITING_RETRIEVAL) && !(foreman_uplink))			break;
+!task_state_any(q, WORK_QUEUE_TASK_RUNNING) && !task_state_any(q, WORK_QUEUE_TASK_READY) && !task_state_any(q, WORK_QUEUE_TASK_WAITING_RETRIEVAL) && !(foreman_uplink)
+!task_state_any(q, WORK_QUEUE_TASK_RUNNING) && !task_state_any(q, WORK_QUEUE_TASK_READY) && !task_state_any(q, WORK_QUEUE_TASK_WAITING_RETRIEVAL)
+!task_state_any(q, WORK_QUEUE_TASK_RUNNING) && !task_state_any(q, WORK_QUEUE_TASK_READY)
+!task_state_any(q, WORK_QUEUE_TASK_RUNNING)
+task_state_any(q, WORK_QUEUE_TASK_RUNNING)
+task_state_any
+task_state_any
+q
+q
+WORK_QUEUE_TASK_RUNNING
+WORK_QUEUE_TASK_RUNNING
+!task_state_any(q, WORK_QUEUE_TASK_READY)
+task_state_any(q, WORK_QUEUE_TASK_READY)
+task_state_any
+task_state_any
+q
+q
+WORK_QUEUE_TASK_READY
+WORK_QUEUE_TASK_READY
+!task_state_any(q, WORK_QUEUE_TASK_WAITING_RETRIEVAL)
+task_state_any(q, WORK_QUEUE_TASK_WAITING_RETRIEVAL)
+task_state_any
+task_state_any
+q
+q
+WORK_QUEUE_TASK_WAITING_RETRIEVAL
+WORK_QUEUE_TASK_WAITING_RETRIEVAL
+!(foreman_uplink)
+(foreman_uplink)
+foreman_uplink
+foreman_uplink
+break;
+wait_loop_poll_links(q, stoptime, foreman_uplink, foreman_uplink_active, tasks_transfered);
+wait_loop_poll_links(q, stoptime, foreman_uplink, foreman_uplink_active, tasks_transfered)
+wait_loop_poll_links
+wait_loop_poll_links
+q
+q
+stoptime
+stoptime
+foreman_uplink
+foreman_uplink
+foreman_uplink_active
+foreman_uplink_active
+tasks_transfered
+tasks_transfered
+expire_waiting_tasks(q);
+expire_waiting_tasks(q)
+expire_waiting_tasks
+expire_waiting_tasks
+q
+q
+while((t = task_state_any(q, WORK_QUEUE_TASK_WAITING_RESUBMISSION))) {			if(t->result == WORK_QUEUE_RESULT_RESOURCE_EXHAUSTION) {				category_allocation_t next = category_next_label(q->categories, t->category, t->resource_request, /* resource overflow */ 1);				if(next == CATEGORY_ALLOCATION_AUTO_ZERO || next == CATEGORY_ALLOCATION_AUTO_FIRST || next == CATEGORY_ALLOCATION_AUTO_MAX) {					debug(D_WQ, "Task %d resubmitted using new resource allocation.\n", t->taskid);					t->resource_request = next;					cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY);				} else {					debug(D_WQ, "Task %d failed given max resource exhaustion.\n", t->taskid);					change_task_state(q, t, WORK_QUEUE_TASK_WAITING_RETRIEVAL);				}			} else {				cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY);			}		}
+(t = task_state_any(q, WORK_QUEUE_TASK_WAITING_RESUBMISSION))
+t = task_state_any(q, WORK_QUEUE_TASK_WAITING_RESUBMISSION)
+t
+t
+task_state_any(q, WORK_QUEUE_TASK_WAITING_RESUBMISSION)
+task_state_any
+task_state_any
+q
+q
+WORK_QUEUE_TASK_WAITING_RESUBMISSION
+WORK_QUEUE_TASK_WAITING_RESUBMISSION
+{			if(t->result == WORK_QUEUE_RESULT_RESOURCE_EXHAUSTION) {				category_allocation_t next = category_next_label(q->categories, t->category, t->resource_request, /* resource overflow */ 1);				if(next == CATEGORY_ALLOCATION_AUTO_ZERO || next == CATEGORY_ALLOCATION_AUTO_FIRST || next == CATEGORY_ALLOCATION_AUTO_MAX) {					debug(D_WQ, "Task %d resubmitted using new resource allocation.\n", t->taskid);					t->resource_request = next;					cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY);				} else {					debug(D_WQ, "Task %d failed given max resource exhaustion.\n", t->taskid);					change_task_state(q, t, WORK_QUEUE_TASK_WAITING_RETRIEVAL);				}			} else {				cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY);			}		}
+if(t->result == WORK_QUEUE_RESULT_RESOURCE_EXHAUSTION) {				category_allocation_t next = category_next_label(q->categories, t->category, t->resource_request, /* resource overflow */ 1);				if(next == CATEGORY_ALLOCATION_AUTO_ZERO || next == CATEGORY_ALLOCATION_AUTO_FIRST || next == CATEGORY_ALLOCATION_AUTO_MAX) {					debug(D_WQ, "Task %d resubmitted using new resource allocation.\n", t->taskid);					t->resource_request = next;					cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY);				} else {					debug(D_WQ, "Task %d failed given max resource exhaustion.\n", t->taskid);					change_task_state(q, t, WORK_QUEUE_TASK_WAITING_RETRIEVAL);				}			} else {				cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY);			}
+t->result == WORK_QUEUE_RESULT_RESOURCE_EXHAUSTION
+t->result
+t
+t
+result
+WORK_QUEUE_RESULT_RESOURCE_EXHAUSTION
+WORK_QUEUE_RESULT_RESOURCE_EXHAUSTION
+{				category_allocation_t next = category_next_label(q->categories, t->category, t->resource_request, /* resource overflow */ 1);				if(next == CATEGORY_ALLOCATION_AUTO_ZERO || next == CATEGORY_ALLOCATION_AUTO_FIRST || next == CATEGORY_ALLOCATION_AUTO_MAX) {					debug(D_WQ, "Task %d resubmitted using new resource allocation.\n", t->taskid);					t->resource_request = next;					cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY);				} else {					debug(D_WQ, "Task %d failed given max resource exhaustion.\n", t->taskid);					change_task_state(q, t, WORK_QUEUE_TASK_WAITING_RETRIEVAL);				}			}
+category_allocation_t next = category_next_label(q->categories, t->category, t->resource_request, /* resource overflow */ 1);
+category_allocation_t next = category_next_label(q->categories, t->category, t->resource_request, /* resource overflow */ 1);
+category_allocation_t
+category_allocation_t
+next = category_next_label(q->categories, t->category, t->resource_request, /* resource overflow */ 1)
+next
+= category_next_label(q->categories, t->category, t->resource_request, /* resource overflow */ 1)
+category_next_label(q->categories, t->category, t->resource_request, /* resource overflow */ 1)
+category_next_label
+category_next_label
+q->categories
+q
+q
+categories
+t->category
+t
+t
+category
+t->resource_request
+t
+t
+resource_request
+1
+if(next == CATEGORY_ALLOCATION_AUTO_ZERO || next == CATEGORY_ALLOCATION_AUTO_FIRST || next == CATEGORY_ALLOCATION_AUTO_MAX) {					debug(D_WQ, "Task %d resubmitted using new resource allocation.\n", t->taskid);					t->resource_request = next;					cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY);				} else {					debug(D_WQ, "Task %d failed given max resource exhaustion.\n", t->taskid);					change_task_state(q, t, WORK_QUEUE_TASK_WAITING_RETRIEVAL);				}
+next == CATEGORY_ALLOCATION_AUTO_ZERO || next == CATEGORY_ALLOCATION_AUTO_FIRST || next == CATEGORY_ALLOCATION_AUTO_MAX
+next == CATEGORY_ALLOCATION_AUTO_ZERO || next == CATEGORY_ALLOCATION_AUTO_FIRST
+next == CATEGORY_ALLOCATION_AUTO_ZERO
+next
+next
+CATEGORY_ALLOCATION_AUTO_ZERO
+CATEGORY_ALLOCATION_AUTO_ZERO
+next == CATEGORY_ALLOCATION_AUTO_FIRST
+next
+next
+CATEGORY_ALLOCATION_AUTO_FIRST
+CATEGORY_ALLOCATION_AUTO_FIRST
+next == CATEGORY_ALLOCATION_AUTO_MAX
+next
+next
+CATEGORY_ALLOCATION_AUTO_MAX
+CATEGORY_ALLOCATION_AUTO_MAX
+{					debug(D_WQ, "Task %d resubmitted using new resource allocation.\n", t->taskid);					t->resource_request = next;					cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY);				}
+debug(D_WQ, "Task %d resubmitted using new resource allocation.\n", t->taskid);
+debug(D_WQ, "Task %d resubmitted using new resource allocation.\n", t->taskid)
+debug
+debug
+D_WQ
+D_WQ
+"Task %d resubmitted using new resource allocation.\n"
+t->taskid
+t
+t
+taskid
+t->resource_request = next;
+t->resource_request = next
+t->resource_request
+t
+t
+resource_request
+next
+next
+cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY);
+cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY)
+cancel_task_on_worker
+cancel_task_on_worker
+q
+q
+t
+t
+WORK_QUEUE_TASK_READY
+WORK_QUEUE_TASK_READY
+{					debug(D_WQ, "Task %d failed given max resource exhaustion.\n", t->taskid);					change_task_state(q, t, WORK_QUEUE_TASK_WAITING_RETRIEVAL);				}
+debug(D_WQ, "Task %d failed given max resource exhaustion.\n", t->taskid);
+debug(D_WQ, "Task %d failed given max resource exhaustion.\n", t->taskid)
+debug
+debug
+D_WQ
+D_WQ
+"Task %d failed given max resource exhaustion.\n"
+t->taskid
+t
+t
+taskid
+change_task_state(q, t, WORK_QUEUE_TASK_WAITING_RETRIEVAL);
+change_task_state(q, t, WORK_QUEUE_TASK_WAITING_RETRIEVAL)
+change_task_state
+change_task_state
+q
+q
+t
+t
+WORK_QUEUE_TASK_WAITING_RETRIEVAL
+WORK_QUEUE_TASK_WAITING_RETRIEVAL
+{				cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY);			}
+cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY);
+cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY)
+cancel_task_on_worker
+cancel_task_on_worker
+q
+q
+t
+t
+WORK_QUEUE_TASK_READY
+WORK_QUEUE_TASK_READY
+int known = known_workers(q);
+int known = known_workers(q);
+int
+known = known_workers(q)
+known
+= known_workers(q)
+known_workers(q)
+known_workers
+known_workers
+q
+q
+if(known > 0 && known >= q->workers_to_wait) {			tasks_transfered = wait_loop_transfer_tasks(q, stoptime);			q->workers_to_wait = 0; //disable it after we started dipatching tasks		}
+known > 0 && known >= q->workers_to_wait
+known > 0
+known
+known
+0
+known >= q->workers_to_wait
+known
+known
+q->workers_to_wait
+q
+q
+workers_to_wait
+{			tasks_transfered = wait_loop_transfer_tasks(q, stoptime);			q->workers_to_wait = 0; //disable it after we started dipatching tasks		}
+tasks_transfered = wait_loop_transfer_tasks(q, stoptime);
+tasks_transfered = wait_loop_transfer_tasks(q, stoptime)
+tasks_transfered
+tasks_transfered
+wait_loop_transfer_tasks(q, stoptime)
+wait_loop_transfer_tasks
+wait_loop_transfer_tasks
+q
+q
+stoptime
+stoptime
+q->workers_to_wait = 0;
+q->workers_to_wait = 0
+q->workers_to_wait
+q
+q
+workers_to_wait
+0
+abort_slow_workers(q);
+abort_slow_workers(q)
+abort_slow_workers
+abort_slow_workers
+q
+q
+if(foreman_uplink) {			break;		}
+foreman_uplink
+foreman_uplink
+{			break;		}
+break;
+if(stoptime && time(0) >= stoptime) {			break;		} else {			continue;		}
+stoptime && time(0) >= stoptime
+stoptime
+stoptime
+time(0) >= stoptime
+time(0)
+time
+time
+0
+stoptime
+stoptime
+{			break;		}
+break;
+{			continue;		}
+continue;
+last_left_time = timestamp_get();
+last_left_time = timestamp_get()
+last_left_time
+last_left_time
+timestamp_get()
+timestamp_get
+timestamp_get
+return 0;
+0
+-----joern-----
+(86,79,0)
+(67,118,0)
+(189,232,0)
+(26,90,0)
+(144,69,0)
+(50,134,0)
+(184,59,0)
+(228,148,0)
+(81,78,0)
+(147,154,0)
+(146,47,0)
+(220,82,0)
+(159,220,0)
+(17,87,0)
+(65,26,0)
+(197,5,0)
+(186,112,0)
+(109,185,0)
+(77,222,0)
+(237,51,0)
+(70,209,0)
+(55,207,0)
+(11,171,0)
+(162,174,0)
+(123,207,0)
+(5,121,0)
+(71,129,0)
+(197,69,0)
+(85,113,0)
+(90,108,0)
+(136,171,0)
+(182,149,0)
+(220,159,0)
+(116,21,0)
+(44,220,0)
+(33,17,0)
+(79,199,0)
+(219,34,0)
+(187,202,0)
+(53,7,0)
+(223,234,0)
+(69,208,0)
+(105,39,0)
+(234,140,0)
+(65,85,0)
+(82,120,0)
+(5,136,0)
+(245,174,0)
+(57,134,0)
+(180,154,0)
+(194,217,0)
+(215,155,0)
+(183,148,0)
+(146,118,0)
+(85,148,0)
+(105,206,0)
+(235,202,0)
+(35,90,0)
+(8,99,0)
+(185,109,0)
+(48,136,0)
+(124,207,0)
+(94,4,0)
+(163,135,0)
+(4,113,0)
+(35,142,0)
+(118,146,0)
+(28,50,0)
+(175,185,0)
+(181,206,0)
+(47,129,0)
+(192,245,0)
+(28,159,0)
+(176,216,0)
+(212,197,0)
+(58,217,0)
+(209,163,0)
+(213,54,0)
+(244,234,0)
+(239,103,0)
+(35,148,0)
+(93,197,0)
+(39,105,0)
+(207,55,0)
+(80,37,0)
+(201,226,0)
+(156,130,0)
+(84,212,0)
+(55,148,0)
+(36,232,0)
+(126,34,0)
+(209,148,0)
+(16,168,0)
+(120,148,0)
+(230,151,0)
+(196,123,0)
+(65,234,0)
+(207,217,0)
+(108,90,0)
+(79,51,0)
+(65,154,0)
+(128,79,0)
+(7,148,0)
+(136,24,0)
+(222,217,0)
+(241,195,0)
+(75,40,0)
+(168,195,0)
+(195,203,0)
+(101,203,0)
+(13,154,0)
+(79,5,0)
+(149,148,0)
+(203,148,0)
+(231,8,0)
+(149,160,0)
+(112,217,0)
+(104,228,0)
+(79,148,0)
+(202,235,0)
+(130,148,0)
+(118,245,0)
+(56,161,0)
+(23,4,0)
+(220,44,0)
+(112,148,0)
+(42,109,0)
+(88,118,0)
+(214,235,0)
+(153,217,0)
+(229,35,0)
+(59,41,0)
+(61,206,0)
+(198,120,0)
+(8,90,0)
+(1,120,0)
+(62,217,0)
+(185,90,0)
+(50,28,0)
+(105,140,0)
+(79,119,0)
+(228,238,0)
+(212,69,0)
+(135,131,0)
+(63,7,0)
+(68,241,0)
+(20,154,0)
+(22,129,0)
+(123,196,0)
+(205,185,0)
+(74,217,0)
+(203,195,0)
+(19,24,0)
+(34,18,0)
+(161,212,0)
+(206,154,0)
+(41,217,0)
+(24,136,0)
+(218,183,0)
+(212,5,0)
+(228,166,0)
+(27,217,0)
+(113,64,0)
+(54,18,0)
+(222,148,0)
+(241,40,0)
+(110,148,0)
+(216,18,0)
+(232,36,0)
+(169,69,0)
+(58,148,0)
+(158,151,0)
+(82,220,0)
+(241,90,0)
+(129,47,0)
+(7,51,0)
+(45,148,0)
+(8,148,0)
+(165,79,0)
+(73,202,0)
+(26,40,0)
+(79,217,0)
+(235,99,0)
+(21,90,0)
+(54,41,0)
+(94,207,0)
+(196,94,0)
+(122,108,0)
+(221,216,0)
+(243,65,0)
+(164,241,0)
+(234,148,0)
+(145,85,0)
+(4,94,0)
+(2,217,0)
+(159,28,0)
+(152,59,0)
+(210,195,0)
+(183,218,0)
+(46,155,0)
+(40,160,0)
+(6,35,0)
+(87,17,0)
+(111,226,0)
+(97,228,0)
+(10,85,0)
+(107,123,0)
+(34,126,0)
+(78,81,0)
+(30,35,0)
+(9,217,0)
+(159,218,0)
+(21,98,0)
+(106,5,0)
+(78,151,0)
+(25,113,0)
+(240,55,0)
+(17,154,0)
+(177,183,0)
+(226,148,0)
+(114,90,0)
+(108,148,0)
+(52,174,0)
+(95,98,0)
+(137,44,0)
+(76,4,0)
+(47,146,0)
+(36,41,0)
+(31,168,0)
+(190,217,0)
+(149,90,0)
+(4,148,0)
+(51,7,0)
+(170,132,0)
+(199,154,0)
+(102,154,0)
+(120,82,0)
+(49,26,0)
+(100,149,0)
+(92,8,0)
+(37,206,0)
+(233,8,0)
+(167,228,0)
+(248,58,0)
+(127,154,0)
+(195,245,0)
+(94,196,0)
+(150,134,0)
+(221,65,0)
+(242,98,0)
+(193,105,0)
+(134,148,0)
+(191,154,0)
+(218,159,0)
+(29,45,0)
+(155,146,0)
+(15,36,0)
+(72,41,0)
+(89,37,0)
+(110,154,0)
+(38,36,0)
+(79,238,0)
+(173,235,0)
+(60,108,0)
+(12,199,0)
+(125,117,0)
+(136,5,0)
+(188,209,0)
+(143,54,0)
+(43,203,0)
+(41,59,0)
+(168,90,0)
+(115,79,0)
+(172,21,0)
+(44,238,0)
+(151,78,0)
+(134,50,0)
+(195,241,0)
+(66,183,0)
+(245,195,0)
+(7,69,0)
+(179,11,0)
+(96,163,0)
+(140,227,0)
+(91,18,0)
+(216,41,0)
+(178,11,0)
+(141,94,0)
+(140,105,0)
+(3,54,0)
+(135,163,0)
+(98,21,0)
+(163,209,0)
+(155,245,0)
+(247,110,0)
+(7,5,0)
+(59,148,0)
+(0,26,0)
+(129,245,0)
+(98,160,0)
+(32,149,0)
+(212,161,0)
+(146,155,0)
+(14,217,0)
+(79,69,0)
+(195,168,0)
+(40,245,0)
+(157,217,0)
+(204,45,0)
+(246,199,0)
+(54,148,0)
+(224,79,0)
+(202,90,0)
+(197,212,0)
+(236,211,0)
+(138,123,0)
+(151,148,0)
+(51,64,0)
+(94,4,1)
+(79,69,1)
+(183,148,1)
+(114,8,1)
+(45,148,1)
+(44,137,1)
+(225,69,1)
+(195,241,1)
+(186,79,1)
+(161,56,1)
+(177,66,1)
+(201,111,1)
+(79,224,1)
+(212,69,1)
+(5,136,1)
+(108,148,1)
+(229,6,1)
+(151,158,1)
+(40,245,1)
+(188,70,1)
+(220,44,1)
+(212,84,1)
+(38,15,1)
+(167,97,1)
+(51,7,1)
+(37,206,1)
+(6,109,1)
+(26,0,1)
+(244,223,1)
+(193,39,1)
+(222,148,1)
+(219,54,1)
+(187,73,1)
+(128,86,1)
+(96,209,1)
+(90,108,1)
+(26,90,1)
+(195,210,1)
+(7,5,1)
+(123,138,1)
+(12,246,1)
+(35,148,1)
+(37,80,1)
+(59,148,1)
+(105,39,1)
+(241,164,1)
+(122,60,1)
+(196,94,1)
+(107,207,1)
+(45,29,1)
+(28,50,1)
+(199,12,1)
+(216,176,1)
+(105,193,1)
+(228,167,1)
+(94,207,1)
+(77,226,1)
+(234,244,1)
+(85,10,1)
+(120,148,1)
+(46,215,1)
+(19,106,1)
+(150,78,1)
+(0,49,1)
+(236,133,1)
+(248,196,1)
+(33,170,1)
+(184,72,1)
+(176,135,1)
+(104,45,1)
+(53,237,1)
+(79,5,1)
+(16,31,1)
+(78,81,1)
+(98,21,1)
+(203,43,1)
+(70,232,1)
+(32,40,1)
+(123,207,1)
+(221,216,1)
+(77,130,1)
+(67,88,1)
+(183,177,1)
+(195,203,1)
+(175,90,1)
+(144,169,1)
+(234,148,1)
+(196,123,1)
+(178,179,1)
+(136,171,1)
+(17,87,1)
+(146,118,1)
+(42,185,1)
+(215,129,1)
+(226,201,1)
+(114,112,1)
+(113,25,1)
+(179,110,1)
+(207,55,1)
+(210,241,1)
+(43,101,1)
+(110,247,1)
+(192,109,1)
+(218,183,1)
+(172,116,1)
+(149,148,1)
+(228,148,1)
+(54,41,1)
+(197,212,1)
+(223,37,1)
+(120,198,1)
+(36,41,1)
+(22,245,1)
+(248,113,1)
+(195,168,1)
+(48,24,1)
+(105,206,1)
+(198,1,1)
+(72,222,1)
+(152,184,1)
+(185,90,1)
+(225,125,1)
+(118,245,1)
+(240,124,1)
+(33,225,1)
+(89,206,1)
+(81,151,1)
+(232,189,1)
+(55,148,1)
+(75,26,1)
+(69,144,1)
+(159,218,1)
+(130,156,1)
+(41,59,1)
+(204,225,1)
+(11,178,1)
+(136,48,1)
+(245,195,1)
+(203,148,1)
+(39,234,1)
+(209,148,1)
+(87,33,1)
+(44,238,1)
+(206,181,1)
+(7,63,1)
+(84,161,1)
+(4,148,1)
+(11,171,1)
+(50,134,1)
+(118,67,1)
+(110,148,1)
+(34,126,1)
+(232,36,1)
+(155,46,1)
+(130,148,1)
+(4,113,1)
+(137,82,1)
+(28,159,1)
+(30,229,1)
+(155,245,1)
+(163,96,1)
+(146,155,1)
+(112,186,1)
+(56,93,1)
+(225,5,1)
+(134,57,1)
+(109,185,1)
+(235,202,1)
+(73,173,1)
+(79,119,1)
+(200,28,1)
+(68,168,1)
+(8,148,1)
+(49,98,1)
+(182,32,1)
+(33,236,1)
+(57,150,1)
+(65,243,1)
+(169,11,1)
+(237,196,1)
+(58,248,1)
+(21,90,1)
+(35,90,1)
+(230,83,1)
+(8,90,1)
+(149,100,1)
+(24,19,1)
+(205,175,1)
+(97,104,1)
+(3,83,1)
+(111,45,1)
+(226,148,1)
+(241,40,1)
+(86,165,1)
+(79,51,1)
+(197,93,1)
+(145,51,1)
+(159,220,1)
+(143,213,1)
+(164,68,1)
+(149,90,1)
+(241,90,1)
+(170,197,1)
+(242,47,1)
+(100,182,1)
+(93,133,1)
+(8,92,1)
+(65,85,1)
+(176,232,1)
+(158,230,1)
+(79,199,1)
+(7,148,1)
+(29,204,1)
+(185,205,1)
+(47,146,1)
+(243,17,1)
+(1,218,1)
+(212,5,1)
+(126,219,1)
+(61,199,1)
+(224,115,1)
+(213,3,1)
+(197,5,1)
+(109,42,1)
+(66,50,1)
+(83,41,1)
+(134,148,1)
+(35,30,1)
+(189,36,1)
+(95,242,1)
+(25,85,1)
+(168,16,1)
+(65,234,1)
+(54,143,1)
+(106,11,1)
+(138,107,1)
+(135,163,1)
+(168,90,1)
+(222,77,1)
+(209,188,1)
+(124,90,1)
+(101,192,1)
+(231,235,1)
+(7,69,1)
+(76,141,1)
+(88,155,1)
+(233,231,1)
+(33,139,1)
+(36,38,1)
+(216,41,1)
+(85,148,1)
+(220,82,1)
+(78,151,1)
+(59,152,1)
+(228,238,1)
+(111,228,1)
+(65,26,1)
+(221,65,1)
+(79,148,1)
+(136,24,1)
+(214,47,1)
+(63,53,1)
+(114,35,1)
+(54,148,1)
+(112,148,1)
+(125,197,1)
+(21,172,1)
+(82,120,1)
+(173,214,1)
+(80,89,1)
+(108,122,1)
+(141,123,1)
+(163,209,1)
+(116,95,1)
+(202,187,1)
+(55,240,1)
+(202,90,1)
+(15,34,1)
+(129,71,1)
+(60,114,1)
+(31,203,1)
+(40,75,1)
+(197,69,1)
+(247,37,1)
+(139,78,1)
+(71,22,1)
+(92,233,1)
+(181,61,1)
+(133,58,1)
+(115,128,1)
+(33,200,1)
+(23,76,1)
+(212,161,1)
+(151,148,1)
+(10,145,1)
+(140,105,1)
+(129,245,1)
+(247,140,1)
+(114,149,1)
+(58,148,1)
+(4,23,1)
+(156,226,1)
+(47,129,1)
+(79,238,1)
+(165,28,1)
+(168,90,2)
+(143,83,2)
+(3,83,2)
+(122,28,2)
+(203,148,2)
+(205,90,2)
+(87,225,2)
+(8,90,2)
+(120,218,2)
+(164,109,2)
+(213,83,2)
+(149,47,2)
+(222,225,2)
+(41,225,2)
+(107,28,2)
+(124,28,2)
+(1,218,2)
+(216,83,2)
+(97,45,2)
+(58,28,2)
+(67,155,2)
+(47,146,2)
+(78,83,2)
+(24,11,2)
+(185,90,2)
+(22,109,2)
+(84,93,2)
+(189,83,2)
+(29,225,2)
+(26,47,2)
+(79,119,2)
+(130,226,2)
+(34,83,2)
+(235,202,2)
+(78,151,2)
+(79,199,2)
+(228,45,2)
+(114,28,2)
+(241,40,2)
+(118,155,2)
+(66,50,2)
+(134,148,2)
+(95,47,2)
+(197,5,2)
+(222,148,2)
+(141,123,2)
+(36,41,2)
+(81,151,2)
+(21,90,2)
+(214,47,2)
+(65,85,2)
+(86,28,2)
+(40,47,2)
+(109,90,2)
+(243,78,2)
+(90,108,2)
+(172,47,2)
+(45,225,2)
+(94,4,2)
+(165,28,2)
+(79,51,2)
+(234,148,2)
+(59,225,2)
+(200,28,2)
+(65,133,2)
+(195,203,2)
+(149,148,2)
+(135,163,2)
+(155,129,2)
+(7,69,2)
+(28,78,2)
+(85,196,2)
+(149,90,2)
+(242,47,2)
+(128,28,2)
+(220,44,2)
+(230,83,2)
+(218,183,2)
+(72,225,2)
+(4,113,2)
+(163,232,2)
+(195,109,2)
+(4,123,2)
+(111,225,2)
+(50,78,2)
+(135,232,2)
+(192,109,2)
+(241,109,2)
+(170,197,2)
+(188,232,2)
+(4,148,2)
+(169,11,2)
+(144,11,2)
+(8,47,2)
+(93,133,2)
+(120,148,2)
+(231,47,2)
+(83,225,2)
+(225,197,2)
+(32,47,2)
+(28,159,2)
+(155,245,2)
+(112,28,2)
+(177,50,2)
+(129,109,2)
+(146,155,2)
+(33,133,2)
+(79,28,2)
+(68,109,2)
+(38,83,2)
+(173,47,2)
+(136,171,2)
+(73,47,2)
+(138,28,2)
+(207,28,2)
+(33,225,2)
+(45,148,2)
+(232,36,2)
+(139,78,2)
+(140,37,2)
+(118,245,2)
+(202,47,2)
+(196,94,2)
+(197,69,2)
+(193,37,2)
+(54,41,2)
+(156,226,2)
+(221,65,2)
+(105,206,2)
+(104,45,2)
+(133,28,2)
+(25,196,2)
+(50,134,2)
+(218,50,2)
+(21,47,2)
+(79,5,2)
+(136,11,2)
+(15,83,2)
+(140,105,2)
+(11,171,2)
+(126,83,2)
+(16,109,2)
+(220,218,2)
+(197,212,2)
+(6,109,2)
+(237,196,2)
+(151,83,2)
+(228,238,2)
+(94,123,2)
+(53,196,2)
+(219,83,2)
+(8,148,2)
+(240,28,2)
+(82,218,2)
+(150,78,2)
+(17,78,2)
+(7,148,2)
+(88,155,2)
+(212,161,2)
+(202,90,2)
+(198,218,2)
+(54,148,2)
+(212,69,2)
+(223,37,2)
+(122,90,2)
+(106,11,2)
+(209,148,2)
+(57,78,2)
+(65,197,2)
+(70,232,2)
+(243,225,2)
+(42,90,2)
+(65,28,2)
+(79,69,2)
+(145,196,2)
+(76,123,2)
+(33,28,2)
+(87,133,2)
+(243,28,2)
+(184,225,2)
+(98,21,2)
+(59,148,2)
+(30,109,2)
+(207,55,2)
+(44,238,2)
+(226,148,2)
+(175,90,2)
+(161,93,2)
+(183,148,2)
+(212,5,2)
+(48,11,2)
+(232,83,2)
+(203,109,2)
+(110,148,2)
+(134,78,2)
+(115,28,2)
+(79,238,2)
+(224,28,2)
+(87,197,2)
+(60,28,2)
+(123,207,2)
+(69,11,2)
+(60,90,2)
+(35,109,2)
+(182,47,2)
+(129,245,2)
+(113,196,2)
+(87,28,2)
+(82,120,2)
+(65,225,2)
+(151,148,2)
+(41,59,2)
+(17,133,2)
+(123,28,2)
+(152,225,2)
+(183,50,2)
+(108,28,2)
+(26,90,2)
+(236,133,2)
+(137,82,2)
+(220,82,2)
+(28,50,2)
+(248,28,2)
+(100,47,2)
+(33,197,2)
+(71,109,2)
+(7,196,2)
+(17,28,2)
+(163,209,2)
+(44,82,2)
+(0,47,2)
+(210,109,2)
+(159,218,2)
+(125,197,2)
+(212,93,2)
+(58,148,2)
+(51,196,2)
+(204,225,2)
+(78,81,2)
+(235,47,2)
+(98,47,2)
+(46,129,2)
+(96,232,2)
+(36,83,2)
+(109,185,2)
+(85,148,2)
+(63,196,2)
+(105,39,2)
+(244,37,2)
+(17,87,2)
+(234,37,2)
+(116,47,2)
+(243,197,2)
+(105,37,2)
+(108,90,2)
+(37,206,2)
+(159,50,2)
+(79,148,2)
+(7,5,2)
+(77,225,2)
+(56,93,2)
+(243,133,2)
+(90,90,2)
+(209,232,2)
+(35,90,2)
+(245,109,2)
+(130,148,2)
+(35,148,2)
+(221,216,2)
+(108,148,2)
+(215,129,2)
+(40,245,2)
+(65,78,2)
+(19,11,2)
+(5,11,2)
+(65,234,2)
+(159,220,2)
+(31,109,2)
+(47,129,2)
+(186,28,2)
+(49,47,2)
+(216,41,2)
+(75,47,2)
+(233,47,2)
+(65,26,2)
+(114,90,2)
+(87,78,2)
+(90,28,2)
+(23,123,2)
+(187,47,2)
+(228,148,2)
+(43,109,2)
+(136,24,2)
+(51,7,2)
+(146,118,2)
+(54,83,2)
+(112,148,2)
+(33,78,2)
+(201,225,2)
+(47,109,2)
+(55,28,2)
+(245,195,2)
+(197,133,2)
+(158,83,2)
+(5,136,2)
+(229,109,2)
+(101,109,2)
+(39,37,2)
+(55,148,2)
+(241,90,2)
+(195,168,2)
+(94,207,2)
+(167,45,2)
+(176,83,2)
+(34,126,2)
+(196,123,2)
+(146,129,2)
+(17,197,2)
+(10,196,2)
+(196,28,2)
+(168,109,2)
+(226,225,2)
+(17,225,2)
+(195,241,2)
+(92,47,2)
+-----------------------------------
+(0,resource_request)
+(1,q)
+(2,if(q->name)
+(3,q)
+(4,q->workers_to_wait)
+(5,stoptime = time(0)
+(6,q)
+(7,wait_loop_transfer_tasks(q, stoptime)
+(8,change_task_state(q, t, WORK_QUEUE_TASK_WAITING_RETRIEVAL)
+(9,if( q->process_pending_check && process_pending()
+(10,workers_to_wait)
+(11,timeout == WORK_QUEUE_WAITFORTASK)
+(12,0)
+(13,if(timeout == WORK_QUEUE_WAITFORTASK)
+(14,if(!task_state_any(q, WORK_QUEUE_TASK_RUNNING)
+(15,t)
+(16,category)
+(17,last_left_time = timestamp_get()
+(18,)
+(19,0)
+(20,while(1)
+(21,t->taskid)
+(22,next)
+(23,workers_to_wait)
+(24,time(0)
+(25,0)
+(26,t->resource_request)
+(27,if(t)
+(28,!task_state_any(q, WORK_QUEUE_TASK_RUNNING)
+(29,name)
+(30,WORK_QUEUE_TASK_READY)
+(31,t)
+(32,q)
+(33,last_left_time)
+(34,last_left_time = timestamp_get()
+(35,cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY)
+(36,t->result)
+(37,last_left_time!=0)
+(38,result)
+(39,timestamp_get()
+(40,t->resource_request = next)
+(41,t = task_state_any(q, WORK_QUEUE_TASK_RETRIEVED)
+(42,WORK_QUEUE_RESULT_RESOURCE_EXHAUSTION)
+(43,categories)
+(44,!(foreman_uplink)
+(45,q->name)
+(46,CATEGORY_ALLOCATION_AUTO_FIRST)
+(47,next == CATEGORY_ALLOCATION_AUTO_ZERO || next == CATEGORY_ALLOCATION_AUTO_FIRST || next == CATEGORY_ALLOCATION_AUTO_MAX)
+(48,timeout)
+(49,t)
+(50,!task_state_any(q, WORK_QUEUE_TASK_RUNNING)
+(51,tasks_transfered = wait_loop_transfer_tasks(q, stoptime)
+(52,next)
+(53,q)
+(54,change_task_state(q, t, WORK_QUEUE_TASK_DONE)
+(55,known_workers(q)
+(56,0)
+(57,WORK_QUEUE_TASK_RUNNING)
+(58,abort_slow_workers(q)
+(59,task_state_any(q, WORK_QUEUE_TASK_RETRIEVED)
+(60,q)
+(61,last_left_time)
+(62,if(q->monitor_mode)
+(63,stoptime)
+(64,)
+(65,return 0;)
+(66,q)
+(67,CATEGORY_ALLOCATION_AUTO_MAX)
+(68,t)
+(69,stoptime = 0)
+(70,q)
+(71,CATEGORY_ALLOCATION_AUTO_ZERO)
+(72,t)
+(73,t)
+(74,if(stoptime && time(0)
+(75,next)
+(76,q)
+(77,q)
+(78,q->process_pending_check && process_pending()
+(79,wait_loop_poll_links(q, stoptime, foreman_uplink, foreman_uplink_active, tasks_transfered)
+(80,0)
+(81,process_pending()
+(82,!task_state_any(q, WORK_QUEUE_TASK_WAITING_RETRIEVAL)
+(83,t)
+(84,stoptime)
+(85,q->workers_to_wait)
+(86,stoptime)
+(87,timestamp_get()
+(88,next)
+(89,last_left_time)
+(90,t = task_state_any(q, WORK_QUEUE_TASK_WAITING_RESUBMISSION)
+(91,if( t->result != WORK_QUEUE_RESULT_SUCCESS )
+(92,WORK_QUEUE_TASK_WAITING_RETRIEVAL)
+(93,stoptime)
+(94,known >= q->workers_to_wait)
+(95,"Task %d resubmitted using new resource allocation.\\n")
+(96,total_tasks_failed)
+(97,foreman_uplink)
+(98,debug(D_WQ, "Task %d resubmitted using new resource allocation.\\n", t->taskid)
+(99,)
+(100,WORK_QUEUE_TASK_READY)
+(101,q)
+(102,if(last_left_time!=0)
+(103,)
+(104,q)
+(105,timestamp_get()
+(106,stoptime)
+(107,known)
+(108,task_state_any(q, WORK_QUEUE_TASK_WAITING_RESUBMISSION)
+(109,t->result == WORK_QUEUE_RESULT_RESOURCE_EXHAUSTION)
+(110,print_password_warning(q)
+(111,q)
+(112,expire_waiting_tasks(q)
+(113,q->workers_to_wait = 0)
+(114,t)
+(115,foreman_uplink_active)
+(116,t)
+(117,)
+(118,next == CATEGORY_ALLOCATION_AUTO_MAX)
+(119,int *foreman_uplink_active)
+(120,task_state_any(q, WORK_QUEUE_TASK_WAITING_RETRIEVAL)
+(121,)
+(122,WORK_QUEUE_TASK_WAITING_RESUBMISSION)
+(123,known > 0)
+(124,known)
+(125,continue;)
+(126,timestamp_get()
+(127,last_left_time)
+(128,foreman_uplink)
+(129,next == CATEGORY_ALLOCATION_AUTO_ZERO)
+(130,update_resource_report(q)
+(131,)
+(132,)
+(133,foreman_uplink)
+(134,task_state_any(q, WORK_QUEUE_TASK_RUNNING)
+(135,q->stats->total_tasks_failed++)
+(136,time(0)
+(137,foreman_uplink)
+(138,0)
+(139,break;)
+(140,q->total_app_time += timestamp_get()
+(141,known)
+(142,)
+(143,WORK_QUEUE_TASK_DONE)
+(144,0)
+(145,q)
+(146,next == CATEGORY_ALLOCATION_AUTO_FIRST || next == CATEGORY_ALLOCATION_AUTO_MAX)
+(147,t)
+(148,struct work_queue *q)
+(149,cancel_task_on_worker(q, t, WORK_QUEUE_TASK_READY)
+(150,q)
+(151,q->process_pending_check)
+(152,WORK_QUEUE_TASK_RETRIEVED)
+(153,if(foreman_uplink)
+(154,)
+(155,next == CATEGORY_ALLOCATION_AUTO_FIRST)
+(156,q)
+(157,known)
+(158,process_pending_check)
+(159,!task_state_any(q, WORK_QUEUE_TASK_READY)
+(160,)
+(161,time(0)
+(162,if(next == CATEGORY_ALLOCATION_AUTO_ZERO || next == CATEGORY_ALLOCATION_AUTO_FIRST || next == CATEGORY_ALLOCATION_AUTO_MAX)
+(163,q->stats->total_tasks_failed)
+(164,resource_request)
+(165,q)
+(166,)
+(167,0)
+(168,t->category)
+(169,stoptime)
+(170,break;)
+(171,int timeout)
+(172,taskid)
+(173,"Task %d failed given max resource exhaustion.\\n")
+(174,)
+(175,t)
+(176,t)
+(177,WORK_QUEUE_TASK_READY)
+(178,WORK_QUEUE_WAITFORTASK)
+(179,timeout)
+(180,stoptime)
+(181,0)
+(182,t)
+(183,task_state_any(q, WORK_QUEUE_TASK_READY)
+(184,q)
+(185,t->result)
+(186,q)
+(187,taskid)
+(188,stats)
+(189,WORK_QUEUE_RESULT_SUCCESS)
+(190,if(known > 0 && known >= q->workers_to_wait)
+(191,tasks_transfered)
+(192,next)
+(193,last_left_time)
+(194,while((t = task_state_any(q, WORK_QUEUE_TASK_WAITING_RESUBMISSION)
+(195,category_next_label(q->categories, t->category, t->resource_request, /* resource overflow */ 1)
+(196,known > 0 && known >= q->workers_to_wait)
+(197,stoptime && time(0)
+(198,WORK_QUEUE_TASK_WAITING_RETRIEVAL)
+(199,tasks_transfered = 0)
+(200,break;)
+(201,monitor_mode)
+(202,t->taskid)
+(203,q->categories)
+(204,q)
+(205,result)
+(206,last_left_time = 0)
+(207,known = known_workers(q)
+(208,)
+(209,q->stats)
+(210,1)
+(211,)
+(212,time(0)
+(213,t)
+(214,D_WQ)
+(215,next)
+(216,return t;)
+(217,)
+(218,!task_state_any(q, WORK_QUEUE_TASK_READY)
+(219,last_left_time)
+(220,!task_state_any(q, WORK_QUEUE_TASK_WAITING_RETRIEVAL)
+(221,RET)
+(222,ask_for_workers_updates(q)
+(223,q)
+(224,tasks_transfered)
+(225,1)
+(226,q->monitor_mode)
+(227,)
+(228,update_catalog(q, foreman_uplink, 0)
+(229,t)
+(230,q)
+(231,q)
+(232,t->result != WORK_QUEUE_RESULT_SUCCESS)
+(233,t)
+(234,q->total_app_time)
+(235,debug(D_WQ, "Task %d failed given max resource exhaustion.\\n", t->taskid)
+(236,break;)
+(237,tasks_transfered)
+(238,struct link *foreman_uplink)
+(239,if(t->result == WORK_QUEUE_RESULT_RESOURCE_EXHAUSTION)
+(240,q)
+(241,t->resource_request)
+(242,D_WQ)
+(243,0)
+(244,total_app_time)
+(245,next = category_next_label(q->categories, t->category, t->resource_request, /* resource overflow */ 1)
+(246,tasks_transfered)
+(247,q)
+(248,q)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

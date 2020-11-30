@@ -1,0 +1,1461 @@
+-----label-----
+1
+-----code-----
+static void
+test_protover_all_supported(void *arg)
+{
+  (void)arg;
+  char *msg = NULL;
+
+  tt_assert(protover_all_supported(NULL, &msg));
+  tt_ptr_op(msg, OP_EQ, NULL);
+
+  tt_assert(protover_all_supported("", &msg));
+  tt_ptr_op(msg, OP_EQ, NULL);
+
+  // Some things that we do support
+  tt_assert(protover_all_supported("Link=3-4", &msg));
+  tt_ptr_op(msg, OP_EQ, NULL);
+  tt_assert(protover_all_supported("Link=3-4 Desc=2", &msg));
+  tt_ptr_op(msg, OP_EQ, NULL);
+
+  // Some things we don't support
+  tt_assert(! protover_all_supported("Wombat=9", &msg));
+  tt_str_op(msg, OP_EQ, "Wombat=9");
+  tor_free(msg);
+  tt_assert(! protover_all_supported("Link=999", &msg));
+  tt_str_op(msg, OP_EQ, "Link=999");
+  tor_free(msg);
+
+  // Mix of things we support and things we don't
+  tt_assert(! protover_all_supported("Link=3-4 Wombat=9", &msg));
+  tt_str_op(msg, OP_EQ, "Wombat=9");
+  tor_free(msg);
+  tt_assert(! protover_all_supported("Link=3-999", &msg));
+  tt_str_op(msg, OP_EQ, "Link=3-999");
+  tor_free(msg);
+
+  /* CPU/RAM DoS loop: Rust only */
+  tt_assert(! protover_all_supported("Sleen=0-2147483648", &msg));
+  tt_str_op(msg, OP_EQ, "Sleen=0-2147483648");
+  tor_free(msg);
+
+  /* This case is allowed. */
+  tt_assert(! protover_all_supported("Sleen=0-4294967294", &msg));
+  tt_str_op(msg, OP_EQ, "Sleen=0-4294967294");
+  tor_free(msg);
+
+  /* If we get an unparseable list, we say "yes, that's supported." */
+#ifndef HAVE_RUST
+  // XXXX let's make this section unconditional: rust should behave the
+  // XXXX same as C here!
+  tor_capture_bugs_(1);
+  tt_assert(protover_all_supported("Fribble", &msg));
+  tt_ptr_op(msg, OP_EQ, NULL);
+  tor_end_capture_bugs_();
+
+  /* This case is forbidden. Since it came from a protover_all_supported,
+   * it can trigger a bug message.  */
+  tor_capture_bugs_(1);
+  tt_assert(protover_all_supported("Sleen=0-4294967295", &msg));
+  tt_ptr_op(msg, OP_EQ, NULL);
+  tor_free(msg);
+  tor_end_capture_bugs_();
+#endif
+
+  /* Protocol name too long */
+  tor_capture_bugs_(1);
+  tt_assert(protover_all_supported(
+                               "DoSaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                               "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                               "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                               "aaaaaaaaaaaa=1-65536", &msg));
+  tor_end_capture_bugs_();
+
+ done:
+  tor_end_capture_bugs_();
+  tor_free(msg);
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+5,6
+5,7
+7,8
+7,9
+10,11
+10,12
+10,13
+10,14
+10,15
+10,16
+10,17
+10,18
+10,19
+10,20
+10,21
+10,22
+10,23
+10,24
+10,25
+10,26
+10,27
+10,28
+10,29
+10,30
+10,31
+10,32
+10,33
+10,34
+10,35
+10,36
+10,37
+10,38
+10,39
+10,40
+10,41
+10,42
+10,43
+10,44
+10,45
+10,46
+10,47
+10,48
+10,49
+10,50
+10,51
+10,52
+11,12
+12,13
+12,14
+13,14
+13,15
+16,17
+18,19
+19,20
+19,21
+21,22
+21,23
+21,24
+24,25
+25,26
+27,28
+28,29
+28,30
+29,30
+31,32
+31,33
+31,34
+32,33
+34,35
+36,37
+37,38
+39,40
+40,41
+40,42
+40,43
+40,44
+41,42
+43,44
+45,46
+47,48
+49,50
+50,51
+50,52
+51,52
+53,54
+53,55
+53,56
+54,55
+57,58
+58,59
+60,61
+61,62
+61,63
+61,64
+61,65
+62,63
+64,65
+66,67
+68,69
+70,71
+71,72
+71,73
+72,73
+74,75
+74,76
+74,77
+75,76
+78,79
+79,80
+81,82
+82,83
+82,84
+82,85
+82,86
+83,84
+85,86
+87,88
+89,90
+91,92
+92,93
+92,94
+93,94
+95,96
+95,97
+95,98
+96,97
+99,100
+100,101
+102,103
+103,104
+103,105
+103,106
+103,107
+104,105
+106,107
+108,109
+110,111
+112,113
+113,114
+113,115
+114,115
+116,117
+117,118
+117,119
+117,120
+118,119
+121,122
+122,123
+124,125
+125,126
+125,127
+125,128
+125,129
+126,127
+128,129
+130,131
+133,134
+134,135
+134,136
+135,136
+137,138
+139,140
+140,141
+140,142
+141,142
+143,144
+144,145
+144,146
+144,147
+145,146
+148,149
+149,150
+151,152
+152,153
+152,154
+152,155
+152,156
+153,154
+155,156
+157,158
+160,161
+161,162
+161,163
+162,163
+164,165
+166,167
+167,168
+167,169
+168,169
+170,171
+171,172
+171,173
+171,174
+172,173
+175,176
+176,177
+178,179
+179,180
+179,181
+179,182
+179,183
+180,181
+182,183
+184,185
+187,188
+188,189
+188,190
+189,190
+191,192
+193,194
+194,195
+194,196
+195,196
+197,198
+198,199
+198,200
+198,201
+199,200
+202,203
+203,204
+205,206
+206,207
+206,208
+206,209
+206,210
+207,208
+209,210
+211,212
+214,215
+215,216
+215,217
+216,217
+218,219
+220,221
+221,222
+221,223
+222,223
+224,225
+225,226
+225,227
+225,228
+226,227
+229,230
+230,231
+232,233
+233,234
+233,235
+233,236
+233,237
+234,235
+236,237
+238,239
+241,242
+242,243
+242,244
+243,244
+245,246
+247,248
+248,249
+248,250
+249,250
+251,252
+252,253
+252,254
+252,255
+253,254
+256,257
+257,258
+259,260
+260,261
+260,262
+260,263
+260,264
+261,262
+263,264
+265,266
+268,269
+269,270
+269,271
+270,271
+272,273
+274,275
+275,276
+275,277
+276,277
+279,280
+280,281
+280,282
+281,282
+283,284
+283,285
+283,286
+284,285
+287,288
+288,289
+290,291
+291,292
+291,293
+291,294
+291,295
+292,293
+294,295
+296,297
+298,299
+300,301
+301,302
+302,303
+304,305
+305,306
+305,307
+306,307
+309,310
+310,311
+310,312
+311,312
+313,314
+313,315
+313,316
+314,315
+317,318
+318,319
+320,321
+321,322
+321,323
+321,324
+321,325
+322,323
+324,325
+326,327
+328,329
+330,331
+331,332
+331,333
+332,333
+334,335
+336,337
+337,338
+338,339
+340,341
+341,342
+341,343
+342,343
+345,346
+346,347
+346,348
+347,348
+349,350
+349,351
+349,352
+350,351
+353,354
+354,355
+356,357
+357,358
+358,359
+360,361
+360,362
+362,363
+363,364
+364,365
+366,367
+367,368
+367,369
+368,369
+370,371
+-----nextToken-----
+2,4,6,8,9,14,15,17,20,22,23,26,30,33,35,38,42,44,46,48,52,55,56,59,63,65,67,69,73,76,77,80,84,86,88,90,94,97,98,101,105,107,109,111,115,119,120,123,127,129,131,132,136,138,142,146,147,150,154,156,158,159,163,165,169,173,174,177,181,183,185,186,190,192,196,200,201,204,208,210,212,213,217,219,223,227,228,231,235,237,239,240,244,246,250,254,255,258,262,264,266,267,271,273,277,278,282,285,286,289,293,295,297,299,303,307,308,312,315,316,319,323,325,327,329,333,335,339,343,344,348,351,352,355,359,361,365,369,371
+-----computeFrom-----
+-----guardedBy-----
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;CompoundStatement;ExpressionStatement;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;IdExpression;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;LiteralExpression;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;LiteralExpression;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;LiteralExpression;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;LiteralExpression;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;LiteralExpression;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;LiteralExpression;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LabelStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;
+-----ast_node-----
+static voidtest_protover_all_supported(void *arg){  (void)arg;  char *msg = NULL;  tt_assert(protover_all_supported(NULL, &msg));  tt_ptr_op(msg, OP_EQ, NULL);  tt_assert(protover_all_supported("", &msg));  tt_ptr_op(msg, OP_EQ, NULL);  // Some things that we do support  tt_assert(protover_all_supported("Link=3-4", &msg));  tt_ptr_op(msg, OP_EQ, NULL);  tt_assert(protover_all_supported("Link=3-4 Desc=2", &msg));  tt_ptr_op(msg, OP_EQ, NULL);  // Some things we don't support  tt_assert(! protover_all_supported("Wombat=9", &msg));  tt_str_op(msg, OP_EQ, "Wombat=9");  tor_free(msg);  tt_assert(! protover_all_supported("Link=999", &msg));  tt_str_op(msg, OP_EQ, "Link=999");  tor_free(msg);  // Mix of things we support and things we don't  tt_assert(! protover_all_supported("Link=3-4 Wombat=9", &msg));  tt_str_op(msg, OP_EQ, "Wombat=9");  tor_free(msg);  tt_assert(! protover_all_supported("Link=3-999", &msg));  tt_str_op(msg, OP_EQ, "Link=3-999");  tor_free(msg);  /* CPU/RAM DoS loop: Rust only */  tt_assert(! protover_all_supported("Sleen=0-2147483648", &msg));  tt_str_op(msg, OP_EQ, "Sleen=0-2147483648");  tor_free(msg);  /* This case is allowed. */  tt_assert(! protover_all_supported("Sleen=0-4294967294", &msg));  tt_str_op(msg, OP_EQ, "Sleen=0-4294967294");  tor_free(msg);  /* If we get an unparseable list, we say "yes, that's supported." */#ifndef HAVE_RUST  // XXXX let's make this section unconditional: rust should behave the  // XXXX same as C here!  tor_capture_bugs_(1);  tt_assert(protover_all_supported("Fribble", &msg));  tt_ptr_op(msg, OP_EQ, NULL);  tor_end_capture_bugs_();  /* This case is forbidden. Since it came from a protover_all_supported,   * it can trigger a bug message.  */  tor_capture_bugs_(1);  tt_assert(protover_all_supported("Sleen=0-4294967295", &msg));  tt_ptr_op(msg, OP_EQ, NULL);  tor_free(msg);  tor_end_capture_bugs_();#endif  /* Protocol name too long */  tor_capture_bugs_(1);  tt_assert(protover_all_supported(                               "DoSaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"                               "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"                               "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"                               "aaaaaaaaaaaa=1-65536", &msg));  tor_end_capture_bugs_(); done:  tor_end_capture_bugs_();  tor_free(msg);}
+static void
+test_protover_all_supported(void *arg)
+test_protover_all_supported
+void *arg
+void
+*arg
+*
+arg
+{  (void)arg;  char *msg = NULL;  tt_assert(protover_all_supported(NULL, &msg));  tt_ptr_op(msg, OP_EQ, NULL);  tt_assert(protover_all_supported("", &msg));  tt_ptr_op(msg, OP_EQ, NULL);  // Some things that we do support  tt_assert(protover_all_supported("Link=3-4", &msg));  tt_ptr_op(msg, OP_EQ, NULL);  tt_assert(protover_all_supported("Link=3-4 Desc=2", &msg));  tt_ptr_op(msg, OP_EQ, NULL);  // Some things we don't support  tt_assert(! protover_all_supported("Wombat=9", &msg));  tt_str_op(msg, OP_EQ, "Wombat=9");  tor_free(msg);  tt_assert(! protover_all_supported("Link=999", &msg));  tt_str_op(msg, OP_EQ, "Link=999");  tor_free(msg);  // Mix of things we support and things we don't  tt_assert(! protover_all_supported("Link=3-4 Wombat=9", &msg));  tt_str_op(msg, OP_EQ, "Wombat=9");  tor_free(msg);  tt_assert(! protover_all_supported("Link=3-999", &msg));  tt_str_op(msg, OP_EQ, "Link=3-999");  tor_free(msg);  /* CPU/RAM DoS loop: Rust only */  tt_assert(! protover_all_supported("Sleen=0-2147483648", &msg));  tt_str_op(msg, OP_EQ, "Sleen=0-2147483648");  tor_free(msg);  /* This case is allowed. */  tt_assert(! protover_all_supported("Sleen=0-4294967294", &msg));  tt_str_op(msg, OP_EQ, "Sleen=0-4294967294");  tor_free(msg);  /* If we get an unparseable list, we say "yes, that's supported." */#ifndef HAVE_RUST  // XXXX let's make this section unconditional: rust should behave the  // XXXX same as C here!  tor_capture_bugs_(1);  tt_assert(protover_all_supported("Fribble", &msg));  tt_ptr_op(msg, OP_EQ, NULL);  tor_end_capture_bugs_();  /* This case is forbidden. Since it came from a protover_all_supported,   * it can trigger a bug message.  */  tor_capture_bugs_(1);  tt_assert(protover_all_supported("Sleen=0-4294967295", &msg));  tt_ptr_op(msg, OP_EQ, NULL);  tor_free(msg);  tor_end_capture_bugs_();#endif  /* Protocol name too long */  tor_capture_bugs_(1);  tt_assert(protover_all_supported(                               "DoSaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"                               "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"                               "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"                               "aaaaaaaaaaaa=1-65536", &msg));  tor_end_capture_bugs_(); done:  tor_end_capture_bugs_();  tor_free(msg);}
+(void)arg;
+(void)arg
+void
+void
+
+arg
+arg
+char *msg = NULL;
+char *msg = NULL;
+char
+*msg = NULL
+*
+msg
+= NULL
+NULL
+NULL
+tt_assert(protover_all_supported(NULL, &msg));
+tt_assert(protover_all_supported(NULL, &msg))
+tt_assert
+tt_assert
+protover_all_supported(NULL, &msg)
+protover_all_supported
+protover_all_supported
+NULL
+NULL
+&msg
+msg
+msg
+tt_ptr_op(msg, OP_EQ, NULL);
+tt_ptr_op(msg, OP_EQ, NULL)
+tt_ptr_op
+tt_ptr_op
+msg
+msg
+OP_EQ
+OP_EQ
+NULL
+NULL
+tt_assert(protover_all_supported("", &msg));
+tt_assert(protover_all_supported("", &msg))
+tt_assert
+tt_assert
+protover_all_supported("", &msg)
+protover_all_supported
+protover_all_supported
+""
+&msg
+msg
+msg
+tt_ptr_op(msg, OP_EQ, NULL);
+tt_ptr_op(msg, OP_EQ, NULL)
+tt_ptr_op
+tt_ptr_op
+msg
+msg
+OP_EQ
+OP_EQ
+NULL
+NULL
+tt_assert(protover_all_supported("Link=3-4", &msg));
+tt_assert(protover_all_supported("Link=3-4", &msg))
+tt_assert
+tt_assert
+protover_all_supported("Link=3-4", &msg)
+protover_all_supported
+protover_all_supported
+"Link=3-4"
+&msg
+msg
+msg
+tt_ptr_op(msg, OP_EQ, NULL);
+tt_ptr_op(msg, OP_EQ, NULL)
+tt_ptr_op
+tt_ptr_op
+msg
+msg
+OP_EQ
+OP_EQ
+NULL
+NULL
+tt_assert(protover_all_supported("Link=3-4 Desc=2", &msg));
+tt_assert(protover_all_supported("Link=3-4 Desc=2", &msg))
+tt_assert
+tt_assert
+protover_all_supported("Link=3-4 Desc=2", &msg)
+protover_all_supported
+protover_all_supported
+"Link=3-4 Desc=2"
+&msg
+msg
+msg
+tt_ptr_op(msg, OP_EQ, NULL);
+tt_ptr_op(msg, OP_EQ, NULL)
+tt_ptr_op
+tt_ptr_op
+msg
+msg
+OP_EQ
+OP_EQ
+NULL
+NULL
+tt_assert(! protover_all_supported("Wombat=9", &msg));
+tt_assert(! protover_all_supported("Wombat=9", &msg))
+tt_assert
+tt_assert
+! protover_all_supported("Wombat=9", &msg)
+protover_all_supported("Wombat=9", &msg)
+protover_all_supported
+protover_all_supported
+"Wombat=9"
+&msg
+msg
+msg
+tt_str_op(msg, OP_EQ, "Wombat=9");
+tt_str_op(msg, OP_EQ, "Wombat=9")
+tt_str_op
+tt_str_op
+msg
+msg
+OP_EQ
+OP_EQ
+"Wombat=9"
+tor_free(msg);
+tor_free(msg)
+tor_free
+tor_free
+msg
+msg
+tt_assert(! protover_all_supported("Link=999", &msg));
+tt_assert(! protover_all_supported("Link=999", &msg))
+tt_assert
+tt_assert
+! protover_all_supported("Link=999", &msg)
+protover_all_supported("Link=999", &msg)
+protover_all_supported
+protover_all_supported
+"Link=999"
+&msg
+msg
+msg
+tt_str_op(msg, OP_EQ, "Link=999");
+tt_str_op(msg, OP_EQ, "Link=999")
+tt_str_op
+tt_str_op
+msg
+msg
+OP_EQ
+OP_EQ
+"Link=999"
+tor_free(msg);
+tor_free(msg)
+tor_free
+tor_free
+msg
+msg
+tt_assert(! protover_all_supported("Link=3-4 Wombat=9", &msg));
+tt_assert(! protover_all_supported("Link=3-4 Wombat=9", &msg))
+tt_assert
+tt_assert
+! protover_all_supported("Link=3-4 Wombat=9", &msg)
+protover_all_supported("Link=3-4 Wombat=9", &msg)
+protover_all_supported
+protover_all_supported
+"Link=3-4 Wombat=9"
+&msg
+msg
+msg
+tt_str_op(msg, OP_EQ, "Wombat=9");
+tt_str_op(msg, OP_EQ, "Wombat=9")
+tt_str_op
+tt_str_op
+msg
+msg
+OP_EQ
+OP_EQ
+"Wombat=9"
+tor_free(msg);
+tor_free(msg)
+tor_free
+tor_free
+msg
+msg
+tt_assert(! protover_all_supported("Link=3-999", &msg));
+tt_assert(! protover_all_supported("Link=3-999", &msg))
+tt_assert
+tt_assert
+! protover_all_supported("Link=3-999", &msg)
+protover_all_supported("Link=3-999", &msg)
+protover_all_supported
+protover_all_supported
+"Link=3-999"
+&msg
+msg
+msg
+tt_str_op(msg, OP_EQ, "Link=3-999");
+tt_str_op(msg, OP_EQ, "Link=3-999")
+tt_str_op
+tt_str_op
+msg
+msg
+OP_EQ
+OP_EQ
+"Link=3-999"
+tor_free(msg);
+tor_free(msg)
+tor_free
+tor_free
+msg
+msg
+tt_assert(! protover_all_supported("Sleen=0-2147483648", &msg));
+tt_assert(! protover_all_supported("Sleen=0-2147483648", &msg))
+tt_assert
+tt_assert
+! protover_all_supported("Sleen=0-2147483648", &msg)
+protover_all_supported("Sleen=0-2147483648", &msg)
+protover_all_supported
+protover_all_supported
+"Sleen=0-2147483648"
+&msg
+msg
+msg
+tt_str_op(msg, OP_EQ, "Sleen=0-2147483648");
+tt_str_op(msg, OP_EQ, "Sleen=0-2147483648")
+tt_str_op
+tt_str_op
+msg
+msg
+OP_EQ
+OP_EQ
+"Sleen=0-2147483648"
+tor_free(msg);
+tor_free(msg)
+tor_free
+tor_free
+msg
+msg
+tt_assert(! protover_all_supported("Sleen=0-4294967294", &msg));
+tt_assert(! protover_all_supported("Sleen=0-4294967294", &msg))
+tt_assert
+tt_assert
+! protover_all_supported("Sleen=0-4294967294", &msg)
+protover_all_supported("Sleen=0-4294967294", &msg)
+protover_all_supported
+protover_all_supported
+"Sleen=0-4294967294"
+&msg
+msg
+msg
+tt_str_op(msg, OP_EQ, "Sleen=0-4294967294");
+tt_str_op(msg, OP_EQ, "Sleen=0-4294967294")
+tt_str_op
+tt_str_op
+msg
+msg
+OP_EQ
+OP_EQ
+"Sleen=0-4294967294"
+tor_free(msg);
+tor_free(msg)
+tor_free
+tor_free
+msg
+msg
+tor_capture_bugs_(1);
+tor_capture_bugs_(1)
+tor_capture_bugs_
+tor_capture_bugs_
+1
+tt_assert(protover_all_supported("Fribble", &msg));
+tt_assert(protover_all_supported("Fribble", &msg))
+tt_assert
+tt_assert
+protover_all_supported("Fribble", &msg)
+protover_all_supported
+protover_all_supported
+"Fribble"
+&msg
+msg
+msg
+tt_ptr_op(msg, OP_EQ, NULL);
+tt_ptr_op(msg, OP_EQ, NULL)
+tt_ptr_op
+tt_ptr_op
+msg
+msg
+OP_EQ
+OP_EQ
+NULL
+NULL
+tor_end_capture_bugs_();
+tor_end_capture_bugs_()
+tor_end_capture_bugs_
+tor_end_capture_bugs_
+tor_capture_bugs_(1);
+tor_capture_bugs_(1)
+tor_capture_bugs_
+tor_capture_bugs_
+1
+tt_assert(protover_all_supported("Sleen=0-4294967295", &msg));
+tt_assert(protover_all_supported("Sleen=0-4294967295", &msg))
+tt_assert
+tt_assert
+protover_all_supported("Sleen=0-4294967295", &msg)
+protover_all_supported
+protover_all_supported
+"Sleen=0-4294967295"
+&msg
+msg
+msg
+tt_ptr_op(msg, OP_EQ, NULL);
+tt_ptr_op(msg, OP_EQ, NULL)
+tt_ptr_op
+tt_ptr_op
+msg
+msg
+OP_EQ
+OP_EQ
+NULL
+NULL
+tor_free(msg);
+tor_free(msg)
+tor_free
+tor_free
+msg
+msg
+tor_end_capture_bugs_();
+tor_end_capture_bugs_()
+tor_end_capture_bugs_
+tor_end_capture_bugs_
+tor_capture_bugs_(1);
+tor_capture_bugs_(1)
+tor_capture_bugs_
+tor_capture_bugs_
+1
+tt_assert(protover_all_supported(                               "DoSaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"                               "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"                               "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"                               "aaaaaaaaaaaa=1-65536", &msg));
+tt_assert(protover_all_supported(                               "DoSaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"                               "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"                               "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"                               "aaaaaaaaaaaa=1-65536", &msg))
+tt_assert
+tt_assert
+protover_all_supported(                               "DoSaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"                               "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"                               "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"                               "aaaaaaaaaaaa=1-65536", &msg)
+protover_all_supported
+protover_all_supported
+"DoSaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"                               "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"                               "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"                               "aaaaaaaaaaaa=1-65536"
+&msg
+msg
+msg
+tor_end_capture_bugs_();
+tor_end_capture_bugs_()
+tor_end_capture_bugs_
+tor_end_capture_bugs_
+done:  tor_end_capture_bugs_();
+done
+tor_end_capture_bugs_();
+tor_end_capture_bugs_()
+tor_end_capture_bugs_
+tor_end_capture_bugs_
+tor_free(msg);
+tor_free(msg)
+tor_free
+tor_free
+msg
+msg
+-----joern-----
+(10,11,0)
+(155,76,0)
+(44,139,0)
+(39,79,0)
+(145,58,0)
+(132,27,0)
+(86,126,0)
+(76,109,0)
+(110,109,0)
+(154,102,0)
+(36,138,0)
+(152,109,0)
+(142,90,0)
+(73,90,0)
+(141,54,0)
+(150,73,0)
+(55,109,0)
+(60,117,0)
+(7,85,0)
+(15,36,0)
+(154,79,0)
+(90,73,0)
+(12,79,0)
+(70,153,0)
+(114,41,0)
+(138,109,0)
+(16,79,0)
+(62,41,0)
+(20,79,0)
+(32,14,0)
+(41,62,0)
+(52,109,0)
+(33,59,0)
+(128,93,0)
+(139,107,0)
+(54,20,0)
+(18,43,0)
+(46,102,0)
+(74,34,0)
+(25,117,0)
+(74,144,0)
+(101,54,0)
+(125,78,0)
+(9,43,0)
+(127,2,0)
+(144,109,0)
+(29,2,0)
+(121,79,0)
+(134,79,0)
+(38,121,0)
+(128,109,0)
+(47,109,0)
+(126,79,0)
+(55,117,0)
+(50,71,0)
+(3,2,0)
+(26,87,0)
+(41,114,0)
+(88,79,0)
+(64,93,0)
+(40,76,0)
+(100,78,0)
+(111,59,0)
+(72,79,0)
+(72,14,0)
+(108,79,0)
+(143,79,0)
+(37,61,0)
+(0,109,0)
+(151,7,0)
+(119,43,0)
+(3,109,0)
+(146,120,0)
+(78,109,0)
+(93,128,0)
+(105,73,0)
+(57,79,0)
+(85,7,0)
+(7,79,0)
+(27,104,0)
+(131,126,0)
+(59,109,0)
+(129,32,0)
+(71,79,0)
+(117,60,0)
+(107,79,0)
+(148,23,0)
+(29,79,0)
+(137,126,0)
+(1,52,0)
+(115,11,0)
+(46,109,0)
+(133,79,0)
+(144,74,0)
+(109,79,0)
+(68,122,0)
+(150,79,0)
+(23,109,0)
+(123,79,0)
+(61,109,0)
+(5,109,0)
+(126,109,0)
+(99,78,0)
+(98,23,0)
+(130,102,0)
+(34,74,0)
+(19,134,0)
+(106,121,0)
+(76,79,0)
+(31,4,0)
+(83,47,0)
+(104,27,0)
+(43,79,0)
+(73,150,0)
+(153,109,0)
+(138,36,0)
+(13,59,0)
+(140,5,0)
+(14,72,0)
+(117,55,0)
+(53,109,0)
+(20,54,0)
+(147,152,0)
+(11,79,0)
+(113,39,0)
+(121,109,0)
+(84,79,0)
+(143,34,0)
+(92,93,0)
+(4,79,0)
+(153,79,0)
+(66,47,0)
+(90,109,0)
+(42,128,0)
+(22,79,0)
+(141,109,0)
+(51,36,0)
+(69,133,0)
+(110,79,0)
+(120,58,0)
+(122,109,0)
+(139,52,0)
+(81,109,0)
+(4,109,0)
+(11,109,0)
+(45,76,0)
+(103,61,0)
+(116,62,0)
+(71,50,0)
+(87,79,0)
+(81,62,0)
+(35,110,0)
+(149,55,0)
+(24,74,0)
+(152,79,0)
+(77,23,0)
+(93,64,0)
+(6,75,0)
+(58,120,0)
+(118,121,0)
+(78,79,0)
+(5,27,0)
+(61,79,0)
+(102,154,0)
+(136,109,0)
+(58,109,0)
+(12,60,0)
+(133,109,0)
+(67,109,0)
+(43,109,0)
+(134,109,0)
+(50,120,0)
+(23,79,0)
+(104,57,0)
+(2,3,0)
+(36,15,0)
+(135,110,0)
+(48,53,0)
+(67,79,0)
+(65,144,0)
+(114,79,0)
+(59,79,0)
+(122,79,0)
+(7,94,0)
+(15,79,0)
+(14,32,0)
+(102,46,0)
+(120,50,0)
+(27,5,0)
+(95,47,0)
+(80,46,0)
+(97,17,0)
+(47,79,0)
+(54,141,0)
+(34,143,0)
+(91,14,0)
+(52,139,0)
+(82,81,0)
+(89,3,0)
+(124,4,0)
+(8,11,0)
+(21,110,0)
+(96,67,0)
+(107,139,0)
+(17,79,0)
+(75,79,0)
+(2,29,0)
+(63,61,0)
+(56,4,0)
+(75,109,0)
+(49,79,0)
+(62,81,0)
+(64,88,0)
+(88,64,0)
+(28,141,0)
+(57,104,0)
+(32,109,0)
+(30,138,0)
+(60,12,0)
+(53,79,0)
+(116,133,1)
+(87,26,1)
+(71,50,1)
+(25,122,1)
+(147,61,1)
+(82,116,1)
+(39,113,1)
+(61,103,1)
+(90,109,1)
+(103,37,1)
+(142,105,1)
+(19,43,1)
+(0,136,1)
+(14,32,1)
+(109,0,1)
+(133,69,1)
+(138,30,1)
+(65,24,1)
+(13,154,1)
+(33,13,1)
+(101,126,1)
+(136,7,1)
+(55,149,1)
+(75,109,1)
+(1,44,1)
+(123,150,1)
+(46,109,1)
+(97,67,1)
+(4,109,1)
+(51,39,1)
+(155,40,1)
+(8,10,1)
+(117,55,1)
+(37,63,1)
+(111,33,1)
+(59,109,1)
+(77,20,1)
+(90,142,1)
+(46,80,1)
+(66,71,1)
+(114,41,1)
+(133,109,1)
+(115,8,1)
+(105,87,1)
+(110,109,1)
+(112,53,1)
+(56,114,1)
+(24,75,1)
+(139,52,1)
+(69,78,1)
+(60,117,1)
+(43,9,1)
+(126,109,1)
+(153,109,1)
+(9,119,1)
+(145,146,1)
+(149,25,1)
+(100,125,1)
+(31,124,1)
+(106,38,1)
+(52,1,1)
+(53,109,1)
+(7,151,1)
+(28,101,1)
+(130,109,1)
+(102,46,1)
+(36,138,1)
+(144,109,1)
+(146,121,1)
+(61,109,1)
+(67,96,1)
+(52,109,1)
+(81,82,1)
+(45,72,1)
+(49,123,1)
+(143,34,1)
+(42,92,1)
+(152,147,1)
+(58,145,1)
+(43,109,1)
+(119,18,1)
+(86,131,1)
+(76,155,1)
+(131,137,1)
+(11,109,1)
+(96,11,1)
+(7,94,1)
+(75,6,1)
+(122,68,1)
+(98,148,1)
+(138,109,1)
+(48,49,1)
+(113,22,1)
+(152,109,1)
+(62,81,1)
+(18,15,1)
+(10,57,1)
+(7,85,1)
+(104,27,1)
+(58,109,1)
+(73,90,1)
+(128,42,1)
+(57,104,1)
+(92,152,1)
+(78,99,1)
+(55,109,1)
+(120,58,1)
+(17,97,1)
+(30,51,1)
+(54,141,1)
+(141,28,1)
+(59,111,1)
+(125,12,1)
+(141,109,1)
+(80,130,1)
+(64,93,1)
+(15,36,1)
+(23,98,1)
+(95,66,1)
+(4,31,1)
+(91,17,1)
+(137,107,1)
+(78,109,1)
+(89,127,1)
+(126,86,1)
+(32,109,1)
+(50,120,1)
+(67,109,1)
+(3,109,1)
+(99,100,1)
+(32,129,1)
+(6,47,1)
+(122,109,1)
+(35,135,1)
+(124,56,1)
+(134,19,1)
+(16,134,1)
+(74,144,1)
+(107,139,1)
+(121,109,1)
+(132,153,1)
+(26,16,1)
+(150,73,1)
+(148,77,1)
+(144,65,1)
+(29,2,1)
+(5,109,1)
+(135,21,1)
+(23,109,1)
+(118,106,1)
+(121,118,1)
+(53,48,1)
+(140,132,1)
+(22,76,1)
+(47,83,1)
+(83,95,1)
+(3,89,1)
+(154,102,1)
+(76,109,1)
+(11,115,1)
+(81,109,1)
+(93,128,1)
+(128,109,1)
+(2,3,1)
+(129,91,1)
+(44,59,1)
+(72,14,1)
+(88,64,1)
+(21,88,1)
+(20,54,1)
+(38,29,1)
+(63,143,1)
+(34,74,1)
+(134,109,1)
+(47,109,1)
+(68,110,1)
+(127,23,1)
+(5,140,1)
+(41,62,1)
+(40,45,1)
+(70,4,1)
+(153,70,1)
+(12,60,1)
+(110,35,1)
+(27,5,1)
+(64,93,2)
+(20,54,2)
+(144,109,2)
+(104,27,2)
+(154,102,2)
+(78,109,2)
+(4,109,2)
+(71,50,2)
+(11,109,2)
+(150,73,2)
+(143,34,2)
+(102,46,2)
+(27,5,2)
+(7,85,2)
+(54,141,2)
+(47,109,2)
+(7,94,2)
+(57,104,2)
+(67,109,2)
+(55,109,2)
+(50,120,2)
+(114,41,2)
+(29,2,2)
+(15,36,2)
+(14,32,2)
+(128,109,2)
+(52,109,2)
+(62,81,2)
+(43,109,2)
+(72,14,2)
+(81,109,2)
+(110,109,2)
+(36,138,2)
+(126,109,2)
+(90,109,2)
+(139,52,2)
+(23,109,2)
+(88,64,2)
+(153,109,2)
+(133,109,2)
+(121,109,2)
+(61,109,2)
+(5,109,2)
+(141,109,2)
+(59,109,2)
+(58,109,2)
+(76,109,2)
+(60,117,2)
+(75,109,2)
+(122,109,2)
+(3,109,2)
+(120,58,2)
+(53,109,2)
+(73,90,2)
+(74,144,2)
+(34,74,2)
+(134,109,2)
+(107,139,2)
+(117,55,2)
+(46,109,2)
+(93,128,2)
+(32,109,2)
+(12,60,2)
+(2,3,2)
+(152,109,2)
+(138,109,2)
+(41,62,2)
+-----------------------------------
+(0,NULL)
+(1,msg)
+(2,protover_all_supported("Link=3-4 Desc=2", &msg)
+(3,&msg)
+(4,tt_str_op(msg, OP_EQ, "Sleen=0-2147483648")
+(5,&msg)
+(6,msg)
+(7,(void)
+(8,OP_EQ)
+(9,NULL)
+(10,msg)
+(11,tt_str_op(msg, OP_EQ, "Sleen=0-4294967294")
+(12,tt_assert(! protover_all_supported("Link=3-999", &msg)
+(13,msg)
+(14,protover_all_supported("Fribble", &msg)
+(15,tt_assert(protover_all_supported("Sleen=0-4294967295", &msg)
+(16,tor_end_capture_bugs_()
+(17,tor_capture_bugs_(1)
+(18,msg)
+(19,msg)
+(20,tt_assert(protover_all_supported("Link=3-4", &msg)
+(21,msg)
+(22,tor_end_capture_bugs_()
+(23,tt_ptr_op(msg, OP_EQ, NULL)
+(24,"Link=999")
+(25,"Link=3-999")
+(26,1)
+(27,protover_all_supported("Sleen=0-4294967294", &msg)
+(28,msg)
+(29,tt_assert(protover_all_supported("Link=3-4 Desc=2", &msg)
+(30,msg)
+(31,"Sleen=0-2147483648")
+(32,&msg)
+(33,OP_EQ)
+(34,! protover_all_supported("Link=999", &msg)
+(35,"Wombat=9")
+(36,protover_all_supported("Sleen=0-4294967295", &msg)
+(37,OP_EQ)
+(38,msg)
+(39,tor_capture_bugs_(1)
+(40,OP_EQ)
+(41,! protover_all_supported("Sleen=0-2147483648", &msg)
+(42,msg)
+(43,tt_ptr_op(msg, OP_EQ, NULL)
+(44,"")
+(45,msg)
+(46,&msg)
+(47,tt_str_op(msg, OP_EQ, "Wombat=9")
+(48,msg)
+(49,tor_end_capture_bugs_()
+(50,! protover_all_supported("Wombat=9", &msg)
+(51,"Sleen=0-4294967295")
+(52,&msg)
+(53,tor_free(msg)
+(54,protover_all_supported("Link=3-4", &msg)
+(55,&msg)
+(56,msg)
+(57,tt_assert(! protover_all_supported("Sleen=0-4294967294", &msg)
+(58,&msg)
+(59,tt_ptr_op(msg, OP_EQ, NULL)
+(60,! protover_all_supported("Link=3-999", &msg)
+(61,tt_str_op(msg, OP_EQ, "Link=999")
+(62,protover_all_supported("Sleen=0-2147483648", &msg)
+(63,msg)
+(64,! protover_all_supported("Link=3-4 Wombat=9", &msg)
+(65,msg)
+(66,msg)
+(67,tor_free(msg)
+(68,msg)
+(69,msg)
+(70,msg)
+(71,tt_assert(! protover_all_supported("Wombat=9", &msg)
+(72,tt_assert(protover_all_supported("Fribble", &msg)
+(73,protover_all_supported(\n\\n                               "DoSaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"\n\\n                               "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"\n\\n                               "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"\n\\n                               "aaaaaaaaaaaa=1-65536", &msg)
+(74,protover_all_supported("Link=999", &msg)
+(75,tor_free(msg)
+(76,tt_ptr_op(msg, OP_EQ, NULL)
+(77,msg)
+(78,tt_str_op(msg, OP_EQ, "Link=3-999")
+(79,)
+(80,msg)
+(81,&msg)
+(82,msg)
+(83,"Wombat=9")
+(84,done:)
+(85,void)
+(86,NULL)
+(87,tor_capture_bugs_(1)
+(88,tt_assert(! protover_all_supported("Link=3-4 Wombat=9", &msg)
+(89,msg)
+(90,&msg)
+(91,"Fribble")
+(92,"Link=3-4 Wombat=9")
+(93,protover_all_supported("Link=3-4 Wombat=9", &msg)
+(94,void *arg)
+(95,OP_EQ)
+(96,msg)
+(97,1)
+(98,NULL)
+(99,"Link=3-999")
+(100,OP_EQ)
+(101,"Link=3-4")
+(102,protover_all_supported(NULL, &msg)
+(103,"Link=999")
+(104,! protover_all_supported("Sleen=0-4294967294", &msg)
+(105,"DoSaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"\n\\n                               "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"\n\\n                               "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"\n\\n                               "aaaaaaaaaaaa=1-65536")
+(106,OP_EQ)
+(107,tt_assert(protover_all_supported("", &msg)
+(108,msg)
+(109,*msg = NULL)
+(110,tt_str_op(msg, OP_EQ, "Wombat=9")
+(111,NULL)
+(112,RET)
+(113,1)
+(114,tt_assert(! protover_all_supported("Sleen=0-2147483648", &msg)
+(115,"Sleen=0-4294967294")
+(116,"Sleen=0-2147483648")
+(117,protover_all_supported("Link=3-999", &msg)
+(118,NULL)
+(119,OP_EQ)
+(120,protover_all_supported("Wombat=9", &msg)
+(121,tt_ptr_op(msg, OP_EQ, NULL)
+(122,tor_free(msg)
+(123,tor_end_capture_bugs_()
+(124,OP_EQ)
+(125,msg)
+(126,tt_ptr_op(msg, OP_EQ, NULL)
+(127,"Link=3-4 Desc=2")
+(128,&msg)
+(129,msg)
+(130,NULL)
+(131,OP_EQ)
+(132,"Sleen=0-4294967294")
+(133,tor_free(msg)
+(134,tor_free(msg)
+(135,OP_EQ)
+(136,msg)
+(137,msg)
+(138,&msg)
+(139,protover_all_supported("", &msg)
+(140,msg)
+(141,&msg)
+(142,msg)
+(143,tt_assert(! protover_all_supported("Link=999", &msg)
+(144,&msg)
+(145,msg)
+(146,"Wombat=9")
+(147,msg)
+(148,OP_EQ)
+(149,msg)
+(150,tt_assert(protover_all_supported(\n\\n                               "DoSaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"\n\\n                               "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"\n\\n                               "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"\n\\n                               "aaaaaaaaaaaa=1-65536", &msg)
+(151,arg)
+(152,tor_free(msg)
+(153,tor_free(msg)
+(154,tt_assert(protover_all_supported(NULL, &msg)
+(155,NULL)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

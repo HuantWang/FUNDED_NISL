@@ -1,0 +1,2688 @@
+-----label-----
+1
+-----code-----
+unsigned long arch_get_unmapped_area(struct file *filp, unsigned long addr, unsigned long len, unsigned long pgoff, unsigned long flags)
+{
+	struct mm_struct *mm = current->mm;
+	struct vm_area_struct * vma;
+	unsigned long task_size = TASK_SIZE;
+	unsigned long start_addr;
+	int do_color_align;
+
+	if (flags & MAP_FIXED) {
+		/* We do not accept a shared mapping if it would violate
+		 * cache aliasing constraints.
+		 */
+		if ((flags & MAP_SHARED) &&
+		    ((addr - (pgoff << PAGE_SHIFT)) & (SHMLBA - 1)))
+			return -EINVAL;
+		return addr;
+	}
+
+	if (test_thread_flag(TIF_32BIT))
+		task_size = STACK_TOP32;
+	if (unlikely(len > task_size || len >= VA_EXCLUDE_START))
+		return -ENOMEM;
+
+	do_color_align = 0;
+	if (filp || (flags & MAP_SHARED))
+		do_color_align = 1;
+
+	if (addr) {
+		if (do_color_align)
+			addr = COLOUR_ALIGN(addr, pgoff);
+		else
+			addr = PAGE_ALIGN(addr);
+
+		vma = find_vma(mm, addr);
+		if (task_size - len >= addr &&
+		    (!vma || addr + len <= vma->vm_start))
+			return addr;
+	}
+
+	if (len > mm->cached_hole_size) {
+	        start_addr = addr = mm->free_area_cache;
+	} else {
+	        start_addr = addr = TASK_UNMAPPED_BASE;
+	        mm->cached_hole_size = 0;
+	}
+
+	task_size -= len;
+
+full_search:
+	if (do_color_align)
+		addr = COLOUR_ALIGN(addr, pgoff);
+	else
+		addr = PAGE_ALIGN(addr);
+
+	for (vma = find_vma(mm, addr); ; vma = vma->vm_next) {
+		/* At this point:  (!vma || addr < vma->vm_end). */
+		if (addr < VA_EXCLUDE_START &&
+		    (addr + len) >= VA_EXCLUDE_START) {
+			addr = VA_EXCLUDE_END;
+			vma = find_vma(mm, VA_EXCLUDE_END);
+		}
+		if (unlikely(task_size < addr)) {
+			if (start_addr != TASK_UNMAPPED_BASE) {
+				start_addr = addr = TASK_UNMAPPED_BASE;
+				mm->cached_hole_size = 0;
+				goto full_search;
+			}
+			return -ENOMEM;
+		}
+		if (likely(!vma || addr + len <= vma->vm_start)) {
+			/*
+			 * Remember the place where we stopped the search:
+			 */
+			mm->free_area_cache = addr + len;
+			return addr;
+		}
+		if (addr + mm->cached_hole_size < vma->vm_start)
+		        mm->cached_hole_size = vma->vm_start - addr;
+
+		addr = vma->vm_end;
+		if (do_color_align)
+			addr = COLOUR_ALIGN(addr, pgoff);
+	}
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+3,8
+3,9
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+13,14
+15,16
+15,17
+17,18
+19,20
+19,21
+21,22
+23,24
+23,25
+25,26
+27,28
+27,29
+27,30
+27,31
+27,32
+27,33
+27,34
+27,35
+27,36
+27,37
+27,38
+27,39
+27,40
+27,41
+27,42
+28,29
+29,30
+29,31
+30,31
+32,33
+32,34
+32,35
+35,36
+36,37
+36,38
+37,38
+40,41
+41,42
+41,43
+42,43
+44,45
+44,46
+47,48
+48,49
+48,50
+50,51
+50,52
+52,53
+53,54
+55,56
+56,57
+56,58
+58,59
+60,61
+61,62
+61,63
+63,64
+65,66
+65,67
+66,67
+66,68
+67,68
+69,70
+71,72
+71,73
+72,73
+72,74
+73,74
+73,75
+74,75
+75,76
+75,77
+76,77
+78,79
+80,81
+81,82
+81,83
+82,83
+83,84
+83,85
+84,85
+86,87
+87,88
+87,89
+88,89
+90,91
+92,93
+93,94
+93,95
+94,95
+97,98
+98,99
+99,100
+101,102
+102,103
+104,105
+104,106
+105,106
+105,107
+106,107
+108,109
+109,110
+111,112
+112,113
+112,114
+113,114
+115,116
+117,118
+117,119
+118,119
+118,120
+119,120
+121,122
+121,123
+122,123
+122,124
+123,124
+125,126
+127,128
+127,129
+128,129
+130,131
+132,133
+133,134
+134,135
+136,137
+137,138
+137,139
+138,139
+141,142
+141,143
+142,143
+142,144
+143,144
+145,146
+146,147
+146,148
+147,148
+149,150
+151,152
+152,153
+152,154
+153,154
+156,157
+156,158
+157,158
+159,160
+159,161
+159,162
+160,161
+160,162
+160,163
+161,162
+163,164
+164,165
+164,166
+165,166
+167,168
+167,169
+167,170
+168,169
+170,171
+172,173
+174,175
+175,176
+175,177
+176,177
+178,179
+178,180
+179,180
+181,182
+183,184
+184,185
+184,186
+185,186
+187,188
+187,189
+187,190
+188,189
+190,191
+192,193
+194,195
+194,196
+195,196
+195,197
+196,197
+196,198
+197,198
+197,199
+198,199
+200,201
+202,203
+204,205
+205,206
+205,207
+206,207
+207,208
+209,210
+209,211
+210,211
+210,212
+211,212
+213,214
+215,216
+215,217
+216,217
+219,220
+220,221
+222,223
+222,224
+222,225
+223,224
+223,225
+224,225
+226,227
+226,228
+227,228
+230,231
+231,232
+232,233
+232,234
+233,234
+235,236
+235,237
+236,237
+238,239
+238,240
+239,240
+242,243
+242,244
+243,244
+244,245
+244,246
+245,246
+247,248
+247,249
+248,249
+250,251
+252,253
+253,254
+253,255
+254,255
+254,256
+255,256
+259,260
+260,261
+260,262
+261,262
+263,264
+265,266
+265,267
+267,268
+267,269
+267,270
+268,269
+270,271
+271,272
+271,273
+272,273
+274,275
+274,276
+274,277
+275,276
+277,278
+279,280
+281,282
+282,283
+282,284
+283,284
+285,286
+285,287
+286,287
+288,289
+290,291
+290,292
+290,293
+291,292
+292,293
+292,294
+293,294
+295,296
+295,297
+295,298
+296,297
+298,299
+300,301
+302,303
+302,304
+303,304
+305,306
+305,307
+306,307
+309,310
+309,311
+309,312
+309,313
+309,314
+309,315
+310,311
+310,312
+311,312
+311,313
+312,313
+312,314
+313,314
+315,316
+317,318
+317,319
+318,319
+319,320
+319,321
+320,321
+322,323
+324,325
+326,327
+326,328
+327,328
+328,329
+328,330
+329,330
+331,332
+333,334
+334,335
+334,336
+335,336
+337,338
+337,339
+337,340
+338,339
+340,341
+342,343
+344,345
+344,346
+345,346
+345,347
+346,347
+348,349
+348,350
+349,350
+351,352
+353,354
+353,355
+354,355
+354,356
+355,356
+355,357
+356,357
+358,359
+360,361
+360,362
+360,363
+361,362
+362,363
+362,364
+363,364
+365,366
+365,367
+366,367
+368,369
+370,371
+371,372
+371,373
+372,373
+372,374
+373,374
+377,378
+379,380
+380,381
+381,382
+383,384
+383,385
+384,385
+384,386
+385,386
+387,388
+387,389
+388,389
+389,390
+391,392
+391,393
+392,393
+392,394
+393,394
+395,396
+397,398
+397,399
+398,399
+401,402
+401,403
+402,403
+403,404
+403,405
+404,405
+404,406
+405,406
+408,409
+408,410
+409,410
+411,412
+413,414
+414,415
+416,417
+416,418
+417,418
+417,419
+418,419
+418,420
+419,420
+421,422
+421,423
+422,423
+425,426
+425,427
+426,427
+429,430
+430,431
+430,432
+431,432
+431,433
+432,433
+435,436
+435,437
+436,437
+436,438
+437,438
+440,441
+442,443
+443,444
+443,445
+444,445
+446,447
+446,448
+447,448
+450,451
+450,452
+451,452
+453,454
+454,455
+454,456
+455,456
+457,458
+457,459
+457,460
+458,459
+460,461
+462,463
+-----nextToken-----
+2,4,7,9,10,12,14,16,18,20,22,24,26,31,33,34,38,39,43,45,46,49,51,54,57,59,62,64,68,70,77,79,85,89,91,95,96,100,103,107,110,114,116,120,124,126,129,131,135,139,140,144,148,150,154,155,158,162,166,169,171,173,177,180,182,186,189,191,193,199,201,203,208,212,214,217,218,221,225,228,229,234,237,240,241,246,249,251,256,257,258,262,264,266,269,273,276,278,280,284,287,289,294,297,299,301,304,307,308,314,316,321,323,325,330,332,336,339,341,343,347,350,352,357,359,364,367,369,374,375,376,378,382,386,390,394,396,399,400,406,407,410,412,415,420,423,424,427,428,433,434,438,439,441,445,448,449,452,456,459,461,463
+-----computeFrom-----
+66,67
+66,68
+73,74
+73,75
+75,76
+75,77
+81,82
+81,83
+83,84
+83,85
+87,88
+87,89
+93,94
+93,95
+112,113
+112,114
+121,122
+121,123
+122,123
+122,124
+127,128
+127,129
+137,138
+137,139
+142,143
+142,144
+146,147
+146,148
+152,153
+152,154
+164,165
+164,166
+175,176
+175,177
+184,185
+184,186
+195,196
+195,197
+196,197
+196,198
+197,198
+197,199
+205,206
+205,207
+209,210
+209,211
+210,211
+210,212
+223,224
+223,225
+232,233
+232,234
+235,236
+235,237
+244,245
+244,246
+247,248
+247,249
+253,254
+253,255
+260,261
+260,262
+271,272
+271,273
+282,283
+282,284
+292,293
+292,294
+302,303
+302,304
+311,312
+311,313
+312,313
+312,314
+317,318
+317,319
+319,320
+319,321
+328,329
+328,330
+334,335
+334,336
+348,349
+348,350
+355,356
+355,357
+362,363
+362,364
+365,366
+365,367
+371,372
+371,373
+387,388
+387,389
+391,392
+391,393
+392,393
+392,394
+403,404
+403,405
+408,409
+408,410
+417,418
+417,419
+418,419
+418,420
+430,431
+430,432
+435,436
+435,437
+443,444
+443,445
+454,455
+454,456
+-----guardedBy-----
+68,77
+212,221
+228,240
+321,330
+359,369
+357,364
+423,433
+424,434
+428,439
+427,438
+420,441
+-----guardedByNegation-----
+228,256
+229,257
+-----lastLexicalUse-----
+228,256
+-----jump-----
+228,256
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;ReturnStatement;UnaryExpression;IdExpression;Name;ReturnStatement;IdExpression;Name;IfStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;IdExpression;Name;CompoundStatement;IfStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;UnaryExpression;BinaryExpression;UnaryExpression;IdExpression;Name;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;ReturnStatement;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;LabelStatement;Name;IfStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;GotoStatement;Name;ReturnStatement;UnaryExpression;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;UnaryExpression;IdExpression;Name;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IfStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;
+-----ast_node-----
+unsigned long arch_get_unmapped_area(struct file *filp, unsigned long addr, unsigned long len, unsigned long pgoff, unsigned long flags){	struct mm_struct *mm = current->mm;	struct vm_area_struct * vma;	unsigned long task_size = TASK_SIZE;	unsigned long start_addr;	int do_color_align;	if (flags & MAP_FIXED) {		/* We do not accept a shared mapping if it would violate		 * cache aliasing constraints.		 */		if ((flags & MAP_SHARED) &&		    ((addr - (pgoff << PAGE_SHIFT)) & (SHMLBA - 1)))			return -EINVAL;		return addr;	}	if (test_thread_flag(TIF_32BIT))		task_size = STACK_TOP32;	if (unlikely(len > task_size || len >= VA_EXCLUDE_START))		return -ENOMEM;	do_color_align = 0;	if (filp || (flags & MAP_SHARED))		do_color_align = 1;	if (addr) {		if (do_color_align)			addr = COLOUR_ALIGN(addr, pgoff);		else			addr = PAGE_ALIGN(addr);		vma = find_vma(mm, addr);		if (task_size - len >= addr &&		    (!vma || addr + len <= vma->vm_start))			return addr;	}	if (len > mm->cached_hole_size) {	        start_addr = addr = mm->free_area_cache;	} else {	        start_addr = addr = TASK_UNMAPPED_BASE;	        mm->cached_hole_size = 0;	}	task_size -= len;full_search:	if (do_color_align)		addr = COLOUR_ALIGN(addr, pgoff);	else		addr = PAGE_ALIGN(addr);	for (vma = find_vma(mm, addr); ; vma = vma->vm_next) {		/* At this point:  (!vma || addr < vma->vm_end). */		if (addr < VA_EXCLUDE_START &&		    (addr + len) >= VA_EXCLUDE_START) {			addr = VA_EXCLUDE_END;			vma = find_vma(mm, VA_EXCLUDE_END);		}		if (unlikely(task_size < addr)) {			if (start_addr != TASK_UNMAPPED_BASE) {				start_addr = addr = TASK_UNMAPPED_BASE;				mm->cached_hole_size = 0;				goto full_search;			}			return -ENOMEM;		}		if (likely(!vma || addr + len <= vma->vm_start)) {			/*			 * Remember the place where we stopped the search:			 */			mm->free_area_cache = addr + len;			return addr;		}		if (addr + mm->cached_hole_size < vma->vm_start)		        mm->cached_hole_size = vma->vm_start - addr;		addr = vma->vm_end;		if (do_color_align)			addr = COLOUR_ALIGN(addr, pgoff);	}}
+unsigned long
+arch_get_unmapped_area(struct file *filp, unsigned long addr, unsigned long len, unsigned long pgoff, unsigned long flags)
+arch_get_unmapped_area
+struct file *filp
+struct file
+file
+*filp
+*
+filp
+unsigned long addr
+unsigned long
+addr
+addr
+unsigned long len
+unsigned long
+len
+len
+unsigned long pgoff
+unsigned long
+pgoff
+pgoff
+unsigned long flags
+unsigned long
+flags
+flags
+{	struct mm_struct *mm = current->mm;	struct vm_area_struct * vma;	unsigned long task_size = TASK_SIZE;	unsigned long start_addr;	int do_color_align;	if (flags & MAP_FIXED) {		/* We do not accept a shared mapping if it would violate		 * cache aliasing constraints.		 */		if ((flags & MAP_SHARED) &&		    ((addr - (pgoff << PAGE_SHIFT)) & (SHMLBA - 1)))			return -EINVAL;		return addr;	}	if (test_thread_flag(TIF_32BIT))		task_size = STACK_TOP32;	if (unlikely(len > task_size || len >= VA_EXCLUDE_START))		return -ENOMEM;	do_color_align = 0;	if (filp || (flags & MAP_SHARED))		do_color_align = 1;	if (addr) {		if (do_color_align)			addr = COLOUR_ALIGN(addr, pgoff);		else			addr = PAGE_ALIGN(addr);		vma = find_vma(mm, addr);		if (task_size - len >= addr &&		    (!vma || addr + len <= vma->vm_start))			return addr;	}	if (len > mm->cached_hole_size) {	        start_addr = addr = mm->free_area_cache;	} else {	        start_addr = addr = TASK_UNMAPPED_BASE;	        mm->cached_hole_size = 0;	}	task_size -= len;full_search:	if (do_color_align)		addr = COLOUR_ALIGN(addr, pgoff);	else		addr = PAGE_ALIGN(addr);	for (vma = find_vma(mm, addr); ; vma = vma->vm_next) {		/* At this point:  (!vma || addr < vma->vm_end). */		if (addr < VA_EXCLUDE_START &&		    (addr + len) >= VA_EXCLUDE_START) {			addr = VA_EXCLUDE_END;			vma = find_vma(mm, VA_EXCLUDE_END);		}		if (unlikely(task_size < addr)) {			if (start_addr != TASK_UNMAPPED_BASE) {				start_addr = addr = TASK_UNMAPPED_BASE;				mm->cached_hole_size = 0;				goto full_search;			}			return -ENOMEM;		}		if (likely(!vma || addr + len <= vma->vm_start)) {			/*			 * Remember the place where we stopped the search:			 */			mm->free_area_cache = addr + len;			return addr;		}		if (addr + mm->cached_hole_size < vma->vm_start)		        mm->cached_hole_size = vma->vm_start - addr;		addr = vma->vm_end;		if (do_color_align)			addr = COLOUR_ALIGN(addr, pgoff);	}}
+struct mm_struct *mm = current->mm;
+struct mm_struct *mm = current->mm;
+struct mm_struct
+mm_struct
+*mm = current->mm
+*
+mm
+= current->mm
+current->mm
+current
+current
+mm
+struct vm_area_struct * vma;
+struct vm_area_struct * vma;
+struct vm_area_struct
+vm_area_struct
+* vma
+*
+vma
+unsigned long task_size = TASK_SIZE;
+unsigned long task_size = TASK_SIZE;
+unsigned long
+task_size = TASK_SIZE
+task_size
+= TASK_SIZE
+TASK_SIZE
+TASK_SIZE
+unsigned long start_addr;
+unsigned long start_addr;
+unsigned long
+start_addr
+start_addr
+int do_color_align;
+int do_color_align;
+int
+do_color_align
+do_color_align
+if (flags & MAP_FIXED) {		/* We do not accept a shared mapping if it would violate		 * cache aliasing constraints.		 */		if ((flags & MAP_SHARED) &&		    ((addr - (pgoff << PAGE_SHIFT)) & (SHMLBA - 1)))			return -EINVAL;		return addr;	}
+flags & MAP_FIXED
+flags
+flags
+MAP_FIXED
+MAP_FIXED
+{		/* We do not accept a shared mapping if it would violate		 * cache aliasing constraints.		 */		if ((flags & MAP_SHARED) &&		    ((addr - (pgoff << PAGE_SHIFT)) & (SHMLBA - 1)))			return -EINVAL;		return addr;	}
+if ((flags & MAP_SHARED) &&		    ((addr - (pgoff << PAGE_SHIFT)) & (SHMLBA - 1)))			return -EINVAL;
+(flags & MAP_SHARED) &&		    ((addr - (pgoff << PAGE_SHIFT)) & (SHMLBA - 1))
+(flags & MAP_SHARED)
+flags & MAP_SHARED
+flags
+flags
+MAP_SHARED
+MAP_SHARED
+((addr - (pgoff << PAGE_SHIFT)) & (SHMLBA - 1))
+(addr - (pgoff << PAGE_SHIFT)) & (SHMLBA - 1)
+(addr - (pgoff << PAGE_SHIFT))
+addr - (pgoff << PAGE_SHIFT)
+addr
+addr
+(pgoff << PAGE_SHIFT)
+pgoff << PAGE_SHIFT
+pgoff
+pgoff
+PAGE_SHIFT
+PAGE_SHIFT
+(SHMLBA - 1)
+SHMLBA - 1
+SHMLBA
+SHMLBA
+1
+return -EINVAL;
+-EINVAL
+EINVAL
+EINVAL
+return addr;
+addr
+addr
+if (test_thread_flag(TIF_32BIT))		task_size = STACK_TOP32;
+test_thread_flag(TIF_32BIT)
+test_thread_flag
+test_thread_flag
+(TIF_32BIT)
+TIF_32BIT
+TIF_32BIT
+task_size = STACK_TOP32;
+task_size = STACK_TOP32
+task_size
+task_size
+STACK_TOP32
+STACK_TOP32
+if (unlikely(len > task_size || len >= VA_EXCLUDE_START))		return -ENOMEM;
+unlikely(len > task_size || len >= VA_EXCLUDE_START)
+unlikely
+unlikely
+len > task_size || len >= VA_EXCLUDE_START
+len > task_size
+len
+len
+task_size
+task_size
+len >= VA_EXCLUDE_START
+len
+len
+VA_EXCLUDE_START
+VA_EXCLUDE_START
+return -ENOMEM;
+-ENOMEM
+ENOMEM
+ENOMEM
+do_color_align = 0;
+do_color_align = 0
+do_color_align
+do_color_align
+0
+if (filp || (flags & MAP_SHARED))		do_color_align = 1;
+filp || (flags & MAP_SHARED)
+filp
+filp
+(flags & MAP_SHARED)
+flags & MAP_SHARED
+flags
+flags
+MAP_SHARED
+MAP_SHARED
+do_color_align = 1;
+do_color_align = 1
+do_color_align
+do_color_align
+1
+if (addr) {		if (do_color_align)			addr = COLOUR_ALIGN(addr, pgoff);		else			addr = PAGE_ALIGN(addr);		vma = find_vma(mm, addr);		if (task_size - len >= addr &&		    (!vma || addr + len <= vma->vm_start))			return addr;	}
+addr
+addr
+{		if (do_color_align)			addr = COLOUR_ALIGN(addr, pgoff);		else			addr = PAGE_ALIGN(addr);		vma = find_vma(mm, addr);		if (task_size - len >= addr &&		    (!vma || addr + len <= vma->vm_start))			return addr;	}
+if (do_color_align)			addr = COLOUR_ALIGN(addr, pgoff);		else			addr = PAGE_ALIGN(addr);
+do_color_align
+do_color_align
+addr = COLOUR_ALIGN(addr, pgoff);
+addr = COLOUR_ALIGN(addr, pgoff)
+addr
+addr
+COLOUR_ALIGN(addr, pgoff)
+COLOUR_ALIGN
+COLOUR_ALIGN
+addr
+addr
+pgoff
+pgoff
+addr = PAGE_ALIGN(addr);
+addr = PAGE_ALIGN(addr)
+addr
+addr
+PAGE_ALIGN(addr)
+PAGE_ALIGN
+PAGE_ALIGN
+addr
+addr
+vma = find_vma(mm, addr);
+vma = find_vma(mm, addr)
+vma
+vma
+find_vma(mm, addr)
+find_vma
+find_vma
+mm
+mm
+addr
+addr
+if (task_size - len >= addr &&		    (!vma || addr + len <= vma->vm_start))			return addr;
+task_size - len >= addr &&		    (!vma || addr + len <= vma->vm_start)
+task_size - len >= addr
+task_size - len
+task_size
+task_size
+len
+len
+addr
+addr
+(!vma || addr + len <= vma->vm_start)
+!vma || addr + len <= vma->vm_start
+!vma
+vma
+vma
+addr + len <= vma->vm_start
+addr + len
+addr
+addr
+len
+len
+vma->vm_start
+vma
+vma
+vm_start
+return addr;
+addr
+addr
+if (len > mm->cached_hole_size) {	        start_addr = addr = mm->free_area_cache;	} else {	        start_addr = addr = TASK_UNMAPPED_BASE;	        mm->cached_hole_size = 0;	}
+len > mm->cached_hole_size
+len
+len
+mm->cached_hole_size
+mm
+mm
+cached_hole_size
+{	        start_addr = addr = mm->free_area_cache;	}
+start_addr = addr = mm->free_area_cache;
+start_addr = addr = mm->free_area_cache
+start_addr
+start_addr
+addr = mm->free_area_cache
+addr
+addr
+mm->free_area_cache
+mm
+mm
+free_area_cache
+{	        start_addr = addr = TASK_UNMAPPED_BASE;	        mm->cached_hole_size = 0;	}
+start_addr = addr = TASK_UNMAPPED_BASE;
+start_addr = addr = TASK_UNMAPPED_BASE
+start_addr
+start_addr
+addr = TASK_UNMAPPED_BASE
+addr
+addr
+TASK_UNMAPPED_BASE
+TASK_UNMAPPED_BASE
+mm->cached_hole_size = 0;
+mm->cached_hole_size = 0
+mm->cached_hole_size
+mm
+mm
+cached_hole_size
+0
+task_size -= len;
+task_size -= len
+task_size
+task_size
+len
+len
+full_search:	if (do_color_align)		addr = COLOUR_ALIGN(addr, pgoff);	else		addr = PAGE_ALIGN(addr);
+full_search
+if (do_color_align)		addr = COLOUR_ALIGN(addr, pgoff);	else		addr = PAGE_ALIGN(addr);
+do_color_align
+do_color_align
+addr = COLOUR_ALIGN(addr, pgoff);
+addr = COLOUR_ALIGN(addr, pgoff)
+addr
+addr
+COLOUR_ALIGN(addr, pgoff)
+COLOUR_ALIGN
+COLOUR_ALIGN
+addr
+addr
+pgoff
+pgoff
+addr = PAGE_ALIGN(addr);
+addr = PAGE_ALIGN(addr)
+addr
+addr
+PAGE_ALIGN(addr)
+PAGE_ALIGN
+PAGE_ALIGN
+addr
+addr
+for (vma = find_vma(mm, addr); ; vma = vma->vm_next) {		/* At this point:  (!vma || addr < vma->vm_end). */		if (addr < VA_EXCLUDE_START &&		    (addr + len) >= VA_EXCLUDE_START) {			addr = VA_EXCLUDE_END;			vma = find_vma(mm, VA_EXCLUDE_END);		}		if (unlikely(task_size < addr)) {			if (start_addr != TASK_UNMAPPED_BASE) {				start_addr = addr = TASK_UNMAPPED_BASE;				mm->cached_hole_size = 0;				goto full_search;			}			return -ENOMEM;		}		if (likely(!vma || addr + len <= vma->vm_start)) {			/*			 * Remember the place where we stopped the search:			 */			mm->free_area_cache = addr + len;			return addr;		}		if (addr + mm->cached_hole_size < vma->vm_start)		        mm->cached_hole_size = vma->vm_start - addr;		addr = vma->vm_end;		if (do_color_align)			addr = COLOUR_ALIGN(addr, pgoff);	}
+vma = find_vma(mm, addr);
+vma = find_vma(mm, addr)
+vma
+vma
+find_vma(mm, addr)
+find_vma
+find_vma
+mm
+mm
+addr
+addr
+vma = vma->vm_next
+vma
+vma
+vma->vm_next
+vma
+vma
+vm_next
+{		/* At this point:  (!vma || addr < vma->vm_end). */		if (addr < VA_EXCLUDE_START &&		    (addr + len) >= VA_EXCLUDE_START) {			addr = VA_EXCLUDE_END;			vma = find_vma(mm, VA_EXCLUDE_END);		}		if (unlikely(task_size < addr)) {			if (start_addr != TASK_UNMAPPED_BASE) {				start_addr = addr = TASK_UNMAPPED_BASE;				mm->cached_hole_size = 0;				goto full_search;			}			return -ENOMEM;		}		if (likely(!vma || addr + len <= vma->vm_start)) {			/*			 * Remember the place where we stopped the search:			 */			mm->free_area_cache = addr + len;			return addr;		}		if (addr + mm->cached_hole_size < vma->vm_start)		        mm->cached_hole_size = vma->vm_start - addr;		addr = vma->vm_end;		if (do_color_align)			addr = COLOUR_ALIGN(addr, pgoff);	}
+if (addr < VA_EXCLUDE_START &&		    (addr + len) >= VA_EXCLUDE_START) {			addr = VA_EXCLUDE_END;			vma = find_vma(mm, VA_EXCLUDE_END);		}
+addr < VA_EXCLUDE_START &&		    (addr + len) >= VA_EXCLUDE_START
+addr < VA_EXCLUDE_START
+addr
+addr
+VA_EXCLUDE_START
+VA_EXCLUDE_START
+(addr + len) >= VA_EXCLUDE_START
+(addr + len)
+addr + len
+addr
+addr
+len
+len
+VA_EXCLUDE_START
+VA_EXCLUDE_START
+{			addr = VA_EXCLUDE_END;			vma = find_vma(mm, VA_EXCLUDE_END);		}
+addr = VA_EXCLUDE_END;
+addr = VA_EXCLUDE_END
+addr
+addr
+VA_EXCLUDE_END
+VA_EXCLUDE_END
+vma = find_vma(mm, VA_EXCLUDE_END);
+vma = find_vma(mm, VA_EXCLUDE_END)
+vma
+vma
+find_vma(mm, VA_EXCLUDE_END)
+find_vma
+find_vma
+mm
+mm
+VA_EXCLUDE_END
+VA_EXCLUDE_END
+if (unlikely(task_size < addr)) {			if (start_addr != TASK_UNMAPPED_BASE) {				start_addr = addr = TASK_UNMAPPED_BASE;				mm->cached_hole_size = 0;				goto full_search;			}			return -ENOMEM;		}
+unlikely(task_size < addr)
+unlikely
+unlikely
+task_size < addr
+task_size
+task_size
+addr
+addr
+{			if (start_addr != TASK_UNMAPPED_BASE) {				start_addr = addr = TASK_UNMAPPED_BASE;				mm->cached_hole_size = 0;				goto full_search;			}			return -ENOMEM;		}
+if (start_addr != TASK_UNMAPPED_BASE) {				start_addr = addr = TASK_UNMAPPED_BASE;				mm->cached_hole_size = 0;				goto full_search;			}
+start_addr != TASK_UNMAPPED_BASE
+start_addr
+start_addr
+TASK_UNMAPPED_BASE
+TASK_UNMAPPED_BASE
+{				start_addr = addr = TASK_UNMAPPED_BASE;				mm->cached_hole_size = 0;				goto full_search;			}
+start_addr = addr = TASK_UNMAPPED_BASE;
+start_addr = addr = TASK_UNMAPPED_BASE
+start_addr
+start_addr
+addr = TASK_UNMAPPED_BASE
+addr
+addr
+TASK_UNMAPPED_BASE
+TASK_UNMAPPED_BASE
+mm->cached_hole_size = 0;
+mm->cached_hole_size = 0
+mm->cached_hole_size
+mm
+mm
+cached_hole_size
+0
+goto full_search;
+full_search
+return -ENOMEM;
+-ENOMEM
+ENOMEM
+ENOMEM
+if (likely(!vma || addr + len <= vma->vm_start)) {			/*			 * Remember the place where we stopped the search:			 */			mm->free_area_cache = addr + len;			return addr;		}
+likely(!vma || addr + len <= vma->vm_start)
+likely
+likely
+!vma || addr + len <= vma->vm_start
+!vma
+vma
+vma
+addr + len <= vma->vm_start
+addr + len
+addr
+addr
+len
+len
+vma->vm_start
+vma
+vma
+vm_start
+{			/*			 * Remember the place where we stopped the search:			 */			mm->free_area_cache = addr + len;			return addr;		}
+mm->free_area_cache = addr + len;
+mm->free_area_cache = addr + len
+mm->free_area_cache
+mm
+mm
+free_area_cache
+addr + len
+addr
+addr
+len
+len
+return addr;
+addr
+addr
+if (addr + mm->cached_hole_size < vma->vm_start)		        mm->cached_hole_size = vma->vm_start - addr;
+addr + mm->cached_hole_size < vma->vm_start
+addr + mm->cached_hole_size
+addr
+addr
+mm->cached_hole_size
+mm
+mm
+cached_hole_size
+vma->vm_start
+vma
+vma
+vm_start
+mm->cached_hole_size = vma->vm_start - addr;
+mm->cached_hole_size = vma->vm_start - addr
+mm->cached_hole_size
+mm
+mm
+cached_hole_size
+vma->vm_start - addr
+vma->vm_start
+vma
+vma
+vm_start
+addr
+addr
+addr = vma->vm_end;
+addr = vma->vm_end
+addr
+addr
+vma->vm_end
+vma
+vma
+vm_end
+if (do_color_align)			addr = COLOUR_ALIGN(addr, pgoff);
+do_color_align
+do_color_align
+addr = COLOUR_ALIGN(addr, pgoff);
+addr = COLOUR_ALIGN(addr, pgoff)
+addr
+addr
+COLOUR_ALIGN(addr, pgoff)
+COLOUR_ALIGN
+COLOUR_ALIGN
+addr
+addr
+pgoff
+pgoff
+-----joern-----
+(206,164,0)
+(146,68,0)
+(21,97,0)
+(219,149,0)
+(194,176,0)
+(141,132,0)
+(48,229,0)
+(41,122,0)
+(10,75,0)
+(47,207,0)
+(156,136,0)
+(47,14,0)
+(20,8,0)
+(41,105,0)
+(96,229,0)
+(83,114,0)
+(5,92,0)
+(240,94,0)
+(127,184,0)
+(6,175,0)
+(156,207,0)
+(242,256,0)
+(76,101,0)
+(20,23,0)
+(40,116,0)
+(18,17,0)
+(185,1,0)
+(45,35,0)
+(62,117,0)
+(184,118,0)
+(95,149,0)
+(165,258,0)
+(222,95,0)
+(181,177,0)
+(44,164,0)
+(175,23,0)
+(182,152,0)
+(99,79,0)
+(114,207,0)
+(43,207,0)
+(127,207,0)
+(258,121,0)
+(108,6,0)
+(86,207,0)
+(18,53,0)
+(114,14,0)
+(118,184,0)
+(227,139,0)
+(114,181,0)
+(139,12,0)
+(249,170,0)
+(220,53,0)
+(175,53,0)
+(53,207,0)
+(196,136,0)
+(52,157,0)
+(136,11,0)
+(142,81,0)
+(157,111,0)
+(60,12,0)
+(244,149,0)
+(32,167,0)
+(219,72,0)
+(41,18,0)
+(61,76,0)
+(138,0,0)
+(81,256,0)
+(240,175,0)
+(200,120,0)
+(169,11,0)
+(94,240,0)
+(44,225,0)
+(152,32,0)
+(83,207,0)
+(109,251,0)
+(79,13,0)
+(112,20,0)
+(61,83,0)
+(13,79,0)
+(134,199,0)
+(195,252,0)
+(248,193,0)
+(3,6,0)
+(93,193,0)
+(95,83,0)
+(103,107,0)
+(43,8,0)
+(214,75,0)
+(230,62,0)
+(25,151,0)
+(192,182,0)
+(85,62,0)
+(26,117,0)
+(213,18,0)
+(66,107,0)
+(158,61,0)
+(208,139,0)
+(129,169,0)
+(259,170,0)
+(26,121,0)
+(177,111,0)
+(116,209,0)
+(135,86,0)
+(246,87,0)
+(51,14,0)
+(144,53,0)
+(8,207,0)
+(175,83,0)
+(41,191,0)
+(100,87,0)
+(183,117,0)
+(63,115,0)
+(224,43,0)
+(18,126,0)
+(13,127,0)
+(254,47,0)
+(250,114,0)
+(139,53,0)
+(151,8,0)
+(114,83,0)
+(164,207,0)
+(223,181,0)
+(42,61,0)
+(251,174,0)
+(93,23,0)
+(154,156,0)
+(102,169,0)
+(43,53,0)
+(76,61,0)
+(56,87,0)
+(239,94,0)
+(204,164,0)
+(50,79,0)
+(139,117,0)
+(107,11,0)
+(179,97,0)
+(19,53,0)
+(12,139,0)
+(184,207,0)
+(41,242,0)
+(101,76,0)
+(175,6,0)
+(1,72,0)
+(186,183,0)
+(138,11,0)
+(94,149,0)
+(139,23,0)
+(126,201,0)
+(243,87,0)
+(137,8,0)
+(62,87,0)
+(70,225,0)
+(72,1,0)
+(232,95,0)
+(176,105,0)
+(125,189,0)
+(132,96,0)
+(205,144,0)
+(231,126,0)
+(18,207,0)
+(187,48,0)
+(22,142,0)
+(23,68,0)
+(9,144,0)
+(105,189,0)
+(81,184,0)
+(82,155,0)
+(220,207,0)
+(128,136,0)
+(2,166,0)
+(59,242,0)
+(162,60,0)
+(260,20,0)
+(11,169,0)
+(139,8,0)
+(168,193,0)
+(218,100,0)
+(51,132,0)
+(144,149,0)
+(11,87,0)
+(68,23,0)
+(150,100,0)
+(174,117,0)
+(54,217,0)
+(46,11,0)
+(257,140,0)
+(238,1,0)
+(226,87,0)
+(140,87,0)
+(16,121,0)
+(130,118,0)
+(37,175,0)
+(28,170,0)
+(182,72,0)
+(229,96,0)
+(92,119,0)
+(220,83,0)
+(43,126,0)
+(78,87,0)
+(182,119,0)
+(115,157,0)
+(60,11,0)
+(152,182,0)
+(13,22,0)
+(173,119,0)
+(256,47,0)
+(61,8,0)
+(57,219,0)
+(228,43,0)
+(119,219,0)
+(101,220,0)
+(190,87,0)
+(105,138,0)
+(93,0,0)
+(62,140,0)
+(155,75,0)
+(245,87,0)
+(193,119,0)
+(126,207,0)
+(193,72,0)
+(34,87,0)
+(139,207,0)
+(23,207,0)
+(210,87,0)
+(18,8,0)
+(96,166,0)
+(71,177,0)
+(43,83,0)
+(179,65,0)
+(68,207,0)
+(233,151,0)
+(155,241,0)
+(40,179,0)
+(43,23,0)
+(159,127,0)
+(43,152,0)
+(93,83,0)
+(145,111,0)
+(216,40,0)
+(139,83,0)
+(180,87,0)
+(68,156,0)
+(26,81,0)
+(175,8,0)
+(6,0,0)
+(20,207,0)
+(93,207,0)
+(156,116,0)
+(217,122,0)
+(107,183,0)
+(251,258,0)
+(147,174,0)
+(68,97,0)
+(142,22,0)
+(92,72,0)
+(73,97,0)
+(256,207,0)
+(153,121,0)
+(55,182,0)
+(26,140,0)
+(114,97,0)
+(93,53,0)
+(164,44,0)
+(144,72,0)
+(175,207,0)
+(75,155,0)
+(251,109,0)
+(94,119,0)
+(20,83,0)
+(163,47,0)
+(92,149,0)
+(8,151,0)
+(175,240,0)
+(202,220,0)
+(61,23,0)
+(20,53,0)
+(144,119,0)
+(143,127,0)
+(118,207,0)
+(80,76,0)
+(32,152,0)
+(174,251,0)
+(39,60,0)
+(93,126,0)
+(49,181,0)
+(220,101,0)
+(132,207,0)
+(97,179,0)
+(105,115,0)
+(258,117,0)
+(151,207,0)
+(58,83,0)
+(68,181,0)
+(171,81,0)
+(93,8,0)
+(20,126,0)
+(74,179,0)
+(219,119,0)
+(151,14,0)
+(64,247,0)
+(32,92,0)
+(95,11,0)
+(193,93,0)
+(234,22,0)
+(197,51,0)
+(18,83,0)
+(47,256,0)
+(181,207,0)
+(22,234,0)
+(29,51,0)
+(40,177,0)
+(258,140,0)
+(242,207,0)
+(92,32,0)
+(61,53,0)
+(242,184,0)
+(69,26,0)
+(215,87,0)
+(12,17,0)
+(81,142,0)
+(20,260,0)
+(24,256,0)
+(75,172,0)
+(198,94,0)
+(212,116,0)
+(62,121,0)
+(72,201,0)
+(234,44,0)
+(27,140,0)
+(95,23,0)
+(79,44,0)
+(94,72,0)
+(48,172,0)
+(253,258,0)
+(113,138,0)
+(97,207,0)
+(88,23,0)
+(167,32,0)
+(199,172,0)
+(15,87,0)
+(41,86,0)
+(33,236,0)
+(81,207,0)
+(177,181,0)
+(237,166,0)
+(116,156,0)
+(123,44,0)
+(106,87,0)
+(164,256,0)
+(105,35,0)
+(81,26,0)
+(152,43,0)
+(193,149,0)
+(220,23,0)
+(136,156,0)
+(61,207,0)
+(96,132,0)
+(164,11,0)
+(235,234,0)
+(120,65,0)
+(149,95,0)
+(43,117,0)
+(98,189,0)
+(151,53,0)
+(203,114,0)
+(77,174,0)
+(148,40,0)
+(127,13,0)
+(38,184,0)
+(53,170,0)
+(0,93,0)
+(132,51,0)
+(189,11,0)
+(67,225,0)
+(36,30,0)
+(6,11,0)
+(18,23,0)
+(255,219,0)
+(20,62,0)
+(89,170,0)
+(133,115,0)
+(178,126,0)
+(161,48,0)
+(115,11,0)
+(160,87,0)
+(229,48,0)
+(188,93,0)
+(124,26,0)
+(114,156,0)
+(258,251,0)
+(127,117,0)
+(166,96,0)
+(211,138,0)
+(95,207,0)
+(61,117,0)
+(84,72,0)
+(7,220,0)
+(175,126,0)
+(91,199,0)
+(31,170,0)
+(247,191,0)
+(86,30,0)
+(22,13,0)
+(127,256,0)
+(220,8,0)
+(164,184,0)
+(53,144,0)
+(90,20,0)
+(183,107,0)
+(182,149,0)
+(189,120,0)
+(6,157,0)
+(131,236,0)
+(139,126,0)
+(6,120,0)
+(1,11,0)
+(214,82,1)
+(138,11,1)
+(91,134,1)
+(94,72,1)
+(8,151,1)
+(114,14,1)
+(114,156,1)
+(60,11,1)
+(220,8,1)
+(151,25,1)
+(235,81,1)
+(32,152,1)
+(184,118,1)
+(94,119,1)
+(156,207,1)
+(135,229,1)
+(88,104,1)
+(93,23,1)
+(230,116,1)
+(251,258,1)
+(42,158,1)
+(256,207,1)
+(206,204,1)
+(92,119,1)
+(252,195,1)
+(255,57,1)
+(26,121,1)
+(109,251,1)
+(95,232,1)
+(219,255,1)
+(24,110,1)
+(219,119,1)
+(19,240,1)
+(6,120,1)
+(20,62,1)
+(76,61,1)
+(220,23,1)
+(125,98,1)
+(41,122,1)
+(242,59,1)
+(173,8,1)
+(81,171,1)
+(196,128,1)
+(120,200,1)
+(13,127,1)
+(32,92,1)
+(62,140,1)
+(40,179,1)
+(95,11,1)
+(165,121,1)
+(227,60,1)
+(92,72,1)
+(163,254,1)
+(202,119,1)
+(127,117,1)
+(133,63,1)
+(53,207,1)
+(115,11,1)
+(79,44,1)
+(164,207,1)
+(20,90,1)
+(76,80,1)
+(77,258,1)
+(164,11,1)
+(166,2,1)
+(108,3,1)
+(51,197,1)
+(48,161,1)
+(43,207,1)
+(47,207,1)
+(114,207,1)
+(240,94,1)
+(97,207,1)
+(167,32,1)
+(151,14,1)
+(41,18,1)
+(174,147,1)
+(69,124,1)
+(81,26,1)
+(51,14,1)
+(257,27,1)
+(5,260,1)
+(234,235,1)
+(114,97,1)
+(85,230,1)
+(237,132,1)
+(10,214,1)
+(97,73,1)
+(22,234,1)
+(75,172,1)
+(105,138,1)
+(62,117,1)
+(68,146,1)
+(95,207,1)
+(18,126,1)
+(221,236,1)
+(39,162,1)
+(174,117,1)
+(127,143,1)
+(162,167,1)
+(223,49,1)
+(193,72,1)
+(0,93,1)
+(49,71,1)
+(20,53,1)
+(124,44,1)
+(21,74,1)
+(6,11,1)
+(199,91,1)
+(6,0,1)
+(96,132,1)
+(37,167,1)
+(16,252,1)
+(220,53,1)
+(43,228,1)
+(118,207,1)
+(41,191,1)
+(43,117,1)
+(184,207,1)
+(250,58,1)
+(175,126,1)
+(126,207,1)
+(33,155,1)
+(219,72,1)
+(47,14,1)
+(23,207,1)
+(205,9,1)
+(50,99,1)
+(244,83,1)
+(95,23,1)
+(198,239,1)
+(43,53,1)
+(138,113,1)
+(73,21,1)
+(59,142,1)
+(144,72,1)
+(93,8,1)
+(107,103,1)
+(9,19,1)
+(112,101,1)
+(99,127,1)
+(26,140,1)
+(200,189,1)
+(258,253,1)
+(236,131,1)
+(74,183,1)
+(18,53,1)
+(183,117,1)
+(175,207,1)
+(60,39,1)
+(218,150,1)
+(19,0,1)
+(220,83,1)
+(156,136,1)
+(242,207,1)
+(233,137,1)
+(239,175,1)
+(62,85,1)
+(53,144,1)
+(96,166,1)
+(71,40,1)
+(130,38,1)
+(136,11,1)
+(40,177,1)
+(95,83,1)
+(141,48,1)
+(101,76,1)
+(63,177,1)
+(41,105,1)
+(107,11,1)
+(43,126,1)
+(188,193,1)
+(113,211,1)
+(175,53,1)
+(92,5,1)
+(6,108,1)
+(94,198,1)
+(212,183,1)
+(164,184,1)
+(155,241,1)
+(129,102,1)
+(93,193,1)
+(116,156,1)
+(132,51,1)
+(61,23,1)
+(234,44,1)
+(118,130,1)
+(81,256,1)
+(18,207,1)
+(1,11,1)
+(203,250,1)
+(224,92,1)
+(27,11,1)
+(157,52,1)
+(258,140,1)
+(202,149,1)
+(41,86,1)
+(178,101,1)
+(81,207,1)
+(23,68,1)
+(84,126,1)
+(194,40,1)
+(12,139,1)
+(1,185,1)
+(182,119,1)
+(240,175,1)
+(175,8,1)
+(58,104,1)
+(18,213,1)
+(132,207,1)
+(72,1,1)
+(82,100,1)
+(4,53,1)
+(127,184,1)
+(220,207,1)
+(182,149,1)
+(101,220,1)
+(6,157,1)
+(86,207,1)
+(179,97,1)
+(62,121,1)
+(177,181,1)
+(197,29,1)
+(90,112,1)
+(256,47,1)
+(102,46,1)
+(158,220,1)
+(105,189,1)
+(55,192,1)
+(232,222,1)
+(139,23,1)
+(20,83,1)
+(121,153,1)
+(93,126,1)
+(29,141,1)
+(43,83,1)
+(248,168,1)
+(127,256,1)
+(164,256,1)
+(61,207,1)
+(54,229,1)
+(187,199,1)
+(193,119,1)
+(183,107,1)
+(137,4,1)
+(217,54,1)
+(192,43,1)
+(128,154,1)
+(123,184,1)
+(229,48,1)
+(189,125,1)
+(154,212,1)
+(13,79,1)
+(181,223,1)
+(254,24,1)
+(48,172,1)
+(148,216,1)
+(79,50,1)
+(83,207,1)
+(104,62,1)
+(182,72,1)
+(61,117,1)
+(151,207,1)
+(123,256,1)
+(18,23,1)
+(64,109,1)
+(122,217,1)
+(175,6,1)
+(43,23,1)
+(142,22,1)
+(251,174,1)
+(168,138,1)
+(115,133,1)
+(229,96,1)
+(92,149,1)
+(105,115,1)
+(204,123,1)
+(164,206,1)
+(139,117,1)
+(195,199,1)
+(145,157,1)
+(175,83,1)
+(175,23,1)
+(81,184,1)
+(114,181,1)
+(221,155,1)
+(68,97,1)
+(131,33,1)
+(149,95,1)
+(211,240,1)
+(43,8,1)
+(155,75,1)
+(93,53,1)
+(171,26,1)
+(176,194,1)
+(165,252,1)
+(112,72,1)
+(68,156,1)
+(222,244,1)
+(103,66,1)
+(61,83,1)
+(86,135,1)
+(20,8,1)
+(216,260,1)
+(185,238,1)
+(152,43,1)
+(20,23,1)
+(186,221,1)
+(94,149,1)
+(152,182,1)
+(93,207,1)
+(153,16,1)
+(139,208,1)
+(186,142,1)
+(146,88,1)
+(159,234,1)
+(66,186,1)
+(126,231,1)
+(20,207,1)
+(136,196,1)
+(228,224,1)
+(44,164,1)
+(260,20,1)
+(18,8,1)
+(104,145,1)
+(189,11,1)
+(7,202,1)
+(80,61,1)
+(140,257,1)
+(173,4,1)
+(26,117,1)
+(139,126,1)
+(93,188,1)
+(144,119,1)
+(144,205,1)
+(114,203,1)
+(220,7,1)
+(3,37,1)
+(25,233,1)
+(20,126,1)
+(142,81,1)
+(244,23,1)
+(161,187,1)
+(26,69,1)
+(47,163,1)
+(143,159,1)
+(191,247,1)
+(40,148,1)
+(219,149,1)
+(169,129,1)
+(181,207,1)
+(151,53,1)
+(242,256,1)
+(258,117,1)
+(147,77,1)
+(119,219,1)
+(52,115,1)
+(61,8,1)
+(110,221,1)
+(238,84,1)
+(100,218,1)
+(134,140,1)
+(231,178,1)
+(139,207,1)
+(93,83,1)
+(155,82,1)
+(242,184,1)
+(18,83,1)
+(199,172,1)
+(182,55,1)
+(213,12,1)
+(127,207,1)
+(40,116,1)
+(41,242,1)
+(57,173,1)
+(139,83,1)
+(68,207,1)
+(150,109,1)
+(258,121,1)
+(61,53,1)
+(11,169,1)
+(61,42,1)
+(83,114,1)
+(75,10,1)
+(247,64,1)
+(144,149,1)
+(139,8,1)
+(253,165,1)
+(139,53,1)
+(22,13,1)
+(193,248,1)
+(98,179,1)
+(208,227,1)
+(38,110,1)
+(8,207,1)
+(193,149,1)
+(2,237,1)
+(68,181,1)
+(230,120,1)
+(105,176,1)
+(96,48,2)
+(208,167,2)
+(251,258,2)
+(132,207,2)
+(68,207,2)
+(165,199,2)
+(151,207,2)
+(74,183,2)
+(66,221,2)
+(24,110,2)
+(149,95,2)
+(26,121,2)
+(92,72,2)
+(105,138,2)
+(189,183,2)
+(139,126,2)
+(79,44,2)
+(132,48,2)
+(75,172,2)
+(168,240,2)
+(115,40,2)
+(164,184,2)
+(42,220,2)
+(144,119,2)
+(240,94,2)
+(252,199,2)
+(85,221,2)
+(43,92,2)
+(20,167,2)
+(110,221,2)
+(219,72,2)
+(80,220,2)
+(8,4,2)
+(105,40,2)
+(40,177,2)
+(41,105,2)
+(96,132,2)
+(8,151,2)
+(203,104,2)
+(139,8,2)
+(184,110,2)
+(1,11,2)
+(183,221,2)
+(123,221,2)
+(202,221,2)
+(242,142,2)
+(6,11,2)
+(234,44,2)
+(21,183,2)
+(260,20,2)
+(105,115,2)
+(0,240,2)
+(66,142,2)
+(20,53,2)
+(256,110,2)
+(48,172,2)
+(18,8,2)
+(61,23,2)
+(37,167,2)
+(126,207,2)
+(94,149,2)
+(68,104,2)
+(248,240,2)
+(12,139,2)
+(230,221,2)
+(222,40,2)
+(43,207,2)
+(33,155,2)
+(258,199,2)
+(139,83,2)
+(114,156,2)
+(196,183,2)
+(200,183,2)
+(76,220,2)
+(242,184,2)
+(90,167,2)
+(142,22,2)
+(96,166,2)
+(7,40,2)
+(64,109,2)
+(43,23,2)
+(193,240,2)
+(119,167,2)
+(95,221,2)
+(220,167,2)
+(214,82,2)
+(92,260,2)
+(23,104,2)
+(185,101,2)
+(86,229,2)
+(175,83,2)
+(107,142,2)
+(114,14,2)
+(73,183,2)
+(43,8,2)
+(147,258,2)
+(118,207,2)
+(62,117,2)
+(47,207,2)
+(250,104,2)
+(199,172,2)
+(53,144,2)
+(229,96,2)
+(68,181,2)
+(25,4,2)
+(136,183,2)
+(76,61,2)
+(202,142,2)
+(41,242,2)
+(13,127,2)
+(238,101,2)
+(191,109,2)
+(23,68,2)
+(127,207,2)
+(220,23,2)
+(22,234,2)
+(223,40,2)
+(232,142,2)
+(101,142,2)
+(132,51,2)
+(104,142,2)
+(53,207,2)
+(152,43,2)
+(101,76,2)
+(6,157,2)
+(219,149,2)
+(193,149,2)
+(47,14,2)
+(163,110,2)
+(112,40,2)
+(144,149,2)
+(108,167,2)
+(254,110,2)
+(183,107,2)
+(220,40,2)
+(49,40,2)
+(177,40,2)
+(156,183,2)
+(75,82,2)
+(220,53,2)
+(253,199,2)
+(18,23,2)
+(144,72,2)
+(41,86,2)
+(141,48,2)
+(79,234,2)
+(104,221,2)
+(20,23,2)
+(107,11,2)
+(90,221,2)
+(175,53,2)
+(216,260,2)
+(18,53,2)
+(7,142,2)
+(6,167,2)
+(219,167,2)
+(92,149,2)
+(101,220,2)
+(43,53,2)
+(167,32,2)
+(72,101,2)
+(198,167,2)
+(229,199,2)
+(218,109,2)
+(148,260,2)
+(220,8,2)
+(142,221,2)
+(138,240,2)
+(20,8,2)
+(188,240,2)
+(166,48,2)
+(68,156,2)
+(156,207,2)
+(232,40,2)
+(182,72,2)
+(121,252,2)
+(97,207,2)
+(222,221,2)
+(103,221,2)
+(98,183,2)
+(50,234,2)
+(202,167,2)
+(62,140,2)
+(189,11,2)
+(120,183,2)
+(94,119,2)
+(93,8,2)
+(95,40,2)
+(118,110,2)
+(182,92,2)
+(93,126,2)
+(62,142,2)
+(255,167,2)
+(149,40,2)
+(61,117,2)
+(151,14,2)
+(244,142,2)
+(176,40,2)
+(232,221,2)
+(61,8,2)
+(103,142,2)
+(61,207,2)
+(11,169,2)
+(229,48,2)
+(115,11,2)
+(144,167,2)
+(10,82,2)
+(184,118,2)
+(22,81,2)
+(7,221,2)
+(61,83,2)
+(63,40,2)
+(93,83,2)
+(51,48,2)
+(181,40,2)
+(256,207,2)
+(101,167,2)
+(139,167,2)
+(43,126,2)
+(41,18,2)
+(114,97,2)
+(135,229,2)
+(93,193,2)
+(177,181,2)
+(136,11,2)
+(12,167,2)
+(133,40,2)
+(18,207,2)
+(179,183,2)
+(220,221,2)
+(124,221,2)
+(154,183,2)
+(197,48,2)
+(99,234,2)
+(7,167,2)
+(101,40,2)
+(247,109,2)
+(156,136,2)
+(206,221,2)
+(221,109,2)
+(127,117,2)
+(20,221,2)
+(217,229,2)
+(83,104,2)
+(60,167,2)
+(93,23,2)
+(18,126,2)
+(179,97,2)
+(244,221,2)
+(13,234,2)
+(145,40,2)
+(122,229,2)
+(93,207,2)
+(44,164,2)
+(187,199,2)
+(109,199,2)
+(109,251,2)
+(150,109,2)
+(139,53,2)
+(175,167,2)
+(235,81,2)
+(20,62,2)
+(26,117,2)
+(184,207,2)
+(68,97,2)
+(82,109,2)
+(81,207,2)
+(174,117,2)
+(0,93,2)
+(220,207,2)
+(236,155,2)
+(127,184,2)
+(230,142,2)
+(47,110,2)
+(95,142,2)
+(90,40,2)
+(204,221,2)
+(116,183,2)
+(193,72,2)
+(58,104,2)
+(85,142,2)
+(183,142,2)
+(71,40,2)
+(126,101,2)
+(222,142,2)
+(41,191,2)
+(260,167,2)
+(93,53,2)
+(260,142,2)
+(224,92,2)
+(167,260,2)
+(5,260,2)
+(181,207,2)
+(212,183,2)
+(138,11,2)
+(26,140,2)
+(53,167,2)
+(244,40,2)
+(43,117,2)
+(242,207,2)
+(182,149,2)
+(219,119,2)
+(178,101,2)
+(175,23,2)
+(95,83,2)
+(9,167,2)
+(175,126,2)
+(130,110,2)
+(164,256,2)
+(127,234,2)
+(186,142,2)
+(20,40,2)
+(40,116,2)
+(137,4,2)
+(84,101,2)
+(59,142,2)
+(101,221,2)
+(260,40,2)
+(258,140,2)
+(3,167,2)
+(139,117,2)
+(139,207,2)
+(94,72,2)
+(100,109,2)
+(97,183,2)
+(161,199,2)
+(228,92,2)
+(174,258,2)
+(164,207,2)
+(112,221,2)
+(143,234,2)
+(183,117,2)
+(164,221,2)
+(72,1,2)
+(233,4,2)
+(13,79,2)
+(231,101,2)
+(194,40,2)
+(227,167,2)
+(175,8,2)
+(20,83,2)
+(139,23,2)
+(77,258,2)
+(152,92,2)
+(175,6,2)
+(202,40,2)
+(6,0,2)
+(93,240,2)
+(114,181,2)
+(48,199,2)
+(242,256,2)
+(113,240,2)
+(20,207,2)
+(114,104,2)
+(128,183,2)
+(258,121,2)
+(173,167,2)
+(195,199,2)
+(40,179,2)
+(142,81,2)
+(125,183,2)
+(127,256,2)
+(95,23,2)
+(104,40,2)
+(1,101,2)
+(60,11,2)
+(18,83,2)
+(83,207,2)
+(61,220,2)
+(95,11,2)
+(146,104,2)
+(151,53,2)
+(119,219,2)
+(52,40,2)
+(32,92,2)
+(149,142,2)
+(186,221,2)
+(164,11,2)
+(57,167,2)
+(162,167,2)
+(240,175,2)
+(256,47,2)
+(62,221,2)
+(260,221,2)
+(131,155,2)
+(88,104,2)
+(32,260,2)
+(152,182,2)
+(81,184,2)
+(40,260,2)
+(23,207,2)
+(116,156,2)
+(157,40,2)
+(19,167,2)
+(43,83,2)
+(81,221,2)
+(159,234,2)
+(16,252,2)
+(55,92,2)
+(86,207,2)
+(155,75,2)
+(112,142,2)
+(8,207,2)
+(38,110,2)
+(90,142,2)
+(95,207,2)
+(51,14,2)
+(251,174,2)
+(69,221,2)
+(237,48,2)
+(240,167,2)
+(83,114,2)
+(211,240,2)
+(239,167,2)
+(81,256,2)
+(32,152,2)
+(205,167,2)
+(6,120,2)
+(251,199,2)
+(26,221,2)
+(94,167,2)
+(220,83,2)
+(61,53,2)
+(18,167,2)
+(234,81,2)
+(107,221,2)
+(92,119,2)
+(182,119,2)
+(112,167,2)
+(20,126,2)
+(54,229,2)
+(171,221,2)
+(81,26,2)
+(20,142,2)
+(2,48,2)
+(62,121,2)
+(175,207,2)
+(153,252,2)
+(151,4,2)
+(220,142,2)
+(105,189,2)
+(213,167,2)
+(44,221,2)
+(155,241,2)
+(22,13,2)
+(41,122,2)
+(39,167,2)
+(114,207,2)
+(158,220,2)
+(258,117,2)
+(155,109,2)
+(193,119,2)
+(149,221,2)
+(192,92,2)
+(4,167,2)
+(29,48,2)
+-----------------------------------
+(0,mm->cached_hole_size = vma->vm_start - addr)
+(1,find_vma(mm, VA_EXCLUDE_END)
+(2,1)
+(3,mm)
+(4,do_color_align)
+(5,vma)
+(6,mm->cached_hole_size)
+(7,VA_EXCLUDE_START)
+(8,addr = COLOUR_ALIGN(addr, pgoff)
+(9,vma)
+(10,MAP_SHARED)
+(11,*mm = current->mm)
+(12,mm->free_area_cache = addr + len)
+(13,addr + len <= vma->vm_start)
+(14,unsigned long pgoff)
+(15,full_search:)
+(16,task_size)
+(17,)
+(18,return addr;)
+(19,addr)
+(20,task_size < addr)
+(21,addr)
+(22,!vma || addr + len <= vma->vm_start)
+(23,addr = PAGE_ALIGN(addr)
+(24,addr)
+(25,pgoff)
+(26,task_size - len)
+(27,task_size)
+(28,if (addr < VA_EXCLUDE_START &&\n\\n\\t\\t    (addr + len)
+(29,pgoff)
+(30,)
+(31,if (unlikely(task_size < addr)
+(32,!vma || addr + len <= vma->vm_start)
+(33,do_color_align)
+(34,do_color_align)
+(35,)
+(36,if ((flags & MAP_SHARED)
+(37,addr)
+(38,addr)
+(39,free_area_cache)
+(40,start_addr != TASK_UNMAPPED_BASE)
+(41,RET)
+(42,len)
+(43,addr + len)
+(44,vma = find_vma(mm, addr)
+(45,if (start_addr != TASK_UNMAPPED_BASE)
+(46,mm)
+(47,COLOUR_ALIGN(addr, pgoff)
+(48,flags & MAP_SHARED)
+(49,addr)
+(50,vm_start)
+(51,pgoff << PAGE_SHIFT)
+(52,0)
+(53,addr = vma->vm_end)
+(54,EINVAL)
+(55,vm_start)
+(56,if (do_color_align)
+(57,vma)
+(58,addr)
+(59,addr)
+(60,mm->free_area_cache)
+(61,addr + len)
+(62,task_size -= len)
+(63,mm)
+(64,ENOMEM)
+(65,)
+(66,mm)
+(67,if (do_color_align)
+(68,PAGE_ALIGN(addr)
+(69,len)
+(70,if (task_size - len >= addr &&\n\\n\\t\\t    (!vma || addr + len <= vma->vm_start)
+(71,start_addr)
+(72,vma = find_vma(mm, VA_EXCLUDE_END)
+(73,TASK_UNMAPPED_BASE)
+(74,start_addr)
+(75,flags & MAP_SHARED)
+(76,(addr + len)
+(77,len)
+(78,if (flags & MAP_FIXED)
+(79,vma->vm_start)
+(80,VA_EXCLUDE_START)
+(81,task_size - len >= addr)
+(82,filp)
+(83,addr = COLOUR_ALIGN(addr, pgoff)
+(84,vma)
+(85,len)
+(86,return addr;)
+(87,)
+(88,addr)
+(89,if (do_color_align)
+(90,addr)
+(91,MAP_FIXED)
+(92,!vma)
+(93,vma->vm_start - addr)
+(94,vma->vm_start)
+(95,find_vma(mm, addr)
+(96,(addr - (pgoff << PAGE_SHIFT)
+(97,addr = TASK_UNMAPPED_BASE)
+(98,mm)
+(99,vma)
+(100,do_color_align = 0)
+(101,addr < VA_EXCLUDE_START &&\n\\n\\t\\t    (addr + len)
+(102,current)
+(103,cached_hole_size)
+(104,do_color_align)
+(105,return -ENOMEM;)
+(106,mm)
+(107,mm->cached_hole_size)
+(108,cached_hole_size)
+(109,unlikely(len > task_size || len >= VA_EXCLUDE_START)
+(110,do_color_align)
+(111,)
+(112,task_size)
+(113,cached_hole_size)
+(114,COLOUR_ALIGN(addr, pgoff)
+(115,mm->cached_hole_size)
+(116,start_addr = addr = mm->free_area_cache)
+(117,unsigned long len)
+(118,PAGE_ALIGN(addr)
+(119,vma = vma->vm_next)
+(120,mm->cached_hole_size = 0)
+(121,task_size = STACK_TOP32)
+(122,return -EINVAL;)
+(123,vma)
+(124,task_size)
+(125,cached_hole_size)
+(126,addr = VA_EXCLUDE_END)
+(127,addr + len)
+(128,mm)
+(129,mm)
+(130,addr)
+(131,1)
+(132,addr - (pgoff << PAGE_SHIFT)
+(133,cached_hole_size)
+(134,flags)
+(135,addr)
+(136,mm->free_area_cache)
+(137,addr)
+(138,mm->cached_hole_size)
+(139,addr + len)
+(140,task_size = TASK_SIZE)
+(141,addr)
+(142,task_size - len >= addr &&\n\\n\\t\\t    (!vma || addr + len <= vma->vm_start)
+(143,len)
+(144,vma->vm_end)
+(145,goto full_search;)
+(146,addr)
+(147,VA_EXCLUDE_START)
+(148,TASK_UNMAPPED_BASE)
+(149,vma = find_vma(mm, addr)
+(150,do_color_align)
+(151,COLOUR_ALIGN(addr, pgoff)
+(152,addr + len <= vma->vm_start)
+(153,STACK_TOP32)
+(154,addr)
+(155,filp || (flags & MAP_SHARED)
+(156,addr = mm->free_area_cache)
+(157,mm->cached_hole_size = 0)
+(158,addr)
+(159,addr)
+(160,task_size)
+(161,MAP_SHARED)
+(162,mm)
+(163,pgoff)
+(164,find_vma(mm, addr)
+(165,len)
+(166,SHMLBA - 1)
+(167,likely(!vma || addr + len <= vma->vm_start)
+(168,vma)
+(169,current->mm)
+(170,)
+(171,addr)
+(172,unsigned long flags)
+(173,vma)
+(174,len >= VA_EXCLUDE_START)
+(175,addr + mm->cached_hole_size)
+(176,-ENOMEM)
+(177,start_addr = addr = TASK_UNMAPPED_BASE)
+(178,addr)
+(179,start_addr = addr = TASK_UNMAPPED_BASE)
+(180,if (addr)
+(181,addr = TASK_UNMAPPED_BASE)
+(182,vma->vm_start)
+(183,len > mm->cached_hole_size)
+(184,addr = PAGE_ALIGN(addr)
+(185,VA_EXCLUDE_END)
+(186,len)
+(187,flags)
+(188,addr)
+(189,mm->cached_hole_size)
+(190,for (vma = find_vma(mm, addr)
+(191,return -ENOMEM;)
+(192,vma)
+(193,vma->vm_start)
+(194,ENOMEM)
+(195,TIF_32BIT)
+(196,free_area_cache)
+(197,PAGE_SHIFT)
+(198,vm_start)
+(199,flags & MAP_FIXED)
+(200,0)
+(201,)
+(202,addr)
+(203,pgoff)
+(204,mm)
+(205,vm_end)
+(206,addr)
+(207,unsigned long addr)
+(208,len)
+(209,)
+(210,vma)
+(211,mm)
+(212,start_addr)
+(213,addr)
+(214,flags)
+(215,if (test_thread_flag(TIF_32BIT)
+(216,start_addr)
+(217,-EINVAL)
+(218,0)
+(219,vma->vm_next)
+(220,addr < VA_EXCLUDE_START)
+(221,addr)
+(222,mm)
+(223,TASK_UNMAPPED_BASE)
+(224,addr)
+(225,)
+(226,if (unlikely(len > task_size || len >= VA_EXCLUDE_START)
+(227,addr)
+(228,len)
+(229,(flags & MAP_SHARED)
+(230,task_size)
+(231,VA_EXCLUDE_END)
+(232,addr)
+(233,addr)
+(234,!vma)
+(235,vma)
+(236,do_color_align = 1)
+(237,SHMLBA)
+(238,mm)
+(239,vma)
+(240,addr + mm->cached_hole_size < vma->vm_start)
+(241,struct file *filp)
+(242,return addr;)
+(243,start_addr)
+(244,vma)
+(245,if (len > mm->cached_hole_size)
+(246,if (filp || (flags & MAP_SHARED)
+(247,-ENOMEM)
+(248,vm_start)
+(249,if (addr + mm->cached_hole_size < vma->vm_start)
+(250,addr)
+(251,len > task_size || len >= VA_EXCLUDE_START)
+(252,test_thread_flag(TIF_32BIT)
+(253,task_size)
+(254,addr)
+(255,vm_next)
+(256,addr = COLOUR_ALIGN(addr, pgoff)
+(257,TASK_SIZE)
+(258,len > task_size)
+(259,if (likely(!vma || addr + len <= vma->vm_start)
+(260,unlikely(task_size < addr)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

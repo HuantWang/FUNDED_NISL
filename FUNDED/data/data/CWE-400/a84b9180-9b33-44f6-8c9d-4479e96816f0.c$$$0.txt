@@ -1,0 +1,935 @@
+-----label-----
+0
+-----code-----
+void arc_init_IRQ(void)
+{
+	unsigned int tmp, irq_prio, i;
+	struct bcr_irq_arcv2 irq_bcr;
+
+	struct aux_irq_ctrl {
+#ifdef CONFIG_CPU_BIG_ENDIAN
+		unsigned int res3:18, save_idx_regs:1, res2:1,
+			     save_u_to_u:1, save_lp_regs:1, save_blink:1,
+			     res:4, save_nr_gpr_pairs:5;
+#else
+		unsigned int save_nr_gpr_pairs:5, res:4,
+			     save_blink:1, save_lp_regs:1, save_u_to_u:1,
+			     res2:1, save_idx_regs:1, res3:18;
+#endif
+	} ictrl;
+
+	*(unsigned int *)&ictrl = 0;
+
+#ifndef CONFIG_ARC_IRQ_NO_AUTOSAVE
+	ictrl.save_nr_gpr_pairs = 6;	/* r0 to r11 (r12 saved manually) */
+	ictrl.save_blink = 1;
+	ictrl.save_lp_regs = 1;		/* LP_COUNT, LP_START, LP_END */
+	ictrl.save_u_to_u = 0;		/* user ctxt saved on kernel stack */
+	ictrl.save_idx_regs = 1;	/* JLI, LDI, EI */
+#endif
+
+	WRITE_AUX(AUX_IRQ_CTRL, ictrl);
+
+	/*
+	 * ARCv2 core intc provides multiple interrupt priorities (upto 16).
+	 * Typical builds though have only two levels (0-high, 1-low)
+	 * Linux by default uses lower prio 1 for most irqs, reserving 0 for
+	 * NMI style interrupts in future (say perf)
+	 */
+
+	READ_BCR(ARC_REG_IRQ_BCR, irq_bcr);
+
+	irq_prio = irq_bcr.prio;	/* Encoded as N-1 for N levels */
+	pr_info("archs-intc\t: %d priority levels (default %d)%s\n",
+		irq_prio + 1, ARCV2_IRQ_DEF_PRIO,
+		irq_bcr.firq ? " FIRQ (not used)":"");
+
+	/*
+	 * Set a default priority for all available interrupts to prevent
+	 * switching of register banks if Fast IRQ and multiple register banks
+	 * are supported by CPU.
+	 * Also disable private-per-core IRQ lines so faulty external HW won't
+	 * trigger interrupt that kernel is not ready to handle.
+	 */
+	for (i = NR_EXCEPTIONS; i < irq_bcr.irqs + NR_EXCEPTIONS; i++) {
+		write_aux_reg(AUX_IRQ_SELECT, i);
+		write_aux_reg(AUX_IRQ_PRIORITY, ARCV2_IRQ_DEF_PRIO);
+
+		/*
+		 * Only mask cpu private IRQs here.
+		 * "common" interrupts are masked at IDU, otherwise it would
+		 * need to be unmasked at each cpu, with IPIs
+		 */
+		if (i < FIRST_EXT_IRQ)
+			write_aux_reg(AUX_IRQ_ENABLE, 0);
+	}
+
+	/* setup status32, don't enable intr yet as kernel doesn't want */
+	tmp = read_aux_reg(ARC_REG_STATUS32);
+	tmp |= STATUS_AD_MASK | (ARCV2_IRQ_DEF_PRIO << 1);
+	tmp &= ~STATUS_IE_MASK;
+	asm volatile("kflag %0	\n"::"r"(tmp));
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+5,6
+5,7
+7,8
+9,10
+9,11
+9,12
+9,13
+9,14
+9,15
+9,16
+9,17
+9,18
+9,19
+9,20
+9,21
+9,22
+9,23
+9,24
+9,25
+9,26
+9,27
+10,11
+11,12
+11,13
+11,14
+11,15
+13,14
+15,16
+17,18
+19,20
+20,21
+20,22
+21,22
+23,24
+25,26
+26,27
+26,28
+27,28
+27,29
+29,30
+29,31
+29,32
+29,33
+29,34
+29,35
+29,36
+29,37
+29,38
+31,32
+31,33
+34,35
+34,36
+37,38
+37,39
+40,41
+40,42
+43,44
+43,45
+46,47
+46,48
+49,50
+49,51
+52,53
+52,54
+55,56
+58,59
+59,60
+59,61
+60,61
+61,62
+61,63
+62,63
+62,64
+64,65
+66,67
+67,68
+70,71
+71,72
+71,73
+72,73
+72,74
+73,74
+77,78
+78,79
+78,80
+79,80
+79,81
+80,81
+84,85
+85,86
+85,87
+86,87
+86,88
+87,88
+91,92
+92,93
+92,94
+93,94
+93,95
+94,95
+98,99
+99,100
+99,101
+100,101
+100,102
+101,102
+105,106
+106,107
+106,108
+106,109
+107,108
+109,110
+111,112
+113,114
+114,115
+114,116
+114,117
+115,116
+117,118
+119,120
+121,122
+122,123
+122,124
+123,124
+125,126
+125,127
+126,127
+129,130
+130,131
+130,132
+130,133
+130,134
+130,135
+131,132
+134,135
+134,136
+135,136
+138,139
+140,141
+140,142
+140,143
+141,142
+141,143
+142,143
+147,148
+147,149
+147,150
+147,151
+148,149
+149,150
+149,151
+150,151
+152,153
+154,155
+154,156
+155,156
+157,158
+157,159
+158,159
+158,160
+159,160
+162,163
+164,165
+165,166
+167,168
+167,169
+167,170
+168,169
+169,170
+169,171
+169,172
+170,171
+172,173
+174,175
+176,177
+177,178
+177,179
+177,180
+178,179
+180,181
+182,183
+184,185
+184,186
+185,186
+185,187
+186,187
+188,189
+190,191
+191,192
+191,193
+191,194
+192,193
+194,195
+197,198
+198,199
+198,200
+199,200
+201,202
+201,203
+202,203
+204,205
+206,207
+207,208
+207,209
+208,209
+210,211
+210,212
+211,212
+213,214
+214,215
+214,216
+215,216
+218,219
+219,220
+219,221
+220,221
+222,223
+223,224
+225,226
+-----nextToken-----
+2,4,6,8,12,14,16,18,22,24,28,30,32,33,35,36,38,39,41,42,44,45,47,48,50,51,53,54,56,57,63,65,68,69,74,75,76,81,82,83,88,89,90,95,96,97,102,103,104,108,110,112,116,118,120,124,127,128,132,133,136,137,139,143,144,145,146,151,153,156,160,161,163,166,171,173,175,179,181,183,187,189,193,195,196,200,203,205,209,212,216,217,221,224,226
+-----computeFrom-----
+59,60
+59,61
+71,72
+71,73
+78,79
+78,80
+85,86
+85,87
+92,93
+92,94
+99,100
+99,101
+122,123
+122,124
+134,135
+134,136
+149,150
+149,151
+154,155
+154,156
+157,158
+157,159
+185,186
+185,187
+198,199
+198,200
+207,208
+207,209
+210,211
+210,212
+214,215
+214,216
+219,220
+219,221
+-----guardedBy-----
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;Declarator;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;CompositeTypeSpecifier;Name;SimpleDeclaration;SimpleDeclSpecifier;FieldDeclarator;Name;LiteralExpression;FieldDeclarator;Name;LiteralExpression;FieldDeclarator;Name;LiteralExpression;FieldDeclarator;Name;LiteralExpression;FieldDeclarator;Name;LiteralExpression;FieldDeclarator;Name;LiteralExpression;FieldDeclarator;Name;LiteralExpression;FieldDeclarator;Name;LiteralExpression;Declarator;Name;ImplicitName;ExpressionStatement;BinaryExpression;UnaryExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;UnaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;ConditionalExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;LiteralExpression;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;DeclarationStatement;ASMDeclaration;
+-----ast_node-----
+void arc_init_IRQ(void){	unsigned int tmp, irq_prio, i;	struct bcr_irq_arcv2 irq_bcr;	struct aux_irq_ctrl {#ifdef CONFIG_CPU_BIG_ENDIAN		unsigned int res3:18, save_idx_regs:1, res2:1,			     save_u_to_u:1, save_lp_regs:1, save_blink:1,			     res:4, save_nr_gpr_pairs:5;#else		unsigned int save_nr_gpr_pairs:5, res:4,			     save_blink:1, save_lp_regs:1, save_u_to_u:1,			     res2:1, save_idx_regs:1, res3:18;#endif	} ictrl;	*(unsigned int *)&ictrl = 0;#ifndef CONFIG_ARC_IRQ_NO_AUTOSAVE	ictrl.save_nr_gpr_pairs = 6;	/* r0 to r11 (r12 saved manually) */	ictrl.save_blink = 1;	ictrl.save_lp_regs = 1;		/* LP_COUNT, LP_START, LP_END */	ictrl.save_u_to_u = 0;		/* user ctxt saved on kernel stack */	ictrl.save_idx_regs = 1;	/* JLI, LDI, EI */#endif	WRITE_AUX(AUX_IRQ_CTRL, ictrl);	/*	 * ARCv2 core intc provides multiple interrupt priorities (upto 16).	 * Typical builds though have only two levels (0-high, 1-low)	 * Linux by default uses lower prio 1 for most irqs, reserving 0 for	 * NMI style interrupts in future (say perf)	 */	READ_BCR(ARC_REG_IRQ_BCR, irq_bcr);	irq_prio = irq_bcr.prio;	/* Encoded as N-1 for N levels */	pr_info("archs-intc\t: %d priority levels (default %d)%s\n",		irq_prio + 1, ARCV2_IRQ_DEF_PRIO,		irq_bcr.firq ? " FIRQ (not used)":"");	/*	 * Set a default priority for all available interrupts to prevent	 * switching of register banks if Fast IRQ and multiple register banks	 * are supported by CPU.	 * Also disable private-per-core IRQ lines so faulty external HW won't	 * trigger interrupt that kernel is not ready to handle.	 */	for (i = NR_EXCEPTIONS; i < irq_bcr.irqs + NR_EXCEPTIONS; i++) {		write_aux_reg(AUX_IRQ_SELECT, i);		write_aux_reg(AUX_IRQ_PRIORITY, ARCV2_IRQ_DEF_PRIO);		/*		 * Only mask cpu private IRQs here.		 * "common" interrupts are masked at IDU, otherwise it would		 * need to be unmasked at each cpu, with IPIs		 */		if (i < FIRST_EXT_IRQ)			write_aux_reg(AUX_IRQ_ENABLE, 0);	}	/* setup status32, don't enable intr yet as kernel doesn't want */	tmp = read_aux_reg(ARC_REG_STATUS32);	tmp |= STATUS_AD_MASK | (ARCV2_IRQ_DEF_PRIO << 1);	tmp &= ~STATUS_IE_MASK;	asm volatile("kflag %0	\n"::"r"(tmp));}
+void
+arc_init_IRQ(void)
+arc_init_IRQ
+void
+void
+
+
+{	unsigned int tmp, irq_prio, i;	struct bcr_irq_arcv2 irq_bcr;	struct aux_irq_ctrl {#ifdef CONFIG_CPU_BIG_ENDIAN		unsigned int res3:18, save_idx_regs:1, res2:1,			     save_u_to_u:1, save_lp_regs:1, save_blink:1,			     res:4, save_nr_gpr_pairs:5;#else		unsigned int save_nr_gpr_pairs:5, res:4,			     save_blink:1, save_lp_regs:1, save_u_to_u:1,			     res2:1, save_idx_regs:1, res3:18;#endif	} ictrl;	*(unsigned int *)&ictrl = 0;#ifndef CONFIG_ARC_IRQ_NO_AUTOSAVE	ictrl.save_nr_gpr_pairs = 6;	/* r0 to r11 (r12 saved manually) */	ictrl.save_blink = 1;	ictrl.save_lp_regs = 1;		/* LP_COUNT, LP_START, LP_END */	ictrl.save_u_to_u = 0;		/* user ctxt saved on kernel stack */	ictrl.save_idx_regs = 1;	/* JLI, LDI, EI */#endif	WRITE_AUX(AUX_IRQ_CTRL, ictrl);	/*	 * ARCv2 core intc provides multiple interrupt priorities (upto 16).	 * Typical builds though have only two levels (0-high, 1-low)	 * Linux by default uses lower prio 1 for most irqs, reserving 0 for	 * NMI style interrupts in future (say perf)	 */	READ_BCR(ARC_REG_IRQ_BCR, irq_bcr);	irq_prio = irq_bcr.prio;	/* Encoded as N-1 for N levels */	pr_info("archs-intc\t: %d priority levels (default %d)%s\n",		irq_prio + 1, ARCV2_IRQ_DEF_PRIO,		irq_bcr.firq ? " FIRQ (not used)":"");	/*	 * Set a default priority for all available interrupts to prevent	 * switching of register banks if Fast IRQ and multiple register banks	 * are supported by CPU.	 * Also disable private-per-core IRQ lines so faulty external HW won't	 * trigger interrupt that kernel is not ready to handle.	 */	for (i = NR_EXCEPTIONS; i < irq_bcr.irqs + NR_EXCEPTIONS; i++) {		write_aux_reg(AUX_IRQ_SELECT, i);		write_aux_reg(AUX_IRQ_PRIORITY, ARCV2_IRQ_DEF_PRIO);		/*		 * Only mask cpu private IRQs here.		 * "common" interrupts are masked at IDU, otherwise it would		 * need to be unmasked at each cpu, with IPIs		 */		if (i < FIRST_EXT_IRQ)			write_aux_reg(AUX_IRQ_ENABLE, 0);	}	/* setup status32, don't enable intr yet as kernel doesn't want */	tmp = read_aux_reg(ARC_REG_STATUS32);	tmp |= STATUS_AD_MASK | (ARCV2_IRQ_DEF_PRIO << 1);	tmp &= ~STATUS_IE_MASK;	asm volatile("kflag %0	\n"::"r"(tmp));}
+unsigned int tmp, irq_prio, i;
+unsigned int tmp, irq_prio, i;
+unsigned int
+tmp
+tmp
+irq_prio
+irq_prio
+i
+i
+struct bcr_irq_arcv2 irq_bcr;
+struct bcr_irq_arcv2 irq_bcr;
+struct bcr_irq_arcv2
+bcr_irq_arcv2
+irq_bcr
+irq_bcr
+struct aux_irq_ctrl {#ifdef CONFIG_CPU_BIG_ENDIAN		unsigned int res3:18, save_idx_regs:1, res2:1,			     save_u_to_u:1, save_lp_regs:1, save_blink:1,			     res:4, save_nr_gpr_pairs:5;#else		unsigned int save_nr_gpr_pairs:5, res:4,			     save_blink:1, save_lp_regs:1, save_u_to_u:1,			     res2:1, save_idx_regs:1, res3:18;#endif	} ictrl;
+struct aux_irq_ctrl {#ifdef CONFIG_CPU_BIG_ENDIAN		unsigned int res3:18, save_idx_regs:1, res2:1,			     save_u_to_u:1, save_lp_regs:1, save_blink:1,			     res:4, save_nr_gpr_pairs:5;#else		unsigned int save_nr_gpr_pairs:5, res:4,			     save_blink:1, save_lp_regs:1, save_u_to_u:1,			     res2:1, save_idx_regs:1, res3:18;#endif	} ictrl;
+struct aux_irq_ctrl {#ifdef CONFIG_CPU_BIG_ENDIAN		unsigned int res3:18, save_idx_regs:1, res2:1,			     save_u_to_u:1, save_lp_regs:1, save_blink:1,			     res:4, save_nr_gpr_pairs:5;#else		unsigned int save_nr_gpr_pairs:5, res:4,			     save_blink:1, save_lp_regs:1, save_u_to_u:1,			     res2:1, save_idx_regs:1, res3:18;#endif	}
+aux_irq_ctrl
+unsigned int save_nr_gpr_pairs:5, res:4,			     save_blink:1, save_lp_regs:1, save_u_to_u:1,			     res2:1, save_idx_regs:1, res3:18;
+unsigned int
+save_nr_gpr_pairs:5
+save_nr_gpr_pairs
+5
+res:4
+res
+4
+save_blink:1
+save_blink
+1
+save_lp_regs:1
+save_lp_regs
+1
+save_u_to_u:1
+save_u_to_u
+1
+res2:1
+res2
+1
+save_idx_regs:1
+save_idx_regs
+1
+res3:18
+res3
+18
+ictrl
+ictrl
+ictrl
+*(unsigned int *)&ictrl = 0;
+*(unsigned int *)&ictrl = 0
+*(unsigned int *)&ictrl
+(unsigned int *)&ictrl
+unsigned int *
+unsigned int
+*
+*
+&ictrl
+ictrl
+ictrl
+0
+ictrl.save_nr_gpr_pairs = 6;
+ictrl.save_nr_gpr_pairs = 6
+ictrl.save_nr_gpr_pairs
+ictrl
+ictrl
+save_nr_gpr_pairs
+6
+ictrl.save_blink = 1;
+ictrl.save_blink = 1
+ictrl.save_blink
+ictrl
+ictrl
+save_blink
+1
+ictrl.save_lp_regs = 1;
+ictrl.save_lp_regs = 1
+ictrl.save_lp_regs
+ictrl
+ictrl
+save_lp_regs
+1
+ictrl.save_u_to_u = 0;
+ictrl.save_u_to_u = 0
+ictrl.save_u_to_u
+ictrl
+ictrl
+save_u_to_u
+0
+ictrl.save_idx_regs = 1;
+ictrl.save_idx_regs = 1
+ictrl.save_idx_regs
+ictrl
+ictrl
+save_idx_regs
+1
+WRITE_AUX(AUX_IRQ_CTRL, ictrl);
+WRITE_AUX(AUX_IRQ_CTRL, ictrl)
+WRITE_AUX
+WRITE_AUX
+AUX_IRQ_CTRL
+AUX_IRQ_CTRL
+ictrl
+ictrl
+READ_BCR(ARC_REG_IRQ_BCR, irq_bcr);
+READ_BCR(ARC_REG_IRQ_BCR, irq_bcr)
+READ_BCR
+READ_BCR
+ARC_REG_IRQ_BCR
+ARC_REG_IRQ_BCR
+irq_bcr
+irq_bcr
+irq_prio = irq_bcr.prio;
+irq_prio = irq_bcr.prio
+irq_prio
+irq_prio
+irq_bcr.prio
+irq_bcr
+irq_bcr
+prio
+pr_info("archs-intc\t: %d priority levels (default %d)%s\n",		irq_prio + 1, ARCV2_IRQ_DEF_PRIO,		irq_bcr.firq ? " FIRQ (not used)":"");
+pr_info("archs-intc\t: %d priority levels (default %d)%s\n",		irq_prio + 1, ARCV2_IRQ_DEF_PRIO,		irq_bcr.firq ? " FIRQ (not used)":"")
+pr_info
+pr_info
+"archs-intc\t: %d priority levels (default %d)%s\n"
+irq_prio + 1
+irq_prio
+irq_prio
+1
+ARCV2_IRQ_DEF_PRIO
+ARCV2_IRQ_DEF_PRIO
+irq_bcr.firq ? " FIRQ (not used)":""
+irq_bcr.firq
+irq_bcr
+irq_bcr
+firq
+" FIRQ (not used)"
+""
+for (i = NR_EXCEPTIONS; i < irq_bcr.irqs + NR_EXCEPTIONS; i++) {		write_aux_reg(AUX_IRQ_SELECT, i);		write_aux_reg(AUX_IRQ_PRIORITY, ARCV2_IRQ_DEF_PRIO);		/*		 * Only mask cpu private IRQs here.		 * "common" interrupts are masked at IDU, otherwise it would		 * need to be unmasked at each cpu, with IPIs		 */		if (i < FIRST_EXT_IRQ)			write_aux_reg(AUX_IRQ_ENABLE, 0);	}
+i = NR_EXCEPTIONS;
+i = NR_EXCEPTIONS
+i
+i
+NR_EXCEPTIONS
+NR_EXCEPTIONS
+i < irq_bcr.irqs + NR_EXCEPTIONS
+i
+i
+irq_bcr.irqs + NR_EXCEPTIONS
+irq_bcr.irqs
+irq_bcr
+irq_bcr
+irqs
+NR_EXCEPTIONS
+NR_EXCEPTIONS
+i++
+i
+i
+{		write_aux_reg(AUX_IRQ_SELECT, i);		write_aux_reg(AUX_IRQ_PRIORITY, ARCV2_IRQ_DEF_PRIO);		/*		 * Only mask cpu private IRQs here.		 * "common" interrupts are masked at IDU, otherwise it would		 * need to be unmasked at each cpu, with IPIs		 */		if (i < FIRST_EXT_IRQ)			write_aux_reg(AUX_IRQ_ENABLE, 0);	}
+write_aux_reg(AUX_IRQ_SELECT, i);
+write_aux_reg(AUX_IRQ_SELECT, i)
+write_aux_reg
+write_aux_reg
+AUX_IRQ_SELECT
+AUX_IRQ_SELECT
+i
+i
+write_aux_reg(AUX_IRQ_PRIORITY, ARCV2_IRQ_DEF_PRIO);
+write_aux_reg(AUX_IRQ_PRIORITY, ARCV2_IRQ_DEF_PRIO)
+write_aux_reg
+write_aux_reg
+AUX_IRQ_PRIORITY
+AUX_IRQ_PRIORITY
+ARCV2_IRQ_DEF_PRIO
+ARCV2_IRQ_DEF_PRIO
+if (i < FIRST_EXT_IRQ)			write_aux_reg(AUX_IRQ_ENABLE, 0);
+i < FIRST_EXT_IRQ
+i
+i
+FIRST_EXT_IRQ
+FIRST_EXT_IRQ
+write_aux_reg(AUX_IRQ_ENABLE, 0);
+write_aux_reg(AUX_IRQ_ENABLE, 0)
+write_aux_reg
+write_aux_reg
+AUX_IRQ_ENABLE
+AUX_IRQ_ENABLE
+0
+tmp = read_aux_reg(ARC_REG_STATUS32);
+tmp = read_aux_reg(ARC_REG_STATUS32)
+tmp
+tmp
+read_aux_reg(ARC_REG_STATUS32)
+read_aux_reg
+read_aux_reg
+ARC_REG_STATUS32
+ARC_REG_STATUS32
+tmp |= STATUS_AD_MASK | (ARCV2_IRQ_DEF_PRIO << 1);
+tmp |= STATUS_AD_MASK | (ARCV2_IRQ_DEF_PRIO << 1)
+tmp
+tmp
+STATUS_AD_MASK | (ARCV2_IRQ_DEF_PRIO << 1)
+STATUS_AD_MASK
+STATUS_AD_MASK
+(ARCV2_IRQ_DEF_PRIO << 1)
+ARCV2_IRQ_DEF_PRIO << 1
+ARCV2_IRQ_DEF_PRIO
+ARCV2_IRQ_DEF_PRIO
+1
+tmp &= ~STATUS_IE_MASK;
+tmp &= ~STATUS_IE_MASK
+tmp
+tmp
+~STATUS_IE_MASK
+STATUS_IE_MASK
+STATUS_IE_MASK
+asm volatile("kflag %0	\n"::"r"(tmp));
+asm volatile("kflag %0	\n"::"r"(tmp));
+-----joern-----
+(15,50,0)
+(57,50,0)
+(62,69,0)
+(94,56,0)
+(98,28,0)
+(35,77,0)
+(32,65,0)
+(24,75,0)
+(56,69,0)
+(79,35,0)
+(102,40,0)
+(54,22,0)
+(26,1,0)
+(64,95,0)
+(16,25,0)
+(52,50,0)
+(87,69,0)
+(27,87,0)
+(48,12,0)
+(50,1,0)
+(17,90,0)
+(58,68,0)
+(99,2,0)
+(36,11,0)
+(34,90,0)
+(3,96,0)
+(28,69,0)
+(5,69,0)
+(38,48,0)
+(101,81,0)
+(73,33,0)
+(22,63,0)
+(44,60,0)
+(55,95,0)
+(2,28,0)
+(86,15,0)
+(88,15,0)
+(25,65,0)
+(60,77,0)
+(66,53,0)
+(45,69,0)
+(30,3,0)
+(1,69,0)
+(97,36,0)
+(28,64,0)
+(29,79,0)
+(95,64,0)
+(48,77,0)
+(92,81,0)
+(85,36,0)
+(28,11,0)
+(51,89,0)
+(47,25,0)
+(61,69,0)
+(10,64,0)
+(84,77,0)
+(63,22,0)
+(67,69,0)
+(23,69,0)
+(42,62,0)
+(41,40,0)
+(79,29,0)
+(74,21,0)
+(65,69,0)
+(81,1,0)
+(21,69,0)
+(11,36,0)
+(1,81,0)
+(18,29,0)
+(63,102,0)
+(40,69,0)
+(14,12,0)
+(78,3,0)
+(13,35,0)
+(37,62,0)
+(19,93,0)
+(75,77,0)
+(35,79,0)
+(59,53,0)
+(20,79,0)
+(93,21,0)
+(81,21,0)
+(1,50,0)
+(82,2,0)
+(9,75,0)
+(80,29,0)
+(64,69,0)
+(100,69,0)
+(90,56,0)
+(91,96,0)
+(4,68,0)
+(0,5,0)
+(70,67,0)
+(33,5,0)
+(102,63,0)
+(21,93,0)
+(83,48,0)
+(7,77,0)
+(50,15,0)
+(72,93,0)
+(39,33,0)
+(89,87,0)
+(53,12,0)
+(8,67,0)
+(49,69,0)
+(43,1,0)
+(6,69,0)
+(2,69,0)
+(76,11,0)
+(63,46,0)
+(11,28,0)
+(96,69,0)
+(46,63,0)
+(31,89,0)
+(79,20,1)
+(48,77,1)
+(42,67,1)
+(25,47,1)
+(29,80,1)
+(36,85,1)
+(97,76,1)
+(44,75,1)
+(98,64,1)
+(50,15,1)
+(93,72,1)
+(63,22,1)
+(86,26,1)
+(74,62,1)
+(31,51,1)
+(39,73,1)
+(59,66,1)
+(13,77,1)
+(18,13,1)
+(30,65,1)
+(27,89,1)
+(8,5,1)
+(70,8,1)
+(19,74,1)
+(44,68,1)
+(4,58,1)
+(63,46,1)
+(95,55,1)
+(94,90,1)
+(92,43,1)
+(11,36,1)
+(13,60,1)
+(43,21,1)
+(28,64,1)
+(89,31,1)
+(79,29,1)
+(73,96,1)
+(75,77,1)
+(33,39,1)
+(58,75,1)
+(2,99,1)
+(47,16,1)
+(37,42,1)
+(101,92,1)
+(53,59,1)
+(88,86,1)
+(60,44,1)
+(21,93,1)
+(28,11,1)
+(16,56,1)
+(65,32,1)
+(34,87,1)
+(91,3,1)
+(57,15,1)
+(75,9,1)
+(67,70,1)
+(99,82,1)
+(78,30,1)
+(2,28,1)
+(40,41,1)
+(77,7,1)
+(84,1,1)
+(82,28,1)
+(32,25,1)
+(83,38,1)
+(35,77,1)
+(0,33,1)
+(85,97,1)
+(17,34,1)
+(1,50,1)
+(80,18,1)
+(60,77,1)
+(50,57,1)
+(48,83,1)
+(68,4,1)
+(15,88,1)
+(20,29,1)
+(71,2,1)
+(3,78,1)
+(41,102,1)
+(96,91,1)
+(90,17,1)
+(56,94,1)
+(38,35,1)
+(24,53,1)
+(1,81,1)
+(22,54,1)
+(64,95,1)
+(102,63,1)
+(5,0,1)
+(87,27,1)
+(35,79,1)
+(26,81,1)
+(76,98,1)
+(81,21,1)
+(66,48,1)
+(50,52,1)
+(7,84,1)
+(62,37,1)
+(81,101,1)
+(9,24,1)
+(51,40,1)
+(72,19,1)
+(55,10,1)
+(10,35,1)
+(52,15,1)
+(35,79,2)
+(60,77,2)
+(28,64,2)
+(48,35,2)
+(52,15,2)
+(28,11,2)
+(79,35,2)
+(60,35,2)
+(20,35,2)
+(4,75,2)
+(38,35,2)
+(58,75,2)
+(68,75,2)
+(29,35,2)
+(44,35,2)
+(64,95,2)
+(102,63,2)
+(1,50,2)
+(24,35,2)
+(35,77,2)
+(21,93,2)
+(11,36,2)
+(2,28,2)
+(79,29,2)
+(75,77,2)
+(81,21,2)
+(13,35,2)
+(59,35,2)
+(48,77,2)
+(80,35,2)
+(50,15,2)
+(75,35,2)
+(66,35,2)
+(18,35,2)
+(63,46,2)
+(35,35,2)
+(53,35,2)
+(63,22,2)
+(57,15,2)
+(9,35,2)
+(1,81,2)
+(83,35,2)
+-----------------------------------
+(0,1)
+(1,pr_info("archs-intc\\t: %d priority levels (default %d)
+(2,tmp &= ~STATUS_IE_MASK)
+(3,ictrl.save_u_to_u)
+(4,0)
+(5,ictrl.save_idx_regs = 1)
+(6,irq_prio)
+(7,NR_EXCEPTIONS)
+(8,AUX_IRQ_CTRL)
+(9,FIRST_EXT_IRQ)
+(10,tmp)
+(11,STATUS_AD_MASK | (ARCV2_IRQ_DEF_PRIO << 1)
+(12,)
+(13,i)
+(14,if (i < FIRST_EXT_IRQ)
+(15,irq_bcr.firq)
+(16,ictrl)
+(17,save_blink)
+(18,irq_bcr)
+(19,irq_bcr)
+(20,NR_EXCEPTIONS)
+(21,irq_prio = irq_bcr.prio)
+(22,&ictrl)
+(23,irq_bcr)
+(24,i)
+(25,ictrl.save_lp_regs)
+(26,ARCV2_IRQ_DEF_PRIO)
+(27,6)
+(28,tmp |= STATUS_AD_MASK | (ARCV2_IRQ_DEF_PRIO << 1)
+(29,irq_bcr.irqs)
+(30,ictrl)
+(31,save_nr_gpr_pairs)
+(32,1)
+(33,ictrl.save_idx_regs)
+(34,ictrl)
+(35,i < irq_bcr.irqs + NR_EXCEPTIONS)
+(36,ARCV2_IRQ_DEF_PRIO << 1)
+(37,irq_bcr)
+(38,AUX_IRQ_SELECT)
+(39,save_idx_regs)
+(40,*(unsigned int *)
+(41,0)
+(42,ARC_REG_IRQ_BCR)
+(43,"archs-intc\\t: %d priority levels (default %d)
+(44,i)
+(45,i)
+(46,unsigned int *)
+(47,save_lp_regs)
+(48,write_aux_reg(AUX_IRQ_SELECT, i)
+(49,for (i = NR_EXCEPTIONS; i < irq_bcr.irqs + NR_EXCEPTIONS; i++)
+(50,irq_bcr.firq ? " FIRQ (not used)
+(51,ictrl)
+(52," FIRQ (not used)
+(53,write_aux_reg(AUX_IRQ_PRIORITY, ARCV2_IRQ_DEF_PRIO)
+(54,ictrl)
+(55,ARC_REG_STATUS32)
+(56,ictrl.save_blink = 1)
+(57,"")
+(58,AUX_IRQ_ENABLE)
+(59,ARCV2_IRQ_DEF_PRIO)
+(60,i++)
+(61,)
+(62,READ_BCR(ARC_REG_IRQ_BCR, irq_bcr)
+(63,(unsigned int *)
+(64,tmp = read_aux_reg(ARC_REG_STATUS32)
+(65,ictrl.save_lp_regs = 1)
+(66,AUX_IRQ_PRIORITY)
+(67,WRITE_AUX(AUX_IRQ_CTRL, ictrl)
+(68,write_aux_reg(AUX_IRQ_ENABLE, 0)
+(69,)
+(70,ictrl)
+(71,RET)
+(72,prio)
+(73,ictrl)
+(74,irq_prio)
+(75,i < FIRST_EXT_IRQ)
+(76,STATUS_AD_MASK)
+(77,i = NR_EXCEPTIONS)
+(78,save_u_to_u)
+(79,irq_bcr.irqs + NR_EXCEPTIONS)
+(80,irqs)
+(81,irq_prio + 1)
+(82,tmp)
+(83,i)
+(84,i)
+(85,1)
+(86,irq_bcr)
+(87,ictrl.save_nr_gpr_pairs = 6)
+(88,firq)
+(89,ictrl.save_nr_gpr_pairs)
+(90,ictrl.save_blink)
+(91,0)
+(92,irq_prio)
+(93,irq_bcr.prio)
+(94,1)
+(95,read_aux_reg(ARC_REG_STATUS32)
+(96,ictrl.save_u_to_u = 0)
+(97,ARCV2_IRQ_DEF_PRIO)
+(98,tmp)
+(99,~STATUS_IE_MASK)
+(100,tmp)
+(101,1)
+(102,*(unsigned int *)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

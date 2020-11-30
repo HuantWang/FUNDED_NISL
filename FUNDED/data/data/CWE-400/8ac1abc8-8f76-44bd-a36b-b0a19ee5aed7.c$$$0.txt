@@ -1,0 +1,2235 @@
+-----label-----
+1
+-----code-----
+static int set_member_paused(const char *queuename, const char *interface, const char *reason, int paused)
+{
+	int found = 0;
+	struct call_queue *q;
+	struct member *mem;
+	struct ao2_iterator queue_iter;
+	int failed;
+
+	/* Special event for when all queues are paused - individual events still generated */
+	/* XXX In all other cases, we use the membername, but since this affects all queues, we cannot */
+	if (ast_strlen_zero(queuename))
+		ast_queue_log("NONE", "NONE", interface, (paused ? "PAUSEALL" : "UNPAUSEALL"), "%s", "");
+
+	queue_iter = ao2_iterator_init(queues, 0);
+	while ((q = ao2_t_iterator_next(&queue_iter, "Iterate over queues"))) {
+		ao2_lock(q);
+		if (ast_strlen_zero(queuename) || !strcasecmp(q->name, queuename)) {
+			if ((mem = interface_exists(q, interface))) {
+				if (mem->paused == paused) {
+					ast_debug(1, "%spausing already-%spaused queue member %s:%s\n", (paused ? "" : "un"), (paused ? "" : "un"), q->name, interface);
+				}
+
+				failed = 0;
+				if (mem->realtime) {
+					failed = update_realtime_member_field(mem, q->name, "paused", paused ? "1" : "0");
+				}
+
+				if (failed) {
+					ast_log(LOG_WARNING, "Failed %spausing realtime queue member %s:%s\n", (paused ? "" : "un"), q->name, interface);
+					ao2_ref(mem, -1);
+					ao2_unlock(q);
+					queue_t_unref(q, "Done with iterator");
+					continue;
+				}
+				found++;
+				mem->paused = paused;
+
+				if (queue_persistent_members) {
+					dump_queue_members(q);
+				}
+
+				if (is_member_available(mem)) {
+					ast_devstate_changed(AST_DEVICE_NOT_INUSE, "Queue:%s_avail", q->name);
+				} else if (!num_available_members(q)) {
+					ast_devstate_changed(AST_DEVICE_INUSE, "Queue:%s_avail", q->name);
+				}
+
+				ast_queue_log(q->name, "NONE", mem->membername, (paused ? "PAUSE" : "UNPAUSE"), "%s", S_OR(reason, ""));
+
+				/*** DOCUMENTATION
+				<managerEventInstance>
+					<synopsis>Raised when a member is paused/unpaused in the queue with a reason.</synopsis>
+					<syntax>
+						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />
+						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />
+						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />
+						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />
+					</syntax>
+					<see-also>
+						<ref type="application">PauseQueueMember</ref>
+						<ref type="application">UnPauseQueueMember</ref>
+					</see-also>
+				</managerEventInstance>
+				***/
+				if (!ast_strlen_zero(reason)) {
+					manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",
+						"Queue: %s\r\n"
+						"Location: %s\r\n"
+						"MemberName: %s\r\n"
+						"Paused: %d\r\n"
+						"Reason: %s\r\n",
+							q->name, mem->interface, mem->membername, paused, reason);
+				} else {
+					/*** DOCUMENTATION
+					<managerEventInstance>
+						<synopsis>Raised when a member is paused/unpaused in the queue without a reason.</synopsis>
+						<syntax>
+							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />
+							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />
+							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />
+							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />
+						</syntax>
+						<see-also>
+							<ref type="application">PauseQueueMember</ref>
+							<ref type="application">UnPauseQueueMember</ref>
+						</see-also>
+					</managerEventInstance>
+					***/
+					manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",
+						"Queue: %s\r\n"
+						"Location: %s\r\n"
+						"MemberName: %s\r\n"
+						"Paused: %d\r\n",
+							q->name, mem->interface, mem->membername, paused);
+				}
+				ao2_ref(mem, -1);
+			}
+		}
+
+		if (!ast_strlen_zero(queuename) && !strcasecmp(queuename, q->name)) {
+			ao2_unlock(q);
+			queue_t_unref(q, "Done with iterator");
+			break;
+		}
+
+		ao2_unlock(q);
+		queue_t_unref(q, "Done with iterator");
+	}
+	ao2_iterator_destroy(&queue_iter);
+
+	return found ? RESULT_SUCCESS : RESULT_FAILURE;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+3,8
+5,6
+5,7
+7,8
+7,9
+10,11
+10,12
+12,13
+12,14
+15,16
+15,17
+17,18
+17,19
+20,21
+20,22
+22,23
+24,25
+24,26
+24,27
+24,28
+24,29
+24,30
+24,31
+24,32
+24,33
+24,34
+25,26
+26,27
+26,28
+28,29
+28,30
+30,31
+32,33
+33,34
+33,35
+34,35
+36,37
+36,38
+39,40
+40,41
+40,42
+41,42
+43,44
+43,45
+46,47
+47,48
+47,49
+48,49
+50,51
+52,53
+53,54
+53,55
+55,56
+57,58
+57,59
+58,59
+58,60
+59,60
+61,62
+63,64
+64,65
+64,66
+64,67
+64,68
+64,69
+64,70
+64,71
+65,66
+69,70
+71,72
+72,73
+72,74
+72,75
+73,74
+79,80
+80,81
+80,82
+81,82
+83,84
+83,85
+83,86
+84,85
+86,87
+89,90
+89,91
+90,91
+91,92
+91,93
+92,93
+94,95
+94,96
+94,97
+95,96
+97,98
+98,99
+101,102
+101,103
+101,104
+101,105
+101,106
+102,103
+103,104
+103,105
+104,105
+106,107
+108,109
+108,110
+109,110
+109,111
+110,111
+110,112
+111,112
+113,114
+115,116
+116,117
+116,118
+116,119
+117,118
+119,120
+119,121
+120,121
+123,124
+125,126
+126,127
+126,128
+127,128
+128,129
+128,130
+129,130
+131,132
+131,133
+131,134
+132,133
+134,135
+136,137
+138,139
+138,140
+138,141
+138,142
+138,143
+138,144
+138,145
+138,146
+138,147
+138,148
+138,149
+139,140
+139,141
+140,141
+140,142
+141,142
+141,143
+142,143
+145,146
+147,148
+148,149
+149,150
+149,151
+149,152
+149,153
+149,154
+149,155
+149,156
+150,151
+154,155
+155,156
+155,157
+155,158
+156,157
+160,161
+161,162
+161,163
+161,164
+162,163
+166,167
+166,168
+167,168
+170,171
+172,173
+173,174
+173,175
+174,175
+177,178
+177,179
+178,179
+178,180
+179,180
+182,183
+183,184
+184,185
+184,186
+185,186
+187,188
+187,189
+187,190
+187,191
+187,192
+188,189
+190,191
+192,193
+192,194
+193,194
+197,198
+197,199
+197,200
+198,199
+202,203
+202,204
+203,204
+205,206
+205,207
+205,208
+205,209
+205,210
+206,207
+207,208
+207,209
+207,210
+207,211
+207,212
+207,213
+208,209
+210,211
+213,214
+214,215
+214,216
+214,217
+215,216
+219,220
+219,221
+220,221
+223,224
+225,226
+226,227
+226,228
+226,229
+227,228
+229,230
+231,232
+233,234
+234,235
+234,236
+235,236
+237,238
+239,240
+240,241
+240,242
+240,243
+241,242
+243,244
+247,248
+248,249
+249,250
+251,252
+252,253
+252,254
+253,254
+253,255
+254,255
+257,258
+259,260
+259,261
+260,261
+262,263
+263,264
+264,265
+264,266
+265,266
+267,268
+269,270
+269,271
+269,272
+270,271
+270,272
+271,272
+273,274
+275,276
+276,277
+277,278
+277,279
+277,280
+277,281
+278,279
+280,281
+283,284
+283,285
+284,285
+287,288
+287,289
+288,289
+289,290
+289,291
+290,291
+292,293
+294,295
+295,296
+296,297
+296,298
+296,299
+296,300
+297,298
+299,300
+302,303
+302,304
+303,304
+306,307
+307,308
+307,309
+307,310
+307,311
+307,312
+307,313
+307,314
+308,309
+310,311
+310,312
+311,312
+315,316
+315,317
+316,317
+319,320
+320,321
+320,322
+320,323
+321,322
+326,327
+326,328
+326,329
+327,328
+329,330
+332,333
+332,334
+332,335
+333,334
+334,335
+334,336
+335,336
+337,338
+339,340
+340,341
+341,342
+341,343
+341,344
+341,345
+341,346
+341,347
+341,348
+341,349
+341,350
+342,343
+344,345
+348,349
+348,350
+349,350
+352,353
+352,354
+353,354
+356,357
+356,358
+357,358
+360,361
+362,363
+364,365
+365,366
+366,367
+366,368
+366,369
+366,370
+366,371
+366,372
+366,373
+366,374
+367,368
+369,370
+373,374
+373,375
+374,375
+377,378
+377,379
+378,379
+381,382
+381,383
+382,383
+385,386
+387,388
+388,389
+388,390
+388,391
+389,390
+391,392
+393,394
+395,396
+395,397
+396,397
+396,398
+397,398
+398,399
+398,400
+399,400
+401,402
+403,404
+404,405
+404,406
+404,407
+405,406
+407,408
+409,410
+409,411
+410,411
+413,414
+413,415
+413,416
+414,415
+415,416
+415,417
+416,417
+418,419
+420,421
+421,422
+421,423
+421,424
+422,423
+424,425
+428,429
+429,430
+429,431
+430,431
+432,433
+434,435
+435,436
+435,437
+435,438
+436,437
+438,439
+441,442
+442,443
+442,444
+443,444
+445,446
+446,447
+448,449
+449,450
+449,451
+449,452
+450,451
+452,453
+454,455
+-----nextToken-----
+2,4,6,8,9,11,13,14,16,18,19,21,23,27,29,31,35,37,38,42,44,45,49,51,54,56,60,62,66,67,68,70,74,75,76,77,78,82,85,87,88,93,96,99,100,105,107,112,114,118,121,122,124,130,133,135,137,143,144,146,151,152,153,157,158,159,163,164,165,168,169,171,175,176,180,181,186,189,191,194,195,196,199,200,201,204,209,211,212,216,217,218,221,222,224,228,230,232,236,238,242,244,245,246,250,255,256,258,261,266,268,272,274,279,281,282,285,286,291,293,298,300,301,304,305,309,312,313,314,317,318,322,323,324,325,328,330,331,336,338,343,345,346,347,350,351,354,355,358,359,361,363,368,370,371,372,375,376,379,380,383,384,386,390,392,394,400,402,406,408,411,412,417,419,423,425,426,427,431,433,437,439,440,444,447,451,453,455
+-----computeFrom-----
+80,81
+80,82
+91,92
+91,93
+109,110
+109,111
+128,129
+128,130
+140,141
+140,142
+173,174
+173,175
+184,185
+184,186
+252,253
+252,254
+396,397
+396,398
+-----guardedBy-----
+121,375
+122,376
+112,336
+146,163
+411,425
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;LiteralExpression;IdExpression;Name;UnaryExpression;ConditionalExpression;IdExpression;Name;LiteralExpression;LiteralExpression;LiteralExpression;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;WhileStatement;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;IfStatement;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;LiteralExpression;UnaryExpression;ConditionalExpression;IdExpression;Name;LiteralExpression;LiteralExpression;UnaryExpression;ConditionalExpression;IdExpression;Name;LiteralExpression;LiteralExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;ConditionalExpression;IdExpression;Name;LiteralExpression;LiteralExpression;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;UnaryExpression;ConditionalExpression;IdExpression;Name;LiteralExpression;LiteralExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ContinueStatement;ExpressionStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;ConditionalExpression;IdExpression;Name;LiteralExpression;LiteralExpression;LiteralExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;LiteralExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;LiteralExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;LiteralExpression;IfStatement;BinaryExpression;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;BreakStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ReturnStatement;ConditionalExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;
+-----ast_node-----
+static int set_member_paused(const char *queuename, const char *interface, const char *reason, int paused){	int found = 0;	struct call_queue *q;	struct member *mem;	struct ao2_iterator queue_iter;	int failed;	/* Special event for when all queues are paused - individual events still generated */	/* XXX In all other cases, we use the membername, but since this affects all queues, we cannot */	if (ast_strlen_zero(queuename))		ast_queue_log("NONE", "NONE", interface, (paused ? "PAUSEALL" : "UNPAUSEALL"), "%s", "");	queue_iter = ao2_iterator_init(queues, 0);	while ((q = ao2_t_iterator_next(&queue_iter, "Iterate over queues"))) {		ao2_lock(q);		if (ast_strlen_zero(queuename) || !strcasecmp(q->name, queuename)) {			if ((mem = interface_exists(q, interface))) {				if (mem->paused == paused) {					ast_debug(1, "%spausing already-%spaused queue member %s:%s\n", (paused ? "" : "un"), (paused ? "" : "un"), q->name, interface);				}				failed = 0;				if (mem->realtime) {					failed = update_realtime_member_field(mem, q->name, "paused", paused ? "1" : "0");				}				if (failed) {					ast_log(LOG_WARNING, "Failed %spausing realtime queue member %s:%s\n", (paused ? "" : "un"), q->name, interface);					ao2_ref(mem, -1);					ao2_unlock(q);					queue_t_unref(q, "Done with iterator");					continue;				}				found++;				mem->paused = paused;				if (queue_persistent_members) {					dump_queue_members(q);				}				if (is_member_available(mem)) {					ast_devstate_changed(AST_DEVICE_NOT_INUSE, "Queue:%s_avail", q->name);				} else if (!num_available_members(q)) {					ast_devstate_changed(AST_DEVICE_INUSE, "Queue:%s_avail", q->name);				}				ast_queue_log(q->name, "NONE", mem->membername, (paused ? "PAUSE" : "UNPAUSE"), "%s", S_OR(reason, ""));				/*** DOCUMENTATION				<managerEventInstance>					<synopsis>Raised when a member is paused/unpaused in the queue with a reason.</synopsis>					<syntax>						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />					</syntax>					<see-also>						<ref type="application">PauseQueueMember</ref>						<ref type="application">UnPauseQueueMember</ref>					</see-also>				</managerEventInstance>				***/				if (!ast_strlen_zero(reason)) {					manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",						"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n"						"Reason: %s\r\n",							q->name, mem->interface, mem->membername, paused, reason);				} else {					/*** DOCUMENTATION					<managerEventInstance>						<synopsis>Raised when a member is paused/unpaused in the queue without a reason.</synopsis>						<syntax>							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />						</syntax>						<see-also>							<ref type="application">PauseQueueMember</ref>							<ref type="application">UnPauseQueueMember</ref>						</see-also>					</managerEventInstance>					***/					manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",						"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n",							q->name, mem->interface, mem->membername, paused);				}				ao2_ref(mem, -1);			}		}		if (!ast_strlen_zero(queuename) && !strcasecmp(queuename, q->name)) {			ao2_unlock(q);			queue_t_unref(q, "Done with iterator");			break;		}		ao2_unlock(q);		queue_t_unref(q, "Done with iterator");	}	ao2_iterator_destroy(&queue_iter);	return found ? RESULT_SUCCESS : RESULT_FAILURE;}
+static int
+set_member_paused(const char *queuename, const char *interface, const char *reason, int paused)
+set_member_paused
+const char *queuename
+const char
+*queuename
+*
+queuename
+const char *interface
+const char
+*interface
+*
+interface
+const char *reason
+const char
+*reason
+*
+reason
+int paused
+int
+paused
+paused
+{	int found = 0;	struct call_queue *q;	struct member *mem;	struct ao2_iterator queue_iter;	int failed;	/* Special event for when all queues are paused - individual events still generated */	/* XXX In all other cases, we use the membername, but since this affects all queues, we cannot */	if (ast_strlen_zero(queuename))		ast_queue_log("NONE", "NONE", interface, (paused ? "PAUSEALL" : "UNPAUSEALL"), "%s", "");	queue_iter = ao2_iterator_init(queues, 0);	while ((q = ao2_t_iterator_next(&queue_iter, "Iterate over queues"))) {		ao2_lock(q);		if (ast_strlen_zero(queuename) || !strcasecmp(q->name, queuename)) {			if ((mem = interface_exists(q, interface))) {				if (mem->paused == paused) {					ast_debug(1, "%spausing already-%spaused queue member %s:%s\n", (paused ? "" : "un"), (paused ? "" : "un"), q->name, interface);				}				failed = 0;				if (mem->realtime) {					failed = update_realtime_member_field(mem, q->name, "paused", paused ? "1" : "0");				}				if (failed) {					ast_log(LOG_WARNING, "Failed %spausing realtime queue member %s:%s\n", (paused ? "" : "un"), q->name, interface);					ao2_ref(mem, -1);					ao2_unlock(q);					queue_t_unref(q, "Done with iterator");					continue;				}				found++;				mem->paused = paused;				if (queue_persistent_members) {					dump_queue_members(q);				}				if (is_member_available(mem)) {					ast_devstate_changed(AST_DEVICE_NOT_INUSE, "Queue:%s_avail", q->name);				} else if (!num_available_members(q)) {					ast_devstate_changed(AST_DEVICE_INUSE, "Queue:%s_avail", q->name);				}				ast_queue_log(q->name, "NONE", mem->membername, (paused ? "PAUSE" : "UNPAUSE"), "%s", S_OR(reason, ""));				/*** DOCUMENTATION				<managerEventInstance>					<synopsis>Raised when a member is paused/unpaused in the queue with a reason.</synopsis>					<syntax>						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />					</syntax>					<see-also>						<ref type="application">PauseQueueMember</ref>						<ref type="application">UnPauseQueueMember</ref>					</see-also>				</managerEventInstance>				***/				if (!ast_strlen_zero(reason)) {					manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",						"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n"						"Reason: %s\r\n",							q->name, mem->interface, mem->membername, paused, reason);				} else {					/*** DOCUMENTATION					<managerEventInstance>						<synopsis>Raised when a member is paused/unpaused in the queue without a reason.</synopsis>						<syntax>							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />						</syntax>						<see-also>							<ref type="application">PauseQueueMember</ref>							<ref type="application">UnPauseQueueMember</ref>						</see-also>					</managerEventInstance>					***/					manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",						"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n",							q->name, mem->interface, mem->membername, paused);				}				ao2_ref(mem, -1);			}		}		if (!ast_strlen_zero(queuename) && !strcasecmp(queuename, q->name)) {			ao2_unlock(q);			queue_t_unref(q, "Done with iterator");			break;		}		ao2_unlock(q);		queue_t_unref(q, "Done with iterator");	}	ao2_iterator_destroy(&queue_iter);	return found ? RESULT_SUCCESS : RESULT_FAILURE;}
+int found = 0;
+int found = 0;
+int
+found = 0
+found
+= 0
+0
+struct call_queue *q;
+struct call_queue *q;
+struct call_queue
+call_queue
+*q
+*
+q
+struct member *mem;
+struct member *mem;
+struct member
+member
+*mem
+*
+mem
+struct ao2_iterator queue_iter;
+struct ao2_iterator queue_iter;
+struct ao2_iterator
+ao2_iterator
+queue_iter
+queue_iter
+int failed;
+int failed;
+int
+failed
+failed
+if (ast_strlen_zero(queuename))		ast_queue_log("NONE", "NONE", interface, (paused ? "PAUSEALL" : "UNPAUSEALL"), "%s", "");
+ast_strlen_zero(queuename)
+ast_strlen_zero
+ast_strlen_zero
+queuename
+queuename
+ast_queue_log("NONE", "NONE", interface, (paused ? "PAUSEALL" : "UNPAUSEALL"), "%s", "");
+ast_queue_log("NONE", "NONE", interface, (paused ? "PAUSEALL" : "UNPAUSEALL"), "%s", "")
+ast_queue_log
+ast_queue_log
+"NONE"
+"NONE"
+interface
+interface
+(paused ? "PAUSEALL" : "UNPAUSEALL")
+paused ? "PAUSEALL" : "UNPAUSEALL"
+paused
+paused
+"PAUSEALL"
+"UNPAUSEALL"
+"%s"
+""
+queue_iter = ao2_iterator_init(queues, 0);
+queue_iter = ao2_iterator_init(queues, 0)
+queue_iter
+queue_iter
+ao2_iterator_init(queues, 0)
+ao2_iterator_init
+ao2_iterator_init
+queues
+queues
+0
+while ((q = ao2_t_iterator_next(&queue_iter, "Iterate over queues"))) {		ao2_lock(q);		if (ast_strlen_zero(queuename) || !strcasecmp(q->name, queuename)) {			if ((mem = interface_exists(q, interface))) {				if (mem->paused == paused) {					ast_debug(1, "%spausing already-%spaused queue member %s:%s\n", (paused ? "" : "un"), (paused ? "" : "un"), q->name, interface);				}				failed = 0;				if (mem->realtime) {					failed = update_realtime_member_field(mem, q->name, "paused", paused ? "1" : "0");				}				if (failed) {					ast_log(LOG_WARNING, "Failed %spausing realtime queue member %s:%s\n", (paused ? "" : "un"), q->name, interface);					ao2_ref(mem, -1);					ao2_unlock(q);					queue_t_unref(q, "Done with iterator");					continue;				}				found++;				mem->paused = paused;				if (queue_persistent_members) {					dump_queue_members(q);				}				if (is_member_available(mem)) {					ast_devstate_changed(AST_DEVICE_NOT_INUSE, "Queue:%s_avail", q->name);				} else if (!num_available_members(q)) {					ast_devstate_changed(AST_DEVICE_INUSE, "Queue:%s_avail", q->name);				}				ast_queue_log(q->name, "NONE", mem->membername, (paused ? "PAUSE" : "UNPAUSE"), "%s", S_OR(reason, ""));				/*** DOCUMENTATION				<managerEventInstance>					<synopsis>Raised when a member is paused/unpaused in the queue with a reason.</synopsis>					<syntax>						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />					</syntax>					<see-also>						<ref type="application">PauseQueueMember</ref>						<ref type="application">UnPauseQueueMember</ref>					</see-also>				</managerEventInstance>				***/				if (!ast_strlen_zero(reason)) {					manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",						"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n"						"Reason: %s\r\n",							q->name, mem->interface, mem->membername, paused, reason);				} else {					/*** DOCUMENTATION					<managerEventInstance>						<synopsis>Raised when a member is paused/unpaused in the queue without a reason.</synopsis>						<syntax>							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />						</syntax>						<see-also>							<ref type="application">PauseQueueMember</ref>							<ref type="application">UnPauseQueueMember</ref>						</see-also>					</managerEventInstance>					***/					manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",						"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n",							q->name, mem->interface, mem->membername, paused);				}				ao2_ref(mem, -1);			}		}		if (!ast_strlen_zero(queuename) && !strcasecmp(queuename, q->name)) {			ao2_unlock(q);			queue_t_unref(q, "Done with iterator");			break;		}		ao2_unlock(q);		queue_t_unref(q, "Done with iterator");	}
+(q = ao2_t_iterator_next(&queue_iter, "Iterate over queues"))
+q = ao2_t_iterator_next(&queue_iter, "Iterate over queues")
+q
+q
+ao2_t_iterator_next(&queue_iter, "Iterate over queues")
+ao2_t_iterator_next
+ao2_t_iterator_next
+&queue_iter
+queue_iter
+queue_iter
+"Iterate over queues"
+{		ao2_lock(q);		if (ast_strlen_zero(queuename) || !strcasecmp(q->name, queuename)) {			if ((mem = interface_exists(q, interface))) {				if (mem->paused == paused) {					ast_debug(1, "%spausing already-%spaused queue member %s:%s\n", (paused ? "" : "un"), (paused ? "" : "un"), q->name, interface);				}				failed = 0;				if (mem->realtime) {					failed = update_realtime_member_field(mem, q->name, "paused", paused ? "1" : "0");				}				if (failed) {					ast_log(LOG_WARNING, "Failed %spausing realtime queue member %s:%s\n", (paused ? "" : "un"), q->name, interface);					ao2_ref(mem, -1);					ao2_unlock(q);					queue_t_unref(q, "Done with iterator");					continue;				}				found++;				mem->paused = paused;				if (queue_persistent_members) {					dump_queue_members(q);				}				if (is_member_available(mem)) {					ast_devstate_changed(AST_DEVICE_NOT_INUSE, "Queue:%s_avail", q->name);				} else if (!num_available_members(q)) {					ast_devstate_changed(AST_DEVICE_INUSE, "Queue:%s_avail", q->name);				}				ast_queue_log(q->name, "NONE", mem->membername, (paused ? "PAUSE" : "UNPAUSE"), "%s", S_OR(reason, ""));				/*** DOCUMENTATION				<managerEventInstance>					<synopsis>Raised when a member is paused/unpaused in the queue with a reason.</synopsis>					<syntax>						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />					</syntax>					<see-also>						<ref type="application">PauseQueueMember</ref>						<ref type="application">UnPauseQueueMember</ref>					</see-also>				</managerEventInstance>				***/				if (!ast_strlen_zero(reason)) {					manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",						"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n"						"Reason: %s\r\n",							q->name, mem->interface, mem->membername, paused, reason);				} else {					/*** DOCUMENTATION					<managerEventInstance>						<synopsis>Raised when a member is paused/unpaused in the queue without a reason.</synopsis>						<syntax>							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />						</syntax>						<see-also>							<ref type="application">PauseQueueMember</ref>							<ref type="application">UnPauseQueueMember</ref>						</see-also>					</managerEventInstance>					***/					manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",						"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n",							q->name, mem->interface, mem->membername, paused);				}				ao2_ref(mem, -1);			}		}		if (!ast_strlen_zero(queuename) && !strcasecmp(queuename, q->name)) {			ao2_unlock(q);			queue_t_unref(q, "Done with iterator");			break;		}		ao2_unlock(q);		queue_t_unref(q, "Done with iterator");	}
+ao2_lock(q);
+ao2_lock(q)
+ao2_lock
+ao2_lock
+q
+q
+if (ast_strlen_zero(queuename) || !strcasecmp(q->name, queuename)) {			if ((mem = interface_exists(q, interface))) {				if (mem->paused == paused) {					ast_debug(1, "%spausing already-%spaused queue member %s:%s\n", (paused ? "" : "un"), (paused ? "" : "un"), q->name, interface);				}				failed = 0;				if (mem->realtime) {					failed = update_realtime_member_field(mem, q->name, "paused", paused ? "1" : "0");				}				if (failed) {					ast_log(LOG_WARNING, "Failed %spausing realtime queue member %s:%s\n", (paused ? "" : "un"), q->name, interface);					ao2_ref(mem, -1);					ao2_unlock(q);					queue_t_unref(q, "Done with iterator");					continue;				}				found++;				mem->paused = paused;				if (queue_persistent_members) {					dump_queue_members(q);				}				if (is_member_available(mem)) {					ast_devstate_changed(AST_DEVICE_NOT_INUSE, "Queue:%s_avail", q->name);				} else if (!num_available_members(q)) {					ast_devstate_changed(AST_DEVICE_INUSE, "Queue:%s_avail", q->name);				}				ast_queue_log(q->name, "NONE", mem->membername, (paused ? "PAUSE" : "UNPAUSE"), "%s", S_OR(reason, ""));				/*** DOCUMENTATION				<managerEventInstance>					<synopsis>Raised when a member is paused/unpaused in the queue with a reason.</synopsis>					<syntax>						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />					</syntax>					<see-also>						<ref type="application">PauseQueueMember</ref>						<ref type="application">UnPauseQueueMember</ref>					</see-also>				</managerEventInstance>				***/				if (!ast_strlen_zero(reason)) {					manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",						"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n"						"Reason: %s\r\n",							q->name, mem->interface, mem->membername, paused, reason);				} else {					/*** DOCUMENTATION					<managerEventInstance>						<synopsis>Raised when a member is paused/unpaused in the queue without a reason.</synopsis>						<syntax>							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />						</syntax>						<see-also>							<ref type="application">PauseQueueMember</ref>							<ref type="application">UnPauseQueueMember</ref>						</see-also>					</managerEventInstance>					***/					manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",						"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n",							q->name, mem->interface, mem->membername, paused);				}				ao2_ref(mem, -1);			}		}
+ast_strlen_zero(queuename) || !strcasecmp(q->name, queuename)
+ast_strlen_zero(queuename)
+ast_strlen_zero
+ast_strlen_zero
+queuename
+queuename
+!strcasecmp(q->name, queuename)
+strcasecmp(q->name, queuename)
+strcasecmp
+strcasecmp
+q->name
+q
+q
+name
+queuename
+queuename
+{			if ((mem = interface_exists(q, interface))) {				if (mem->paused == paused) {					ast_debug(1, "%spausing already-%spaused queue member %s:%s\n", (paused ? "" : "un"), (paused ? "" : "un"), q->name, interface);				}				failed = 0;				if (mem->realtime) {					failed = update_realtime_member_field(mem, q->name, "paused", paused ? "1" : "0");				}				if (failed) {					ast_log(LOG_WARNING, "Failed %spausing realtime queue member %s:%s\n", (paused ? "" : "un"), q->name, interface);					ao2_ref(mem, -1);					ao2_unlock(q);					queue_t_unref(q, "Done with iterator");					continue;				}				found++;				mem->paused = paused;				if (queue_persistent_members) {					dump_queue_members(q);				}				if (is_member_available(mem)) {					ast_devstate_changed(AST_DEVICE_NOT_INUSE, "Queue:%s_avail", q->name);				} else if (!num_available_members(q)) {					ast_devstate_changed(AST_DEVICE_INUSE, "Queue:%s_avail", q->name);				}				ast_queue_log(q->name, "NONE", mem->membername, (paused ? "PAUSE" : "UNPAUSE"), "%s", S_OR(reason, ""));				/*** DOCUMENTATION				<managerEventInstance>					<synopsis>Raised when a member is paused/unpaused in the queue with a reason.</synopsis>					<syntax>						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />					</syntax>					<see-also>						<ref type="application">PauseQueueMember</ref>						<ref type="application">UnPauseQueueMember</ref>					</see-also>				</managerEventInstance>				***/				if (!ast_strlen_zero(reason)) {					manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",						"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n"						"Reason: %s\r\n",							q->name, mem->interface, mem->membername, paused, reason);				} else {					/*** DOCUMENTATION					<managerEventInstance>						<synopsis>Raised when a member is paused/unpaused in the queue without a reason.</synopsis>						<syntax>							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />						</syntax>						<see-also>							<ref type="application">PauseQueueMember</ref>							<ref type="application">UnPauseQueueMember</ref>						</see-also>					</managerEventInstance>					***/					manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",						"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n",							q->name, mem->interface, mem->membername, paused);				}				ao2_ref(mem, -1);			}		}
+if ((mem = interface_exists(q, interface))) {				if (mem->paused == paused) {					ast_debug(1, "%spausing already-%spaused queue member %s:%s\n", (paused ? "" : "un"), (paused ? "" : "un"), q->name, interface);				}				failed = 0;				if (mem->realtime) {					failed = update_realtime_member_field(mem, q->name, "paused", paused ? "1" : "0");				}				if (failed) {					ast_log(LOG_WARNING, "Failed %spausing realtime queue member %s:%s\n", (paused ? "" : "un"), q->name, interface);					ao2_ref(mem, -1);					ao2_unlock(q);					queue_t_unref(q, "Done with iterator");					continue;				}				found++;				mem->paused = paused;				if (queue_persistent_members) {					dump_queue_members(q);				}				if (is_member_available(mem)) {					ast_devstate_changed(AST_DEVICE_NOT_INUSE, "Queue:%s_avail", q->name);				} else if (!num_available_members(q)) {					ast_devstate_changed(AST_DEVICE_INUSE, "Queue:%s_avail", q->name);				}				ast_queue_log(q->name, "NONE", mem->membername, (paused ? "PAUSE" : "UNPAUSE"), "%s", S_OR(reason, ""));				/*** DOCUMENTATION				<managerEventInstance>					<synopsis>Raised when a member is paused/unpaused in the queue with a reason.</synopsis>					<syntax>						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />					</syntax>					<see-also>						<ref type="application">PauseQueueMember</ref>						<ref type="application">UnPauseQueueMember</ref>					</see-also>				</managerEventInstance>				***/				if (!ast_strlen_zero(reason)) {					manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",						"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n"						"Reason: %s\r\n",							q->name, mem->interface, mem->membername, paused, reason);				} else {					/*** DOCUMENTATION					<managerEventInstance>						<synopsis>Raised when a member is paused/unpaused in the queue without a reason.</synopsis>						<syntax>							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />						</syntax>						<see-also>							<ref type="application">PauseQueueMember</ref>							<ref type="application">UnPauseQueueMember</ref>						</see-also>					</managerEventInstance>					***/					manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",						"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n",							q->name, mem->interface, mem->membername, paused);				}				ao2_ref(mem, -1);			}
+(mem = interface_exists(q, interface))
+mem = interface_exists(q, interface)
+mem
+mem
+interface_exists(q, interface)
+interface_exists
+interface_exists
+q
+q
+interface
+interface
+{				if (mem->paused == paused) {					ast_debug(1, "%spausing already-%spaused queue member %s:%s\n", (paused ? "" : "un"), (paused ? "" : "un"), q->name, interface);				}				failed = 0;				if (mem->realtime) {					failed = update_realtime_member_field(mem, q->name, "paused", paused ? "1" : "0");				}				if (failed) {					ast_log(LOG_WARNING, "Failed %spausing realtime queue member %s:%s\n", (paused ? "" : "un"), q->name, interface);					ao2_ref(mem, -1);					ao2_unlock(q);					queue_t_unref(q, "Done with iterator");					continue;				}				found++;				mem->paused = paused;				if (queue_persistent_members) {					dump_queue_members(q);				}				if (is_member_available(mem)) {					ast_devstate_changed(AST_DEVICE_NOT_INUSE, "Queue:%s_avail", q->name);				} else if (!num_available_members(q)) {					ast_devstate_changed(AST_DEVICE_INUSE, "Queue:%s_avail", q->name);				}				ast_queue_log(q->name, "NONE", mem->membername, (paused ? "PAUSE" : "UNPAUSE"), "%s", S_OR(reason, ""));				/*** DOCUMENTATION				<managerEventInstance>					<synopsis>Raised when a member is paused/unpaused in the queue with a reason.</synopsis>					<syntax>						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />						<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />					</syntax>					<see-also>						<ref type="application">PauseQueueMember</ref>						<ref type="application">UnPauseQueueMember</ref>					</see-also>				</managerEventInstance>				***/				if (!ast_strlen_zero(reason)) {					manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",						"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n"						"Reason: %s\r\n",							q->name, mem->interface, mem->membername, paused, reason);				} else {					/*** DOCUMENTATION					<managerEventInstance>						<synopsis>Raised when a member is paused/unpaused in the queue without a reason.</synopsis>						<syntax>							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />						</syntax>						<see-also>							<ref type="application">PauseQueueMember</ref>							<ref type="application">UnPauseQueueMember</ref>						</see-also>					</managerEventInstance>					***/					manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",						"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n",							q->name, mem->interface, mem->membername, paused);				}				ao2_ref(mem, -1);			}
+if (mem->paused == paused) {					ast_debug(1, "%spausing already-%spaused queue member %s:%s\n", (paused ? "" : "un"), (paused ? "" : "un"), q->name, interface);				}
+mem->paused == paused
+mem->paused
+mem
+mem
+paused
+paused
+paused
+{					ast_debug(1, "%spausing already-%spaused queue member %s:%s\n", (paused ? "" : "un"), (paused ? "" : "un"), q->name, interface);				}
+ast_debug(1, "%spausing already-%spaused queue member %s:%s\n", (paused ? "" : "un"), (paused ? "" : "un"), q->name, interface);
+ast_debug(1, "%spausing already-%spaused queue member %s:%s\n", (paused ? "" : "un"), (paused ? "" : "un"), q->name, interface)
+ast_debug
+ast_debug
+1
+"%spausing already-%spaused queue member %s:%s\n"
+(paused ? "" : "un")
+paused ? "" : "un"
+paused
+paused
+""
+"un"
+(paused ? "" : "un")
+paused ? "" : "un"
+paused
+paused
+""
+"un"
+q->name
+q
+q
+name
+interface
+interface
+failed = 0;
+failed = 0
+failed
+failed
+0
+if (mem->realtime) {					failed = update_realtime_member_field(mem, q->name, "paused", paused ? "1" : "0");				}
+mem->realtime
+mem
+mem
+realtime
+{					failed = update_realtime_member_field(mem, q->name, "paused", paused ? "1" : "0");				}
+failed = update_realtime_member_field(mem, q->name, "paused", paused ? "1" : "0");
+failed = update_realtime_member_field(mem, q->name, "paused", paused ? "1" : "0")
+failed
+failed
+update_realtime_member_field(mem, q->name, "paused", paused ? "1" : "0")
+update_realtime_member_field
+update_realtime_member_field
+mem
+mem
+q->name
+q
+q
+name
+"paused"
+paused ? "1" : "0"
+paused
+paused
+"1"
+"0"
+if (failed) {					ast_log(LOG_WARNING, "Failed %spausing realtime queue member %s:%s\n", (paused ? "" : "un"), q->name, interface);					ao2_ref(mem, -1);					ao2_unlock(q);					queue_t_unref(q, "Done with iterator");					continue;				}
+failed
+failed
+{					ast_log(LOG_WARNING, "Failed %spausing realtime queue member %s:%s\n", (paused ? "" : "un"), q->name, interface);					ao2_ref(mem, -1);					ao2_unlock(q);					queue_t_unref(q, "Done with iterator");					continue;				}
+ast_log(LOG_WARNING, "Failed %spausing realtime queue member %s:%s\n", (paused ? "" : "un"), q->name, interface);
+ast_log(LOG_WARNING, "Failed %spausing realtime queue member %s:%s\n", (paused ? "" : "un"), q->name, interface)
+ast_log
+ast_log
+LOG_WARNING
+LOG_WARNING
+"Failed %spausing realtime queue member %s:%s\n"
+(paused ? "" : "un")
+paused ? "" : "un"
+paused
+paused
+""
+"un"
+q->name
+q
+q
+name
+interface
+interface
+ao2_ref(mem, -1);
+ao2_ref(mem, -1)
+ao2_ref
+ao2_ref
+mem
+mem
+-1
+1
+ao2_unlock(q);
+ao2_unlock(q)
+ao2_unlock
+ao2_unlock
+q
+q
+queue_t_unref(q, "Done with iterator");
+queue_t_unref(q, "Done with iterator")
+queue_t_unref
+queue_t_unref
+q
+q
+"Done with iterator"
+continue;
+found++;
+found++
+found
+found
+mem->paused = paused;
+mem->paused = paused
+mem->paused
+mem
+mem
+paused
+paused
+paused
+if (queue_persistent_members) {					dump_queue_members(q);				}
+queue_persistent_members
+queue_persistent_members
+{					dump_queue_members(q);				}
+dump_queue_members(q);
+dump_queue_members(q)
+dump_queue_members
+dump_queue_members
+q
+q
+if (is_member_available(mem)) {					ast_devstate_changed(AST_DEVICE_NOT_INUSE, "Queue:%s_avail", q->name);				} else if (!num_available_members(q)) {					ast_devstate_changed(AST_DEVICE_INUSE, "Queue:%s_avail", q->name);				}
+is_member_available(mem)
+is_member_available
+is_member_available
+mem
+mem
+{					ast_devstate_changed(AST_DEVICE_NOT_INUSE, "Queue:%s_avail", q->name);				}
+ast_devstate_changed(AST_DEVICE_NOT_INUSE, "Queue:%s_avail", q->name);
+ast_devstate_changed(AST_DEVICE_NOT_INUSE, "Queue:%s_avail", q->name)
+ast_devstate_changed
+ast_devstate_changed
+AST_DEVICE_NOT_INUSE
+AST_DEVICE_NOT_INUSE
+"Queue:%s_avail"
+q->name
+q
+q
+name
+if (!num_available_members(q)) {					ast_devstate_changed(AST_DEVICE_INUSE, "Queue:%s_avail", q->name);				}
+!num_available_members(q)
+num_available_members(q)
+num_available_members
+num_available_members
+q
+q
+{					ast_devstate_changed(AST_DEVICE_INUSE, "Queue:%s_avail", q->name);				}
+ast_devstate_changed(AST_DEVICE_INUSE, "Queue:%s_avail", q->name);
+ast_devstate_changed(AST_DEVICE_INUSE, "Queue:%s_avail", q->name)
+ast_devstate_changed
+ast_devstate_changed
+AST_DEVICE_INUSE
+AST_DEVICE_INUSE
+"Queue:%s_avail"
+q->name
+q
+q
+name
+ast_queue_log(q->name, "NONE", mem->membername, (paused ? "PAUSE" : "UNPAUSE"), "%s", S_OR(reason, ""));
+ast_queue_log(q->name, "NONE", mem->membername, (paused ? "PAUSE" : "UNPAUSE"), "%s", S_OR(reason, ""))
+ast_queue_log
+ast_queue_log
+q->name
+q
+q
+name
+"NONE"
+mem->membername
+mem
+mem
+membername
+(paused ? "PAUSE" : "UNPAUSE")
+paused ? "PAUSE" : "UNPAUSE"
+paused
+paused
+"PAUSE"
+"UNPAUSE"
+"%s"
+S_OR(reason, "")
+S_OR
+S_OR
+reason
+reason
+""
+if (!ast_strlen_zero(reason)) {					manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",						"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n"						"Reason: %s\r\n",							q->name, mem->interface, mem->membername, paused, reason);				} else {					/*** DOCUMENTATION					<managerEventInstance>						<synopsis>Raised when a member is paused/unpaused in the queue without a reason.</synopsis>						<syntax>							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />						</syntax>						<see-also>							<ref type="application">PauseQueueMember</ref>							<ref type="application">UnPauseQueueMember</ref>						</see-also>					</managerEventInstance>					***/					manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",						"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n",							q->name, mem->interface, mem->membername, paused);				}
+!ast_strlen_zero(reason)
+ast_strlen_zero(reason)
+ast_strlen_zero
+ast_strlen_zero
+reason
+reason
+{					manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",						"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n"						"Reason: %s\r\n",							q->name, mem->interface, mem->membername, paused, reason);				}
+manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",						"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n"						"Reason: %s\r\n",							q->name, mem->interface, mem->membername, paused, reason);
+manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",						"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n"						"Reason: %s\r\n",							q->name, mem->interface, mem->membername, paused, reason)
+manager_event
+manager_event
+EVENT_FLAG_AGENT
+EVENT_FLAG_AGENT
+"QueueMemberPaused"
+"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n"						"Reason: %s\r\n"
+q->name
+q
+q
+name
+mem->interface
+mem
+mem
+interface
+mem->membername
+mem
+mem
+membername
+paused
+paused
+reason
+reason
+{					/*** DOCUMENTATION					<managerEventInstance>						<synopsis>Raised when a member is paused/unpaused in the queue without a reason.</synopsis>						<syntax>							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />							<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />						</syntax>						<see-also>							<ref type="application">PauseQueueMember</ref>							<ref type="application">UnPauseQueueMember</ref>						</see-also>					</managerEventInstance>					***/					manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",						"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n",							q->name, mem->interface, mem->membername, paused);				}
+manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",						"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n",							q->name, mem->interface, mem->membername, paused);
+manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",						"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n",							q->name, mem->interface, mem->membername, paused)
+manager_event
+manager_event
+EVENT_FLAG_AGENT
+EVENT_FLAG_AGENT
+"QueueMemberPaused"
+"Queue: %s\r\n"						"Location: %s\r\n"						"MemberName: %s\r\n"						"Paused: %d\r\n"
+q->name
+q
+q
+name
+mem->interface
+mem
+mem
+interface
+mem->membername
+mem
+mem
+membername
+paused
+paused
+ao2_ref(mem, -1);
+ao2_ref(mem, -1)
+ao2_ref
+ao2_ref
+mem
+mem
+-1
+1
+if (!ast_strlen_zero(queuename) && !strcasecmp(queuename, q->name)) {			ao2_unlock(q);			queue_t_unref(q, "Done with iterator");			break;		}
+!ast_strlen_zero(queuename) && !strcasecmp(queuename, q->name)
+!ast_strlen_zero(queuename)
+ast_strlen_zero(queuename)
+ast_strlen_zero
+ast_strlen_zero
+queuename
+queuename
+!strcasecmp(queuename, q->name)
+strcasecmp(queuename, q->name)
+strcasecmp
+strcasecmp
+queuename
+queuename
+q->name
+q
+q
+name
+{			ao2_unlock(q);			queue_t_unref(q, "Done with iterator");			break;		}
+ao2_unlock(q);
+ao2_unlock(q)
+ao2_unlock
+ao2_unlock
+q
+q
+queue_t_unref(q, "Done with iterator");
+queue_t_unref(q, "Done with iterator")
+queue_t_unref
+queue_t_unref
+q
+q
+"Done with iterator"
+break;
+ao2_unlock(q);
+ao2_unlock(q)
+ao2_unlock
+ao2_unlock
+q
+q
+queue_t_unref(q, "Done with iterator");
+queue_t_unref(q, "Done with iterator")
+queue_t_unref
+queue_t_unref
+q
+q
+"Done with iterator"
+ao2_iterator_destroy(&queue_iter);
+ao2_iterator_destroy(&queue_iter)
+ao2_iterator_destroy
+ao2_iterator_destroy
+&queue_iter
+queue_iter
+queue_iter
+return found ? RESULT_SUCCESS : RESULT_FAILURE;
+found ? RESULT_SUCCESS : RESULT_FAILURE
+found
+found
+RESULT_SUCCESS
+RESULT_SUCCESS
+RESULT_FAILURE
+RESULT_FAILURE
+-----joern-----
+(16,2,0)
+(192,109,0)
+(48,34,0)
+(168,215,0)
+(166,145,0)
+(178,20,0)
+(130,62,0)
+(145,166,0)
+(166,133,0)
+(145,152,0)
+(115,182,0)
+(207,30,0)
+(184,160,0)
+(167,152,0)
+(37,62,0)
+(154,50,0)
+(110,196,0)
+(55,146,0)
+(197,228,0)
+(30,152,0)
+(151,184,0)
+(84,152,0)
+(129,174,0)
+(139,190,0)
+(225,130,0)
+(125,167,0)
+(203,164,0)
+(239,8,0)
+(54,228,0)
+(56,13,0)
+(195,204,0)
+(165,116,0)
+(98,126,0)
+(113,186,0)
+(36,122,0)
+(57,152,0)
+(169,98,0)
+(199,72,0)
+(148,214,0)
+(208,120,0)
+(7,62,0)
+(187,61,0)
+(162,66,0)
+(127,108,0)
+(182,67,0)
+(97,204,0)
+(158,168,0)
+(13,126,0)
+(156,182,0)
+(160,184,0)
+(43,134,0)
+(164,83,0)
+(23,32,0)
+(194,117,0)
+(136,213,0)
+(1,240,0)
+(73,182,0)
+(201,204,0)
+(39,231,0)
+(182,61,0)
+(88,30,0)
+(93,159,0)
+(50,126,0)
+(72,31,0)
+(53,117,0)
+(50,67,0)
+(52,240,0)
+(104,152,0)
+(95,166,0)
+(158,65,0)
+(3,28,0)
+(101,196,0)
+(62,167,0)
+(175,196,0)
+(108,127,0)
+(63,140,0)
+(65,231,0)
+(210,133,0)
+(57,239,0)
+(8,153,0)
+(218,217,0)
+(49,164,0)
+(72,32,0)
+(103,238,0)
+(238,126,0)
+(168,158,0)
+(213,126,0)
+(120,182,0)
+(2,152,0)
+(215,168,0)
+(120,83,0)
+(11,137,0)
+(174,62,0)
+(122,226,0)
+(21,17,0)
+(206,25,0)
+(72,30,0)
+(30,72,0)
+(22,239,0)
+(139,126,0)
+(166,95,0)
+(213,160,0)
+(235,61,0)
+(35,117,0)
+(33,228,0)
+(102,117,0)
+(65,158,0)
+(71,83,0)
+(116,204,0)
+(149,160,0)
+(226,205,0)
+(123,115,0)
+(68,25,0)
+(191,120,0)
+(62,130,0)
+(25,215,0)
+(217,209,0)
+(139,71,0)
+(138,204,0)
+(98,160,0)
+(228,118,0)
+(211,140,0)
+(177,8,0)
+(119,201,0)
+(70,160,0)
+(166,204,0)
+(89,139,0)
+(69,215,0)
+(10,126,0)
+(96,117,0)
+(108,152,0)
+(133,166,0)
+(223,214,0)
+(209,217,0)
+(141,117,0)
+(72,221,0)
+(60,117,0)
+(200,153,0)
+(42,28,0)
+(42,117,0)
+(76,57,0)
+(153,8,0)
+(228,159,0)
+(59,66,0)
+(64,221,0)
+(196,67,0)
+(179,126,0)
+(28,42,0)
+(163,32,0)
+(182,120,0)
+(62,174,0)
+(111,164,0)
+(45,60,0)
+(159,126,0)
+(95,126,0)
+(130,220,0)
+(134,152,0)
+(35,146,0)
+(84,61,0)
+(196,140,0)
+(185,179,0)
+(99,213,0)
+(9,60,0)
+(82,166,0)
+(215,109,0)
+(72,67,0)
+(0,134,0)
+(47,153,0)
+(106,182,0)
+(124,94,0)
+(27,145,0)
+(12,80,0)
+(164,166,0)
+(192,34,0)
+(133,100,0)
+(140,83,0)
+(186,134,0)
+(212,13,0)
+(190,204,0)
+(86,190,0)
+(15,226,0)
+(13,61,0)
+(157,186,0)
+(80,152,0)
+(179,185,0)
+(228,83,0)
+(126,50,0)
+(1,152,0)
+(34,192,0)
+(29,240,0)
+(66,228,0)
+(144,185,0)
+(104,240,0)
+(234,91,0)
+(172,80,0)
+(66,126,0)
+(160,51,0)
+(4,118,0)
+(134,186,0)
+(193,238,0)
+(5,45,0)
+(118,152,0)
+(45,35,0)
+(118,228,0)
+(171,212,0)
+(81,159,0)
+(180,209,0)
+(237,184,0)
+(188,45,0)
+(92,120,0)
+(46,32,0)
+(167,62,0)
+(40,146,0)
+(32,72,0)
+(152,57,0)
+(146,126,0)
+(227,160,0)
+(184,152,0)
+(215,25,0)
+(187,152,0)
+(222,133,0)
+(166,164,0)
+(8,117,0)
+(198,35,0)
+(229,201,0)
+(234,152,0)
+(159,228,0)
+(180,192,0)
+(62,126,0)
+(147,204,0)
+(209,180,0)
+(34,152,0)
+(90,72,0)
+(135,179,0)
+(233,152,0)
+(140,196,0)
+(80,94,0)
+(114,71,0)
+(78,1,0)
+(173,160,0)
+(75,166,0)
+(122,152,0)
+(155,108,0)
+(142,84,0)
+(230,192,0)
+(216,234,0)
+(58,228,0)
+(24,72,0)
+(79,139,0)
+(132,45,0)
+(174,83,0)
+(14,115,0)
+(228,66,0)
+(143,19,0)
+(228,241,0)
+(217,109,0)
+(186,170,0)
+(232,167,0)
+(231,65,0)
+(85,60,0)
+(160,98,0)
+(116,60,0)
+(221,83,0)
+(239,57,0)
+(115,152,0)
+(19,94,0)
+(38,95,0)
+(182,115,0)
+(77,118,0)
+(179,204,0)
+(28,8,0)
+(6,174,0)
+(20,109,0)
+(150,98,0)
+(18,84,0)
+(161,117,0)
+(190,83,0)
+(137,126,0)
+(71,139,0)
+(221,72,0)
+(13,212,0)
+(214,100,0)
+(160,83,0)
+(19,152,0)
+(105,2,0)
+(131,95,0)
+(32,83,0)
+(74,160,0)
+(107,104,0)
+(44,221,0)
+(26,145,0)
+(50,152,0)
+(183,204,0)
+(160,100,0)
+(181,122,0)
+(128,204,0)
+(2,240,0)
+(25,152,0)
+(242,174,0)
+(146,190,0)
+(214,148,0)
+(192,180,0)
+(87,226,0)
+(243,140,0)
+(160,213,0)
+(189,196,0)
+(202,34,0)
+(231,109,0)
+(226,122,0)
+(112,196,0)
+(219,187,0)
+(236,117,0)
+(121,221,0)
+(41,50,0)
+(163,46,1)
+(140,83,1)
+(228,197,1)
+(69,65,1)
+(45,5,1)
+(225,238,1)
+(104,107,1)
+(27,186,1)
+(95,126,1)
+(106,156,1)
+(105,16,1)
+(95,131,1)
+(45,60,1)
+(160,184,1)
+(135,160,1)
+(212,171,1)
+(19,143,1)
+(150,213,1)
+(57,76,1)
+(116,165,1)
+(87,127,1)
+(50,152,1)
+(3,124,1)
+(229,72,1)
+(203,49,1)
+(209,180,1)
+(216,224,1)
+(189,175,1)
+(164,83,1)
+(166,95,1)
+(209,217,1)
+(176,238,1)
+(219,13,1)
+(167,152,1)
+(39,179,1)
+(108,152,1)
+(123,120,1)
+(50,67,1)
+(166,164,1)
+(101,112,1)
+(207,88,1)
+(153,200,1)
+(222,75,1)
+(0,43,1)
+(71,83,1)
+(50,154,1)
+(15,87,1)
+(54,148,1)
+(201,119,1)
+(30,207,1)
+(64,199,1)
+(202,217,1)
+(142,187,1)
+(122,181,1)
+(192,34,1)
+(206,69,1)
+(119,229,1)
+(134,152,1)
+(90,71,1)
+(154,41,1)
+(146,126,1)
+(228,159,1)
+(174,83,1)
+(211,189,1)
+(84,152,1)
+(132,42,1)
+(196,101,1)
+(145,152,1)
+(46,221,1)
+(27,127,1)
+(58,33,1)
+(28,8,1)
+(126,50,1)
+(187,152,1)
+(57,239,1)
+(8,153,1)
+(74,148,1)
+(24,30,1)
+(237,151,1)
+(190,83,1)
+(215,25,1)
+(33,54,1)
+(221,44,1)
+(133,210,1)
+(171,56,1)
+(158,65,1)
+(26,27,1)
+(4,77,1)
+(159,126,1)
+(184,237,1)
+(155,137,1)
+(12,172,1)
+(213,136,1)
+(45,188,1)
+(89,79,1)
+(42,28,1)
+(230,34,1)
+(93,81,1)
+(166,145,1)
+(182,67,1)
+(41,10,1)
+(23,46,1)
+(217,218,1)
+(180,192,1)
+(160,98,1)
+(122,152,1)
+(35,45,1)
+(140,63,1)
+(81,118,1)
+(79,126,1)
+(125,7,1)
+(129,6,1)
+(156,176,1)
+(179,126,1)
+(43,113,1)
+(234,152,1)
+(16,104,1)
+(221,83,1)
+(86,146,1)
+(98,126,1)
+(234,216,1)
+(177,196,1)
+(78,152,1)
+(118,4,1)
+(167,232,1)
+(5,132,1)
+(30,152,1)
+(3,152,1)
+(80,152,1)
+(108,155,1)
+(37,167,1)
+(76,239,1)
+(239,8,1)
+(62,167,1)
+(228,83,1)
+(80,12,1)
+(72,221,1)
+(166,133,1)
+(238,126,1)
+(139,89,1)
+(13,212,1)
+(9,85,1)
+(198,35,1)
+(114,139,1)
+(19,152,1)
+(164,111,1)
+(66,126,1)
+(218,1,1)
+(182,120,1)
+(232,125,1)
+(238,193,1)
+(131,38,1)
+(199,90,1)
+(116,60,1)
+(146,55,1)
+(233,235,1)
+(110,20,1)
+(98,169,1)
+(107,158,1)
+(71,114,1)
+(213,126,1)
+(22,233,1)
+(99,184,1)
+(127,108,1)
+(187,219,1)
+(92,106,1)
+(233,8,1)
+(56,182,1)
+(182,73,1)
+(72,30,1)
+(39,209,1)
+(103,201,1)
+(135,228,1)
+(72,24,1)
+(134,0,1)
+(68,206,1)
+(84,18,1)
+(11,224,1)
+(228,66,1)
+(72,67,1)
+(177,20,1)
+(242,6,1)
+(144,135,1)
+(151,149,1)
+(32,23,1)
+(34,152,1)
+(72,32,1)
+(120,208,1)
+(136,99,1)
+(59,159,1)
+(88,32,1)
+(39,126,1)
+(173,74,1)
+(71,139,1)
+(193,103,1)
+(115,152,1)
+(7,225,1)
+(215,109,1)
+(214,223,1)
+(186,134,1)
+(10,209,1)
+(191,92,1)
+(157,137,1)
+(25,68,1)
+(34,48,1)
+(239,22,1)
+(168,215,1)
+(160,83,1)
+(75,164,1)
+(44,64,1)
+(160,213,1)
+(112,140,1)
+(55,40,1)
+(73,115,1)
+(40,116,1)
+(77,58,1)
+(62,126,1)
+(82,145,1)
+(113,157,1)
+(143,158,1)
+(178,60,1)
+(226,122,1)
+(11,234,1)
+(182,115,1)
+(20,178,1)
+(130,62,1)
+(28,3,1)
+(164,203,1)
+(121,64,1)
+(210,222,1)
+(160,100,1)
+(32,163,1)
+(18,142,1)
+(243,211,1)
+(36,15,1)
+(160,70,1)
+(228,118,1)
+(124,80,1)
+(229,71,1)
+(176,130,1)
+(175,110,1)
+(223,166,1)
+(158,168,1)
+(200,47,1)
+(181,36,1)
+(231,39,1)
+(172,19,1)
+(224,190,1)
+(174,242,1)
+(13,126,1)
+(149,173,1)
+(192,109,1)
+(165,176,1)
+(63,211,1)
+(190,86,1)
+(66,162,1)
+(196,67,1)
+(214,100,1)
+(188,132,1)
+(115,14,1)
+(217,109,1)
+(139,190,1)
+(14,123,1)
+(221,121,1)
+(137,126,1)
+(159,93,1)
+(137,11,1)
+(62,174,1)
+(169,150,1)
+(48,202,1)
+(148,214,1)
+(152,57,1)
+(1,78,1)
+(233,2,1)
+(120,83,1)
+(145,26,1)
+(185,144,1)
+(35,146,1)
+(27,226,1)
+(208,92,1)
+(6,37,1)
+(140,243,1)
+(118,152,1)
+(179,185,1)
+(104,152,1)
+(70,227,1)
+(60,9,1)
+(32,83,1)
+(25,152,1)
+(47,177,1)
+(111,49,1)
+(139,126,1)
+(231,109,1)
+(2,105,1)
+(235,84,1)
+(184,152,1)
+(65,231,1)
+(192,230,1)
+(20,109,1)
+(174,129,1)
+(2,152,1)
+(197,66,1)
+(133,100,1)
+(196,140,1)
+(38,82,1)
+(162,59,1)
+(120,191,1)
+(227,98,1)
+(1,152,1)
+(49,95,1)
+(228,148,2)
+(190,83,2)
+(0,137,2)
+(10,209,2)
+(84,152,2)
+(140,20,2)
+(222,176,2)
+(164,176,2)
+(213,126,2)
+(101,20,2)
+(30,71,2)
+(174,83,2)
+(77,148,2)
+(135,176,2)
+(158,65,2)
+(233,176,2)
+(238,126,2)
+(191,92,2)
+(39,126,2)
+(176,126,2)
+(111,49,2)
+(216,224,2)
+(72,67,2)
+(197,148,2)
+(80,152,2)
+(6,238,2)
+(166,145,2)
+(234,152,2)
+(39,176,2)
+(13,126,2)
+(228,118,2)
+(237,148,2)
+(211,20,2)
+(99,148,2)
+(154,209,2)
+(180,217,2)
+(130,238,2)
+(104,152,2)
+(14,176,2)
+(136,148,2)
+(93,148,2)
+(25,65,2)
+(160,213,2)
+(107,158,2)
+(89,126,2)
+(22,176,2)
+(27,176,2)
+(217,109,2)
+(201,126,2)
+(69,65,2)
+(80,158,2)
+(50,67,2)
+(192,217,2)
+(95,126,2)
+(143,158,2)
+(152,176,2)
+(224,176,2)
+(186,137,2)
+(125,238,2)
+(169,148,2)
+(210,176,2)
+(12,158,2)
+(40,176,2)
+(213,148,2)
+(160,98,2)
+(13,212,2)
+(116,60,2)
+(168,65,2)
+(172,158,2)
+(212,176,2)
+(65,176,2)
+(34,152,2)
+(207,71,2)
+(202,217,2)
+(2,152,2)
+(55,176,2)
+(66,148,2)
+(166,133,2)
+(162,148,2)
+(8,153,2)
+(155,137,2)
+(133,100,2)
+(108,137,2)
+(122,127,2)
+(152,158,2)
+(228,66,2)
+(189,20,2)
+(239,158,2)
+(24,71,2)
+(45,60,2)
+(131,176,2)
+(208,92,2)
+(72,221,2)
+(22,158,2)
+(65,209,2)
+(158,126,2)
+(32,71,2)
+(231,209,2)
+(98,148,2)
+(239,176,2)
+(98,126,2)
+(198,35,2)
+(49,176,2)
+(182,120,2)
+(23,46,2)
+(74,148,2)
+(146,126,2)
+(79,126,2)
+(227,148,2)
+(126,50,2)
+(36,127,2)
+(145,176,2)
+(73,176,2)
+(134,152,2)
+(221,71,2)
+(214,100,2)
+(148,176,2)
+(64,71,2)
+(148,214,2)
+(57,176,2)
+(164,83,2)
+(165,176,2)
+(219,176,2)
+(120,83,2)
+(185,176,2)
+(121,64,2)
+(239,8,2)
+(16,158,2)
+(57,158,2)
+(50,152,2)
+(26,176,2)
+(218,152,2)
+(1,152,2)
+(58,148,2)
+(116,176,2)
+(110,20,2)
+(160,83,2)
+(48,217,2)
+(39,209,2)
+(62,126,2)
+(209,152,2)
+(167,238,2)
+(4,148,2)
+(166,95,2)
+(75,176,2)
+(105,158,2)
+(145,152,2)
+(199,71,2)
+(144,176,2)
+(139,126,2)
+(158,168,2)
+(87,127,2)
+(2,158,2)
+(243,211,2)
+(179,185,2)
+(171,176,2)
+(168,215,2)
+(158,176,2)
+(62,174,2)
+(193,126,2)
+(231,126,2)
+(242,6,2)
+(57,239,2)
+(149,148,2)
+(233,158,2)
+(44,64,2)
+(214,176,2)
+(71,83,2)
+(15,127,2)
+(62,167,2)
+(190,176,2)
+(150,148,2)
+(81,148,2)
+(72,32,2)
+(65,231,2)
+(76,158,2)
+(151,148,2)
+(62,238,2)
+(215,109,2)
+(71,126,2)
+(181,127,2)
+(137,126,2)
+(5,132,2)
+(146,176,2)
+(84,176,2)
+(158,209,2)
+(126,209,2)
+(166,164,2)
+(63,211,2)
+(209,217,2)
+(123,176,2)
+(184,148,2)
+(196,140,2)
+(56,176,2)
+(163,46,2)
+(134,137,2)
+(30,152,2)
+(28,8,2)
+(78,152,2)
+(192,109,2)
+(232,238,2)
+(184,152,2)
+(68,65,2)
+(38,176,2)
+(124,158,2)
+(228,159,2)
+(25,152,2)
+(33,148,2)
+(32,83,2)
+(192,34,2)
+(114,126,2)
+(19,152,2)
+(188,132,2)
+(7,238,2)
+(46,71,2)
+(226,122,2)
+(115,152,2)
+(174,238,2)
+(92,176,2)
+(41,209,2)
+(59,148,2)
+(95,176,2)
+(86,176,2)
+(139,190,2)
+(196,20,2)
+(160,100,2)
+(70,148,2)
+(217,152,2)
+(186,134,2)
+(215,25,2)
+(19,158,2)
+(118,148,2)
+(122,152,2)
+(119,126,2)
+(160,184,2)
+(166,176,2)
+(157,137,2)
+(35,146,2)
+(173,148,2)
+(187,176,2)
+(221,83,2)
+(206,65,2)
+(230,217,2)
+(223,176,2)
+(203,49,2)
+(127,137,2)
+(76,176,2)
+(54,148,2)
+(225,238,2)
+(196,67,2)
+(82,176,2)
+(129,6,2)
+(156,176,2)
+(103,126,2)
+(90,71,2)
+(72,71,2)
+(175,20,2)
+(231,109,2)
+(115,176,2)
+(106,176,2)
+(20,109,2)
+(228,83,2)
+(65,126,2)
+(215,65,2)
+(108,152,2)
+(167,152,2)
+(11,176,2)
+(118,152,2)
+(234,224,2)
+(182,115,2)
+(104,158,2)
+(113,137,2)
+(226,127,2)
+(209,180,2)
+(50,209,2)
+(159,126,2)
+(152,57,2)
+(140,83,2)
+(180,192,2)
+(182,176,2)
+(179,126,2)
+(71,139,2)
+(231,176,2)
+(66,126,2)
+(137,176,2)
+(37,238,2)
+(133,176,2)
+(88,71,2)
+(142,176,2)
+(179,176,2)
+(18,176,2)
+(130,62,2)
+(182,67,2)
+(127,108,2)
+(112,20,2)
+(13,176,2)
+(72,30,2)
+(159,148,2)
+(34,217,2)
+(187,152,2)
+(42,28,2)
+(235,176,2)
+(229,126,2)
+(120,176,2)
+(160,148,2)
+(43,137,2)
+-----------------------------------
+(0,name)
+(1,ao2_lock(q)
+(2,queue_t_unref(q, "Done with iterator")
+(3,queue_iter)
+(4,name)
+(5,RESULT_SUCCESS)
+(6,paused)
+(7,mem)
+(8,queue_iter = ao2_iterator_init(queues, 0)
+(9,0)
+(10,mem)
+(11,mem)
+(12,"Done with iterator")
+(13,ao2_ref(mem, -1)
+(14,name)
+(15,"Queue:%s_avail")
+(16,q)
+(17,)
+(18,"Done with iterator")
+(19,ao2_unlock(q)
+(20,ast_strlen_zero(queuename)
+(21,if ((mem = interface_exists(q, interface)
+(22,queue_iter)
+(23,"un")
+(24,interface)
+(25,q->name)
+(26,name)
+(27,q)
+(28,&queue_iter)
+(29,if (!ast_strlen_zero(queuename)
+(30,q->name)
+(31,)
+(32,paused ? "" : "un")
+(33,"QueueMemberPaused")
+(34,q->name)
+(35,return found ? RESULT_SUCCESS : RESULT_FAILURE;)
+(36,q)
+(37,"paused")
+(38,mem)
+(39,queuename)
+(40,mem)
+(41,q)
+(42,ao2_iterator_destroy(&queue_iter)
+(43,q)
+(44,"un")
+(45,found ? RESULT_SUCCESS : RESULT_FAILURE)
+(46,paused)
+(47,queues)
+(48,name)
+(49,paused)
+(50,interface_exists(q, interface)
+(51,)
+(52,if (ast_strlen_zero(queuename)
+(53,queue_iter)
+(54,EVENT_FLAG_AGENT)
+(55,paused)
+(56,mem)
+(57,ao2_t_iterator_next(&queue_iter, "Iterate over queues")
+(58,"Queue: %s\\r\\n"\n\\n\\t\\t\\t\\t\\t\\t"Location: %s\\r\\n"\n\\n\\t\\t\\t\\t\\t\\t"MemberName: %s\\r\\n"\n\\n\\t\\t\\t\\t\\t\\t"Paused: %d\\r\\n")
+(59,mem)
+(60,found = 0)
+(61,)
+(62,update_realtime_member_field(mem, q->name, "paused", paused ? "1" : "0")
+(63,"UNPAUSEALL")
+(64,paused)
+(65,!ast_strlen_zero(queuename)
+(66,mem->membername)
+(67,const char *interface)
+(68,name)
+(69,queuename)
+(70,reason)
+(71,mem->paused == paused)
+(72,ast_debug(1, "%spausing already-%spaused queue member %s:%s\\n", (paused ? "" : "un")
+(73,interface)
+(74,EVENT_FLAG_AGENT)
+(75,"%s")
+(76,"Iterate over queues")
+(77,q)
+(78,q)
+(79,mem)
+(80,queue_t_unref(q, "Done with iterator")
+(81,mem)
+(82,"NONE")
+(83,int paused)
+(84,queue_t_unref(q, "Done with iterator")
+(85,found)
+(86,paused)
+(87,AST_DEVICE_INUSE)
+(88,q)
+(89,paused)
+(90,1)
+(91,)
+(92,paused)
+(93,interface)
+(94,)
+(95,mem->membername)
+(96,found)
+(97,if (!ast_strlen_zero(reason)
+(98,mem->membername)
+(99,mem)
+(100,const char *reason)
+(101,"")
+(102,if (ast_strlen_zero(queuename)
+(103,mem)
+(104,ao2_unlock(q)
+(105,"Done with iterator")
+(106,"Failed %spausing realtime queue member %s:%s\\n")
+(107,q)
+(108,num_available_members(q)
+(109,const char *queuename)
+(110,"NONE")
+(111,"PAUSE")
+(112,"%s")
+(113,"Queue:%s_avail")
+(114,paused)
+(115,q->name)
+(116,found++)
+(117,)
+(118,q->name)
+(119,0)
+(120,paused ? "" : "un")
+(121,"")
+(122,q->name)
+(123,q)
+(124,break;)
+(125,q)
+(126,mem = interface_exists(q, interface)
+(127,!num_available_members(q)
+(128,if (queue_persistent_members)
+(129,"1")
+(130,failed = update_realtime_member_field(mem, q->name, "paused", paused ? "1" : "0")
+(131,membername)
+(132,found)
+(133,S_OR(reason, "")
+(134,q->name)
+(135,mem)
+(136,interface)
+(137,is_member_available(mem)
+(138,if (is_member_available(mem)
+(139,mem->paused)
+(140,paused ? "PAUSEALL" : "UNPAUSEALL")
+(141,while ((q = ao2_t_iterator_next(&queue_iter, "Iterate over queues")
+(142,q)
+(143,q)
+(144,1)
+(145,q->name)
+(146,mem->paused)
+(147,if (mem->paused == paused)
+(148,!ast_strlen_zero(reason)
+(149,"Queue: %s\\r\\n"\n\\n\\t\\t\\t\\t\\t\\t"Location: %s\\r\\n"\n\\n\\t\\t\\t\\t\\t\\t"MemberName: %s\\r\\n"\n\\n\\t\\t\\t\\t\\t\\t"Paused: %d\\r\\n"\n\\n\\t\\t\\t\\t\\t\\t"Reason: %s\\r\\n")
+(150,mem)
+(151,q)
+(152,q = ao2_t_iterator_next(&queue_iter, "Iterate over queues")
+(153,ao2_iterator_init(queues, 0)
+(154,interface)
+(155,q)
+(156,LOG_WARNING)
+(157,AST_DEVICE_NOT_INUSE)
+(158,!ast_strlen_zero(queuename)
+(159,mem->interface)
+(160,manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",\n\\n\\t\\t\\t\\t\\t\\t"Queue: %s\\r\\n"\n\\n\\t\\t\\t\\t\\t\\t"Location: %s\\r\\n"\n\\n\\t\\t\\t\\t\\t\\t"MemberName: %s\\r\\n"\n\\n\\t\\t\\t\\t\\t\\t"Paused: %d\\r\\n"\n\\n\\t\\t\\t\\t\\t\\t"Reason: %s\\r\\n",\n\\n\\t\\t\\t\\t\\t\\t\\tq->name, mem->interface, mem->membername, paused, reason)
+(161,mem)
+(162,membername)
+(163,"")
+(164,paused ? "PAUSE" : "UNPAUSE")
+(165,found)
+(166,ast_queue_log(q->name, "NONE", mem->membername, (paused ? "PAUSE" : "UNPAUSE")
+(167,q->name)
+(168,!strcasecmp(queuename, q->name)
+(169,membername)
+(170,)
+(171,1)
+(172,q)
+(173,"QueueMemberPaused")
+(174,paused ? "1" : "0")
+(175,"NONE")
+(176,failed)
+(177,queue_iter)
+(178,queuename)
+(179,ao2_ref(mem, -1)
+(180,!strcasecmp(q->name, queuename)
+(181,name)
+(182,ast_log(LOG_WARNING, "Failed %spausing realtime queue member %s:%s\\n", (paused ? "" : "un")
+(183,if (failed)
+(184,q->name)
+(185,-1)
+(186,ast_devstate_changed(AST_DEVICE_NOT_INUSE, "Queue:%s_avail", q->name)
+(187,ao2_unlock(q)
+(188,RESULT_FAILURE)
+(189,interface)
+(190,mem->paused = paused)
+(191,"un")
+(192,strcasecmp(q->name, queuename)
+(193,realtime)
+(194,q)
+(195,if (mem->realtime)
+(196,ast_queue_log("NONE", "NONE", interface, (paused ? "PAUSEALL" : "UNPAUSEALL")
+(197,paused)
+(198,RET)
+(199,"%spausing already-%spaused queue member %s:%s\\n")
+(200,0)
+(201,failed = 0)
+(202,q)
+(203,"UNPAUSE")
+(204,)
+(205,)
+(206,q)
+(207,name)
+(208,"")
+(209,ast_strlen_zero(queuename)
+(210,"")
+(211,paused)
+(212,-1)
+(213,mem->interface)
+(214,ast_strlen_zero(reason)
+(215,strcasecmp(queuename, q->name)
+(216,q)
+(217,ast_strlen_zero(queuename)
+(218,queuename)
+(219,q)
+(220,)
+(221,paused ? "" : "un")
+(222,reason)
+(223,reason)
+(224,queue_persistent_members)
+(225,failed)
+(226,ast_devstate_changed(AST_DEVICE_INUSE, "Queue:%s_avail", q->name)
+(227,paused)
+(228,manager_event(EVENT_FLAG_AGENT, "QueueMemberPaused",\n\\n\\t\\t\\t\\t\\t\\t"Queue: %s\\r\\n"\n\\n\\t\\t\\t\\t\\t\\t"Location: %s\\r\\n"\n\\n\\t\\t\\t\\t\\t\\t"MemberName: %s\\r\\n"\n\\n\\t\\t\\t\\t\\t\\t"Paused: %d\\r\\n",\n\\n\\t\\t\\t\\t\\t\\t\\tq->name, mem->interface, mem->membername, paused)
+(229,failed)
+(230,queuename)
+(231,ast_strlen_zero(queuename)
+(232,name)
+(233,q)
+(234,dump_queue_members(q)
+(235,continue;)
+(236,failed)
+(237,name)
+(238,mem->realtime)
+(239,&queue_iter)
+(240,)
+(241,)
+(242,"0")
+(243,"PAUSEALL")
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,2581 @@
+-----label-----
+0
+-----code-----
+int
+main (int argc, char **argv)
+{
+  enum header_mode header_mode = multiple_files;
+  bool ok = true;
+  /* If from_start, the number of items to skip before printing; otherwise,
+     the number of items at the end of the file to print.  Although the type
+     is signed, the value is never negative.  */
+  uintmax_t n_units = DEFAULT_N_LINES;
+  size_t n_files;
+  char **file;
+  struct File_spec *F;
+  size_t i;
+  bool obsolete_option;
+
+  /* The number of seconds to sleep between iterations.
+     During one iteration, every file name or descriptor is checked to
+     see if it has changed.  */
+  double sleep_interval = 1.0;
+
+  initialize_main (&argc, &argv);
+  set_program_name (argv[0]);
+  setlocale (LC_ALL, "");
+  bindtextdomain (PACKAGE, LOCALEDIR);
+  textdomain (PACKAGE);
+
+  atexit (close_stdout);
+
+  have_read_stdin = false;
+
+  count_lines = true;
+  forever = from_start = print_headers = false;
+  obsolete_option = parse_obsolete_option (argc, argv, &n_units);
+  argc -= obsolete_option;
+  argv += obsolete_option;
+  parse_options (argc, argv, &n_units, &header_mode, &sleep_interval);
+
+  /* To start printing with item N_UNITS from the start of the file, skip
+     N_UNITS - 1 items.  `tail -n +0' is actually meaningless, but for Unix
+     compatibility it's treated the same as `tail -n +1'.  */
+  if (from_start)
+    {
+      if (n_units)
+        --n_units;
+    }
+
+  if (optind < argc)
+    {
+      n_files = argc - optind;
+      file = argv + optind;
+    }
+  else
+    {
+      static char *dummy_stdin = (char *) "-";
+      n_files = 1;
+      file = &dummy_stdin;
+    }
+
+  {
+    bool found_hyphen = false;
+
+    for (i = 0; i < n_files; i++)
+      if (STREQ (file[i], "-"))
+        found_hyphen = true;
+
+    /* When following by name, there must be a name.  */
+    if (found_hyphen && follow_mode == Follow_name)
+      error (EXIT_FAILURE, 0, _("cannot follow %s by name"), quote ("-"));
+
+    /* When following forever, warn if any file is `-'.
+       This is only a warning, since tail's output (before a failing seek,
+       and that from any non-stdin files) might still be useful.  */
+    if (forever && found_hyphen && isatty (STDIN_FILENO))
+      error (0, 0, _("warning: following standard input"
+                     " indefinitely is ineffective"));
+  }
+
+  F = xnmalloc (n_files, sizeof *F);
+  for (i = 0; i < n_files; i++)
+    F[i].name = file[i];
+
+  if (header_mode == always
+      || (header_mode == multiple_files && n_files > 1))
+    print_headers = true;
+
+  if (O_BINARY && ! isatty (STDOUT_FILENO))
+    xfreopen (NULL, "wb", stdout);
+
+  for (i = 0; i < n_files; i++)
+    ok &= tail_file (&F[i], n_units);
+
+  if (forever && ignore_fifo_and_pipe (F, n_files))
+    {
+#if HAVE_INOTIFY
+      /* tailable_stdin() checks if the user specifies stdin via  "-",
+         or implicitly by providing no arguments. If so, we won't use inotify.
+         Technically, on systems with a working /dev/stdin, we *could*,
+         but would it be worth it?  Verifying that it's a real device
+         and hooked up to stdin is not trivial, while reverting to
+         non-inotify-based tail_forever is easy and portable.
+
+         any_remote_file() checks if the user has specified any
+         files that reside on remote file systems.  inotify is not used
+         in this case because it would miss any updates to the file
+         that were not initiated from the local system.
+
+         FIXME: inotify doesn't give any notification when a new
+         (remote) file or directory is mounted on top a watched file.
+         When follow_mode == Follow_name we would ideally like to detect that.
+         Note if there is a change to the original file then we'll
+         recheck it and follow the new file, or ignore it if the
+         file has changed to being remote.  */
+      if (tailable_stdin (F, n_files) || any_remote_file (F, n_files))
+        disable_inotify = true;
+
+      if (!disable_inotify)
+        {
+          int wd = inotify_init ();
+          if (wd < 0)
+            error (0, errno, _("inotify cannot be used, reverting to polling"));
+          else
+            {
+              /* Flush any output from tail_file, now, since
+                 tail_forever_inotify flushes only after writing,
+                 not before reading.  */
+              if (fflush (stdout) != 0)
+                error (EXIT_FAILURE, errno, _("write error"));
+
+              tail_forever_inotify (wd, F, n_files, sleep_interval);
+
+              /* The only way the above returns is upon failure.  */
+              exit (EXIT_FAILURE);
+            }
+        }
+#endif
+      tail_forever (F, n_files, sleep_interval);
+    }
+
+  if (have_read_stdin && close (STDIN_FILENO) < 0)
+    error (EXIT_FAILURE, errno, "-");
+  exit (ok ? EXIT_SUCCESS : EXIT_FAILURE);
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+5,6
+5,7
+7,8
+9,10
+9,11
+11,12
+11,13
+11,14
+15,16
+15,17
+15,18
+15,19
+15,20
+15,21
+15,22
+15,23
+15,24
+15,25
+15,26
+15,27
+15,28
+15,29
+15,30
+15,31
+15,32
+15,33
+15,34
+15,35
+15,36
+15,37
+15,38
+15,39
+15,40
+15,41
+15,42
+15,43
+15,44
+15,45
+15,46
+15,47
+15,48
+16,17
+17,18
+17,19
+18,19
+20,21
+20,22
+22,23
+23,24
+25,26
+26,27
+26,28
+28,29
+28,30
+30,31
+32,33
+33,34
+33,35
+34,35
+36,37
+36,38
+38,39
+39,40
+41,42
+42,43
+42,44
+43,44
+45,46
+47,48
+48,49
+48,50
+50,51
+50,52
+50,53
+54,55
+55,56
+55,57
+56,57
+58,59
+58,60
+61,62
+62,63
+62,64
+63,64
+65,66
+67,68
+68,69
+68,70
+70,71
+72,73
+73,74
+73,75
+75,76
+75,77
+77,78
+79,80
+80,81
+80,82
+80,83
+81,82
+83,84
+84,85
+86,87
+87,88
+89,90
+90,91
+90,92
+91,92
+93,94
+93,95
+94,95
+97,98
+98,99
+98,100
+98,101
+99,100
+101,102
+104,105
+105,106
+105,107
+105,108
+106,107
+108,109
+110,111
+112,113
+113,114
+113,115
+114,115
+116,117
+117,118
+119,120
+120,121
+120,122
+121,122
+123,124
+124,125
+126,127
+127,128
+127,129
+128,129
+131,132
+132,133
+132,134
+133,134
+136,137
+137,138
+137,139
+138,139
+140,141
+140,142
+141,142
+143,144
+143,145
+144,145
+147,148
+148,149
+148,150
+149,150
+151,152
+151,153
+151,154
+151,155
+152,153
+154,155
+156,157
+158,159
+159,160
+161,162
+162,163
+162,164
+163,164
+165,166
+167,168
+168,169
+168,170
+169,170
+171,172
+173,174
+174,175
+174,176
+174,177
+174,178
+174,179
+174,180
+175,176
+177,178
+179,180
+181,182
+182,183
+184,185
+185,186
+187,188
+188,189
+190,191
+190,192
+191,192
+193,194
+194,195
+194,196
+195,196
+197,198
+198,199
+199,200
+201,202
+201,203
+201,204
+202,203
+202,204
+203,204
+205,206
+207,208
+207,209
+208,209
+209,210
+209,211
+210,211
+212,213
+212,214
+213,214
+215,216
+217,218
+218,219
+218,220
+219,220
+221,222
+221,223
+222,223
+224,225
+226,227
+226,228
+226,229
+227,228
+228,229
+228,230
+230,231
+230,232
+230,233
+233,234
+234,235
+234,236
+235,236
+235,237
+237,238
+240,241
+241,242
+241,243
+242,243
+245,246
+246,247
+246,248
+247,248
+249,250
+250,251
+252,253
+252,254
+252,255
+252,256
+253,254
+254,255
+254,256
+256,257
+256,258
+258,259
+260,261
+260,262
+260,263
+260,264
+261,262
+262,263
+262,264
+263,264
+266,267
+266,268
+267,268
+269,270
+271,272
+272,273
+274,275
+274,276
+275,276
+275,277
+275,278
+276,277
+278,279
+278,280
+279,280
+281,282
+284,285
+285,286
+285,287
+286,287
+289,290
+289,291
+290,291
+290,292
+291,292
+293,294
+293,295
+294,295
+296,297
+298,299
+299,300
+299,301
+299,302
+299,303
+299,304
+300,301
+302,303
+305,306
+305,307
+306,307
+309,310
+309,311
+310,311
+313,314
+313,315
+314,315
+314,316
+315,316
+315,317
+316,317
+318,319
+320,321
+320,322
+321,322
+323,324
+325,326
+326,327
+326,328
+326,329
+326,330
+327,328
+331,332
+331,333
+332,333
+335,336
+336,337
+336,338
+337,338
+339,340
+339,341
+339,342
+340,341
+342,343
+344,345
+345,346
+346,347
+348,349
+348,350
+348,351
+348,352
+349,350
+350,351
+350,352
+351,352
+354,355
+354,356
+355,356
+357,358
+359,360
+360,361
+362,363
+363,364
+363,365
+364,365
+364,366
+365,366
+365,367
+366,367
+368,369
+371,372
+371,373
+372,373
+374,375
+376,377
+376,378
+377,378
+377,379
+378,379
+378,380
+379,380
+381,382
+383,384
+384,385
+384,386
+385,386
+385,387
+386,387
+388,389
+390,391
+390,392
+391,392
+394,395
+395,396
+395,397
+396,397
+399,400
+399,401
+400,401
+400,402
+401,402
+403,404
+404,405
+404,406
+405,406
+407,408
+409,410
+410,411
+410,412
+410,413
+410,414
+411,412
+413,414
+416,417
+418,419
+418,420
+418,421
+418,422
+419,420
+420,421
+420,422
+421,422
+424,425
+424,426
+425,426
+427,428
+429,430
+430,431
+432,433
+433,434
+433,435
+434,435
+436,437
+436,438
+436,439
+437,438
+439,440
+440,441
+440,442
+441,442
+443,444
+445,446
+447,448
+447,449
+448,449
+448,450
+449,450
+451,452
+451,453
+451,454
+452,453
+454,455
+456,457
+458,459
+459,460
+460,461
+460,462
+460,463
+460,464
+461,462
+463,464
+465,466
+467,468
+469,470
+469,471
+470,471
+470,472
+471,472
+473,474
+473,475
+474,475
+474,476
+475,476
+477,478
+480,481
+481,482
+481,483
+481,484
+481,485
+482,483
+484,485
+486,487
+489,490
+490,491
+490,492
+491,492
+493,494
+493,495
+493,496
+494,495
+496,497
+498,499
+-----nextToken-----
+2,4,6,8,10,12,13,14,19,21,24,27,29,31,35,37,40,44,46,49,51,52,53,57,59,60,64,66,69,71,74,76,78,82,85,88,92,95,96,100,102,103,107,109,111,115,118,122,125,129,130,134,135,139,142,145,146,150,153,155,157,160,164,166,170,172,176,178,180,183,186,189,192,196,200,204,206,211,214,216,220,223,225,229,231,232,236,238,239,243,244,248,251,255,257,259,264,265,268,270,273,277,280,282,283,287,288,292,295,297,301,303,304,307,308,311,312,317,319,322,324,328,329,330,333,334,338,341,343,347,352,353,356,358,361,367,369,370,373,375,380,382,387,389,392,393,397,398,402,406,408,412,414,415,417,422,423,426,428,431,435,438,442,444,446,450,453,455,457,462,464,466,468,472,476,478,479,483,485,487,488,492,495,497,499
+-----computeFrom-----
+127,128
+127,129
+132,133
+132,134
+137,138
+137,139
+140,141
+140,142
+143,144
+143,145
+148,149
+148,150
+162,163
+162,164
+168,169
+168,170
+202,203
+202,204
+209,210
+209,211
+212,213
+212,214
+218,219
+218,220
+221,222
+221,223
+241,242
+241,243
+246,247
+246,248
+262,263
+262,264
+266,267
+266,268
+285,286
+285,287
+290,291
+290,292
+293,294
+293,295
+314,315
+314,316
+315,316
+315,317
+336,337
+336,338
+350,351
+350,352
+354,355
+354,356
+363,364
+363,365
+377,378
+377,379
+378,379
+378,380
+384,385
+384,386
+385,386
+385,387
+390,391
+390,392
+395,396
+395,397
+400,401
+400,402
+420,421
+420,422
+424,425
+424,426
+433,434
+433,435
+448,449
+448,450
+470,471
+470,472
+473,474
+473,475
+-----guardedBy-----
+206,214
+204,225
+455,464
+457,466
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;IdExpression;Name;CompoundStatement;IfStatement;IdExpression;Name;ExpressionStatement;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;EqualsInitializer;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FunctionCallExpression;IdExpression;Name;LiteralExpression;FunctionCallExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;LiteralExpression;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;UnaryExpression;IdExpression;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ConditionalExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;
+-----ast_node-----
+intmain (int argc, char **argv){  enum header_mode header_mode = multiple_files;  bool ok = true;  /* If from_start, the number of items to skip before printing; otherwise,     the number of items at the end of the file to print.  Although the type     is signed, the value is never negative.  */  uintmax_t n_units = DEFAULT_N_LINES;  size_t n_files;  char **file;  struct File_spec *F;  size_t i;  bool obsolete_option;  /* The number of seconds to sleep between iterations.     During one iteration, every file name or descriptor is checked to     see if it has changed.  */  double sleep_interval = 1.0;  initialize_main (&argc, &argv);  set_program_name (argv[0]);  setlocale (LC_ALL, "");  bindtextdomain (PACKAGE, LOCALEDIR);  textdomain (PACKAGE);  atexit (close_stdout);  have_read_stdin = false;  count_lines = true;  forever = from_start = print_headers = false;  obsolete_option = parse_obsolete_option (argc, argv, &n_units);  argc -= obsolete_option;  argv += obsolete_option;  parse_options (argc, argv, &n_units, &header_mode, &sleep_interval);  /* To start printing with item N_UNITS from the start of the file, skip     N_UNITS - 1 items.  `tail -n +0' is actually meaningless, but for Unix     compatibility it's treated the same as `tail -n +1'.  */  if (from_start)    {      if (n_units)        --n_units;    }  if (optind < argc)    {      n_files = argc - optind;      file = argv + optind;    }  else    {      static char *dummy_stdin = (char *) "-";      n_files = 1;      file = &dummy_stdin;    }  {    bool found_hyphen = false;    for (i = 0; i < n_files; i++)      if (STREQ (file[i], "-"))        found_hyphen = true;    /* When following by name, there must be a name.  */    if (found_hyphen && follow_mode == Follow_name)      error (EXIT_FAILURE, 0, _("cannot follow %s by name"), quote ("-"));    /* When following forever, warn if any file is `-'.       This is only a warning, since tail's output (before a failing seek,       and that from any non-stdin files) might still be useful.  */    if (forever && found_hyphen && isatty (STDIN_FILENO))      error (0, 0, _("warning: following standard input"                     " indefinitely is ineffective"));  }  F = xnmalloc (n_files, sizeof *F);  for (i = 0; i < n_files; i++)    F[i].name = file[i];  if (header_mode == always      || (header_mode == multiple_files && n_files > 1))    print_headers = true;  if (O_BINARY && ! isatty (STDOUT_FILENO))    xfreopen (NULL, "wb", stdout);  for (i = 0; i < n_files; i++)    ok &= tail_file (&F[i], n_units);  if (forever && ignore_fifo_and_pipe (F, n_files))    {#if HAVE_INOTIFY      /* tailable_stdin() checks if the user specifies stdin via  "-",         or implicitly by providing no arguments. If so, we won't use inotify.         Technically, on systems with a working /dev/stdin, we *could*,         but would it be worth it?  Verifying that it's a real device         and hooked up to stdin is not trivial, while reverting to         non-inotify-based tail_forever is easy and portable.         any_remote_file() checks if the user has specified any         files that reside on remote file systems.  inotify is not used         in this case because it would miss any updates to the file         that were not initiated from the local system.         FIXME: inotify doesn't give any notification when a new         (remote) file or directory is mounted on top a watched file.         When follow_mode == Follow_name we would ideally like to detect that.         Note if there is a change to the original file then we'll         recheck it and follow the new file, or ignore it if the         file has changed to being remote.  */      if (tailable_stdin (F, n_files) || any_remote_file (F, n_files))        disable_inotify = true;      if (!disable_inotify)        {          int wd = inotify_init ();          if (wd < 0)            error (0, errno, _("inotify cannot be used, reverting to polling"));          else            {              /* Flush any output from tail_file, now, since                 tail_forever_inotify flushes only after writing,                 not before reading.  */              if (fflush (stdout) != 0)                error (EXIT_FAILURE, errno, _("write error"));              tail_forever_inotify (wd, F, n_files, sleep_interval);              /* The only way the above returns is upon failure.  */              exit (EXIT_FAILURE);            }        }#endif      tail_forever (F, n_files, sleep_interval);    }  if (have_read_stdin && close (STDIN_FILENO) < 0)    error (EXIT_FAILURE, errno, "-");  exit (ok ? EXIT_SUCCESS : EXIT_FAILURE);}
+int
+main (int argc, char **argv)
+main
+int argc
+int
+argc
+argc
+char **argv
+char
+**argv
+*
+*
+argv
+{  enum header_mode header_mode = multiple_files;  bool ok = true;  /* If from_start, the number of items to skip before printing; otherwise,     the number of items at the end of the file to print.  Although the type     is signed, the value is never negative.  */  uintmax_t n_units = DEFAULT_N_LINES;  size_t n_files;  char **file;  struct File_spec *F;  size_t i;  bool obsolete_option;  /* The number of seconds to sleep between iterations.     During one iteration, every file name or descriptor is checked to     see if it has changed.  */  double sleep_interval = 1.0;  initialize_main (&argc, &argv);  set_program_name (argv[0]);  setlocale (LC_ALL, "");  bindtextdomain (PACKAGE, LOCALEDIR);  textdomain (PACKAGE);  atexit (close_stdout);  have_read_stdin = false;  count_lines = true;  forever = from_start = print_headers = false;  obsolete_option = parse_obsolete_option (argc, argv, &n_units);  argc -= obsolete_option;  argv += obsolete_option;  parse_options (argc, argv, &n_units, &header_mode, &sleep_interval);  /* To start printing with item N_UNITS from the start of the file, skip     N_UNITS - 1 items.  `tail -n +0' is actually meaningless, but for Unix     compatibility it's treated the same as `tail -n +1'.  */  if (from_start)    {      if (n_units)        --n_units;    }  if (optind < argc)    {      n_files = argc - optind;      file = argv + optind;    }  else    {      static char *dummy_stdin = (char *) "-";      n_files = 1;      file = &dummy_stdin;    }  {    bool found_hyphen = false;    for (i = 0; i < n_files; i++)      if (STREQ (file[i], "-"))        found_hyphen = true;    /* When following by name, there must be a name.  */    if (found_hyphen && follow_mode == Follow_name)      error (EXIT_FAILURE, 0, _("cannot follow %s by name"), quote ("-"));    /* When following forever, warn if any file is `-'.       This is only a warning, since tail's output (before a failing seek,       and that from any non-stdin files) might still be useful.  */    if (forever && found_hyphen && isatty (STDIN_FILENO))      error (0, 0, _("warning: following standard input"                     " indefinitely is ineffective"));  }  F = xnmalloc (n_files, sizeof *F);  for (i = 0; i < n_files; i++)    F[i].name = file[i];  if (header_mode == always      || (header_mode == multiple_files && n_files > 1))    print_headers = true;  if (O_BINARY && ! isatty (STDOUT_FILENO))    xfreopen (NULL, "wb", stdout);  for (i = 0; i < n_files; i++)    ok &= tail_file (&F[i], n_units);  if (forever && ignore_fifo_and_pipe (F, n_files))    {#if HAVE_INOTIFY      /* tailable_stdin() checks if the user specifies stdin via  "-",         or implicitly by providing no arguments. If so, we won't use inotify.         Technically, on systems with a working /dev/stdin, we *could*,         but would it be worth it?  Verifying that it's a real device         and hooked up to stdin is not trivial, while reverting to         non-inotify-based tail_forever is easy and portable.         any_remote_file() checks if the user has specified any         files that reside on remote file systems.  inotify is not used         in this case because it would miss any updates to the file         that were not initiated from the local system.         FIXME: inotify doesn't give any notification when a new         (remote) file or directory is mounted on top a watched file.         When follow_mode == Follow_name we would ideally like to detect that.         Note if there is a change to the original file then we'll         recheck it and follow the new file, or ignore it if the         file has changed to being remote.  */      if (tailable_stdin (F, n_files) || any_remote_file (F, n_files))        disable_inotify = true;      if (!disable_inotify)        {          int wd = inotify_init ();          if (wd < 0)            error (0, errno, _("inotify cannot be used, reverting to polling"));          else            {              /* Flush any output from tail_file, now, since                 tail_forever_inotify flushes only after writing,                 not before reading.  */              if (fflush (stdout) != 0)                error (EXIT_FAILURE, errno, _("write error"));              tail_forever_inotify (wd, F, n_files, sleep_interval);              /* The only way the above returns is upon failure.  */              exit (EXIT_FAILURE);            }        }#endif      tail_forever (F, n_files, sleep_interval);    }  if (have_read_stdin && close (STDIN_FILENO) < 0)    error (EXIT_FAILURE, errno, "-");  exit (ok ? EXIT_SUCCESS : EXIT_FAILURE);}
+enum header_mode header_mode = multiple_files;
+enum header_mode header_mode = multiple_files;
+enum header_mode
+header_mode
+header_mode = multiple_files
+header_mode
+= multiple_files
+multiple_files
+multiple_files
+bool ok = true;
+bool ok = true;
+bool
+ok = true
+ok
+= true
+true
+uintmax_t n_units = DEFAULT_N_LINES;
+uintmax_t n_units = DEFAULT_N_LINES;
+uintmax_t
+uintmax_t
+n_units = DEFAULT_N_LINES
+n_units
+= DEFAULT_N_LINES
+DEFAULT_N_LINES
+DEFAULT_N_LINES
+size_t n_files;
+size_t n_files;
+size_t
+size_t
+n_files
+n_files
+char **file;
+char **file;
+char
+**file
+*
+*
+file
+struct File_spec *F;
+struct File_spec *F;
+struct File_spec
+File_spec
+*F
+*
+F
+size_t i;
+size_t i;
+size_t
+size_t
+i
+i
+bool obsolete_option;
+bool obsolete_option;
+bool
+obsolete_option
+obsolete_option
+double sleep_interval = 1.0;
+double sleep_interval = 1.0;
+double
+sleep_interval = 1.0
+sleep_interval
+= 1.0
+1.0
+initialize_main (&argc, &argv);
+initialize_main (&argc, &argv)
+initialize_main
+initialize_main
+&argc
+argc
+argc
+&argv
+argv
+argv
+set_program_name (argv[0]);
+set_program_name (argv[0])
+set_program_name
+set_program_name
+argv[0]
+argv
+argv
+0
+setlocale (LC_ALL, "");
+setlocale (LC_ALL, "")
+setlocale
+setlocale
+LC_ALL
+LC_ALL
+""
+bindtextdomain (PACKAGE, LOCALEDIR);
+bindtextdomain (PACKAGE, LOCALEDIR)
+bindtextdomain
+bindtextdomain
+PACKAGE
+PACKAGE
+LOCALEDIR
+LOCALEDIR
+textdomain (PACKAGE);
+textdomain (PACKAGE);
+textdomain
+textdomain
+(PACKAGE)
+PACKAGE
+PACKAGE
+atexit (close_stdout);
+atexit (close_stdout);
+atexit
+atexit
+(close_stdout)
+close_stdout
+close_stdout
+have_read_stdin = false;
+have_read_stdin = false
+have_read_stdin
+have_read_stdin
+false
+count_lines = true;
+count_lines = true
+count_lines
+count_lines
+true
+forever = from_start = print_headers = false;
+forever = from_start = print_headers = false
+forever
+forever
+from_start = print_headers = false
+from_start
+from_start
+print_headers = false
+print_headers
+print_headers
+false
+obsolete_option = parse_obsolete_option (argc, argv, &n_units);
+obsolete_option = parse_obsolete_option (argc, argv, &n_units)
+obsolete_option
+obsolete_option
+parse_obsolete_option (argc, argv, &n_units)
+parse_obsolete_option
+parse_obsolete_option
+argc
+argc
+argv
+argv
+&n_units
+n_units
+n_units
+argc -= obsolete_option;
+argc -= obsolete_option
+argc
+argc
+obsolete_option
+obsolete_option
+argv += obsolete_option;
+argv += obsolete_option
+argv
+argv
+obsolete_option
+obsolete_option
+parse_options (argc, argv, &n_units, &header_mode, &sleep_interval);
+parse_options (argc, argv, &n_units, &header_mode, &sleep_interval)
+parse_options
+parse_options
+argc
+argc
+argv
+argv
+&n_units
+n_units
+n_units
+&header_mode
+header_mode
+header_mode
+&sleep_interval
+sleep_interval
+sleep_interval
+if (from_start)    {      if (n_units)        --n_units;    }
+from_start
+from_start
+{      if (n_units)        --n_units;    }
+if (n_units)        --n_units;
+n_units
+n_units
+--n_units;
+--n_units
+n_units
+n_units
+if (optind < argc)    {      n_files = argc - optind;      file = argv + optind;    }  else    {      static char *dummy_stdin = (char *) "-";      n_files = 1;      file = &dummy_stdin;    }
+optind < argc
+optind
+optind
+argc
+argc
+{      n_files = argc - optind;      file = argv + optind;    }
+n_files = argc - optind;
+n_files = argc - optind
+n_files
+n_files
+argc - optind
+argc
+argc
+optind
+optind
+file = argv + optind;
+file = argv + optind
+file
+file
+argv + optind
+argv
+argv
+optind
+optind
+{      static char *dummy_stdin = (char *) "-";      n_files = 1;      file = &dummy_stdin;    }
+static char *dummy_stdin = (char *) "-";
+static char *dummy_stdin = (char *) "-";
+static char
+*dummy_stdin = (char *) "-"
+*
+dummy_stdin
+= (char *) "-"
+(char *) "-"
+char *
+char
+*
+*
+"-"
+n_files = 1;
+n_files = 1
+n_files
+n_files
+1
+file = &dummy_stdin;
+file = &dummy_stdin
+file
+file
+&dummy_stdin
+dummy_stdin
+dummy_stdin
+{    bool found_hyphen = false;    for (i = 0; i < n_files; i++)      if (STREQ (file[i], "-"))        found_hyphen = true;    /* When following by name, there must be a name.  */    if (found_hyphen && follow_mode == Follow_name)      error (EXIT_FAILURE, 0, _("cannot follow %s by name"), quote ("-"));    /* When following forever, warn if any file is `-'.       This is only a warning, since tail's output (before a failing seek,       and that from any non-stdin files) might still be useful.  */    if (forever && found_hyphen && isatty (STDIN_FILENO))      error (0, 0, _("warning: following standard input"                     " indefinitely is ineffective"));  }
+bool found_hyphen = false;
+bool found_hyphen = false;
+bool
+found_hyphen = false
+found_hyphen
+= false
+false
+for (i = 0; i < n_files; i++)      if (STREQ (file[i], "-"))        found_hyphen = true;
+i = 0;
+i = 0
+i
+i
+0
+i < n_files
+i
+i
+n_files
+n_files
+i++
+i
+i
+if (STREQ (file[i], "-"))        found_hyphen = true;
+STREQ (file[i], "-")
+STREQ
+STREQ
+file[i]
+file
+file
+i
+i
+"-"
+found_hyphen = true;
+found_hyphen = true
+found_hyphen
+found_hyphen
+true
+if (found_hyphen && follow_mode == Follow_name)      error (EXIT_FAILURE, 0, _("cannot follow %s by name"), quote ("-"));
+found_hyphen && follow_mode == Follow_name
+found_hyphen
+found_hyphen
+follow_mode == Follow_name
+follow_mode
+follow_mode
+Follow_name
+Follow_name
+error (EXIT_FAILURE, 0, _("cannot follow %s by name"), quote ("-"));
+error (EXIT_FAILURE, 0, _("cannot follow %s by name"), quote ("-"))
+error
+error
+EXIT_FAILURE
+EXIT_FAILURE
+0
+_("cannot follow %s by name")
+_
+_
+"cannot follow %s by name"
+quote ("-")
+quote
+quote
+"-"
+if (forever && found_hyphen && isatty (STDIN_FILENO))      error (0, 0, _("warning: following standard input"                     " indefinitely is ineffective"));
+forever && found_hyphen && isatty (STDIN_FILENO)
+forever && found_hyphen
+forever
+forever
+found_hyphen
+found_hyphen
+isatty (STDIN_FILENO)
+isatty
+isatty
+STDIN_FILENO
+STDIN_FILENO
+error (0, 0, _("warning: following standard input"                     " indefinitely is ineffective"));
+error (0, 0, _("warning: following standard input"                     " indefinitely is ineffective"))
+error
+error
+0
+0
+_("warning: following standard input"                     " indefinitely is ineffective")
+_
+_
+"warning: following standard input"                     " indefinitely is ineffective"
+F = xnmalloc (n_files, sizeof *F);
+F = xnmalloc (n_files, sizeof *F)
+F
+F
+xnmalloc (n_files, sizeof *F)
+xnmalloc
+xnmalloc
+n_files
+n_files
+sizeof *F
+*F
+F
+F
+for (i = 0; i < n_files; i++)    F[i].name = file[i];
+i = 0;
+i = 0
+i
+i
+0
+i < n_files
+i
+i
+n_files
+n_files
+i++
+i
+i
+F[i].name = file[i];
+F[i].name = file[i]
+F[i].name
+F[i]
+F
+F
+i
+i
+name
+file[i]
+file
+file
+i
+i
+if (header_mode == always      || (header_mode == multiple_files && n_files > 1))    print_headers = true;
+header_mode == always      || (header_mode == multiple_files && n_files > 1)
+header_mode == always
+header_mode
+header_mode
+always
+always
+(header_mode == multiple_files && n_files > 1)
+header_mode == multiple_files && n_files > 1
+header_mode == multiple_files
+header_mode
+header_mode
+multiple_files
+multiple_files
+n_files > 1
+n_files
+n_files
+1
+print_headers = true;
+print_headers = true
+print_headers
+print_headers
+true
+if (O_BINARY && ! isatty (STDOUT_FILENO))    xfreopen (NULL, "wb", stdout);
+O_BINARY && ! isatty (STDOUT_FILENO)
+O_BINARY
+O_BINARY
+! isatty (STDOUT_FILENO)
+isatty (STDOUT_FILENO)
+isatty
+isatty
+STDOUT_FILENO
+STDOUT_FILENO
+xfreopen (NULL, "wb", stdout);
+xfreopen (NULL, "wb", stdout)
+xfreopen
+xfreopen
+NULL
+NULL
+"wb"
+stdout
+stdout
+for (i = 0; i < n_files; i++)    ok &= tail_file (&F[i], n_units);
+i = 0;
+i = 0
+i
+i
+0
+i < n_files
+i
+i
+n_files
+n_files
+i++
+i
+i
+ok &= tail_file (&F[i], n_units);
+ok &= tail_file (&F[i], n_units)
+ok
+ok
+tail_file (&F[i], n_units)
+tail_file
+tail_file
+&F[i]
+F[i]
+F
+F
+i
+i
+n_units
+n_units
+if (forever && ignore_fifo_and_pipe (F, n_files))    {#if HAVE_INOTIFY      /* tailable_stdin() checks if the user specifies stdin via  "-",         or implicitly by providing no arguments. If so, we won't use inotify.         Technically, on systems with a working /dev/stdin, we *could*,         but would it be worth it?  Verifying that it's a real device         and hooked up to stdin is not trivial, while reverting to         non-inotify-based tail_forever is easy and portable.         any_remote_file() checks if the user has specified any         files that reside on remote file systems.  inotify is not used         in this case because it would miss any updates to the file         that were not initiated from the local system.         FIXME: inotify doesn't give any notification when a new         (remote) file or directory is mounted on top a watched file.         When follow_mode == Follow_name we would ideally like to detect that.         Note if there is a change to the original file then we'll         recheck it and follow the new file, or ignore it if the         file has changed to being remote.  */      if (tailable_stdin (F, n_files) || any_remote_file (F, n_files))        disable_inotify = true;      if (!disable_inotify)        {          int wd = inotify_init ();          if (wd < 0)            error (0, errno, _("inotify cannot be used, reverting to polling"));          else            {              /* Flush any output from tail_file, now, since                 tail_forever_inotify flushes only after writing,                 not before reading.  */              if (fflush (stdout) != 0)                error (EXIT_FAILURE, errno, _("write error"));              tail_forever_inotify (wd, F, n_files, sleep_interval);              /* The only way the above returns is upon failure.  */              exit (EXIT_FAILURE);            }        }#endif      tail_forever (F, n_files, sleep_interval);    }
+forever && ignore_fifo_and_pipe (F, n_files)
+forever
+forever
+ignore_fifo_and_pipe (F, n_files)
+ignore_fifo_and_pipe
+ignore_fifo_and_pipe
+F
+F
+n_files
+n_files
+{#if HAVE_INOTIFY      /* tailable_stdin() checks if the user specifies stdin via  "-",         or implicitly by providing no arguments. If so, we won't use inotify.         Technically, on systems with a working /dev/stdin, we *could*,         but would it be worth it?  Verifying that it's a real device         and hooked up to stdin is not trivial, while reverting to         non-inotify-based tail_forever is easy and portable.         any_remote_file() checks if the user has specified any         files that reside on remote file systems.  inotify is not used         in this case because it would miss any updates to the file         that were not initiated from the local system.         FIXME: inotify doesn't give any notification when a new         (remote) file or directory is mounted on top a watched file.         When follow_mode == Follow_name we would ideally like to detect that.         Note if there is a change to the original file then we'll         recheck it and follow the new file, or ignore it if the         file has changed to being remote.  */      if (tailable_stdin (F, n_files) || any_remote_file (F, n_files))        disable_inotify = true;      if (!disable_inotify)        {          int wd = inotify_init ();          if (wd < 0)            error (0, errno, _("inotify cannot be used, reverting to polling"));          else            {              /* Flush any output from tail_file, now, since                 tail_forever_inotify flushes only after writing,                 not before reading.  */              if (fflush (stdout) != 0)                error (EXIT_FAILURE, errno, _("write error"));              tail_forever_inotify (wd, F, n_files, sleep_interval);              /* The only way the above returns is upon failure.  */              exit (EXIT_FAILURE);            }        }#endif      tail_forever (F, n_files, sleep_interval);    }
+tail_forever (F, n_files, sleep_interval);
+tail_forever (F, n_files, sleep_interval)
+tail_forever
+tail_forever
+F
+F
+n_files
+n_files
+sleep_interval
+sleep_interval
+if (have_read_stdin && close (STDIN_FILENO) < 0)    error (EXIT_FAILURE, errno, "-");
+have_read_stdin && close (STDIN_FILENO) < 0
+have_read_stdin
+have_read_stdin
+close (STDIN_FILENO) < 0
+close (STDIN_FILENO)
+close
+close
+STDIN_FILENO
+STDIN_FILENO
+0
+error (EXIT_FAILURE, errno, "-");
+error (EXIT_FAILURE, errno, "-")
+error
+error
+EXIT_FAILURE
+EXIT_FAILURE
+errno
+errno
+"-"
+exit (ok ? EXIT_SUCCESS : EXIT_FAILURE);
+exit (ok ? EXIT_SUCCESS : EXIT_FAILURE)
+exit
+exit
+ok ? EXIT_SUCCESS : EXIT_FAILURE
+ok
+ok
+EXIT_SUCCESS
+EXIT_SUCCESS
+EXIT_FAILURE
+EXIT_FAILURE
+-----joern-----
+(98,281,0)
+(17,197,0)
+(143,223,0)
+(51,31,0)
+(44,31,0)
+(297,32,0)
+(192,121,0)
+(205,6,0)
+(102,6,0)
+(301,224,0)
+(97,9,0)
+(35,58,0)
+(245,252,0)
+(104,284,0)
+(300,6,0)
+(218,6,0)
+(173,128,0)
+(73,285,0)
+(250,9,0)
+(157,8,0)
+(221,87,0)
+(118,285,0)
+(145,49,0)
+(170,35,0)
+(123,6,0)
+(260,246,0)
+(125,10,0)
+(278,232,0)
+(161,68,0)
+(159,208,0)
+(87,221,0)
+(240,6,0)
+(135,138,0)
+(110,6,0)
+(236,237,0)
+(126,253,0)
+(41,108,0)
+(197,167,0)
+(208,159,0)
+(33,51,0)
+(137,128,0)
+(9,184,0)
+(163,159,0)
+(80,202,0)
+(70,35,0)
+(277,18,0)
+(28,115,0)
+(51,41,0)
+(202,271,0)
+(139,6,0)
+(62,255,0)
+(16,119,0)
+(96,176,0)
+(10,6,0)
+(209,153,0)
+(66,161,0)
+(38,254,0)
+(57,9,0)
+(239,287,0)
+(255,62,0)
+(171,254,0)
+(54,4,0)
+(84,161,0)
+(205,287,0)
+(118,41,0)
+(20,31,0)
+(154,247,0)
+(24,274,0)
+(108,9,0)
+(78,16,0)
+(98,246,0)
+(219,202,0)
+(235,258,0)
+(97,206,0)
+(248,140,0)
+(125,119,0)
+(263,157,0)
+(74,48,0)
+(13,250,0)
+(151,202,0)
+(293,223,0)
+(197,224,0)
+(21,18,0)
+(219,225,0)
+(118,9,0)
+(202,6,0)
+(250,285,0)
+(207,197,0)
+(246,206,0)
+(16,187,0)
+(250,31,0)
+(158,18,0)
+(31,22,0)
+(257,6,0)
+(16,186,0)
+(20,9,0)
+(101,87,0)
+(40,285,0)
+(4,41,0)
+(138,190,0)
+(63,97,0)
+(149,79,0)
+(92,112,0)
+(174,121,0)
+(250,252,0)
+(113,116,0)
+(29,64,0)
+(246,98,0)
+(241,195,0)
+(88,57,0)
+(253,6,0)
+(121,19,0)
+(99,174,0)
+(175,19,0)
+(200,167,0)
+(266,10,0)
+(90,115,0)
+(41,6,0)
+(199,6,0)
+(202,219,0)
+(65,6,0)
+(202,119,0)
+(244,136,0)
+(287,205,0)
+(186,6,0)
+(147,68,0)
+(196,118,0)
+(75,66,0)
+(226,218,0)
+(97,31,0)
+(20,41,0)
+(72,184,0)
+(20,79,0)
+(91,41,0)
+(190,138,0)
+(130,218,0)
+(45,20,0)
+(271,202,0)
+(10,119,0)
+(57,31,0)
+(131,197,0)
+(188,20,0)
+(247,136,0)
+(282,6,0)
+(204,118,0)
+(248,167,0)
+(60,8,0)
+(201,186,0)
+(75,56,0)
+(115,61,0)
+(132,242,0)
+(71,46,0)
+(157,6,0)
+(64,9,0)
+(279,6,0)
+(213,6,0)
+(8,157,0)
+(214,68,0)
+(208,103,0)
+(179,221,0)
+(249,247,0)
+(223,255,0)
+(234,150,0)
+(195,19,0)
+(168,123,0)
+(256,97,0)
+(134,228,0)
+(270,22,0)
+(55,116,0)
+(4,31,0)
+(74,37,0)
+(34,4,0)
+(4,144,0)
+(186,16,0)
+(3,51,0)
+(121,174,0)
+(66,57,0)
+(69,58,0)
+(111,230,0)
+(139,186,0)
+(225,6,0)
+(121,208,0)
+(11,248,0)
+(216,227,0)
+(58,17,0)
+(48,74,0)
+(2,140,0)
+(4,9,0)
+(7,190,0)
+(291,139,0)
+(155,95,0)
+(23,71,0)
+(50,228,0)
+(290,130,0)
+(76,43,0)
+(127,56,0)
+(299,153,0)
+(81,74,0)
+(198,93,0)
+(189,73,0)
+(95,296,0)
+(42,215,0)
+(30,125,0)
+(271,68,0)
+(275,250,0)
+(32,6,0)
+(162,298,0)
+(133,158,0)
+(153,6,0)
+(217,225,0)
+(117,71,0)
+(94,82,0)
+(121,167,0)
+(222,92,0)
+(251,118,0)
+(0,253,0)
+(58,35,0)
+(12,93,0)
+(276,206,0)
+(118,255,0)
+(184,9,0)
+(161,66,0)
+(130,119,0)
+(116,6,0)
+(285,6,0)
+(106,213,0)
+(105,177,0)
+(141,9,0)
+(243,64,0)
+(255,215,0)
+(292,285,0)
+(202,139,0)
+(142,187,0)
+(286,194,0)
+(227,116,0)
+(193,153,0)
+(176,150,0)
+(218,226,0)
+(85,191,0)
+(160,138,0)
+(197,17,0)
+(287,116,0)
+(165,31,0)
+(64,224,0)
+(246,41,0)
+(37,74,0)
+(114,287,0)
+(107,10,0)
+(43,8,0)
+(232,19,0)
+(27,219,0)
+(233,115,0)
+(16,61,0)
+(281,227,0)
+(136,247,0)
+(9,103,0)
+(229,121,0)
+(184,10,0)
+(35,41,0)
+(68,6,0)
+(194,225,0)
+(108,31,0)
+(167,248,0)
+(8,43,0)
+(139,61,0)
+(122,39,0)
+(274,237,0)
+(108,41,0)
+(14,140,0)
+(227,281,0)
+(296,95,0)
+(261,48,0)
+(265,139,0)
+(267,14,0)
+(181,6,0)
+(71,298,0)
+(280,59,0)
+(26,56,0)
+(210,224,0)
+(202,73,0)
+(140,14,0)
+(231,6,0)
+(118,237,0)
+(64,31,0)
+(158,128,0)
+(250,41,0)
+(183,14,0)
+(118,31,0)
+(202,61,0)
+(203,6,0)
+(238,6,0)
+(109,25,0)
+(53,153,0)
+(89,46,0)
+(152,39,0)
+(115,90,0)
+(232,9,0)
+(56,75,0)
+(230,6,0)
+(77,118,0)
+(281,98,0)
+(289,225,0)
+(66,75,0)
+(159,61,0)
+(82,158,0)
+(120,281,0)
+(57,66,0)
+(284,6,0)
+(232,31,0)
+(100,232,0)
+(296,108,0)
+(90,6,0)
+(220,206,0)
+(269,250,0)
+(144,51,0)
+(148,43,0)
+(169,109,0)
+(258,206,0)
+(164,37,0)
+(158,82,0)
+(150,176,0)
+(158,177,0)
+(182,32,0)
+(10,186,0)
+(144,4,0)
+(46,71,0)
+(49,112,0)
+(79,20,0)
+(218,130,0)
+(108,296,0)
+(86,255,0)
+(51,144,0)
+(272,287,0)
+(187,225,0)
+(268,161,0)
+(259,213,0)
+(197,208,0)
+(172,215,0)
+(212,109,0)
+(112,49,0)
+(167,22,0)
+(283,25,0)
+(190,18,0)
+(187,16,0)
+(159,139,0)
+(226,61,0)
+(52,39,0)
+(242,224,0)
+(15,246,0)
+(177,158,0)
+(178,6,0)
+(273,271,0)
+(262,159,0)
+(83,16,0)
+(5,184,0)
+(281,225,0)
+(288,57,0)
+(35,224,0)
+(180,6,0)
+(128,153,0)
+(166,221,0)
+(294,6,0)
+(73,202,0)
+(67,226,0)
+(47,228,0)
+(298,71,0)
+(14,267,0)
+(25,109,0)
+(202,10,0)
+(185,6,0)
+(184,119,0)
+(211,208,0)
+(295,108,0)
+(264,125,0)
+(51,9,0)
+(140,22,0)
+(56,68,0)
+(190,128,0)
+(146,19,0)
+(112,92,0)
+(124,252,0)
+(156,123,0)
+(77,176,1)
+(121,167,1)
+(73,189,1)
+(187,142,1)
+(250,285,1)
+(30,36,1)
+(262,211,1)
+(10,186,1)
+(70,64,1)
+(105,190,1)
+(217,289,1)
+(221,87,1)
+(98,246,1)
+(141,125,1)
+(118,41,1)
+(151,80,1)
+(195,19,1)
+(227,281,1)
+(159,61,1)
+(218,130,1)
+(248,140,1)
+(223,143,1)
+(161,68,1)
+(190,138,1)
+(104,123,1)
+(202,139,1)
+(194,225,1)
+(118,9,1)
+(51,9,1)
+(57,31,1)
+(60,263,1)
+(166,177,1)
+(161,268,1)
+(284,104,1)
+(295,91,1)
+(296,95,1)
+(91,177,1)
+(51,41,1)
+(74,81,1)
+(234,223,1)
+(194,286,1)
+(58,35,1)
+(13,247,1)
+(247,136,1)
+(281,98,1)
+(219,225,1)
+(249,154,1)
+(174,121,1)
+(202,271,1)
+(158,128,1)
+(56,68,1)
+(202,219,1)
+(202,10,1)
+(56,127,1)
+(5,72,1)
+(190,7,1)
+(94,133,1)
+(134,48,1)
+(20,188,1)
+(175,128,1)
+(76,60,1)
+(12,198,1)
+(293,255,1)
+(45,149,1)
+(250,31,1)
+(57,9,1)
+(90,115,1)
+(224,210,1)
+(184,119,1)
+(108,9,1)
+(83,78,1)
+(89,117,1)
+(208,159,1)
+(230,111,1)
+(39,52,1)
+(35,170,1)
+(204,196,1)
+(154,223,1)
+(264,30,1)
+(122,49,1)
+(202,73,1)
+(100,278,1)
+(174,99,1)
+(213,259,1)
+(43,148,1)
+(233,28,1)
+(121,208,1)
+(130,290,1)
+(71,298,1)
+(273,219,1)
+(50,47,1)
+(173,137,1)
+(253,126,1)
+(260,216,1)
+(51,31,1)
+(4,34,1)
+(250,269,1)
+(149,97,1)
+(30,194,1)
+(135,160,1)
+(169,212,1)
+(163,262,1)
+(189,271,1)
+(281,120,1)
+(101,179,1)
+(108,296,1)
+(69,35,1)
+(256,258,1)
+(118,204,1)
+(188,45,1)
+(159,139,1)
+(125,119,1)
+(17,197,1)
+(285,40,1)
+(20,31,1)
+(220,49,1)
+(10,119,1)
+(298,162,1)
+(118,285,1)
+(250,41,1)
+(123,156,1)
+(35,224,1)
+(212,176,1)
+(242,224,1)
+(232,19,1)
+(66,161,1)
+(106,253,1)
+(287,114,1)
+(265,10,1)
+(32,182,1)
+(150,234,1)
+(155,295,1)
+(202,61,1)
+(195,241,1)
+(139,61,1)
+(46,89,1)
+(48,74,1)
+(4,41,1)
+(261,250,1)
+(287,116,1)
+(121,19,1)
+(152,122,1)
+(144,4,1)
+(254,171,1)
+(158,82,1)
+(179,166,1)
+(158,18,1)
+(116,113,1)
+(190,128,1)
+(243,242,1)
+(197,131,1)
+(54,51,1)
+(79,149,1)
+(235,227,1)
+(37,164,1)
+(118,31,1)
+(117,23,1)
+(146,175,1)
+(51,3,1)
+(86,191,1)
+(29,243,1)
+(269,275,1)
+(266,107,1)
+(80,139,1)
+(137,208,1)
+(1,205,1)
+(243,224,1)
+(207,58,1)
+(26,64,1)
+(211,9,1)
+(19,146,1)
+(52,152,1)
+(248,11,1)
+(218,226,1)
+(164,261,1)
+(223,255,1)
+(246,41,1)
+(232,9,1)
+(258,206,1)
+(130,119,1)
+(113,55,1)
+(160,7,1)
+(271,68,1)
+(64,29,1)
+(18,21,1)
+(220,39,1)
+(85,144,1)
+(246,206,1)
+(7,232,1)
+(72,141,1)
+(66,57,1)
+(16,187,1)
+(99,121,1)
+(20,9,1)
+(258,235,1)
+(192,232,1)
+(88,161,1)
+(225,217,1)
+(92,222,1)
+(126,0,1)
+(49,145,1)
+(68,214,1)
+(145,75,1)
+(226,61,1)
+(95,155,1)
+(85,93,1)
+(227,116,1)
+(274,24,1)
+(167,248,1)
+(114,239,1)
+(139,186,1)
+(200,31,1)
+(30,129,1)
+(251,77,1)
+(301,41,1)
+(48,261,1)
+(75,66,1)
+(97,9,1)
+(82,94,1)
+(127,26,1)
+(177,105,1)
+(97,63,1)
+(49,112,1)
+(15,260,1)
+(297,90,1)
+(115,233,1)
+(21,277,1)
+(91,221,1)
+(74,37,1)
+(24,118,1)
+(205,287,1)
+(187,225,1)
+(246,15,1)
+(271,273,1)
+(278,19,1)
+(197,167,1)
+(125,264,1)
+(241,18,1)
+(183,2,1)
+(108,31,1)
+(28,218,1)
+(250,9,1)
+(242,132,1)
+(133,105,1)
+(14,267,1)
+(118,255,1)
+(219,27,1)
+(75,56,1)
+(191,85,1)
+(137,167,1)
+(168,32,1)
+(197,208,1)
+(158,133,1)
+(170,70,1)
+(8,43,1)
+(55,68,1)
+(228,50,1)
+(290,285,1)
+(36,202,1)
+(157,8,1)
+(229,192,1)
+(226,67,1)
+(162,46,1)
+(93,12,1)
+(78,201,1)
+(14,183,1)
+(107,186,1)
+(73,285,1)
+(190,18,1)
+(292,225,1)
+(20,41,1)
+(115,61,1)
+(40,292,1)
+(13,274,1)
+(176,96,1)
+(216,97,1)
+(171,38,1)
+(239,228,1)
+(58,69,1)
+(41,108,1)
+(63,256,1)
+(263,213,1)
+(261,79,1)
+(268,84,1)
+(105,71,1)
+(132,17,1)
+(288,88,1)
+(2,125,1)
+(289,116,1)
+(232,100,1)
+(4,9,1)
+(145,254,1)
+(148,76,1)
+(291,265,1)
+(176,150,1)
+(57,288,1)
+(47,134,1)
+(64,224,1)
+(0,230,1)
+(275,13,1)
+(198,144,1)
+(27,151,1)
+(129,36,1)
+(239,48,1)
+(121,229,1)
+(139,291,1)
+(64,9,1)
+(16,119,1)
+(84,56,1)
+(278,195,1)
+(136,244,1)
+(128,173,1)
+(281,225,1)
+(232,31,1)
+(138,135,1)
+(44,140,1)
+(13,191,1)
+(62,86,1)
+(97,31,1)
+(222,145,1)
+(38,75,1)
+(177,158,1)
+(143,293,1)
+(256,206,1)
+(201,157,1)
+(286,129,1)
+(4,31,1)
+(120,98,1)
+(276,220,1)
+(197,224,1)
+(283,169,1)
+(111,284,1)
+(214,147,1)
+(97,206,1)
+(25,283,1)
+(142,83,1)
+(131,207,1)
+(112,92,1)
+(202,119,1)
+(96,150,1)
+(125,10,1)
+(184,5,1)
+(165,44,1)
+(79,20,1)
+(182,297,1)
+(64,31,1)
+(109,25,1)
+(272,239,1)
+(156,168,1)
+(67,130,1)
+(87,101,1)
+(9,184,1)
+(35,41,1)
+(259,106,1)
+(3,33,1)
+(206,276,1)
+(77,109,1)
+(16,61,1)
+(31,165,1)
+(144,51,1)
+(210,301,1)
+(244,249,1)
+(10,266,1)
+(11,200,1)
+(33,79,1)
+(140,14,1)
+(287,272,1)
+(255,62,1)
+(81,37,1)
+(71,46,1)
+(277,174,1)
+(184,10,1)
+(23,190,1)
+(186,16,1)
+(241,174,1)
+(196,251,1)
+(34,54,1)
+(159,163,1)
+(248,125,2)
+(118,223,2)
+(158,18,2)
+(204,223,2)
+(202,139,2)
+(77,223,2)
+(92,145,2)
+(66,57,2)
+(293,191,2)
+(197,208,2)
+(242,64,2)
+(97,9,2)
+(211,125,2)
+(97,97,2)
+(35,64,2)
+(144,79,2)
+(167,248,2)
+(57,31,2)
+(165,125,2)
+(54,51,2)
+(283,176,2)
+(227,281,2)
+(198,144,2)
+(216,97,2)
+(25,176,2)
+(163,125,2)
+(232,19,2)
+(16,119,2)
+(268,56,2)
+(108,9,2)
+(158,128,2)
+(158,105,2)
+(97,31,2)
+(171,75,2)
+(219,225,2)
+(176,150,2)
+(223,191,2)
+(4,51,2)
+(86,191,2)
+(125,119,2)
+(44,125,2)
+(14,267,2)
+(46,190,2)
+(97,206,2)
+(52,49,2)
+(298,190,2)
+(278,232,2)
+(277,174,2)
+(49,112,2)
+(194,129,2)
+(222,145,2)
+(47,48,2)
+(194,225,2)
+(251,223,2)
+(37,261,2)
+(24,223,2)
+(62,191,2)
+(167,125,2)
+(98,97,2)
+(174,232,2)
+(169,176,2)
+(141,125,2)
+(159,139,2)
+(196,223,2)
+(164,261,2)
+(64,9,2)
+(243,64,2)
+(90,115,2)
+(41,108,2)
+(184,119,2)
+(202,10,2)
+(143,191,2)
+(296,95,2)
+(202,219,2)
+(17,64,2)
+(14,125,2)
+(177,158,2)
+(184,125,2)
+(120,97,2)
+(200,125,2)
+(118,9,2)
+(202,119,2)
+(260,97,2)
+(74,261,2)
+(134,48,2)
+(246,206,2)
+(50,48,2)
+(115,61,2)
+(281,225,2)
+(140,14,2)
+(162,190,2)
+(64,31,2)
+(254,75,2)
+(139,61,2)
+(246,41,2)
+(79,20,2)
+(186,16,2)
+(96,223,2)
+(287,116,2)
+(232,232,2)
+(98,246,2)
+(184,10,2)
+(16,187,2)
+(183,125,2)
+(244,223,2)
+(82,133,2)
+(202,73,2)
+(140,125,2)
+(69,64,2)
+(51,9,2)
+(161,68,2)
+(100,232,2)
+(31,125,2)
+(179,177,2)
+(12,144,2)
+(122,49,2)
+(150,223,2)
+(241,232,2)
+(154,223,2)
+(170,64,2)
+(94,133,2)
+(208,159,2)
+(218,130,2)
+(10,186,2)
+(197,64,2)
+(221,87,2)
+(58,64,2)
+(58,35,2)
+(232,31,2)
+(71,46,2)
+(234,223,2)
+(135,7,2)
+(9,184,2)
+(57,9,2)
+(258,97,2)
+(4,31,2)
+(195,19,2)
+(2,125,2)
+(5,125,2)
+(88,161,2)
+(51,79,2)
+(221,177,2)
+(112,145,2)
+(4,41,2)
+(250,79,2)
+(75,66,2)
+(84,56,2)
+(66,161,2)
+(288,161,2)
+(229,232,2)
+(118,31,2)
+(118,41,2)
+(66,56,2)
+(85,79,2)
+(136,223,2)
+(38,75,2)
+(20,9,2)
+(138,7,2)
+(275,79,2)
+(232,9,2)
+(9,125,2)
+(56,68,2)
+(226,61,2)
+(33,79,2)
+(202,61,2)
+(262,125,2)
+(192,232,2)
+(20,31,2)
+(121,19,2)
+(39,49,2)
+(3,79,2)
+(108,31,2)
+(269,79,2)
+(63,97,2)
+(188,149,2)
+(250,41,2)
+(35,224,2)
+(223,255,2)
+(187,225,2)
+(218,226,2)
+(274,223,2)
+(281,98,2)
+(144,51,2)
+(23,190,2)
+(258,206,2)
+(109,25,2)
+(75,56,2)
+(227,116,2)
+(10,119,2)
+(255,191,2)
+(121,167,2)
+(235,97,2)
+(191,79,2)
+(64,64,2)
+(197,224,2)
+(205,287,2)
+(99,232,2)
+(57,161,2)
+(250,9,2)
+(159,61,2)
+(247,136,2)
+(286,129,2)
+(21,174,2)
+(228,48,2)
+(247,223,2)
+(45,149,2)
+(158,82,2)
+(133,105,2)
+(207,64,2)
+(190,128,2)
+(249,223,2)
+(51,41,2)
+(112,92,2)
+(93,144,2)
+(101,177,2)
+(11,125,2)
+(51,31,2)
+(121,232,2)
+(139,186,2)
+(129,36,2)
+(227,97,2)
+(20,41,2)
+(174,121,2)
+(212,176,2)
+(29,64,2)
+(15,97,2)
+(17,197,2)
+(117,190,2)
+(144,4,2)
+(190,138,2)
+(250,285,2)
+(160,7,2)
+(74,37,2)
+(64,224,2)
+(125,10,2)
+(18,174,2)
+(248,140,2)
+(71,298,2)
+(246,97,2)
+(70,64,2)
+(118,285,2)
+(34,51,2)
+(16,61,2)
+(114,239,2)
+(202,271,2)
+(152,49,2)
+(35,41,2)
+(130,119,2)
+(109,176,2)
+(208,125,2)
+(108,296,2)
+(87,177,2)
+(195,232,2)
+(132,64,2)
+(242,224,2)
+(72,125,2)
+(159,125,2)
+(131,64,2)
+(118,255,2)
+(89,190,2)
+(271,68,2)
+(281,97,2)
+(176,223,2)
+(20,149,2)
+(190,18,2)
+(272,239,2)
+(161,56,2)
+(13,79,2)
+(166,177,2)
+(121,208,2)
+(71,190,2)
+(73,285,2)
+(4,9,2)
+(255,62,2)
+(8,43,2)
+(256,97,2)
+(157,8,2)
+(48,74,2)
+(250,31,2)
+(197,167,2)
+(81,261,2)
+-----------------------------------
+(0,have_read_stdin)
+(1,RET)
+(2,dummy_stdin)
+(3,n_files)
+(4,any_remote_file (F, n_files)
+(5,optind)
+(6,)
+(7,found_hyphen)
+(8,from_start = print_headers = false)
+(9,n_files = argc - optind)
+(10,argc -= obsolete_option)
+(11,dummy_stdin)
+(12,true)
+(13,F)
+(14,(char *)
+(15,i)
+(16,parse_obsolete_option (argc, argv, &n_units)
+(17,F[i].name = file[i])
+(18,found_hyphen = true)
+(19,i = 0)
+(20,ignore_fifo_and_pipe (F, n_files)
+(21,true)
+(22,)
+(23,EXIT_FAILURE)
+(24,EXIT_FAILURE)
+(25,_("write error")
+(26,header_mode)
+(27,n_units)
+(28,argv)
+(29,n_files)
+(30,optind)
+(31,n_files = 1)
+(32,setlocale (LC_ALL, "")
+(33,F)
+(34,n_files)
+(35,F[i])
+(36,from_start)
+(37,close (STDIN_FILENO)
+(38,print_headers)
+(39,xfreopen (NULL, "wb", stdout)
+(40,1.0)
+(41,F = xnmalloc (n_files, sizeof *F)
+(42,wd)
+(43,print_headers = false)
+(44,n_files)
+(45,F)
+(46,_("cannot follow %s by name")
+(47,errno)
+(48,have_read_stdin && close (STDIN_FILENO)
+(49,O_BINARY && ! isatty (STDOUT_FILENO)
+(50,"-")
+(51,tailable_stdin (F, n_files)
+(52,stdout)
+(53,for (i = 0; i < n_files; i++)
+(54,F)
+(55,ok)
+(56,header_mode == always)
+(57,n_files > 1)
+(58,F[i].name)
+(59,)
+(60,from_start)
+(61,char **argv)
+(62,inotify_init ()
+(63,n_files)
+(64,i < n_files)
+(65,if (forever && ignore_fifo_and_pipe (F, n_files)
+(66,header_mode == multiple_files && n_files > 1)
+(67,argv)
+(68,header_mode = multiple_files)
+(69,name)
+(70,F)
+(71,error (EXIT_FAILURE, 0, _("cannot follow %s by name")
+(72,argc)
+(73,&sleep_interval)
+(74,close (STDIN_FILENO)
+(75,header_mode == always\n\\n      || (header_mode == multiple_files && n_files > 1)
+(76,print_headers)
+(77,wd)
+(78,argc)
+(79,forever && ignore_fifo_and_pipe (F, n_files)
+(80,argc)
+(81,0)
+(82,isatty (STDIN_FILENO)
+(83,argv)
+(84,header_mode)
+(85,disable_inotify)
+(86,wd)
+(87,_("warning: following standard input"\n\\n                     " indefinitely is ineffective")
+(88,n_files)
+(89,"cannot follow %s by name")
+(90,set_program_name (argv[0])
+(91,F)
+(92,isatty (STDOUT_FILENO)
+(93,disable_inotify = true)
+(94,STDIN_FILENO)
+(95,*F)
+(96,0)
+(97,i < n_files)
+(98,&F[i])
+(99,"-")
+(100,n_files)
+(101,"warning: following standard input"\n\\n                     " indefinitely is ineffective")
+(102,i)
+(103,)
+(104,PACKAGE)
+(105,forever)
+(106,count_lines)
+(107,argc)
+(108,xnmalloc (n_files, sizeof *F)
+(109,error (EXIT_FAILURE, errno, _("write error")
+(110,if (O_BINARY && ! isatty (STDOUT_FILENO)
+(111,close_stdout)
+(112,! isatty (STDOUT_FILENO)
+(113,true)
+(114,EXIT_SUCCESS)
+(115,argv[0])
+(116,ok = true)
+(117,0)
+(118,tail_forever_inotify (wd, F, n_files, sleep_interval)
+(119,int argc)
+(120,n_units)
+(121,file[i])
+(122,NULL)
+(123,bindtextdomain (PACKAGE, LOCALEDIR)
+(124,if (!disable_inotify)
+(125,optind < argc)
+(126,false)
+(127,always)
+(128,found_hyphen = false)
+(129,n_units)
+(130,&argc)
+(131,i)
+(132,i)
+(133,found_hyphen)
+(134,EXIT_FAILURE)
+(135,Follow_name)
+(136,_("inotify cannot be used, reverting to polling")
+(137,found_hyphen)
+(138,follow_mode == Follow_name)
+(139,argv += obsolete_option)
+(140,*dummy_stdin = (char *)
+(141,n_files)
+(142,n_units)
+(143,0)
+(144,tailable_stdin (F, n_files)
+(145,O_BINARY)
+(146,0)
+(147,header_mode)
+(148,false)
+(149,forever)
+(150,fflush (stdout)
+(151,argv)
+(152,"wb")
+(153,)
+(154,0)
+(155,F)
+(156,LOCALEDIR)
+(157,forever = from_start = print_headers = false)
+(158,found_hyphen && isatty (STDIN_FILENO)
+(159,argv + optind)
+(160,follow_mode)
+(161,header_mode == multiple_files)
+(162,"-")
+(163,optind)
+(164,STDIN_FILENO)
+(165,1)
+(166,0)
+(167,file = &dummy_stdin)
+(168,PACKAGE)
+(169,errno)
+(170,i)
+(171,true)
+(172,if (wd < 0)
+(173,false)
+(174,STREQ (file[i], "-")
+(175,i)
+(176,fflush (stdout)
+(177,forever && found_hyphen && isatty (STDIN_FILENO)
+(178,if (from_start)
+(179,0)
+(180,if (optind < argc)
+(181,n_units)
+(182,"")
+(183,"-")
+(184,argc - optind)
+(185,if (have_read_stdin && close (STDIN_FILENO)
+(186,obsolete_option = parse_obsolete_option (argc, argv, &n_units)
+(187,&n_units)
+(188,n_files)
+(189,sleep_interval)
+(190,found_hyphen && follow_mode == Follow_name)
+(191,!disable_inotify)
+(192,file)
+(193,if (found_hyphen && follow_mode == Follow_name)
+(194,--n_units)
+(195,i++)
+(196,n_files)
+(197,file[i])
+(198,disable_inotify)
+(199,file)
+(200,file)
+(201,obsolete_option)
+(202,parse_options (argc, argv, &n_units, &header_mode, &sleep_interval)
+(203,for (i = 0; i < n_files; i++)
+(204,sleep_interval)
+(205,exit (ok ? EXIT_SUCCESS : EXIT_FAILURE)
+(206,i = 0)
+(207,file)
+(208,file = argv + optind)
+(209,if (forever && found_hyphen && isatty (STDIN_FILENO)
+(210,0)
+(211,file)
+(212,EXIT_FAILURE)
+(213,count_lines = true)
+(214,multiple_files)
+(215,)
+(216,ok)
+(217,DEFAULT_N_LINES)
+(218,initialize_main (&argc, &argv)
+(219,&n_units)
+(220,i)
+(221,error (0, 0, _("warning: following standard input"\n\\n                     " indefinitely is ineffective")
+(222,STDOUT_FILENO)
+(223,wd < 0)
+(224,i = 0)
+(225,n_units = DEFAULT_N_LINES)
+(226,&argv)
+(227,ok &= tail_file (&F[i], n_units)
+(228,error (EXIT_FAILURE, errno, "-")
+(229,i)
+(230,atexit (close_stdout)
+(231,F)
+(232,i < n_files)
+(233,0)
+(234,stdout)
+(235,i)
+(236,if (fflush (stdout)
+(237,)
+(238,obsolete_option)
+(239,ok)
+(240,header_mode)
+(241,i)
+(242,i++)
+(243,i)
+(244,"inotify cannot be used, reverting to polling")
+(245,if (tailable_stdin (F, n_files)
+(246,F[i])
+(247,error (0, errno, _("inotify cannot be used, reverting to polling")
+(248,&dummy_stdin)
+(249,errno)
+(250,tail_forever (F, n_files, sleep_interval)
+(251,F)
+(252,)
+(253,have_read_stdin = false)
+(254,print_headers = true)
+(255,wd = inotify_init ()
+(256,i)
+(257,sleep_interval)
+(258,i++)
+(259,true)
+(260,F)
+(261,have_read_stdin)
+(262,argv)
+(263,forever)
+(264,argc)
+(265,argv)
+(266,obsolete_option)
+(267,char *)
+(268,multiple_files)
+(269,sleep_interval)
+(270,dummy_stdin)
+(271,&header_mode)
+(272,EXIT_FAILURE)
+(273,header_mode)
+(274,exit (EXIT_FAILURE)
+(275,n_files)
+(276,0)
+(277,found_hyphen)
+(278,i)
+(279,ok)
+(280,if (n_units)
+(281,tail_file (&F[i], n_units)
+(282,for (i = 0; i < n_files; i++)
+(283,"write error")
+(284,textdomain (PACKAGE)
+(285,sleep_interval = 1.0)
+(286,n_units)
+(287,ok ? EXIT_SUCCESS : EXIT_FAILURE)
+(288,1)
+(289,n_units)
+(290,argc)
+(291,obsolete_option)
+(292,sleep_interval)
+(293,wd)
+(294,if (header_mode == always\n\\n      || (header_mode == multiple_files && n_files > 1)
+(295,n_files)
+(296,sizeof *F)
+(297,LC_ALL)
+(298,quote ("-")
+(299,found_hyphen)
+(300,n_files)
+(301,i)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

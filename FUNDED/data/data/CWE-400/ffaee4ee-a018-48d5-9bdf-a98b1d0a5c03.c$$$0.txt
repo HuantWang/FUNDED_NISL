@@ -1,0 +1,1695 @@
+-----label-----
+0
+-----code-----
+int main(int argc, char **argv) {
+    sigset_t sigmask;
+    int sigfd;
+    Display *d;
+    Window root_win;
+    int xrr_event_base = 0;
+    int xrr_error_base = 0;
+    int x11_fd;
+
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s <script>\n", argv[0]);
+        exit(1);
+    }
+
+    signal(SIGCHLD, SIG_IGN);
+    sigemptyset(&sigmask);
+    sigaddset(&sigmask, SIGTERM);
+    if (sigprocmask(SIG_BLOCK, &sigmask, NULL) == -1) {
+        perror("Couldn't block signals for graceful signal recovery");
+        exit(1);
+    }
+    sigfd = signalfd(-1, &sigmask, SFD_CLOEXEC);
+    if (sigfd == -1) {
+        perror("Couldn't create signalfd for graceful signal recovery");
+        exit(1);
+    }
+
+    d = XOpenDisplay(NULL);
+    if (!d) {
+        fprintf(stderr, "Failed to open display\n");
+        exit(1);
+    }
+    root_win = DefaultRootWindow(d);
+
+    if (!XRRQueryExtension(d, &xrr_event_base, &xrr_error_base)) {
+        fprintf(stderr, "RandR extension missing\n");
+        exit(1);
+    }
+    XRRSelectInput(d, root_win, RRScreenChangeNotifyMask);
+
+    XFlush(d);
+    x11_fd = ConnectionNumber(d);
+    for (;;) {
+        XEvent ev;
+        fd_set in_fds;
+        FD_ZERO(&in_fds);
+        FD_SET(sigfd, &in_fds);
+        FD_SET(x11_fd, &in_fds);
+
+        if (select(FD_SETSIZE, &in_fds, NULL, NULL, NULL) < 0) {
+            XCloseDisplay(d);
+            exit(2);
+        }
+
+        if (FD_ISSET(sigfd, &in_fds)) {
+            /* This must be SIGTERM as we are not listening on anything else */
+            XCloseDisplay(d);
+            exit(0);
+        }
+
+        while (XPending(d)) {
+            XNextEvent(d, &ev);
+            XRRUpdateConfiguration(&ev);
+
+            if (ev.type != xrr_event_base + RRScreenChangeNotify) {
+                /* skip other events (this shouldn't happen) */
+                continue;
+            }
+
+            fprintf(stderr, "Screen layout change event received\n");
+            switch (fork()) {
+                case 0:
+                    close(ConnectionNumber(d));
+                    execvp(argv[1], &argv[1]);
+                    perror("Failed to execute script");
+                    exit(1);
+                case -1:
+                    perror("fork");
+                    exit(1);
+                default:
+                    break;
+            }
+        }
+    }
+    return 0;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+5,6
+5,7
+7,8
+9,10
+9,11
+11,12
+11,13
+11,14
+15,16
+15,17
+15,18
+15,19
+15,20
+15,21
+15,22
+15,23
+15,24
+15,25
+15,26
+15,27
+15,28
+15,29
+15,30
+15,31
+15,32
+15,33
+15,34
+15,35
+15,36
+15,37
+15,38
+16,17
+17,18
+17,19
+18,19
+20,21
+22,23
+23,24
+23,25
+25,26
+27,28
+28,29
+28,30
+29,30
+31,32
+31,33
+34,35
+35,36
+35,37
+36,37
+38,39
+40,41
+41,42
+41,43
+43,44
+43,45
+45,46
+47,48
+48,49
+48,50
+50,51
+50,52
+52,53
+54,55
+55,56
+55,57
+57,58
+59,60
+59,61
+60,61
+60,62
+61,62
+64,65
+64,66
+65,66
+66,67
+66,68
+66,69
+66,70
+67,68
+69,70
+72,73
+72,74
+73,74
+76,77
+77,78
+77,79
+78,79
+81,82
+82,83
+82,84
+82,85
+83,84
+85,86
+87,88
+89,90
+90,91
+90,92
+91,92
+93,94
+94,95
+96,97
+97,98
+97,99
+97,100
+98,99
+100,101
+101,102
+103,104
+105,106
+105,107
+106,107
+106,108
+107,108
+107,109
+107,110
+107,111
+108,109
+110,111
+112,113
+113,114
+115,116
+117,118
+119,120
+119,121
+120,121
+121,122
+121,123
+122,123
+125,126
+126,127
+126,128
+127,128
+130,131
+131,132
+131,133
+132,133
+134,135
+134,136
+134,137
+134,138
+135,136
+137,138
+139,140
+140,141
+142,143
+144,145
+144,146
+145,146
+145,147
+146,147
+148,149
+150,151
+150,152
+151,152
+152,153
+152,154
+153,154
+156,157
+157,158
+157,159
+158,159
+161,162
+162,163
+162,164
+163,164
+165,166
+165,167
+166,167
+168,169
+170,171
+170,172
+171,172
+172,173
+174,175
+174,176
+175,176
+176,177
+176,178
+176,179
+177,178
+179,180
+182,183
+183,184
+183,185
+184,185
+187,188
+188,189
+188,190
+189,190
+191,192
+191,193
+192,193
+194,195
+196,197
+196,198
+197,198
+198,199
+198,200
+198,201
+198,202
+199,200
+201,202
+203,204
+204,205
+206,207
+207,208
+209,210
+209,211
+210,211
+211,212
+211,213
+211,214
+212,213
+214,215
+217,218
+218,219
+218,220
+219,220
+222,223
+223,224
+223,225
+223,226
+223,227
+224,225
+226,227
+228,229
+230,231
+232,233
+233,234
+233,235
+234,235
+236,237
+238,239
+239,240
+239,241
+240,241
+242,243
+242,244
+243,244
+245,246
+247,248
+247,249
+249,250
+249,251
+249,252
+249,253
+249,254
+249,255
+249,256
+249,257
+250,251
+251,252
+251,253
+252,253
+254,255
+256,257
+257,258
+257,259
+258,259
+260,261
+262,263
+263,264
+263,265
+264,265
+266,267
+267,268
+269,270
+270,271
+270,272
+270,273
+271,272
+273,274
+275,276
+276,277
+278,279
+279,280
+279,281
+279,282
+280,281
+282,283
+284,285
+285,286
+287,288
+287,289
+288,289
+288,290
+289,290
+289,291
+289,292
+289,293
+289,294
+289,295
+290,291
+292,293
+294,295
+295,296
+297,298
+299,300
+301,302
+304,305
+304,306
+305,306
+306,307
+306,308
+307,308
+309,310
+311,312
+312,313
+312,314
+313,314
+316,317
+316,318
+317,318
+317,319
+317,320
+318,319
+320,321
+322,323
+323,324
+325,326
+325,327
+326,327
+327,328
+327,329
+328,329
+330,331
+332,333
+333,334
+333,335
+334,335
+337,338
+337,339
+338,339
+338,340
+339,340
+341,342
+343,344
+343,345
+343,346
+343,347
+343,348
+344,345
+345,346
+345,347
+345,348
+346,347
+348,349
+350,351
+351,352
+353,354
+354,355
+354,356
+355,356
+357,358
+358,359
+360,361
+360,362
+361,362
+361,363
+362,363
+362,364
+363,364
+366,367
+366,368
+367,368
+369,370
+371,372
+373,374
+374,375
+374,376
+374,377
+375,376
+377,378
+380,381
+380,382
+381,382
+382,383
+384,385
+384,386
+384,387
+384,388
+384,389
+384,390
+384,391
+384,392
+384,393
+384,394
+385,386
+387,388
+388,389
+388,390
+389,390
+391,392
+391,393
+392,393
+394,395
+396,397
+397,398
+397,399
+397,400
+398,399
+400,401
+400,402
+401,402
+404,405
+405,406
+405,407
+406,407
+409,410
+410,411
+410,412
+411,412
+414,415
+415,416
+415,417
+416,417
+419,420
+420,421
+422,423
+423,424
+423,425
+424,425
+427,428
+428,429
+428,430
+429,430
+434,435
+-----nextToken-----
+2,4,6,8,10,12,13,14,19,21,24,26,30,32,33,37,39,42,44,46,49,51,53,56,58,62,63,68,70,71,74,75,79,80,84,86,88,92,95,99,102,104,109,111,114,116,118,123,124,128,129,133,136,138,141,143,147,149,154,155,159,160,164,167,169,173,178,180,181,185,186,190,193,195,200,202,205,208,213,215,216,220,221,225,227,229,231,235,237,241,244,246,248,253,255,259,261,265,268,272,274,277,281,283,286,291,293,296,298,300,302,303,308,310,314,315,319,321,324,329,331,335,336,340,342,347,349,352,356,359,364,365,368,370,372,376,378,379,383,386,390,393,395,399,402,403,407,408,412,413,417,418,421,425,426,430,431,432,433,435
+-----computeFrom-----
+60,61
+60,62
+106,107
+106,108
+131,132
+131,133
+145,146
+145,147
+162,163
+162,164
+188,189
+188,190
+239,240
+239,241
+288,289
+288,290
+361,362
+361,363
+366,367
+366,368
+-----guardedBy-----
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;LiteralExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;UnaryExpression;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ForStatement;NullStatement;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;WhileStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ContinueStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;SwitchStatement;FunctionCallExpression;IdExpression;Name;CompoundStatement;CaseStatement;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;UnaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;CaseStatement;UnaryExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;DefaultStatement;BreakStatement;ReturnStatement;LiteralExpression;
+-----ast_node-----
+int main(int argc, char **argv) {    sigset_t sigmask;    int sigfd;    Display *d;    Window root_win;    int xrr_event_base = 0;    int xrr_error_base = 0;    int x11_fd;    if (argc < 2) {        fprintf(stderr, "Usage: %s <script>\n", argv[0]);        exit(1);    }    signal(SIGCHLD, SIG_IGN);    sigemptyset(&sigmask);    sigaddset(&sigmask, SIGTERM);    if (sigprocmask(SIG_BLOCK, &sigmask, NULL) == -1) {        perror("Couldn't block signals for graceful signal recovery");        exit(1);    }    sigfd = signalfd(-1, &sigmask, SFD_CLOEXEC);    if (sigfd == -1) {        perror("Couldn't create signalfd for graceful signal recovery");        exit(1);    }    d = XOpenDisplay(NULL);    if (!d) {        fprintf(stderr, "Failed to open display\n");        exit(1);    }    root_win = DefaultRootWindow(d);    if (!XRRQueryExtension(d, &xrr_event_base, &xrr_error_base)) {        fprintf(stderr, "RandR extension missing\n");        exit(1);    }    XRRSelectInput(d, root_win, RRScreenChangeNotifyMask);    XFlush(d);    x11_fd = ConnectionNumber(d);    for (;;) {        XEvent ev;        fd_set in_fds;        FD_ZERO(&in_fds);        FD_SET(sigfd, &in_fds);        FD_SET(x11_fd, &in_fds);        if (select(FD_SETSIZE, &in_fds, NULL, NULL, NULL) < 0) {            XCloseDisplay(d);            exit(2);        }        if (FD_ISSET(sigfd, &in_fds)) {            /* This must be SIGTERM as we are not listening on anything else */            XCloseDisplay(d);            exit(0);        }        while (XPending(d)) {            XNextEvent(d, &ev);            XRRUpdateConfiguration(&ev);            if (ev.type != xrr_event_base + RRScreenChangeNotify) {                /* skip other events (this shouldn't happen) */                continue;            }            fprintf(stderr, "Screen layout change event received\n");            switch (fork()) {                case 0:                    close(ConnectionNumber(d));                    execvp(argv[1], &argv[1]);                    perror("Failed to execute script");                    exit(1);                case -1:                    perror("fork");                    exit(1);                default:                    break;            }        }    }    return 0;}
+int
+main(int argc, char **argv)
+main
+int argc
+int
+argc
+argc
+char **argv
+char
+**argv
+*
+*
+argv
+{    sigset_t sigmask;    int sigfd;    Display *d;    Window root_win;    int xrr_event_base = 0;    int xrr_error_base = 0;    int x11_fd;    if (argc < 2) {        fprintf(stderr, "Usage: %s <script>\n", argv[0]);        exit(1);    }    signal(SIGCHLD, SIG_IGN);    sigemptyset(&sigmask);    sigaddset(&sigmask, SIGTERM);    if (sigprocmask(SIG_BLOCK, &sigmask, NULL) == -1) {        perror("Couldn't block signals for graceful signal recovery");        exit(1);    }    sigfd = signalfd(-1, &sigmask, SFD_CLOEXEC);    if (sigfd == -1) {        perror("Couldn't create signalfd for graceful signal recovery");        exit(1);    }    d = XOpenDisplay(NULL);    if (!d) {        fprintf(stderr, "Failed to open display\n");        exit(1);    }    root_win = DefaultRootWindow(d);    if (!XRRQueryExtension(d, &xrr_event_base, &xrr_error_base)) {        fprintf(stderr, "RandR extension missing\n");        exit(1);    }    XRRSelectInput(d, root_win, RRScreenChangeNotifyMask);    XFlush(d);    x11_fd = ConnectionNumber(d);    for (;;) {        XEvent ev;        fd_set in_fds;        FD_ZERO(&in_fds);        FD_SET(sigfd, &in_fds);        FD_SET(x11_fd, &in_fds);        if (select(FD_SETSIZE, &in_fds, NULL, NULL, NULL) < 0) {            XCloseDisplay(d);            exit(2);        }        if (FD_ISSET(sigfd, &in_fds)) {            /* This must be SIGTERM as we are not listening on anything else */            XCloseDisplay(d);            exit(0);        }        while (XPending(d)) {            XNextEvent(d, &ev);            XRRUpdateConfiguration(&ev);            if (ev.type != xrr_event_base + RRScreenChangeNotify) {                /* skip other events (this shouldn't happen) */                continue;            }            fprintf(stderr, "Screen layout change event received\n");            switch (fork()) {                case 0:                    close(ConnectionNumber(d));                    execvp(argv[1], &argv[1]);                    perror("Failed to execute script");                    exit(1);                case -1:                    perror("fork");                    exit(1);                default:                    break;            }        }    }    return 0;}
+sigset_t sigmask;
+sigset_t sigmask;
+sigset_t
+sigset_t
+sigmask
+sigmask
+int sigfd;
+int sigfd;
+int
+sigfd
+sigfd
+Display *d;
+Display *d;
+Display
+Display
+*d
+*
+d
+Window root_win;
+Window root_win;
+Window
+Window
+root_win
+root_win
+int xrr_event_base = 0;
+int xrr_event_base = 0;
+int
+xrr_event_base = 0
+xrr_event_base
+= 0
+0
+int xrr_error_base = 0;
+int xrr_error_base = 0;
+int
+xrr_error_base = 0
+xrr_error_base
+= 0
+0
+int x11_fd;
+int x11_fd;
+int
+x11_fd
+x11_fd
+if (argc < 2) {        fprintf(stderr, "Usage: %s <script>\n", argv[0]);        exit(1);    }
+argc < 2
+argc
+argc
+2
+{        fprintf(stderr, "Usage: %s <script>\n", argv[0]);        exit(1);    }
+fprintf(stderr, "Usage: %s <script>\n", argv[0]);
+fprintf(stderr, "Usage: %s <script>\n", argv[0])
+fprintf
+fprintf
+stderr
+stderr
+"Usage: %s <script>\n"
+argv[0]
+argv
+argv
+0
+exit(1);
+exit(1)
+exit
+exit
+1
+signal(SIGCHLD, SIG_IGN);
+signal(SIGCHLD, SIG_IGN)
+signal
+signal
+SIGCHLD
+SIGCHLD
+SIG_IGN
+SIG_IGN
+sigemptyset(&sigmask);
+sigemptyset(&sigmask)
+sigemptyset
+sigemptyset
+&sigmask
+sigmask
+sigmask
+sigaddset(&sigmask, SIGTERM);
+sigaddset(&sigmask, SIGTERM)
+sigaddset
+sigaddset
+&sigmask
+sigmask
+sigmask
+SIGTERM
+SIGTERM
+if (sigprocmask(SIG_BLOCK, &sigmask, NULL) == -1) {        perror("Couldn't block signals for graceful signal recovery");        exit(1);    }
+sigprocmask(SIG_BLOCK, &sigmask, NULL) == -1
+sigprocmask(SIG_BLOCK, &sigmask, NULL)
+sigprocmask
+sigprocmask
+SIG_BLOCK
+SIG_BLOCK
+&sigmask
+sigmask
+sigmask
+NULL
+NULL
+-1
+1
+{        perror("Couldn't block signals for graceful signal recovery");        exit(1);    }
+perror("Couldn't block signals for graceful signal recovery");
+perror("Couldn't block signals for graceful signal recovery")
+perror
+perror
+"Couldn't block signals for graceful signal recovery"
+exit(1);
+exit(1)
+exit
+exit
+1
+sigfd = signalfd(-1, &sigmask, SFD_CLOEXEC);
+sigfd = signalfd(-1, &sigmask, SFD_CLOEXEC)
+sigfd
+sigfd
+signalfd(-1, &sigmask, SFD_CLOEXEC)
+signalfd
+signalfd
+-1
+1
+&sigmask
+sigmask
+sigmask
+SFD_CLOEXEC
+SFD_CLOEXEC
+if (sigfd == -1) {        perror("Couldn't create signalfd for graceful signal recovery");        exit(1);    }
+sigfd == -1
+sigfd
+sigfd
+-1
+1
+{        perror("Couldn't create signalfd for graceful signal recovery");        exit(1);    }
+perror("Couldn't create signalfd for graceful signal recovery");
+perror("Couldn't create signalfd for graceful signal recovery")
+perror
+perror
+"Couldn't create signalfd for graceful signal recovery"
+exit(1);
+exit(1)
+exit
+exit
+1
+d = XOpenDisplay(NULL);
+d = XOpenDisplay(NULL)
+d
+d
+XOpenDisplay(NULL)
+XOpenDisplay
+XOpenDisplay
+NULL
+NULL
+if (!d) {        fprintf(stderr, "Failed to open display\n");        exit(1);    }
+!d
+d
+d
+{        fprintf(stderr, "Failed to open display\n");        exit(1);    }
+fprintf(stderr, "Failed to open display\n");
+fprintf(stderr, "Failed to open display\n")
+fprintf
+fprintf
+stderr
+stderr
+"Failed to open display\n"
+exit(1);
+exit(1)
+exit
+exit
+1
+root_win = DefaultRootWindow(d);
+root_win = DefaultRootWindow(d)
+root_win
+root_win
+DefaultRootWindow(d)
+DefaultRootWindow
+DefaultRootWindow
+d
+d
+if (!XRRQueryExtension(d, &xrr_event_base, &xrr_error_base)) {        fprintf(stderr, "RandR extension missing\n");        exit(1);    }
+!XRRQueryExtension(d, &xrr_event_base, &xrr_error_base)
+XRRQueryExtension(d, &xrr_event_base, &xrr_error_base)
+XRRQueryExtension
+XRRQueryExtension
+d
+d
+&xrr_event_base
+xrr_event_base
+xrr_event_base
+&xrr_error_base
+xrr_error_base
+xrr_error_base
+{        fprintf(stderr, "RandR extension missing\n");        exit(1);    }
+fprintf(stderr, "RandR extension missing\n");
+fprintf(stderr, "RandR extension missing\n")
+fprintf
+fprintf
+stderr
+stderr
+"RandR extension missing\n"
+exit(1);
+exit(1)
+exit
+exit
+1
+XRRSelectInput(d, root_win, RRScreenChangeNotifyMask);
+XRRSelectInput(d, root_win, RRScreenChangeNotifyMask)
+XRRSelectInput
+XRRSelectInput
+d
+d
+root_win
+root_win
+RRScreenChangeNotifyMask
+RRScreenChangeNotifyMask
+XFlush(d);
+XFlush(d)
+XFlush
+XFlush
+d
+d
+x11_fd = ConnectionNumber(d);
+x11_fd = ConnectionNumber(d)
+x11_fd
+x11_fd
+ConnectionNumber(d)
+ConnectionNumber
+ConnectionNumber
+d
+d
+for (;;) {        XEvent ev;        fd_set in_fds;        FD_ZERO(&in_fds);        FD_SET(sigfd, &in_fds);        FD_SET(x11_fd, &in_fds);        if (select(FD_SETSIZE, &in_fds, NULL, NULL, NULL) < 0) {            XCloseDisplay(d);            exit(2);        }        if (FD_ISSET(sigfd, &in_fds)) {            /* This must be SIGTERM as we are not listening on anything else */            XCloseDisplay(d);            exit(0);        }        while (XPending(d)) {            XNextEvent(d, &ev);            XRRUpdateConfiguration(&ev);            if (ev.type != xrr_event_base + RRScreenChangeNotify) {                /* skip other events (this shouldn't happen) */                continue;            }            fprintf(stderr, "Screen layout change event received\n");            switch (fork()) {                case 0:                    close(ConnectionNumber(d));                    execvp(argv[1], &argv[1]);                    perror("Failed to execute script");                    exit(1);                case -1:                    perror("fork");                    exit(1);                default:                    break;            }        }    }
+;
+{        XEvent ev;        fd_set in_fds;        FD_ZERO(&in_fds);        FD_SET(sigfd, &in_fds);        FD_SET(x11_fd, &in_fds);        if (select(FD_SETSIZE, &in_fds, NULL, NULL, NULL) < 0) {            XCloseDisplay(d);            exit(2);        }        if (FD_ISSET(sigfd, &in_fds)) {            /* This must be SIGTERM as we are not listening on anything else */            XCloseDisplay(d);            exit(0);        }        while (XPending(d)) {            XNextEvent(d, &ev);            XRRUpdateConfiguration(&ev);            if (ev.type != xrr_event_base + RRScreenChangeNotify) {                /* skip other events (this shouldn't happen) */                continue;            }            fprintf(stderr, "Screen layout change event received\n");            switch (fork()) {                case 0:                    close(ConnectionNumber(d));                    execvp(argv[1], &argv[1]);                    perror("Failed to execute script");                    exit(1);                case -1:                    perror("fork");                    exit(1);                default:                    break;            }        }    }
+XEvent ev;
+XEvent ev;
+XEvent
+XEvent
+ev
+ev
+fd_set in_fds;
+fd_set in_fds;
+fd_set
+fd_set
+in_fds
+in_fds
+FD_ZERO(&in_fds);
+FD_ZERO(&in_fds)
+FD_ZERO
+FD_ZERO
+&in_fds
+in_fds
+in_fds
+FD_SET(sigfd, &in_fds);
+FD_SET(sigfd, &in_fds)
+FD_SET
+FD_SET
+sigfd
+sigfd
+&in_fds
+in_fds
+in_fds
+FD_SET(x11_fd, &in_fds);
+FD_SET(x11_fd, &in_fds)
+FD_SET
+FD_SET
+x11_fd
+x11_fd
+&in_fds
+in_fds
+in_fds
+if (select(FD_SETSIZE, &in_fds, NULL, NULL, NULL) < 0) {            XCloseDisplay(d);            exit(2);        }
+select(FD_SETSIZE, &in_fds, NULL, NULL, NULL) < 0
+select(FD_SETSIZE, &in_fds, NULL, NULL, NULL)
+select
+select
+FD_SETSIZE
+FD_SETSIZE
+&in_fds
+in_fds
+in_fds
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+0
+{            XCloseDisplay(d);            exit(2);        }
+XCloseDisplay(d);
+XCloseDisplay(d)
+XCloseDisplay
+XCloseDisplay
+d
+d
+exit(2);
+exit(2)
+exit
+exit
+2
+if (FD_ISSET(sigfd, &in_fds)) {            /* This must be SIGTERM as we are not listening on anything else */            XCloseDisplay(d);            exit(0);        }
+FD_ISSET(sigfd, &in_fds)
+FD_ISSET
+FD_ISSET
+sigfd
+sigfd
+&in_fds
+in_fds
+in_fds
+{            /* This must be SIGTERM as we are not listening on anything else */            XCloseDisplay(d);            exit(0);        }
+XCloseDisplay(d);
+XCloseDisplay(d)
+XCloseDisplay
+XCloseDisplay
+d
+d
+exit(0);
+exit(0)
+exit
+exit
+0
+while (XPending(d)) {            XNextEvent(d, &ev);            XRRUpdateConfiguration(&ev);            if (ev.type != xrr_event_base + RRScreenChangeNotify) {                /* skip other events (this shouldn't happen) */                continue;            }            fprintf(stderr, "Screen layout change event received\n");            switch (fork()) {                case 0:                    close(ConnectionNumber(d));                    execvp(argv[1], &argv[1]);                    perror("Failed to execute script");                    exit(1);                case -1:                    perror("fork");                    exit(1);                default:                    break;            }        }
+XPending(d)
+XPending
+XPending
+d
+d
+{            XNextEvent(d, &ev);            XRRUpdateConfiguration(&ev);            if (ev.type != xrr_event_base + RRScreenChangeNotify) {                /* skip other events (this shouldn't happen) */                continue;            }            fprintf(stderr, "Screen layout change event received\n");            switch (fork()) {                case 0:                    close(ConnectionNumber(d));                    execvp(argv[1], &argv[1]);                    perror("Failed to execute script");                    exit(1);                case -1:                    perror("fork");                    exit(1);                default:                    break;            }        }
+XNextEvent(d, &ev);
+XNextEvent(d, &ev)
+XNextEvent
+XNextEvent
+d
+d
+&ev
+ev
+ev
+XRRUpdateConfiguration(&ev);
+XRRUpdateConfiguration(&ev)
+XRRUpdateConfiguration
+XRRUpdateConfiguration
+&ev
+ev
+ev
+if (ev.type != xrr_event_base + RRScreenChangeNotify) {                /* skip other events (this shouldn't happen) */                continue;            }
+ev.type != xrr_event_base + RRScreenChangeNotify
+ev.type
+ev
+ev
+type
+xrr_event_base + RRScreenChangeNotify
+xrr_event_base
+xrr_event_base
+RRScreenChangeNotify
+RRScreenChangeNotify
+{                /* skip other events (this shouldn't happen) */                continue;            }
+continue;
+fprintf(stderr, "Screen layout change event received\n");
+fprintf(stderr, "Screen layout change event received\n")
+fprintf
+fprintf
+stderr
+stderr
+"Screen layout change event received\n"
+switch (fork()) {                case 0:                    close(ConnectionNumber(d));                    execvp(argv[1], &argv[1]);                    perror("Failed to execute script");                    exit(1);                case -1:                    perror("fork");                    exit(1);                default:                    break;            }
+fork()
+fork
+fork
+{                case 0:                    close(ConnectionNumber(d));                    execvp(argv[1], &argv[1]);                    perror("Failed to execute script");                    exit(1);                case -1:                    perror("fork");                    exit(1);                default:                    break;            }
+case 0:
+0
+close(ConnectionNumber(d));
+close(ConnectionNumber(d))
+close
+close
+ConnectionNumber(d)
+ConnectionNumber
+ConnectionNumber
+d
+d
+execvp(argv[1], &argv[1]);
+execvp(argv[1], &argv[1])
+execvp
+execvp
+argv[1]
+argv
+argv
+1
+&argv[1]
+argv[1]
+argv
+argv
+1
+perror("Failed to execute script");
+perror("Failed to execute script")
+perror
+perror
+"Failed to execute script"
+exit(1);
+exit(1)
+exit
+exit
+1
+case -1:
+-1
+1
+perror("fork");
+perror("fork")
+perror
+perror
+"fork"
+exit(1);
+exit(1)
+exit
+exit
+1
+default:
+break;
+return 0;
+0
+-----joern-----
+(186,134,0)
+(19,167,0)
+(81,183,0)
+(140,12,0)
+(113,5,0)
+(148,134,0)
+(122,94,0)
+(112,147,0)
+(145,19,0)
+(160,92,0)
+(2,5,0)
+(23,12,0)
+(115,167,0)
+(31,181,0)
+(30,110,0)
+(27,128,0)
+(71,171,0)
+(29,66,0)
+(114,185,0)
+(114,187,0)
+(83,32,0)
+(128,27,0)
+(109,199,0)
+(11,16,0)
+(162,153,0)
+(1,30,0)
+(195,22,0)
+(103,191,0)
+(184,119,0)
+(44,134,0)
+(26,185,0)
+(135,56,0)
+(101,202,0)
+(14,140,0)
+(66,32,0)
+(183,134,0)
+(76,44,0)
+(9,148,0)
+(25,74,0)
+(185,6,0)
+(198,88,0)
+(155,65,0)
+(69,56,0)
+(174,51,0)
+(130,32,0)
+(59,56,0)
+(33,16,0)
+(180,117,0)
+(108,56,0)
+(101,12,0)
+(120,153,0)
+(39,96,0)
+(29,134,0)
+(159,117,0)
+(13,117,0)
+(148,28,0)
+(142,62,0)
+(177,107,0)
+(197,92,0)
+(49,187,0)
+(181,56,0)
+(183,117,0)
+(40,29,0)
+(47,152,0)
+(25,134,0)
+(22,65,0)
+(88,118,0)
+(136,89,0)
+(141,10,0)
+(91,59,0)
+(202,156,0)
+(132,42,0)
+(98,92,0)
+(161,52,0)
+(53,98,0)
+(58,27,0)
+(86,188,0)
+(42,28,0)
+(21,56,0)
+(134,77,0)
+(173,149,0)
+(154,12,0)
+(175,189,0)
+(72,182,0)
+(53,88,0)
+(82,51,0)
+(186,108,0)
+(192,199,0)
+(74,25,0)
+(123,180,0)
+(190,32,0)
+(116,102,0)
+(18,56,0)
+(98,53,0)
+(188,86,0)
+(63,27,0)
+(60,108,0)
+(124,12,0)
+(80,16,0)
+(171,3,0)
+(41,32,0)
+(46,56,0)
+(193,82,0)
+(166,56,0)
+(48,83,0)
+(10,117,0)
+(168,86,0)
+(182,167,0)
+(17,185,0)
+(45,77,0)
+(95,32,0)
+(153,56,0)
+(87,153,0)
+(65,22,0)
+(158,75,0)
+(183,149,0)
+(97,16,0)
+(179,59,0)
+(91,25,0)
+(182,25,0)
+(24,56,0)
+(144,43,0)
+(157,167,0)
+(147,31,0)
+(24,75,0)
+(52,169,0)
+(68,186,0)
+(121,188,0)
+(25,182,0)
+(78,97,0)
+(4,35,0)
+(191,103,0)
+(137,94,0)
+(94,96,0)
+(149,183,0)
+(31,147,0)
+(43,152,0)
+(19,110,0)
+(101,107,0)
+(6,185,0)
+(25,91,0)
+(36,12,0)
+(8,16,0)
+(27,58,0)
+(153,134,0)
+(62,32,0)
+(150,56,0)
+(54,101,0)
+(140,14,0)
+(100,10,0)
+(199,56,0)
+(84,56,0)
+(131,56,0)
+(200,181,0)
+(156,202,0)
+(185,114,0)
+(196,24,0)
+(126,123,0)
+(99,174,0)
+(146,47,0)
+(86,104,0)
+(110,19,0)
+(50,19,0)
+(61,14,0)
+(2,181,0)
+(187,114,0)
+(108,186,0)
+(66,29,0)
+(176,163,0)
+(167,56,0)
+(194,16,0)
+(5,2,0)
+(151,128,0)
+(16,8,0)
+(166,134,0)
+(188,118,0)
+(105,64,0)
+(7,202,0)
+(15,56,0)
+(35,104,0)
+(180,123,0)
+(143,166,0)
+(20,56,0)
+(129,91,0)
+(138,8,0)
+(172,134,0)
+(27,181,0)
+(178,58,0)
+(181,27,0)
+(67,12,0)
+(102,189,0)
+(55,175,0)
+(156,134,0)
+(37,188,0)
+(106,32,0)
+(204,30,0)
+(89,56,0)
+(107,101,0)
+(57,56,0)
+(16,97,0)
+(38,25,0)
+(34,39,0)
+(22,181,0)
+(127,171,0)
+(79,43,0)
+(111,56,0)
+(191,56,0)
+(164,6,0)
+(98,32,0)
+(93,190,0)
+(2,12,0)
+(85,95,0)
+(0,88,0)
+(170,32,0)
+(70,89,0)
+(134,56,0)
+(203,156,0)
+(77,134,0)
+(90,103,0)
+(92,98,0)
+(119,169,0)
+(73,56,0)
+(133,31,0)
+(202,56,0)
+(64,134,0)
+(125,2,0)
+(119,134,0)
+(75,24,0)
+(153,108,0)
+(88,53,0)
+(139,59,0)
+(165,86,0)
+(110,30,0)
+(92,118,0)
+(59,139,1)
+(91,129,1)
+(128,151,1)
+(146,43,1)
+(191,103,1)
+(88,0,1)
+(35,4,1)
+(166,143,1)
+(166,134,1)
+(164,17,1)
+(101,107,1)
+(112,133,1)
+(181,27,1)
+(200,174,1)
+(182,167,1)
+(37,121,1)
+(141,110,1)
+(16,80,1)
+(31,147,1)
+(50,30,1)
+(81,44,1)
+(183,134,1)
+(24,75,1)
+(147,112,1)
+(29,40,1)
+(116,31,1)
+(76,41,1)
+(26,6,1)
+(1,180,1)
+(171,71,1)
+(17,24,1)
+(11,33,1)
+(92,197,1)
+(158,191,1)
+(187,49,1)
+(9,8,1)
+(149,173,1)
+(123,126,1)
+(151,200,1)
+(103,90,1)
+(183,149,1)
+(19,167,1)
+(39,34,1)
+(197,160,1)
+(64,105,1)
+(113,125,1)
+(153,87,1)
+(177,54,1)
+(144,79,1)
+(162,120,1)
+(95,85,1)
+(86,188,1)
+(168,165,1)
+(155,195,1)
+(94,137,1)
+(136,171,1)
+(78,194,1)
+(139,179,1)
+(83,48,1)
+(125,140,1)
+(161,119,1)
+(92,118,1)
+(184,22,1)
+(60,64,1)
+(27,128,1)
+(188,118,1)
+(203,7,1)
+(40,201,1)
+(137,122,1)
+(63,58,1)
+(99,82,1)
+(65,155,1)
+(193,114,1)
+(172,31,1)
+(122,74,1)
+(142,190,1)
+(110,19,1)
+(185,26,1)
+(44,134,1)
+(173,81,1)
+(38,108,1)
+(140,14,1)
+(68,60,1)
+(76,22,1)
+(41,83,1)
+(196,75,1)
+(101,202,1)
+(52,161,1)
+(61,202,1)
+(119,134,1)
+(0,198,1)
+(200,114,1)
+(88,118,1)
+(60,47,1)
+(167,157,1)
+(93,95,1)
+(8,16,1)
+(156,203,1)
+(120,39,1)
+(108,186,1)
+(199,192,1)
+(58,178,1)
+(66,29,1)
+(41,201,1)
+(82,193,1)
+(55,102,1)
+(90,89,1)
+(19,145,1)
+(42,132,1)
+(61,44,1)
+(179,167,1)
+(186,134,1)
+(71,127,1)
+(178,128,1)
+(188,37,1)
+(62,142,1)
+(185,6,1)
+(109,199,1)
+(27,63,1)
+(100,141,1)
+(25,134,1)
+(54,2,1)
+(27,58,1)
+(74,25,1)
+(48,62,1)
+(2,5,1)
+(72,38,1)
+(8,138,1)
+(180,123,1)
+(89,70,1)
+(160,66,1)
+(22,181,1)
+(29,134,1)
+(133,181,1)
+(129,182,1)
+(186,68,1)
+(91,59,1)
+(24,196,1)
+(174,99,1)
+(25,182,1)
+(201,10,1)
+(176,110,1)
+(25,91,1)
+(4,86,1)
+(64,134,1)
+(79,64,1)
+(165,171,1)
+(153,108,1)
+(80,11,1)
+(70,136,1)
+(190,93,1)
+(114,187,1)
+(148,9,1)
+(30,204,1)
+(102,116,1)
+(49,185,1)
+(14,61,1)
+(45,172,1)
+(47,146,1)
+(132,148,1)
+(202,156,1)
+(198,92,1)
+(53,88,1)
+(87,162,1)
+(134,77,1)
+(22,65,1)
+(195,42,1)
+(120,74,1)
+(143,153,1)
+(182,72,1)
+(110,30,1)
+(76,52,1)
+(43,144,1)
+(76,176,1)
+(157,115,1)
+(171,3,1)
+(105,134,1)
+(10,100,1)
+(148,134,1)
+(175,55,1)
+(16,97,1)
+(156,134,1)
+(136,35,1)
+(5,113,1)
+(31,181,1)
+(98,92,1)
+(195,8,1)
+(7,166,1)
+(204,1,1)
+(6,164,1)
+(127,59,1)
+(172,175,1)
+(34,94,1)
+(33,97,1)
+(153,134,1)
+(75,158,1)
+(126,183,1)
+(121,168,1)
+(194,101,1)
+(85,98,1)
+(77,45,1)
+(2,181,1)
+(107,177,1)
+(44,76,1)
+(114,185,1)
+(98,53,1)
+(138,16,1)
+(97,78,1)
+(145,50,1)
+(119,184,1)
+(25,182,2)
+(22,181,2)
+(101,202,2)
+(183,134,2)
+(27,58,2)
+(22,65,2)
+(66,29,2)
+(182,167,2)
+(86,188,2)
+(156,134,2)
+(88,118,2)
+(180,123,2)
+(153,134,2)
+(183,149,2)
+(2,5,2)
+(25,91,2)
+(98,92,2)
+(27,128,2)
+(108,186,2)
+(181,27,2)
+(134,77,2)
+(186,134,2)
+(44,134,2)
+(53,88,2)
+(31,181,2)
+(110,30,2)
+(16,97,2)
+(101,107,2)
+(110,19,2)
+(2,181,2)
+(74,25,2)
+(166,134,2)
+(148,134,2)
+(171,3,2)
+(64,134,2)
+(91,59,2)
+(119,134,2)
+(140,14,2)
+(29,134,2)
+(153,108,2)
+(24,75,2)
+(188,118,2)
+(31,147,2)
+(92,118,2)
+(202,156,2)
+(25,134,2)
+(114,187,2)
+(185,6,2)
+(19,167,2)
+(8,16,2)
+(98,53,2)
+(109,199,2)
+(114,185,2)
+(191,103,2)
+-----------------------------------
+(0,1)
+(1,ev)
+(2,FD_SET(sigfd, &in_fds)
+(3,int argc)
+(4,1)
+(5,&in_fds)
+(6,&sigmask)
+(7,x11_fd)
+(8,select(FD_SETSIZE, &in_fds, NULL, NULL, NULL)
+(9,d)
+(10,fprintf(stderr, "Screen layout change event received\\n")
+(11,NULL)
+(12,)
+(13,switch (fork()
+(14,&in_fds)
+(15,x11_fd)
+(16,select(FD_SETSIZE, &in_fds, NULL, NULL, NULL)
+(17,SIG_BLOCK)
+(18,sigfd)
+(19,xrr_event_base + RRScreenChangeNotify)
+(20,if (!d)
+(21,xrr_error_base)
+(22,FD_ISSET(sigfd, &in_fds)
+(23,if (select(FD_SETSIZE, &in_fds, NULL, NULL, NULL)
+(24,sigaddset(&sigmask, SIGTERM)
+(25,XRRQueryExtension(d, &xrr_event_base, &xrr_error_base)
+(26,NULL)
+(27,signalfd(-1, &sigmask, SFD_CLOEXEC)
+(28,)
+(29,ConnectionNumber(d)
+(30,ev.type)
+(31,sigfd == -1)
+(32,)
+(33,NULL)
+(34,1)
+(35,exit(1)
+(36,ev)
+(37,0)
+(38,d)
+(39,exit(1)
+(40,d)
+(41,break;)
+(42,exit(2)
+(43,fprintf(stderr, "Failed to open display\\n")
+(44,XPending(d)
+(45,NULL)
+(46,sigmask)
+(47,exit(1)
+(48,1)
+(49,1)
+(50,xrr_event_base)
+(51,)
+(52,exit(0)
+(53,&argv[1])
+(54,x11_fd)
+(55,1)
+(56,)
+(57,if (argc < 2)
+(58,&sigmask)
+(59,xrr_error_base = 0)
+(60,root_win)
+(61,in_fds)
+(62,perror("fork")
+(63,SFD_CLOEXEC)
+(64,!d)
+(65,&in_fds)
+(66,close(ConnectionNumber(d)
+(67,while (XPending(d)
+(68,d)
+(69,if (sigfd == -1)
+(70,SIG_IGN)
+(71,2)
+(72,xrr_event_base)
+(73,root_win)
+(74,!XRRQueryExtension(d, &xrr_event_base, &xrr_error_base)
+(75,&sigmask)
+(76,d)
+(77,XOpenDisplay(NULL)
+(78,in_fds)
+(79,stderr)
+(80,NULL)
+(81,d)
+(82,perror("Couldn\'t block signals for graceful signal recovery")
+(83,exit(1)
+(84,for (;;)
+(85,"Failed to execute script")
+(86,fprintf(stderr, "Usage: %s <script>\\n", argv[0])
+(87,RRScreenChangeNotifyMask)
+(88,argv[1])
+(89,signal(SIGCHLD, SIG_IGN)
+(90,sigmask)
+(91,&xrr_error_base)
+(92,argv[1])
+(93,1)
+(94,fprintf(stderr, "RandR extension missing\\n")
+(95,perror("Failed to execute script")
+(96,)
+(97,&in_fds)
+(98,execvp(argv[1], &argv[1])
+(99,1)
+(100,"Screen layout change event received\\n")
+(101,FD_SET(x11_fd, &in_fds)
+(102,perror("Couldn\'t create signalfd for graceful signal recovery")
+(103,&sigmask)
+(104,)
+(105,d)
+(106,1:)
+(107,&in_fds)
+(108,root_win = DefaultRootWindow(d)
+(109,RET)
+(110,ev.type != xrr_event_base + RRScreenChangeNotify)
+(111,if (sigprocmask(SIG_BLOCK, &sigmask, NULL)
+(112,1)
+(113,in_fds)
+(114,sigprocmask(SIG_BLOCK, &sigmask, NULL)
+(115,xrr_event_base)
+(116,"Couldn\'t create signalfd for graceful signal recovery")
+(117,)
+(118,char **argv)
+(119,XCloseDisplay(d)
+(120,d)
+(121,argv)
+(122,stderr)
+(123,&ev)
+(124,in_fds)
+(125,sigfd)
+(126,ev)
+(127,argc)
+(128,-1)
+(129,xrr_error_base)
+(130,case 0:)
+(131,xrr_event_base)
+(132,2)
+(133,sigfd)
+(134,d = XOpenDisplay(NULL)
+(135,d)
+(136,SIGCHLD)
+(137,"RandR extension missing\\n")
+(138,0)
+(139,0)
+(140,FD_ZERO(&in_fds)
+(141,stderr)
+(142,"fork")
+(143,d)
+(144,"Failed to open display\\n")
+(145,RRScreenChangeNotify)
+(146,1)
+(147,-1)
+(148,XCloseDisplay(d)
+(149,&ev)
+(150,if (!XRRQueryExtension(d, &xrr_event_base, &xrr_error_base)
+(151,1)
+(152,)
+(153,XRRSelectInput(d, root_win, RRScreenChangeNotifyMask)
+(154,if (FD_ISSET(sigfd, &in_fds)
+(155,in_fds)
+(156,ConnectionNumber(d)
+(157,0)
+(158,sigmask)
+(159,if (ev.type != xrr_event_base + RRScreenChangeNotify)
+(160,argv)
+(161,0)
+(162,root_win)
+(163,)
+(164,sigmask)
+(165,stderr)
+(166,XFlush(d)
+(167,xrr_event_base = 0)
+(168,"Usage: %s <script>\\n")
+(169,)
+(170,default:)
+(171,argc < 2)
+(172,d)
+(173,ev)
+(174,exit(1)
+(175,exit(1)
+(176,continue;)
+(177,in_fds)
+(178,sigmask)
+(179,xrr_error_base)
+(180,XRRUpdateConfiguration(&ev)
+(181,sigfd = signalfd(-1, &sigmask, SFD_CLOEXEC)
+(182,&xrr_event_base)
+(183,XNextEvent(d, &ev)
+(184,d)
+(185,sigprocmask(SIG_BLOCK, &sigmask, NULL)
+(186,DefaultRootWindow(d)
+(187,-1)
+(188,argv[0])
+(189,)
+(190,exit(1)
+(191,sigemptyset(&sigmask)
+(192,0)
+(193,"Couldn\'t block signals for graceful signal recovery")
+(194,FD_SETSIZE)
+(195,sigfd)
+(196,SIGTERM)
+(197,1)
+(198,argv)
+(199,return 0;)
+(200,sigfd)
+(201,fork()
+(202,x11_fd = ConnectionNumber(d)
+(203,d)
+(204,type)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,5328 @@
+-----label-----
+0
+-----code-----
+static int register_verify(int callno, struct sockaddr_in *sin, struct iax_ies *ies)
+{
+	char requeststr[256] = "";
+	char peer[256] = "";
+	char md5secret[256] = "";
+	char rsasecret[256] = "";
+	char secret[256] = "";
+	struct iax2_peer *p = NULL;
+	struct ast_key *key;
+	char *keyn;
+	int x;
+	int expire = 0;
+	int res = -1;
+	struct ast_sockaddr addr;
+
+	ast_clear_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);
+	/* iaxs[callno]->peer[0] = '\0'; not necc. any more-- stringfield is pre-inited to null string */
+	if (ies->username)
+		ast_copy_string(peer, ies->username, sizeof(peer));
+	if (ies->password)
+		ast_copy_string(secret, ies->password, sizeof(secret));
+	if (ies->md5_result)
+		ast_copy_string(md5secret, ies->md5_result, sizeof(md5secret));
+	if (ies->rsa_result)
+		ast_copy_string(rsasecret, ies->rsa_result, sizeof(rsasecret));
+	if (ies->refresh)
+		expire = ies->refresh;
+
+	if (ast_strlen_zero(peer)) {
+		ast_log(LOG_NOTICE, "Empty registration from %s\n", ast_inet_ntoa(sin->sin_addr));
+		return -1;
+	}
+
+	/* SLD: first call to lookup peer during registration */
+	ast_mutex_unlock(&iaxsl[callno]);
+	p = find_peer(peer, 1);
+	ast_mutex_lock(&iaxsl[callno]);
+	if (!p || !iaxs[callno]) {
+		if (iaxs[callno]) {
+			int plaintext = ((last_authmethod & IAX_AUTH_PLAINTEXT) | (iaxs[callno]->authmethods & IAX_AUTH_PLAINTEXT));
+			/* Anything, as long as it's non-blank */
+			ast_string_field_set(iaxs[callno], secret, "badsecret");
+			/* An AUTHREQ must be sent in response to a REGREQ of an invalid peer unless
+			 * 1. A challenge already exists indicating a AUTHREQ was already sent out.
+			 * 2. A plaintext secret is present in ie as result of a previous AUTHREQ requesting it.
+			 * 3. A plaintext secret is present in the ie and the last_authmethod used by a peer happened
+			 *    to be plaintext, indicating it is an authmethod used by other peers on the system. 
+			 *
+			 * If none of these cases exist, res will be returned as 0 without authentication indicating
+			 * an AUTHREQ needs to be sent out. */
+
+			if (ast_strlen_zero(iaxs[callno]->challenge) &&
+				!(!ast_strlen_zero(secret) && plaintext)) {
+				/* by setting res to 0, an REGAUTH will be sent */
+				res = 0;
+			}
+		}
+		if (authdebug && !p)
+			ast_log(LOG_NOTICE, "No registration for peer '%s' (from %s)\n", peer, ast_inet_ntoa(sin->sin_addr));
+		goto return_unref;
+	}
+
+	if (!ast_test_flag64(p, IAX_DYNAMIC)) {
+		if (authdebug)
+			ast_log(LOG_NOTICE, "Peer '%s' is not dynamic (from %s)\n", peer, ast_inet_ntoa(sin->sin_addr));
+		goto return_unref;
+	}
+
+	ast_sockaddr_from_sin(&addr, sin);
+	if (!ast_apply_acl(p->acl, &addr, "IAX2 Peer ACL: ")) {
+		if (authdebug)
+			ast_log(LOG_NOTICE, "Host %s denied access to register peer '%s'\n", ast_inet_ntoa(sin->sin_addr), p->name);
+		goto return_unref;
+	}
+	ast_string_field_set(iaxs[callno], secret, p->secret);
+	ast_string_field_set(iaxs[callno], inkeys, p->inkeys);
+	/* Check secret against what we have on file */
+	if (!ast_strlen_zero(rsasecret) && (p->authmethods & IAX_AUTH_RSA) && !ast_strlen_zero(iaxs[callno]->challenge)) {
+		if (!ast_strlen_zero(p->inkeys)) {
+			char tmpkeys[256];
+			char *stringp=NULL;
+			ast_copy_string(tmpkeys, p->inkeys, sizeof(tmpkeys));
+			stringp=tmpkeys;
+			keyn = strsep(&stringp, ":");
+			while(keyn) {
+				key = ast_key_get(keyn, AST_KEY_PUBLIC);
+				if (key && !ast_check_signature(key, iaxs[callno]->challenge, rsasecret)) {
+					ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);
+					break;
+				} else if (!key)
+					ast_log(LOG_WARNING, "requested inkey '%s' does not exist\n", keyn);
+				keyn = strsep(&stringp, ":");
+			}
+			if (!keyn) {
+				if (authdebug)
+					ast_log(LOG_NOTICE, "Host %s failed RSA authentication with inkeys '%s'\n", peer, p->inkeys);
+				goto return_unref;
+			}
+		} else {
+			if (authdebug)
+				ast_log(LOG_NOTICE, "Host '%s' trying to do RSA authentication, but we have no inkeys\n", peer);
+			goto return_unref;
+		}
+	} else if (!ast_strlen_zero(md5secret) && (p->authmethods & IAX_AUTH_MD5) && !ast_strlen_zero(iaxs[callno]->challenge)) {
+		struct MD5Context md5;
+		unsigned char digest[16];
+		char *tmppw, *stringp;
+
+		tmppw = ast_strdupa(p->secret);
+		stringp = tmppw;
+		while((tmppw = strsep(&stringp, ";"))) {
+			MD5Init(&md5);
+			MD5Update(&md5, (unsigned char *)iaxs[callno]->challenge, strlen(iaxs[callno]->challenge));
+			MD5Update(&md5, (unsigned char *)tmppw, strlen(tmppw));
+			MD5Final(digest, &md5);
+			for (x=0;x<16;x++)
+				sprintf(requeststr + (x << 1), "%2.2x", digest[x]); /* safe */
+			if (!strcasecmp(requeststr, md5secret))
+				break;
+		}
+		if (tmppw) {
+			ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);
+		} else {
+			if (authdebug)
+				ast_log(LOG_NOTICE, "Host %s failed MD5 authentication for '%s' (%s != %s)\n", ast_inet_ntoa(sin->sin_addr), p->name, requeststr, md5secret);
+			goto return_unref;
+		}
+	} else if (!ast_strlen_zero(secret) && (p->authmethods & IAX_AUTH_PLAINTEXT)) {
+		/* They've provided a plain text password and we support that */
+		if (strcmp(secret, p->secret)) {
+			if (authdebug)
+				ast_log(LOG_NOTICE, "Host %s did not provide proper plaintext password for '%s'\n", ast_inet_ntoa(sin->sin_addr), p->name);
+			goto return_unref;
+		} else
+			ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);
+	} else if (!ast_strlen_zero(iaxs[callno]->challenge) && ast_strlen_zero(md5secret) && ast_strlen_zero(rsasecret)) {
+		/* if challenge has been sent, but no challenge response if given, reject. */
+		goto return_unref;
+	}
+	ast_devstate_changed(AST_DEVICE_UNKNOWN, "IAX2/%s", p->name); /* Activate notification */
+
+	/* either Authentication has taken place, or a REGAUTH must be sent before verifying registration */
+	res = 0;
+
+return_unref:
+	if (iaxs[callno]) {
+		ast_string_field_set(iaxs[callno], peer, peer);
+
+		/* Choose lowest expiry number */
+		if (expire && (expire < iaxs[callno]->expiry)) {
+			iaxs[callno]->expiry = expire;
+		}
+	}
+
+	if (p) {
+		peer_unref(p);
+	}
+	return res;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+5,6
+5,7
+7,8
+9,10
+9,11
+10,11
+12,13
+12,14
+15,16
+15,17
+16,17
+18,19
+18,20
+21,22
+21,23
+21,24
+21,25
+21,26
+21,27
+21,28
+21,29
+21,30
+21,31
+21,32
+21,33
+21,34
+21,35
+21,36
+21,37
+21,38
+21,39
+21,40
+21,41
+21,42
+21,43
+21,44
+21,45
+21,46
+21,47
+21,48
+21,49
+21,50
+21,51
+21,52
+21,53
+21,54
+21,55
+22,23
+23,24
+23,25
+25,26
+25,27
+25,28
+27,28
+29,30
+31,32
+32,33
+32,34
+34,35
+34,36
+34,37
+36,37
+38,39
+40,41
+41,42
+41,43
+43,44
+43,45
+43,46
+45,46
+47,48
+49,50
+50,51
+50,52
+52,53
+52,54
+52,55
+54,55
+56,57
+58,59
+59,60
+59,61
+61,62
+61,63
+61,64
+63,64
+65,66
+67,68
+68,69
+68,70
+69,70
+71,72
+71,73
+71,74
+74,75
+75,76
+77,78
+78,79
+78,80
+79,80
+81,82
+81,83
+84,85
+85,86
+85,87
+87,88
+87,89
+90,91
+91,92
+91,93
+93,94
+95,96
+96,97
+96,98
+98,99
+98,100
+100,101
+102,103
+103,104
+103,105
+105,106
+105,107
+107,108
+108,109
+110,111
+111,112
+111,113
+112,113
+114,115
+116,117
+117,118
+117,119
+117,120
+118,119
+120,121
+121,122
+121,123
+122,123
+122,124
+123,124
+125,126
+128,129
+130,131
+130,132
+131,132
+131,133
+132,133
+135,136
+136,137
+136,138
+136,139
+136,140
+137,138
+139,140
+141,142
+141,143
+142,143
+145,146
+146,147
+147,148
+149,150
+149,151
+150,151
+150,152
+151,152
+154,155
+155,156
+155,157
+155,158
+155,159
+156,157
+158,159
+160,161
+160,162
+161,162
+164,165
+165,166
+166,167
+168,169
+168,170
+169,170
+169,171
+170,171
+173,174
+174,175
+174,176
+174,177
+174,178
+175,176
+177,178
+179,180
+179,181
+180,181
+183,184
+184,185
+185,186
+187,188
+187,189
+188,189
+188,190
+189,190
+192,193
+193,194
+193,195
+193,196
+193,197
+194,195
+196,197
+198,199
+198,200
+199,200
+202,203
+203,204
+204,205
+206,207
+206,208
+207,208
+207,209
+208,209
+211,212
+212,213
+212,214
+213,214
+215,216
+215,217
+216,217
+219,220
+219,221
+220,221
+220,222
+221,222
+223,224
+225,226
+225,227
+226,227
+227,228
+227,229
+227,230
+227,231
+228,229
+230,231
+233,234
+233,235
+234,235
+236,237
+236,238
+237,238
+240,241
+241,242
+243,244
+244,245
+244,246
+245,246
+247,248
+248,249
+248,250
+248,251
+251,252
+252,253
+254,255
+255,256
+255,257
+256,257
+258,259
+258,260
+258,261
+259,260
+261,262
+264,265
+265,266
+265,267
+266,267
+268,269
+269,270
+269,271
+270,271
+272,273
+274,275
+274,276
+275,276
+275,277
+276,277
+277,278
+279,280
+280,281
+280,282
+281,282
+283,284
+285,286
+285,287
+285,288
+286,287
+286,288
+287,288
+287,289
+288,289
+290,291
+292,293
+292,294
+292,295
+293,294
+294,295
+294,296
+296,297
+296,298
+298,299
+299,300
+300,301
+300,302
+301,302
+302,303
+302,304
+303,304
+305,306
+307,308
+308,309
+308,310
+309,310
+309,311
+310,311
+310,312
+311,312
+313,314
+316,317
+318,319
+319,320
+319,321
+319,322
+319,323
+320,321
+322,323
+322,324
+323,324
+325,326
+327,328
+330,331
+330,332
+331,332
+331,333
+332,333
+332,334
+333,334
+335,336
+335,337
+336,337
+336,338
+337,338
+339,340
+342,343
+343,344
+344,345
+344,346
+345,346
+346,347
+346,348
+347,348
+349,350
+351,352
+353,354
+354,355
+355,356
+355,357
+356,357
+359,360
+359,361
+360,361
+360,362
+361,362
+363,364
+364,365
+366,367
+367,368
+367,369
+367,370
+367,371
+367,372
+368,369
+370,371
+373,374
+375,376
+375,377
+376,377
+378,379
+378,380
+379,380
+382,383
+384,385
+384,386
+385,386
+386,387
+386,388
+386,389
+387,388
+389,390
+391,392
+393,394
+393,395
+394,395
+394,396
+395,396
+397,398
+398,399
+398,400
+398,401
+398,402
+398,403
+399,400
+401,402
+404,405
+406,407
+406,408
+407,408
+409,410
+409,411
+410,411
+413,414
+415,416
+416,417
+416,418
+416,419
+417,418
+419,420
+420,421
+422,423
+424,425
+424,426
+425,426
+426,427
+426,428
+426,429
+426,430
+427,428
+429,430
+429,431
+430,431
+433,434
+434,435
+437,438
+437,439
+438,439
+438,440
+439,440
+441,442
+442,443
+442,444
+442,445
+442,446
+442,447
+443,444
+445,446
+448,449
+448,450
+449,450
+451,452
+451,453
+452,453
+455,456
+455,457
+456,457
+459,460
+461,462
+462,463
+462,464
+462,465
+462,466
+463,464
+465,466
+465,467
+466,467
+468,469
+470,471
+472,473
+472,474
+473,474
+476,477
+477,478
+477,479
+477,480
+477,481
+478,479
+480,481
+480,482
+481,482
+483,484
+485,486
+487,488
+487,489
+488,489
+491,492
+491,493
+491,494
+492,493
+492,494
+493,494
+493,495
+494,495
+495,496
+495,497
+496,497
+498,499
+500,501
+501,502
+501,503
+502,503
+502,504
+503,504
+506,507
+508,509
+509,510
+509,511
+510,511
+512,513
+512,514
+513,514
+513,515
+514,515
+516,517
+519,520
+520,521
+520,522
+520,523
+521,522
+522,523
+522,524
+523,524
+525,526
+525,527
+526,527
+529,530
+529,531
+529,532
+529,533
+529,534
+529,535
+529,536
+530,531
+531,532
+531,533
+533,534
+533,535
+535,536
+537,538
+538,539
+538,540
+540,541
+540,542
+540,543
+543,544
+544,545
+546,547
+547,548
+547,549
+547,550
+547,551
+548,549
+550,551
+552,553
+552,554
+553,554
+556,557
+557,558
+558,559
+560,561
+561,562
+561,563
+562,563
+564,565
+566,567
+567,568
+567,569
+568,569
+570,571
+570,572
+570,573
+571,572
+573,574
+574,575
+577,578
+577,579
+578,579
+580,581
+580,582
+580,583
+581,582
+582,583
+582,584
+583,584
+585,586
+585,587
+585,588
+586,587
+588,589
+590,591
+592,593
+592,594
+592,595
+593,594
+593,595
+594,595
+596,597
+597,598
+597,599
+597,600
+597,601
+598,599
+600,601
+602,603
+602,604
+603,604
+603,605
+604,605
+606,607
+609,610
+611,612
+611,613
+612,613
+613,614
+613,615
+613,616
+614,615
+616,617
+617,618
+617,619
+618,619
+618,620
+619,620
+621,622
+624,625
+627,628
+627,629
+628,629
+629,630
+631,632
+632,633
+632,634
+632,635
+632,636
+633,634
+635,636
+638,639
+640,641
+641,642
+641,643
+642,643
+644,645
+644,646
+644,647
+645,646
+647,648
+648,649
+651,652
+651,653
+652,653
+653,654
+655,656
+655,657
+656,657
+656,658
+657,658
+659,660
+660,661
+660,662
+660,663
+660,664
+660,665
+661,662
+663,664
+666,667
+668,669
+668,670
+669,670
+672,673
+674,675
+674,676
+675,676
+675,677
+676,677
+678,679
+679,680
+679,681
+679,682
+679,683
+680,681
+682,683
+685,686
+687,688
+689,690
+689,691
+689,692
+690,691
+690,692
+691,692
+691,693
+692,693
+693,694
+693,695
+694,695
+696,697
+698,699
+699,700
+699,701
+700,701
+700,702
+701,702
+704,705
+706,707
+707,708
+707,709
+708,709
+710,711
+710,712
+711,712
+711,713
+712,713
+714,715
+717,718
+717,719
+717,720
+717,721
+717,722
+717,723
+717,724
+718,719
+719,720
+719,721
+720,721
+722,723
+724,725
+725,726
+725,727
+727,728
+727,729
+729,730
+731,732
+732,733
+732,734
+732,735
+734,735
+734,736
+737,738
+737,739
+740,741
+741,742
+741,743
+742,743
+744,745
+744,746
+745,746
+747,748
+747,749
+748,749
+751,752
+752,753
+752,754
+753,754
+755,756
+757,758
+757,759
+758,759
+759,760
+759,761
+760,761
+762,763
+762,764
+762,765
+763,764
+765,766
+766,767
+769,770
+769,771
+769,772
+769,773
+769,774
+769,775
+770,771
+771,772
+771,773
+772,773
+774,775
+775,776
+777,778
+778,779
+778,780
+778,781
+778,782
+779,780
+781,782
+782,783
+784,785
+784,786
+785,786
+785,787
+787,788
+789,790
+789,791
+790,791
+790,792
+791,792
+793,794
+796,797
+796,798
+797,798
+799,800
+799,801
+800,801
+800,802
+801,802
+803,804
+806,807
+807,808
+807,809
+807,810
+807,811
+808,809
+810,811
+811,812
+813,814
+813,815
+814,815
+814,816
+816,817
+818,819
+820,821
+820,822
+821,822
+823,824
+825,826
+826,827
+826,828
+826,829
+827,828
+829,830
+831,832
+832,833
+834,835
+834,836
+834,837
+834,838
+835,836
+836,837
+836,838
+837,838
+840,841
+840,842
+841,842
+844,845
+845,846
+847,848
+848,849
+848,850
+848,851
+848,852
+849,850
+851,852
+851,853
+852,853
+854,855
+855,856
+855,857
+856,857
+860,861
+860,862
+861,862
+863,864
+865,866
+865,867
+866,867
+867,868
+867,869
+867,870
+868,869
+870,871
+872,873
+875,876
+875,877
+875,878
+876,877
+878,879
+879,880
+880,881
+880,882
+880,883
+881,882
+883,884
+884,885
+884,886
+885,886
+885,887
+886,887
+888,889
+891,892
+893,894
+893,895
+894,895
+894,896
+895,896
+897,898
+898,899
+898,900
+898,901
+898,902
+898,903
+898,904
+898,905
+899,900
+901,902
+904,905
+904,906
+905,906
+907,908
+907,909
+908,909
+911,912
+911,913
+912,913
+915,916
+917,918
+919,920
+921,922
+921,923
+921,924
+922,923
+922,924
+923,924
+924,925
+924,926
+925,926
+927,928
+929,930
+930,931
+930,932
+931,932
+931,933
+932,933
+935,936
+937,938
+938,939
+938,940
+938,941
+939,940
+939,941
+939,942
+940,941
+942,943
+944,945
+944,946
+945,946
+948,949
+948,950
+949,950
+949,951
+950,951
+952,953
+953,954
+953,955
+953,956
+953,957
+953,958
+954,955
+956,957
+959,960
+959,961
+960,961
+962,963
+962,964
+963,964
+966,967
+966,968
+967,968
+970,971
+972,973
+973,974
+973,975
+973,976
+974,975
+976,977
+977,978
+977,979
+978,979
+978,980
+979,980
+981,982
+984,985
+986,987
+986,988
+987,988
+987,989
+988,989
+988,990
+989,990
+990,991
+990,992
+991,992
+993,994
+993,995
+994,995
+994,996
+995,996
+997,998
+1000,1001
+1000,1002
+1001,1002
+1003,1004
+1005,1006
+1005,1007
+1006,1007
+1008,1009
+1010,1011
+1011,1012
+1013,1014
+1014,1015
+1014,1016
+1014,1017
+1014,1018
+1015,1016
+1017,1018
+1020,1021
+1020,1022
+1021,1022
+1024,1025
+1025,1026
+1025,1027
+1026,1027
+1029,1030
+1029,1031
+1031,1032
+1031,1033
+1032,1033
+1032,1034
+1033,1034
+1035,1036
+1037,1038
+1037,1039
+1038,1039
+1039,1040
+1039,1041
+1039,1042
+1039,1043
+1040,1041
+1042,1043
+1042,1044
+1043,1044
+1045,1046
+1047,1048
+1049,1050
+1051,1052
+1051,1053
+1052,1053
+1052,1054
+1053,1054
+1055,1056
+1056,1057
+1056,1058
+1057,1058
+1059,1060
+1059,1061
+1060,1061
+1060,1062
+1061,1062
+1063,1064
+1066,1067
+1067,1068
+1068,1069
+1068,1070
+1069,1070
+1069,1071
+1070,1071
+1070,1072
+1071,1072
+1073,1074
+1076,1077
+1078,1079
+1078,1080
+1079,1080
+1081,1082
+1082,1083
+1083,1084
+1083,1085
+1084,1085
+1086,1087
+1088,1089
+1089,1090
+-----nextToken-----
+2,4,6,8,11,13,14,17,19,20,24,26,28,30,33,35,37,39,42,44,46,48,51,53,55,57,60,62,64,66,70,72,73,76,80,82,83,86,88,89,92,94,97,99,101,104,106,109,113,115,119,124,126,127,129,133,134,138,140,143,144,148,152,153,157,159,162,163,167,171,172,176,178,181,182,186,190,191,195,197,200,201,205,209,210,214,217,218,222,224,229,231,232,235,238,239,242,246,249,250,253,257,260,262,263,267,271,273,278,282,284,289,291,295,297,304,306,312,314,315,317,321,324,326,328,329,334,338,340,341,348,350,352,357,358,362,365,369,371,372,374,377,380,381,383,388,390,392,396,400,402,403,405,408,411,412,414,418,421,423,428,431,432,435,436,440,444,446,447,450,453,454,457,458,460,464,467,469,471,474,475,479,482,484,486,489,490,497,499,504,505,507,511,515,517,518,524,527,528,532,534,536,539,541,542,545,549,551,554,555,559,563,565,569,572,575,576,579,584,587,589,591,595,599,601,605,607,608,610,615,620,622,623,625,626,630,634,636,637,639,643,646,649,650,654,658,662,664,665,667,670,671,673,677,681,683,684,686,688,695,697,702,703,705,709,713,715,716,721,723,726,728,730,733,735,736,738,739,743,746,749,750,754,756,761,764,767,768,773,776,780,783,786,788,792,794,795,798,802,804,805,809,812,815,817,819,822,824,828,830,833,838,839,842,843,846,850,853,857,858,859,862,864,869,871,873,874,877,882,887,889,890,892,896,900,902,903,906,909,910,913,914,916,918,920,926,928,933,934,936,941,943,946,947,951,955,957,958,961,964,965,968,969,971,975,980,982,983,985,992,996,998,999,1002,1004,1007,1009,1012,1016,1018,1019,1022,1023,1027,1028,1030,1034,1036,1041,1044,1046,1048,1050,1054,1058,1062,1064,1065,1072,1074,1075,1077,1080,1085,1087,1090
+-----computeFrom-----
+212,213
+212,214
+255,256
+255,257
+275,276
+275,277
+300,301
+300,302
+302,303
+302,304
+308,309
+308,310
+331,332
+331,333
+344,345
+344,346
+355,356
+355,357
+360,361
+360,362
+492,493
+492,494
+493,494
+493,495
+501,502
+501,503
+561,562
+561,563
+567,568
+567,569
+582,583
+582,584
+593,594
+593,595
+641,642
+641,643
+690,691
+690,692
+691,692
+691,693
+699,700
+699,701
+741,742
+741,743
+752,753
+752,754
+759,760
+759,761
+836,837
+836,838
+840,841
+840,842
+851,852
+851,853
+855,856
+855,857
+922,923
+922,924
+930,931
+930,932
+987,988
+987,989
+988,989
+988,990
+1025,1026
+1025,1027
+1052,1053
+1052,1054
+1056,1057
+1056,1058
+1068,1069
+1068,1070
+-----guardedBy-----
+278,365
+282,338
+284,340
+504,670
+515,620
+517,622
+499,610
+518,608
+511,524
+605,620
+607,622
+697,918
+702,913
+713,887
+715,889
+716,805
+933,968
+928,947
+1062,1072
+1064,1074
+1058,1077
+1065,1075
+-----guardedByNegation-----
+504,968
+515,996
+505,934
+517,998
+499,1009
+518,999
+511,1007
+601,630
+697,1004
+702,968
+713,996
+703,934
+715,998
+716,999
+709,1007
+926,1007
+-----lastLexicalUse-----
+511,1007
+515,996
+517,998
+499,1009
+504,968
+518,999
+697,1004
+713,996
+715,998
+702,968
+716,999
+-----jump-----
+511,1007
+515,996
+517,998
+499,1009
+504,968
+518,999
+697,1004
+713,996
+715,998
+702,968
+716,999
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;ArrayDeclarator;Name;ArrayModifier;LiteralExpression;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;ArrayDeclarator;Name;ArrayModifier;LiteralExpression;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;ArrayDeclarator;Name;ArrayModifier;LiteralExpression;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;ArrayDeclarator;Name;ArrayModifier;LiteralExpression;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;ArrayDeclarator;Name;ArrayModifier;LiteralExpression;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;UnaryExpression;LiteralExpression;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;IdExpression;Name;IfStatement;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;UnaryExpression;IdExpression;Name;IfStatement;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;UnaryExpression;IdExpression;Name;IfStatement;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;UnaryExpression;IdExpression;Name;IfStatement;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;UnaryExpression;IdExpression;Name;IfStatement;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ReturnStatement;UnaryExpression;LiteralExpression;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;ArrayDeclarator;ReferenceOperator;Name;ArrayModifier;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;UnaryExpression;IdExpression;Name;UnaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;IfStatement;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;UnaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;BinaryExpression;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;UnaryExpression;UnaryExpression;BinaryExpression;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;GotoStatement;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;IfStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;GotoStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;IfStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;GotoStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;BinaryExpression;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;CompoundStatement;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;ArrayDeclarator;Name;ArrayModifier;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;WhileStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;IdExpression;Name;BreakStatement;IfStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;IfStatement;UnaryExpression;IdExpression;Name;CompoundStatement;IfStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;GotoStatement;Name;CompoundStatement;IfStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;GotoStatement;Name;IfStatement;BinaryExpression;BinaryExpression;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;ArrayDeclarator;Name;ArrayModifier;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;Declarator;Pointer;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;WhileStatement;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;LiteralExpression;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;BreakStatement;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;IfStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;IdExpression;Name;GotoStatement;Name;IfStatement;BinaryExpression;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;IfStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;GotoStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;UnaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;GotoStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;LabelStatement;Name;IfStatement;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;IdExpression;Name;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+static int register_verify(int callno, struct sockaddr_in *sin, struct iax_ies *ies){	char requeststr[256] = "";	char peer[256] = "";	char md5secret[256] = "";	char rsasecret[256] = "";	char secret[256] = "";	struct iax2_peer *p = NULL;	struct ast_key *key;	char *keyn;	int x;	int expire = 0;	int res = -1;	struct ast_sockaddr addr;	ast_clear_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);	/* iaxs[callno]->peer[0] = '\0'; not necc. any more-- stringfield is pre-inited to null string */	if (ies->username)		ast_copy_string(peer, ies->username, sizeof(peer));	if (ies->password)		ast_copy_string(secret, ies->password, sizeof(secret));	if (ies->md5_result)		ast_copy_string(md5secret, ies->md5_result, sizeof(md5secret));	if (ies->rsa_result)		ast_copy_string(rsasecret, ies->rsa_result, sizeof(rsasecret));	if (ies->refresh)		expire = ies->refresh;	if (ast_strlen_zero(peer)) {		ast_log(LOG_NOTICE, "Empty registration from %s\n", ast_inet_ntoa(sin->sin_addr));		return -1;	}	/* SLD: first call to lookup peer during registration */	ast_mutex_unlock(&iaxsl[callno]);	p = find_peer(peer, 1);	ast_mutex_lock(&iaxsl[callno]);	if (!p || !iaxs[callno]) {		if (iaxs[callno]) {			int plaintext = ((last_authmethod & IAX_AUTH_PLAINTEXT) | (iaxs[callno]->authmethods & IAX_AUTH_PLAINTEXT));			/* Anything, as long as it's non-blank */			ast_string_field_set(iaxs[callno], secret, "badsecret");			/* An AUTHREQ must be sent in response to a REGREQ of an invalid peer unless			 * 1. A challenge already exists indicating a AUTHREQ was already sent out.			 * 2. A plaintext secret is present in ie as result of a previous AUTHREQ requesting it.			 * 3. A plaintext secret is present in the ie and the last_authmethod used by a peer happened			 *    to be plaintext, indicating it is an authmethod used by other peers on the system. 			 *			 * If none of these cases exist, res will be returned as 0 without authentication indicating			 * an AUTHREQ needs to be sent out. */			if (ast_strlen_zero(iaxs[callno]->challenge) &&				!(!ast_strlen_zero(secret) && plaintext)) {				/* by setting res to 0, an REGAUTH will be sent */				res = 0;			}		}		if (authdebug && !p)			ast_log(LOG_NOTICE, "No registration for peer '%s' (from %s)\n", peer, ast_inet_ntoa(sin->sin_addr));		goto return_unref;	}	if (!ast_test_flag64(p, IAX_DYNAMIC)) {		if (authdebug)			ast_log(LOG_NOTICE, "Peer '%s' is not dynamic (from %s)\n", peer, ast_inet_ntoa(sin->sin_addr));		goto return_unref;	}	ast_sockaddr_from_sin(&addr, sin);	if (!ast_apply_acl(p->acl, &addr, "IAX2 Peer ACL: ")) {		if (authdebug)			ast_log(LOG_NOTICE, "Host %s denied access to register peer '%s'\n", ast_inet_ntoa(sin->sin_addr), p->name);		goto return_unref;	}	ast_string_field_set(iaxs[callno], secret, p->secret);	ast_string_field_set(iaxs[callno], inkeys, p->inkeys);	/* Check secret against what we have on file */	if (!ast_strlen_zero(rsasecret) && (p->authmethods & IAX_AUTH_RSA) && !ast_strlen_zero(iaxs[callno]->challenge)) {		if (!ast_strlen_zero(p->inkeys)) {			char tmpkeys[256];			char *stringp=NULL;			ast_copy_string(tmpkeys, p->inkeys, sizeof(tmpkeys));			stringp=tmpkeys;			keyn = strsep(&stringp, ":");			while(keyn) {				key = ast_key_get(keyn, AST_KEY_PUBLIC);				if (key && !ast_check_signature(key, iaxs[callno]->challenge, rsasecret)) {					ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);					break;				} else if (!key)					ast_log(LOG_WARNING, "requested inkey '%s' does not exist\n", keyn);				keyn = strsep(&stringp, ":");			}			if (!keyn) {				if (authdebug)					ast_log(LOG_NOTICE, "Host %s failed RSA authentication with inkeys '%s'\n", peer, p->inkeys);				goto return_unref;			}		} else {			if (authdebug)				ast_log(LOG_NOTICE, "Host '%s' trying to do RSA authentication, but we have no inkeys\n", peer);			goto return_unref;		}	} else if (!ast_strlen_zero(md5secret) && (p->authmethods & IAX_AUTH_MD5) && !ast_strlen_zero(iaxs[callno]->challenge)) {		struct MD5Context md5;		unsigned char digest[16];		char *tmppw, *stringp;		tmppw = ast_strdupa(p->secret);		stringp = tmppw;		while((tmppw = strsep(&stringp, ";"))) {			MD5Init(&md5);			MD5Update(&md5, (unsigned char *)iaxs[callno]->challenge, strlen(iaxs[callno]->challenge));			MD5Update(&md5, (unsigned char *)tmppw, strlen(tmppw));			MD5Final(digest, &md5);			for (x=0;x<16;x++)				sprintf(requeststr + (x << 1), "%2.2x", digest[x]); /* safe */			if (!strcasecmp(requeststr, md5secret))				break;		}		if (tmppw) {			ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);		} else {			if (authdebug)				ast_log(LOG_NOTICE, "Host %s failed MD5 authentication for '%s' (%s != %s)\n", ast_inet_ntoa(sin->sin_addr), p->name, requeststr, md5secret);			goto return_unref;		}	} else if (!ast_strlen_zero(secret) && (p->authmethods & IAX_AUTH_PLAINTEXT)) {		/* They've provided a plain text password and we support that */		if (strcmp(secret, p->secret)) {			if (authdebug)				ast_log(LOG_NOTICE, "Host %s did not provide proper plaintext password for '%s'\n", ast_inet_ntoa(sin->sin_addr), p->name);			goto return_unref;		} else			ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);	} else if (!ast_strlen_zero(iaxs[callno]->challenge) && ast_strlen_zero(md5secret) && ast_strlen_zero(rsasecret)) {		/* if challenge has been sent, but no challenge response if given, reject. */		goto return_unref;	}	ast_devstate_changed(AST_DEVICE_UNKNOWN, "IAX2/%s", p->name); /* Activate notification */	/* either Authentication has taken place, or a REGAUTH must be sent before verifying registration */	res = 0;return_unref:	if (iaxs[callno]) {		ast_string_field_set(iaxs[callno], peer, peer);		/* Choose lowest expiry number */		if (expire && (expire < iaxs[callno]->expiry)) {			iaxs[callno]->expiry = expire;		}	}	if (p) {		peer_unref(p);	}	return res;}
+static int
+register_verify(int callno, struct sockaddr_in *sin, struct iax_ies *ies)
+register_verify
+int callno
+int
+callno
+callno
+struct sockaddr_in *sin
+struct sockaddr_in
+sockaddr_in
+*sin
+*
+sin
+struct iax_ies *ies
+struct iax_ies
+iax_ies
+*ies
+*
+ies
+{	char requeststr[256] = "";	char peer[256] = "";	char md5secret[256] = "";	char rsasecret[256] = "";	char secret[256] = "";	struct iax2_peer *p = NULL;	struct ast_key *key;	char *keyn;	int x;	int expire = 0;	int res = -1;	struct ast_sockaddr addr;	ast_clear_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);	/* iaxs[callno]->peer[0] = '\0'; not necc. any more-- stringfield is pre-inited to null string */	if (ies->username)		ast_copy_string(peer, ies->username, sizeof(peer));	if (ies->password)		ast_copy_string(secret, ies->password, sizeof(secret));	if (ies->md5_result)		ast_copy_string(md5secret, ies->md5_result, sizeof(md5secret));	if (ies->rsa_result)		ast_copy_string(rsasecret, ies->rsa_result, sizeof(rsasecret));	if (ies->refresh)		expire = ies->refresh;	if (ast_strlen_zero(peer)) {		ast_log(LOG_NOTICE, "Empty registration from %s\n", ast_inet_ntoa(sin->sin_addr));		return -1;	}	/* SLD: first call to lookup peer during registration */	ast_mutex_unlock(&iaxsl[callno]);	p = find_peer(peer, 1);	ast_mutex_lock(&iaxsl[callno]);	if (!p || !iaxs[callno]) {		if (iaxs[callno]) {			int plaintext = ((last_authmethod & IAX_AUTH_PLAINTEXT) | (iaxs[callno]->authmethods & IAX_AUTH_PLAINTEXT));			/* Anything, as long as it's non-blank */			ast_string_field_set(iaxs[callno], secret, "badsecret");			/* An AUTHREQ must be sent in response to a REGREQ of an invalid peer unless			 * 1. A challenge already exists indicating a AUTHREQ was already sent out.			 * 2. A plaintext secret is present in ie as result of a previous AUTHREQ requesting it.			 * 3. A plaintext secret is present in the ie and the last_authmethod used by a peer happened			 *    to be plaintext, indicating it is an authmethod used by other peers on the system. 			 *			 * If none of these cases exist, res will be returned as 0 without authentication indicating			 * an AUTHREQ needs to be sent out. */			if (ast_strlen_zero(iaxs[callno]->challenge) &&				!(!ast_strlen_zero(secret) && plaintext)) {				/* by setting res to 0, an REGAUTH will be sent */				res = 0;			}		}		if (authdebug && !p)			ast_log(LOG_NOTICE, "No registration for peer '%s' (from %s)\n", peer, ast_inet_ntoa(sin->sin_addr));		goto return_unref;	}	if (!ast_test_flag64(p, IAX_DYNAMIC)) {		if (authdebug)			ast_log(LOG_NOTICE, "Peer '%s' is not dynamic (from %s)\n", peer, ast_inet_ntoa(sin->sin_addr));		goto return_unref;	}	ast_sockaddr_from_sin(&addr, sin);	if (!ast_apply_acl(p->acl, &addr, "IAX2 Peer ACL: ")) {		if (authdebug)			ast_log(LOG_NOTICE, "Host %s denied access to register peer '%s'\n", ast_inet_ntoa(sin->sin_addr), p->name);		goto return_unref;	}	ast_string_field_set(iaxs[callno], secret, p->secret);	ast_string_field_set(iaxs[callno], inkeys, p->inkeys);	/* Check secret against what we have on file */	if (!ast_strlen_zero(rsasecret) && (p->authmethods & IAX_AUTH_RSA) && !ast_strlen_zero(iaxs[callno]->challenge)) {		if (!ast_strlen_zero(p->inkeys)) {			char tmpkeys[256];			char *stringp=NULL;			ast_copy_string(tmpkeys, p->inkeys, sizeof(tmpkeys));			stringp=tmpkeys;			keyn = strsep(&stringp, ":");			while(keyn) {				key = ast_key_get(keyn, AST_KEY_PUBLIC);				if (key && !ast_check_signature(key, iaxs[callno]->challenge, rsasecret)) {					ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);					break;				} else if (!key)					ast_log(LOG_WARNING, "requested inkey '%s' does not exist\n", keyn);				keyn = strsep(&stringp, ":");			}			if (!keyn) {				if (authdebug)					ast_log(LOG_NOTICE, "Host %s failed RSA authentication with inkeys '%s'\n", peer, p->inkeys);				goto return_unref;			}		} else {			if (authdebug)				ast_log(LOG_NOTICE, "Host '%s' trying to do RSA authentication, but we have no inkeys\n", peer);			goto return_unref;		}	} else if (!ast_strlen_zero(md5secret) && (p->authmethods & IAX_AUTH_MD5) && !ast_strlen_zero(iaxs[callno]->challenge)) {		struct MD5Context md5;		unsigned char digest[16];		char *tmppw, *stringp;		tmppw = ast_strdupa(p->secret);		stringp = tmppw;		while((tmppw = strsep(&stringp, ";"))) {			MD5Init(&md5);			MD5Update(&md5, (unsigned char *)iaxs[callno]->challenge, strlen(iaxs[callno]->challenge));			MD5Update(&md5, (unsigned char *)tmppw, strlen(tmppw));			MD5Final(digest, &md5);			for (x=0;x<16;x++)				sprintf(requeststr + (x << 1), "%2.2x", digest[x]); /* safe */			if (!strcasecmp(requeststr, md5secret))				break;		}		if (tmppw) {			ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);		} else {			if (authdebug)				ast_log(LOG_NOTICE, "Host %s failed MD5 authentication for '%s' (%s != %s)\n", ast_inet_ntoa(sin->sin_addr), p->name, requeststr, md5secret);			goto return_unref;		}	} else if (!ast_strlen_zero(secret) && (p->authmethods & IAX_AUTH_PLAINTEXT)) {		/* They've provided a plain text password and we support that */		if (strcmp(secret, p->secret)) {			if (authdebug)				ast_log(LOG_NOTICE, "Host %s did not provide proper plaintext password for '%s'\n", ast_inet_ntoa(sin->sin_addr), p->name);			goto return_unref;		} else			ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);	} else if (!ast_strlen_zero(iaxs[callno]->challenge) && ast_strlen_zero(md5secret) && ast_strlen_zero(rsasecret)) {		/* if challenge has been sent, but no challenge response if given, reject. */		goto return_unref;	}	ast_devstate_changed(AST_DEVICE_UNKNOWN, "IAX2/%s", p->name); /* Activate notification */	/* either Authentication has taken place, or a REGAUTH must be sent before verifying registration */	res = 0;return_unref:	if (iaxs[callno]) {		ast_string_field_set(iaxs[callno], peer, peer);		/* Choose lowest expiry number */		if (expire && (expire < iaxs[callno]->expiry)) {			iaxs[callno]->expiry = expire;		}	}	if (p) {		peer_unref(p);	}	return res;}
+char requeststr[256] = "";
+char requeststr[256] = "";
+char
+requeststr[256] = ""
+requeststr
+[256]
+256
+= ""
+""
+char peer[256] = "";
+char peer[256] = "";
+char
+peer[256] = ""
+peer
+[256]
+256
+= ""
+""
+char md5secret[256] = "";
+char md5secret[256] = "";
+char
+md5secret[256] = ""
+md5secret
+[256]
+256
+= ""
+""
+char rsasecret[256] = "";
+char rsasecret[256] = "";
+char
+rsasecret[256] = ""
+rsasecret
+[256]
+256
+= ""
+""
+char secret[256] = "";
+char secret[256] = "";
+char
+secret[256] = ""
+secret
+[256]
+256
+= ""
+""
+struct iax2_peer *p = NULL;
+struct iax2_peer *p = NULL;
+struct iax2_peer
+iax2_peer
+*p = NULL
+*
+p
+= NULL
+NULL
+NULL
+struct ast_key *key;
+struct ast_key *key;
+struct ast_key
+ast_key
+*key
+*
+key
+char *keyn;
+char *keyn;
+char
+*keyn
+*
+keyn
+int x;
+int x;
+int
+x
+x
+int expire = 0;
+int expire = 0;
+int
+expire = 0
+expire
+= 0
+0
+int res = -1;
+int res = -1;
+int
+res = -1
+res
+= -1
+-1
+1
+struct ast_sockaddr addr;
+struct ast_sockaddr addr;
+struct ast_sockaddr
+ast_sockaddr
+addr
+addr
+ast_clear_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);
+ast_clear_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED)
+ast_clear_flag
+ast_clear_flag
+&iaxs[callno]->state
+iaxs[callno]->state
+iaxs[callno]
+iaxs
+iaxs
+callno
+callno
+state
+IAX_STATE_AUTHENTICATED
+IAX_STATE_AUTHENTICATED
+if (ies->username)		ast_copy_string(peer, ies->username, sizeof(peer));
+ies->username
+ies
+ies
+username
+ast_copy_string(peer, ies->username, sizeof(peer));
+ast_copy_string(peer, ies->username, sizeof(peer))
+ast_copy_string
+ast_copy_string
+peer
+peer
+ies->username
+ies
+ies
+username
+sizeof(peer)
+(peer)
+peer
+peer
+if (ies->password)		ast_copy_string(secret, ies->password, sizeof(secret));
+ies->password
+ies
+ies
+password
+ast_copy_string(secret, ies->password, sizeof(secret));
+ast_copy_string(secret, ies->password, sizeof(secret))
+ast_copy_string
+ast_copy_string
+secret
+secret
+ies->password
+ies
+ies
+password
+sizeof(secret)
+(secret)
+secret
+secret
+if (ies->md5_result)		ast_copy_string(md5secret, ies->md5_result, sizeof(md5secret));
+ies->md5_result
+ies
+ies
+md5_result
+ast_copy_string(md5secret, ies->md5_result, sizeof(md5secret));
+ast_copy_string(md5secret, ies->md5_result, sizeof(md5secret))
+ast_copy_string
+ast_copy_string
+md5secret
+md5secret
+ies->md5_result
+ies
+ies
+md5_result
+sizeof(md5secret)
+(md5secret)
+md5secret
+md5secret
+if (ies->rsa_result)		ast_copy_string(rsasecret, ies->rsa_result, sizeof(rsasecret));
+ies->rsa_result
+ies
+ies
+rsa_result
+ast_copy_string(rsasecret, ies->rsa_result, sizeof(rsasecret));
+ast_copy_string(rsasecret, ies->rsa_result, sizeof(rsasecret))
+ast_copy_string
+ast_copy_string
+rsasecret
+rsasecret
+ies->rsa_result
+ies
+ies
+rsa_result
+sizeof(rsasecret)
+(rsasecret)
+rsasecret
+rsasecret
+if (ies->refresh)		expire = ies->refresh;
+ies->refresh
+ies
+ies
+refresh
+expire = ies->refresh;
+expire = ies->refresh
+expire
+expire
+ies->refresh
+ies
+ies
+refresh
+if (ast_strlen_zero(peer)) {		ast_log(LOG_NOTICE, "Empty registration from %s\n", ast_inet_ntoa(sin->sin_addr));		return -1;	}
+ast_strlen_zero(peer)
+ast_strlen_zero
+ast_strlen_zero
+peer
+peer
+{		ast_log(LOG_NOTICE, "Empty registration from %s\n", ast_inet_ntoa(sin->sin_addr));		return -1;	}
+ast_log(LOG_NOTICE, "Empty registration from %s\n", ast_inet_ntoa(sin->sin_addr));
+ast_log(LOG_NOTICE, "Empty registration from %s\n", ast_inet_ntoa(sin->sin_addr))
+ast_log
+ast_log
+LOG_NOTICE
+LOG_NOTICE
+"Empty registration from %s\n"
+ast_inet_ntoa(sin->sin_addr)
+ast_inet_ntoa
+ast_inet_ntoa
+sin->sin_addr
+sin
+sin
+sin_addr
+return -1;
+-1
+1
+ast_mutex_unlock(&iaxsl[callno]);
+ast_mutex_unlock(&iaxsl[callno]);
+ast_mutex_unlock
+ast_mutex_unlock
+(&iaxsl[callno])
+&iaxsl[callno]
+&
+iaxsl
+[callno]
+callno
+callno
+p = find_peer(peer, 1);
+p = find_peer(peer, 1)
+p
+p
+find_peer(peer, 1)
+find_peer
+find_peer
+peer
+peer
+1
+ast_mutex_lock(&iaxsl[callno]);
+ast_mutex_lock(&iaxsl[callno])
+ast_mutex_lock
+ast_mutex_lock
+&iaxsl[callno]
+iaxsl[callno]
+iaxsl
+iaxsl
+callno
+callno
+if (!p || !iaxs[callno]) {		if (iaxs[callno]) {			int plaintext = ((last_authmethod & IAX_AUTH_PLAINTEXT) | (iaxs[callno]->authmethods & IAX_AUTH_PLAINTEXT));			/* Anything, as long as it's non-blank */			ast_string_field_set(iaxs[callno], secret, "badsecret");			/* An AUTHREQ must be sent in response to a REGREQ of an invalid peer unless			 * 1. A challenge already exists indicating a AUTHREQ was already sent out.			 * 2. A plaintext secret is present in ie as result of a previous AUTHREQ requesting it.			 * 3. A plaintext secret is present in the ie and the last_authmethod used by a peer happened			 *    to be plaintext, indicating it is an authmethod used by other peers on the system. 			 *			 * If none of these cases exist, res will be returned as 0 without authentication indicating			 * an AUTHREQ needs to be sent out. */			if (ast_strlen_zero(iaxs[callno]->challenge) &&				!(!ast_strlen_zero(secret) && plaintext)) {				/* by setting res to 0, an REGAUTH will be sent */				res = 0;			}		}		if (authdebug && !p)			ast_log(LOG_NOTICE, "No registration for peer '%s' (from %s)\n", peer, ast_inet_ntoa(sin->sin_addr));		goto return_unref;	}
+!p || !iaxs[callno]
+!p
+p
+p
+!iaxs[callno]
+iaxs[callno]
+iaxs
+iaxs
+callno
+callno
+{		if (iaxs[callno]) {			int plaintext = ((last_authmethod & IAX_AUTH_PLAINTEXT) | (iaxs[callno]->authmethods & IAX_AUTH_PLAINTEXT));			/* Anything, as long as it's non-blank */			ast_string_field_set(iaxs[callno], secret, "badsecret");			/* An AUTHREQ must be sent in response to a REGREQ of an invalid peer unless			 * 1. A challenge already exists indicating a AUTHREQ was already sent out.			 * 2. A plaintext secret is present in ie as result of a previous AUTHREQ requesting it.			 * 3. A plaintext secret is present in the ie and the last_authmethod used by a peer happened			 *    to be plaintext, indicating it is an authmethod used by other peers on the system. 			 *			 * If none of these cases exist, res will be returned as 0 without authentication indicating			 * an AUTHREQ needs to be sent out. */			if (ast_strlen_zero(iaxs[callno]->challenge) &&				!(!ast_strlen_zero(secret) && plaintext)) {				/* by setting res to 0, an REGAUTH will be sent */				res = 0;			}		}		if (authdebug && !p)			ast_log(LOG_NOTICE, "No registration for peer '%s' (from %s)\n", peer, ast_inet_ntoa(sin->sin_addr));		goto return_unref;	}
+if (iaxs[callno]) {			int plaintext = ((last_authmethod & IAX_AUTH_PLAINTEXT) | (iaxs[callno]->authmethods & IAX_AUTH_PLAINTEXT));			/* Anything, as long as it's non-blank */			ast_string_field_set(iaxs[callno], secret, "badsecret");			/* An AUTHREQ must be sent in response to a REGREQ of an invalid peer unless			 * 1. A challenge already exists indicating a AUTHREQ was already sent out.			 * 2. A plaintext secret is present in ie as result of a previous AUTHREQ requesting it.			 * 3. A plaintext secret is present in the ie and the last_authmethod used by a peer happened			 *    to be plaintext, indicating it is an authmethod used by other peers on the system. 			 *			 * If none of these cases exist, res will be returned as 0 without authentication indicating			 * an AUTHREQ needs to be sent out. */			if (ast_strlen_zero(iaxs[callno]->challenge) &&				!(!ast_strlen_zero(secret) && plaintext)) {				/* by setting res to 0, an REGAUTH will be sent */				res = 0;			}		}
+iaxs[callno]
+iaxs
+iaxs
+callno
+callno
+{			int plaintext = ((last_authmethod & IAX_AUTH_PLAINTEXT) | (iaxs[callno]->authmethods & IAX_AUTH_PLAINTEXT));			/* Anything, as long as it's non-blank */			ast_string_field_set(iaxs[callno], secret, "badsecret");			/* An AUTHREQ must be sent in response to a REGREQ of an invalid peer unless			 * 1. A challenge already exists indicating a AUTHREQ was already sent out.			 * 2. A plaintext secret is present in ie as result of a previous AUTHREQ requesting it.			 * 3. A plaintext secret is present in the ie and the last_authmethod used by a peer happened			 *    to be plaintext, indicating it is an authmethod used by other peers on the system. 			 *			 * If none of these cases exist, res will be returned as 0 without authentication indicating			 * an AUTHREQ needs to be sent out. */			if (ast_strlen_zero(iaxs[callno]->challenge) &&				!(!ast_strlen_zero(secret) && plaintext)) {				/* by setting res to 0, an REGAUTH will be sent */				res = 0;			}		}
+int plaintext = ((last_authmethod & IAX_AUTH_PLAINTEXT) | (iaxs[callno]->authmethods & IAX_AUTH_PLAINTEXT));
+int plaintext = ((last_authmethod & IAX_AUTH_PLAINTEXT) | (iaxs[callno]->authmethods & IAX_AUTH_PLAINTEXT));
+int
+plaintext = ((last_authmethod & IAX_AUTH_PLAINTEXT) | (iaxs[callno]->authmethods & IAX_AUTH_PLAINTEXT))
+plaintext
+= ((last_authmethod & IAX_AUTH_PLAINTEXT) | (iaxs[callno]->authmethods & IAX_AUTH_PLAINTEXT))
+((last_authmethod & IAX_AUTH_PLAINTEXT) | (iaxs[callno]->authmethods & IAX_AUTH_PLAINTEXT))
+(last_authmethod & IAX_AUTH_PLAINTEXT) | (iaxs[callno]->authmethods & IAX_AUTH_PLAINTEXT)
+(last_authmethod & IAX_AUTH_PLAINTEXT)
+last_authmethod & IAX_AUTH_PLAINTEXT
+last_authmethod
+last_authmethod
+IAX_AUTH_PLAINTEXT
+IAX_AUTH_PLAINTEXT
+(iaxs[callno]->authmethods & IAX_AUTH_PLAINTEXT)
+iaxs[callno]->authmethods & IAX_AUTH_PLAINTEXT
+iaxs[callno]->authmethods
+iaxs[callno]
+iaxs
+iaxs
+callno
+callno
+authmethods
+IAX_AUTH_PLAINTEXT
+IAX_AUTH_PLAINTEXT
+ast_string_field_set(iaxs[callno], secret, "badsecret");
+ast_string_field_set(iaxs[callno], secret, "badsecret")
+ast_string_field_set
+ast_string_field_set
+iaxs[callno]
+iaxs
+iaxs
+callno
+callno
+secret
+secret
+"badsecret"
+if (ast_strlen_zero(iaxs[callno]->challenge) &&				!(!ast_strlen_zero(secret) && plaintext)) {				/* by setting res to 0, an REGAUTH will be sent */				res = 0;			}
+ast_strlen_zero(iaxs[callno]->challenge) &&				!(!ast_strlen_zero(secret) && plaintext)
+ast_strlen_zero(iaxs[callno]->challenge)
+ast_strlen_zero
+ast_strlen_zero
+iaxs[callno]->challenge
+iaxs[callno]
+iaxs
+iaxs
+callno
+callno
+challenge
+!(!ast_strlen_zero(secret) && plaintext)
+(!ast_strlen_zero(secret) && plaintext)
+!ast_strlen_zero(secret) && plaintext
+!ast_strlen_zero(secret)
+ast_strlen_zero(secret)
+ast_strlen_zero
+ast_strlen_zero
+secret
+secret
+plaintext
+plaintext
+{				/* by setting res to 0, an REGAUTH will be sent */				res = 0;			}
+res = 0;
+res = 0
+res
+res
+0
+if (authdebug && !p)			ast_log(LOG_NOTICE, "No registration for peer '%s' (from %s)\n", peer, ast_inet_ntoa(sin->sin_addr));
+authdebug && !p
+authdebug
+authdebug
+!p
+p
+p
+ast_log(LOG_NOTICE, "No registration for peer '%s' (from %s)\n", peer, ast_inet_ntoa(sin->sin_addr));
+ast_log(LOG_NOTICE, "No registration for peer '%s' (from %s)\n", peer, ast_inet_ntoa(sin->sin_addr))
+ast_log
+ast_log
+LOG_NOTICE
+LOG_NOTICE
+"No registration for peer '%s' (from %s)\n"
+peer
+peer
+ast_inet_ntoa(sin->sin_addr)
+ast_inet_ntoa
+ast_inet_ntoa
+sin->sin_addr
+sin
+sin
+sin_addr
+goto return_unref;
+return_unref
+if (!ast_test_flag64(p, IAX_DYNAMIC)) {		if (authdebug)			ast_log(LOG_NOTICE, "Peer '%s' is not dynamic (from %s)\n", peer, ast_inet_ntoa(sin->sin_addr));		goto return_unref;	}
+!ast_test_flag64(p, IAX_DYNAMIC)
+ast_test_flag64(p, IAX_DYNAMIC)
+ast_test_flag64
+ast_test_flag64
+p
+p
+IAX_DYNAMIC
+IAX_DYNAMIC
+{		if (authdebug)			ast_log(LOG_NOTICE, "Peer '%s' is not dynamic (from %s)\n", peer, ast_inet_ntoa(sin->sin_addr));		goto return_unref;	}
+if (authdebug)			ast_log(LOG_NOTICE, "Peer '%s' is not dynamic (from %s)\n", peer, ast_inet_ntoa(sin->sin_addr));
+authdebug
+authdebug
+ast_log(LOG_NOTICE, "Peer '%s' is not dynamic (from %s)\n", peer, ast_inet_ntoa(sin->sin_addr));
+ast_log(LOG_NOTICE, "Peer '%s' is not dynamic (from %s)\n", peer, ast_inet_ntoa(sin->sin_addr))
+ast_log
+ast_log
+LOG_NOTICE
+LOG_NOTICE
+"Peer '%s' is not dynamic (from %s)\n"
+peer
+peer
+ast_inet_ntoa(sin->sin_addr)
+ast_inet_ntoa
+ast_inet_ntoa
+sin->sin_addr
+sin
+sin
+sin_addr
+goto return_unref;
+return_unref
+ast_sockaddr_from_sin(&addr, sin);
+ast_sockaddr_from_sin(&addr, sin)
+ast_sockaddr_from_sin
+ast_sockaddr_from_sin
+&addr
+addr
+addr
+sin
+sin
+if (!ast_apply_acl(p->acl, &addr, "IAX2 Peer ACL: ")) {		if (authdebug)			ast_log(LOG_NOTICE, "Host %s denied access to register peer '%s'\n", ast_inet_ntoa(sin->sin_addr), p->name);		goto return_unref;	}
+!ast_apply_acl(p->acl, &addr, "IAX2 Peer ACL: ")
+ast_apply_acl(p->acl, &addr, "IAX2 Peer ACL: ")
+ast_apply_acl
+ast_apply_acl
+p->acl
+p
+p
+acl
+&addr
+addr
+addr
+"IAX2 Peer ACL: "
+{		if (authdebug)			ast_log(LOG_NOTICE, "Host %s denied access to register peer '%s'\n", ast_inet_ntoa(sin->sin_addr), p->name);		goto return_unref;	}
+if (authdebug)			ast_log(LOG_NOTICE, "Host %s denied access to register peer '%s'\n", ast_inet_ntoa(sin->sin_addr), p->name);
+authdebug
+authdebug
+ast_log(LOG_NOTICE, "Host %s denied access to register peer '%s'\n", ast_inet_ntoa(sin->sin_addr), p->name);
+ast_log(LOG_NOTICE, "Host %s denied access to register peer '%s'\n", ast_inet_ntoa(sin->sin_addr), p->name)
+ast_log
+ast_log
+LOG_NOTICE
+LOG_NOTICE
+"Host %s denied access to register peer '%s'\n"
+ast_inet_ntoa(sin->sin_addr)
+ast_inet_ntoa
+ast_inet_ntoa
+sin->sin_addr
+sin
+sin
+sin_addr
+p->name
+p
+p
+name
+goto return_unref;
+return_unref
+ast_string_field_set(iaxs[callno], secret, p->secret);
+ast_string_field_set(iaxs[callno], secret, p->secret)
+ast_string_field_set
+ast_string_field_set
+iaxs[callno]
+iaxs
+iaxs
+callno
+callno
+secret
+secret
+p->secret
+p
+p
+secret
+ast_string_field_set(iaxs[callno], inkeys, p->inkeys);
+ast_string_field_set(iaxs[callno], inkeys, p->inkeys)
+ast_string_field_set
+ast_string_field_set
+iaxs[callno]
+iaxs
+iaxs
+callno
+callno
+inkeys
+inkeys
+p->inkeys
+p
+p
+inkeys
+if (!ast_strlen_zero(rsasecret) && (p->authmethods & IAX_AUTH_RSA) && !ast_strlen_zero(iaxs[callno]->challenge)) {		if (!ast_strlen_zero(p->inkeys)) {			char tmpkeys[256];			char *stringp=NULL;			ast_copy_string(tmpkeys, p->inkeys, sizeof(tmpkeys));			stringp=tmpkeys;			keyn = strsep(&stringp, ":");			while(keyn) {				key = ast_key_get(keyn, AST_KEY_PUBLIC);				if (key && !ast_check_signature(key, iaxs[callno]->challenge, rsasecret)) {					ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);					break;				} else if (!key)					ast_log(LOG_WARNING, "requested inkey '%s' does not exist\n", keyn);				keyn = strsep(&stringp, ":");			}			if (!keyn) {				if (authdebug)					ast_log(LOG_NOTICE, "Host %s failed RSA authentication with inkeys '%s'\n", peer, p->inkeys);				goto return_unref;			}		} else {			if (authdebug)				ast_log(LOG_NOTICE, "Host '%s' trying to do RSA authentication, but we have no inkeys\n", peer);			goto return_unref;		}	} else if (!ast_strlen_zero(md5secret) && (p->authmethods & IAX_AUTH_MD5) && !ast_strlen_zero(iaxs[callno]->challenge)) {		struct MD5Context md5;		unsigned char digest[16];		char *tmppw, *stringp;		tmppw = ast_strdupa(p->secret);		stringp = tmppw;		while((tmppw = strsep(&stringp, ";"))) {			MD5Init(&md5);			MD5Update(&md5, (unsigned char *)iaxs[callno]->challenge, strlen(iaxs[callno]->challenge));			MD5Update(&md5, (unsigned char *)tmppw, strlen(tmppw));			MD5Final(digest, &md5);			for (x=0;x<16;x++)				sprintf(requeststr + (x << 1), "%2.2x", digest[x]); /* safe */			if (!strcasecmp(requeststr, md5secret))				break;		}		if (tmppw) {			ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);		} else {			if (authdebug)				ast_log(LOG_NOTICE, "Host %s failed MD5 authentication for '%s' (%s != %s)\n", ast_inet_ntoa(sin->sin_addr), p->name, requeststr, md5secret);			goto return_unref;		}	} else if (!ast_strlen_zero(secret) && (p->authmethods & IAX_AUTH_PLAINTEXT)) {		/* They've provided a plain text password and we support that */		if (strcmp(secret, p->secret)) {			if (authdebug)				ast_log(LOG_NOTICE, "Host %s did not provide proper plaintext password for '%s'\n", ast_inet_ntoa(sin->sin_addr), p->name);			goto return_unref;		} else			ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);	} else if (!ast_strlen_zero(iaxs[callno]->challenge) && ast_strlen_zero(md5secret) && ast_strlen_zero(rsasecret)) {		/* if challenge has been sent, but no challenge response if given, reject. */		goto return_unref;	}
+!ast_strlen_zero(rsasecret) && (p->authmethods & IAX_AUTH_RSA) && !ast_strlen_zero(iaxs[callno]->challenge)
+!ast_strlen_zero(rsasecret) && (p->authmethods & IAX_AUTH_RSA)
+!ast_strlen_zero(rsasecret)
+ast_strlen_zero(rsasecret)
+ast_strlen_zero
+ast_strlen_zero
+rsasecret
+rsasecret
+(p->authmethods & IAX_AUTH_RSA)
+p->authmethods & IAX_AUTH_RSA
+p->authmethods
+p
+p
+authmethods
+IAX_AUTH_RSA
+IAX_AUTH_RSA
+!ast_strlen_zero(iaxs[callno]->challenge)
+ast_strlen_zero(iaxs[callno]->challenge)
+ast_strlen_zero
+ast_strlen_zero
+iaxs[callno]->challenge
+iaxs[callno]
+iaxs
+iaxs
+callno
+callno
+challenge
+{		if (!ast_strlen_zero(p->inkeys)) {			char tmpkeys[256];			char *stringp=NULL;			ast_copy_string(tmpkeys, p->inkeys, sizeof(tmpkeys));			stringp=tmpkeys;			keyn = strsep(&stringp, ":");			while(keyn) {				key = ast_key_get(keyn, AST_KEY_PUBLIC);				if (key && !ast_check_signature(key, iaxs[callno]->challenge, rsasecret)) {					ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);					break;				} else if (!key)					ast_log(LOG_WARNING, "requested inkey '%s' does not exist\n", keyn);				keyn = strsep(&stringp, ":");			}			if (!keyn) {				if (authdebug)					ast_log(LOG_NOTICE, "Host %s failed RSA authentication with inkeys '%s'\n", peer, p->inkeys);				goto return_unref;			}		} else {			if (authdebug)				ast_log(LOG_NOTICE, "Host '%s' trying to do RSA authentication, but we have no inkeys\n", peer);			goto return_unref;		}	}
+if (!ast_strlen_zero(p->inkeys)) {			char tmpkeys[256];			char *stringp=NULL;			ast_copy_string(tmpkeys, p->inkeys, sizeof(tmpkeys));			stringp=tmpkeys;			keyn = strsep(&stringp, ":");			while(keyn) {				key = ast_key_get(keyn, AST_KEY_PUBLIC);				if (key && !ast_check_signature(key, iaxs[callno]->challenge, rsasecret)) {					ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);					break;				} else if (!key)					ast_log(LOG_WARNING, "requested inkey '%s' does not exist\n", keyn);				keyn = strsep(&stringp, ":");			}			if (!keyn) {				if (authdebug)					ast_log(LOG_NOTICE, "Host %s failed RSA authentication with inkeys '%s'\n", peer, p->inkeys);				goto return_unref;			}		} else {			if (authdebug)				ast_log(LOG_NOTICE, "Host '%s' trying to do RSA authentication, but we have no inkeys\n", peer);			goto return_unref;		}
+!ast_strlen_zero(p->inkeys)
+ast_strlen_zero(p->inkeys)
+ast_strlen_zero
+ast_strlen_zero
+p->inkeys
+p
+p
+inkeys
+{			char tmpkeys[256];			char *stringp=NULL;			ast_copy_string(tmpkeys, p->inkeys, sizeof(tmpkeys));			stringp=tmpkeys;			keyn = strsep(&stringp, ":");			while(keyn) {				key = ast_key_get(keyn, AST_KEY_PUBLIC);				if (key && !ast_check_signature(key, iaxs[callno]->challenge, rsasecret)) {					ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);					break;				} else if (!key)					ast_log(LOG_WARNING, "requested inkey '%s' does not exist\n", keyn);				keyn = strsep(&stringp, ":");			}			if (!keyn) {				if (authdebug)					ast_log(LOG_NOTICE, "Host %s failed RSA authentication with inkeys '%s'\n", peer, p->inkeys);				goto return_unref;			}		}
+char tmpkeys[256];
+char tmpkeys[256];
+char
+tmpkeys[256]
+tmpkeys
+[256]
+256
+char *stringp=NULL;
+char *stringp=NULL;
+char
+*stringp=NULL
+*
+stringp
+=NULL
+NULL
+NULL
+ast_copy_string(tmpkeys, p->inkeys, sizeof(tmpkeys));
+ast_copy_string(tmpkeys, p->inkeys, sizeof(tmpkeys))
+ast_copy_string
+ast_copy_string
+tmpkeys
+tmpkeys
+p->inkeys
+p
+p
+inkeys
+sizeof(tmpkeys)
+(tmpkeys)
+tmpkeys
+tmpkeys
+stringp=tmpkeys;
+stringp=tmpkeys
+stringp
+stringp
+tmpkeys
+tmpkeys
+keyn = strsep(&stringp, ":");
+keyn = strsep(&stringp, ":")
+keyn
+keyn
+strsep(&stringp, ":")
+strsep
+strsep
+&stringp
+stringp
+stringp
+":"
+while(keyn) {				key = ast_key_get(keyn, AST_KEY_PUBLIC);				if (key && !ast_check_signature(key, iaxs[callno]->challenge, rsasecret)) {					ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);					break;				} else if (!key)					ast_log(LOG_WARNING, "requested inkey '%s' does not exist\n", keyn);				keyn = strsep(&stringp, ":");			}
+keyn
+keyn
+{				key = ast_key_get(keyn, AST_KEY_PUBLIC);				if (key && !ast_check_signature(key, iaxs[callno]->challenge, rsasecret)) {					ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);					break;				} else if (!key)					ast_log(LOG_WARNING, "requested inkey '%s' does not exist\n", keyn);				keyn = strsep(&stringp, ":");			}
+key = ast_key_get(keyn, AST_KEY_PUBLIC);
+key = ast_key_get(keyn, AST_KEY_PUBLIC)
+key
+key
+ast_key_get(keyn, AST_KEY_PUBLIC)
+ast_key_get
+ast_key_get
+keyn
+keyn
+AST_KEY_PUBLIC
+AST_KEY_PUBLIC
+if (key && !ast_check_signature(key, iaxs[callno]->challenge, rsasecret)) {					ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);					break;				} else if (!key)					ast_log(LOG_WARNING, "requested inkey '%s' does not exist\n", keyn);
+key && !ast_check_signature(key, iaxs[callno]->challenge, rsasecret)
+key
+key
+!ast_check_signature(key, iaxs[callno]->challenge, rsasecret)
+ast_check_signature(key, iaxs[callno]->challenge, rsasecret)
+ast_check_signature
+ast_check_signature
+key
+key
+iaxs[callno]->challenge
+iaxs[callno]
+iaxs
+iaxs
+callno
+callno
+challenge
+rsasecret
+rsasecret
+{					ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);					break;				}
+ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);
+ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED)
+ast_set_flag
+ast_set_flag
+&iaxs[callno]->state
+iaxs[callno]->state
+iaxs[callno]
+iaxs
+iaxs
+callno
+callno
+state
+IAX_STATE_AUTHENTICATED
+IAX_STATE_AUTHENTICATED
+break;
+if (!key)					ast_log(LOG_WARNING, "requested inkey '%s' does not exist\n", keyn);
+!key
+key
+key
+ast_log(LOG_WARNING, "requested inkey '%s' does not exist\n", keyn);
+ast_log(LOG_WARNING, "requested inkey '%s' does not exist\n", keyn)
+ast_log
+ast_log
+LOG_WARNING
+LOG_WARNING
+"requested inkey '%s' does not exist\n"
+keyn
+keyn
+keyn = strsep(&stringp, ":");
+keyn = strsep(&stringp, ":")
+keyn
+keyn
+strsep(&stringp, ":")
+strsep
+strsep
+&stringp
+stringp
+stringp
+":"
+if (!keyn) {				if (authdebug)					ast_log(LOG_NOTICE, "Host %s failed RSA authentication with inkeys '%s'\n", peer, p->inkeys);				goto return_unref;			}
+!keyn
+keyn
+keyn
+{				if (authdebug)					ast_log(LOG_NOTICE, "Host %s failed RSA authentication with inkeys '%s'\n", peer, p->inkeys);				goto return_unref;			}
+if (authdebug)					ast_log(LOG_NOTICE, "Host %s failed RSA authentication with inkeys '%s'\n", peer, p->inkeys);
+authdebug
+authdebug
+ast_log(LOG_NOTICE, "Host %s failed RSA authentication with inkeys '%s'\n", peer, p->inkeys);
+ast_log(LOG_NOTICE, "Host %s failed RSA authentication with inkeys '%s'\n", peer, p->inkeys)
+ast_log
+ast_log
+LOG_NOTICE
+LOG_NOTICE
+"Host %s failed RSA authentication with inkeys '%s'\n"
+peer
+peer
+p->inkeys
+p
+p
+inkeys
+goto return_unref;
+return_unref
+{			if (authdebug)				ast_log(LOG_NOTICE, "Host '%s' trying to do RSA authentication, but we have no inkeys\n", peer);			goto return_unref;		}
+if (authdebug)				ast_log(LOG_NOTICE, "Host '%s' trying to do RSA authentication, but we have no inkeys\n", peer);
+authdebug
+authdebug
+ast_log(LOG_NOTICE, "Host '%s' trying to do RSA authentication, but we have no inkeys\n", peer);
+ast_log(LOG_NOTICE, "Host '%s' trying to do RSA authentication, but we have no inkeys\n", peer)
+ast_log
+ast_log
+LOG_NOTICE
+LOG_NOTICE
+"Host '%s' trying to do RSA authentication, but we have no inkeys\n"
+peer
+peer
+goto return_unref;
+return_unref
+if (!ast_strlen_zero(md5secret) && (p->authmethods & IAX_AUTH_MD5) && !ast_strlen_zero(iaxs[callno]->challenge)) {		struct MD5Context md5;		unsigned char digest[16];		char *tmppw, *stringp;		tmppw = ast_strdupa(p->secret);		stringp = tmppw;		while((tmppw = strsep(&stringp, ";"))) {			MD5Init(&md5);			MD5Update(&md5, (unsigned char *)iaxs[callno]->challenge, strlen(iaxs[callno]->challenge));			MD5Update(&md5, (unsigned char *)tmppw, strlen(tmppw));			MD5Final(digest, &md5);			for (x=0;x<16;x++)				sprintf(requeststr + (x << 1), "%2.2x", digest[x]); /* safe */			if (!strcasecmp(requeststr, md5secret))				break;		}		if (tmppw) {			ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);		} else {			if (authdebug)				ast_log(LOG_NOTICE, "Host %s failed MD5 authentication for '%s' (%s != %s)\n", ast_inet_ntoa(sin->sin_addr), p->name, requeststr, md5secret);			goto return_unref;		}	} else if (!ast_strlen_zero(secret) && (p->authmethods & IAX_AUTH_PLAINTEXT)) {		/* They've provided a plain text password and we support that */		if (strcmp(secret, p->secret)) {			if (authdebug)				ast_log(LOG_NOTICE, "Host %s did not provide proper plaintext password for '%s'\n", ast_inet_ntoa(sin->sin_addr), p->name);			goto return_unref;		} else			ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);	} else if (!ast_strlen_zero(iaxs[callno]->challenge) && ast_strlen_zero(md5secret) && ast_strlen_zero(rsasecret)) {		/* if challenge has been sent, but no challenge response if given, reject. */		goto return_unref;	}
+!ast_strlen_zero(md5secret) && (p->authmethods & IAX_AUTH_MD5) && !ast_strlen_zero(iaxs[callno]->challenge)
+!ast_strlen_zero(md5secret) && (p->authmethods & IAX_AUTH_MD5)
+!ast_strlen_zero(md5secret)
+ast_strlen_zero(md5secret)
+ast_strlen_zero
+ast_strlen_zero
+md5secret
+md5secret
+(p->authmethods & IAX_AUTH_MD5)
+p->authmethods & IAX_AUTH_MD5
+p->authmethods
+p
+p
+authmethods
+IAX_AUTH_MD5
+IAX_AUTH_MD5
+!ast_strlen_zero(iaxs[callno]->challenge)
+ast_strlen_zero(iaxs[callno]->challenge)
+ast_strlen_zero
+ast_strlen_zero
+iaxs[callno]->challenge
+iaxs[callno]
+iaxs
+iaxs
+callno
+callno
+challenge
+{		struct MD5Context md5;		unsigned char digest[16];		char *tmppw, *stringp;		tmppw = ast_strdupa(p->secret);		stringp = tmppw;		while((tmppw = strsep(&stringp, ";"))) {			MD5Init(&md5);			MD5Update(&md5, (unsigned char *)iaxs[callno]->challenge, strlen(iaxs[callno]->challenge));			MD5Update(&md5, (unsigned char *)tmppw, strlen(tmppw));			MD5Final(digest, &md5);			for (x=0;x<16;x++)				sprintf(requeststr + (x << 1), "%2.2x", digest[x]); /* safe */			if (!strcasecmp(requeststr, md5secret))				break;		}		if (tmppw) {			ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);		} else {			if (authdebug)				ast_log(LOG_NOTICE, "Host %s failed MD5 authentication for '%s' (%s != %s)\n", ast_inet_ntoa(sin->sin_addr), p->name, requeststr, md5secret);			goto return_unref;		}	}
+struct MD5Context md5;
+struct MD5Context md5;
+struct MD5Context
+MD5Context
+md5
+md5
+unsigned char digest[16];
+unsigned char digest[16];
+unsigned char
+digest[16]
+digest
+[16]
+16
+char *tmppw, *stringp;
+char *tmppw, *stringp;
+char
+*tmppw
+*
+tmppw
+*stringp
+*
+stringp
+tmppw = ast_strdupa(p->secret);
+tmppw = ast_strdupa(p->secret)
+tmppw
+tmppw
+ast_strdupa(p->secret)
+ast_strdupa
+ast_strdupa
+p->secret
+p
+p
+secret
+stringp = tmppw;
+stringp = tmppw
+stringp
+stringp
+tmppw
+tmppw
+while((tmppw = strsep(&stringp, ";"))) {			MD5Init(&md5);			MD5Update(&md5, (unsigned char *)iaxs[callno]->challenge, strlen(iaxs[callno]->challenge));			MD5Update(&md5, (unsigned char *)tmppw, strlen(tmppw));			MD5Final(digest, &md5);			for (x=0;x<16;x++)				sprintf(requeststr + (x << 1), "%2.2x", digest[x]); /* safe */			if (!strcasecmp(requeststr, md5secret))				break;		}
+(tmppw = strsep(&stringp, ";"))
+tmppw = strsep(&stringp, ";")
+tmppw
+tmppw
+strsep(&stringp, ";")
+strsep
+strsep
+&stringp
+stringp
+stringp
+";"
+{			MD5Init(&md5);			MD5Update(&md5, (unsigned char *)iaxs[callno]->challenge, strlen(iaxs[callno]->challenge));			MD5Update(&md5, (unsigned char *)tmppw, strlen(tmppw));			MD5Final(digest, &md5);			for (x=0;x<16;x++)				sprintf(requeststr + (x << 1), "%2.2x", digest[x]); /* safe */			if (!strcasecmp(requeststr, md5secret))				break;		}
+MD5Init(&md5);
+MD5Init(&md5)
+MD5Init
+MD5Init
+&md5
+md5
+md5
+MD5Update(&md5, (unsigned char *)iaxs[callno]->challenge, strlen(iaxs[callno]->challenge));
+MD5Update(&md5, (unsigned char *)iaxs[callno]->challenge, strlen(iaxs[callno]->challenge))
+MD5Update
+MD5Update
+&md5
+md5
+md5
+(unsigned char *)iaxs[callno]->challenge
+unsigned char *
+unsigned char
+*
+*
+iaxs[callno]->challenge
+iaxs[callno]
+iaxs
+iaxs
+callno
+callno
+challenge
+strlen(iaxs[callno]->challenge)
+strlen
+strlen
+iaxs[callno]->challenge
+iaxs[callno]
+iaxs
+iaxs
+callno
+callno
+challenge
+MD5Update(&md5, (unsigned char *)tmppw, strlen(tmppw));
+MD5Update(&md5, (unsigned char *)tmppw, strlen(tmppw))
+MD5Update
+MD5Update
+&md5
+md5
+md5
+(unsigned char *)tmppw
+unsigned char *
+unsigned char
+*
+*
+tmppw
+tmppw
+strlen(tmppw)
+strlen
+strlen
+tmppw
+tmppw
+MD5Final(digest, &md5);
+MD5Final(digest, &md5)
+MD5Final
+MD5Final
+digest
+digest
+&md5
+md5
+md5
+for (x=0;x<16;x++)				sprintf(requeststr + (x << 1), "%2.2x", digest[x]);
+x=0;
+x=0
+x
+x
+0
+x<16
+x
+x
+16
+x++
+x
+x
+sprintf(requeststr + (x << 1), "%2.2x", digest[x]);
+sprintf(requeststr + (x << 1), "%2.2x", digest[x])
+sprintf
+sprintf
+requeststr + (x << 1)
+requeststr
+requeststr
+(x << 1)
+x << 1
+x
+x
+1
+"%2.2x"
+digest[x]
+digest
+digest
+x
+x
+if (!strcasecmp(requeststr, md5secret))				break;
+!strcasecmp(requeststr, md5secret)
+strcasecmp(requeststr, md5secret)
+strcasecmp
+strcasecmp
+requeststr
+requeststr
+md5secret
+md5secret
+break;
+if (tmppw) {			ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);		} else {			if (authdebug)				ast_log(LOG_NOTICE, "Host %s failed MD5 authentication for '%s' (%s != %s)\n", ast_inet_ntoa(sin->sin_addr), p->name, requeststr, md5secret);			goto return_unref;		}
+tmppw
+tmppw
+{			ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);		}
+ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);
+ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED)
+ast_set_flag
+ast_set_flag
+&iaxs[callno]->state
+iaxs[callno]->state
+iaxs[callno]
+iaxs
+iaxs
+callno
+callno
+state
+IAX_STATE_AUTHENTICATED
+IAX_STATE_AUTHENTICATED
+{			if (authdebug)				ast_log(LOG_NOTICE, "Host %s failed MD5 authentication for '%s' (%s != %s)\n", ast_inet_ntoa(sin->sin_addr), p->name, requeststr, md5secret);			goto return_unref;		}
+if (authdebug)				ast_log(LOG_NOTICE, "Host %s failed MD5 authentication for '%s' (%s != %s)\n", ast_inet_ntoa(sin->sin_addr), p->name, requeststr, md5secret);
+authdebug
+authdebug
+ast_log(LOG_NOTICE, "Host %s failed MD5 authentication for '%s' (%s != %s)\n", ast_inet_ntoa(sin->sin_addr), p->name, requeststr, md5secret);
+ast_log(LOG_NOTICE, "Host %s failed MD5 authentication for '%s' (%s != %s)\n", ast_inet_ntoa(sin->sin_addr), p->name, requeststr, md5secret)
+ast_log
+ast_log
+LOG_NOTICE
+LOG_NOTICE
+"Host %s failed MD5 authentication for '%s' (%s != %s)\n"
+ast_inet_ntoa(sin->sin_addr)
+ast_inet_ntoa
+ast_inet_ntoa
+sin->sin_addr
+sin
+sin
+sin_addr
+p->name
+p
+p
+name
+requeststr
+requeststr
+md5secret
+md5secret
+goto return_unref;
+return_unref
+if (!ast_strlen_zero(secret) && (p->authmethods & IAX_AUTH_PLAINTEXT)) {		/* They've provided a plain text password and we support that */		if (strcmp(secret, p->secret)) {			if (authdebug)				ast_log(LOG_NOTICE, "Host %s did not provide proper plaintext password for '%s'\n", ast_inet_ntoa(sin->sin_addr), p->name);			goto return_unref;		} else			ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);	} else if (!ast_strlen_zero(iaxs[callno]->challenge) && ast_strlen_zero(md5secret) && ast_strlen_zero(rsasecret)) {		/* if challenge has been sent, but no challenge response if given, reject. */		goto return_unref;	}
+!ast_strlen_zero(secret) && (p->authmethods & IAX_AUTH_PLAINTEXT)
+!ast_strlen_zero(secret)
+ast_strlen_zero(secret)
+ast_strlen_zero
+ast_strlen_zero
+secret
+secret
+(p->authmethods & IAX_AUTH_PLAINTEXT)
+p->authmethods & IAX_AUTH_PLAINTEXT
+p->authmethods
+p
+p
+authmethods
+IAX_AUTH_PLAINTEXT
+IAX_AUTH_PLAINTEXT
+{		/* They've provided a plain text password and we support that */		if (strcmp(secret, p->secret)) {			if (authdebug)				ast_log(LOG_NOTICE, "Host %s did not provide proper plaintext password for '%s'\n", ast_inet_ntoa(sin->sin_addr), p->name);			goto return_unref;		} else			ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);	}
+if (strcmp(secret, p->secret)) {			if (authdebug)				ast_log(LOG_NOTICE, "Host %s did not provide proper plaintext password for '%s'\n", ast_inet_ntoa(sin->sin_addr), p->name);			goto return_unref;		} else			ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);
+strcmp(secret, p->secret)
+strcmp
+strcmp
+secret
+secret
+p->secret
+p
+p
+secret
+{			if (authdebug)				ast_log(LOG_NOTICE, "Host %s did not provide proper plaintext password for '%s'\n", ast_inet_ntoa(sin->sin_addr), p->name);			goto return_unref;		}
+if (authdebug)				ast_log(LOG_NOTICE, "Host %s did not provide proper plaintext password for '%s'\n", ast_inet_ntoa(sin->sin_addr), p->name);
+authdebug
+authdebug
+ast_log(LOG_NOTICE, "Host %s did not provide proper plaintext password for '%s'\n", ast_inet_ntoa(sin->sin_addr), p->name);
+ast_log(LOG_NOTICE, "Host %s did not provide proper plaintext password for '%s'\n", ast_inet_ntoa(sin->sin_addr), p->name)
+ast_log
+ast_log
+LOG_NOTICE
+LOG_NOTICE
+"Host %s did not provide proper plaintext password for '%s'\n"
+ast_inet_ntoa(sin->sin_addr)
+ast_inet_ntoa
+ast_inet_ntoa
+sin->sin_addr
+sin
+sin
+sin_addr
+p->name
+p
+p
+name
+goto return_unref;
+return_unref
+ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED);
+ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED)
+ast_set_flag
+ast_set_flag
+&iaxs[callno]->state
+iaxs[callno]->state
+iaxs[callno]
+iaxs
+iaxs
+callno
+callno
+state
+IAX_STATE_AUTHENTICATED
+IAX_STATE_AUTHENTICATED
+if (!ast_strlen_zero(iaxs[callno]->challenge) && ast_strlen_zero(md5secret) && ast_strlen_zero(rsasecret)) {		/* if challenge has been sent, but no challenge response if given, reject. */		goto return_unref;	}
+!ast_strlen_zero(iaxs[callno]->challenge) && ast_strlen_zero(md5secret) && ast_strlen_zero(rsasecret)
+!ast_strlen_zero(iaxs[callno]->challenge) && ast_strlen_zero(md5secret)
+!ast_strlen_zero(iaxs[callno]->challenge)
+ast_strlen_zero(iaxs[callno]->challenge)
+ast_strlen_zero
+ast_strlen_zero
+iaxs[callno]->challenge
+iaxs[callno]
+iaxs
+iaxs
+callno
+callno
+challenge
+ast_strlen_zero(md5secret)
+ast_strlen_zero
+ast_strlen_zero
+md5secret
+md5secret
+ast_strlen_zero(rsasecret)
+ast_strlen_zero
+ast_strlen_zero
+rsasecret
+rsasecret
+{		/* if challenge has been sent, but no challenge response if given, reject. */		goto return_unref;	}
+goto return_unref;
+return_unref
+ast_devstate_changed(AST_DEVICE_UNKNOWN, "IAX2/%s", p->name);
+ast_devstate_changed(AST_DEVICE_UNKNOWN, "IAX2/%s", p->name)
+ast_devstate_changed
+ast_devstate_changed
+AST_DEVICE_UNKNOWN
+AST_DEVICE_UNKNOWN
+"IAX2/%s"
+p->name
+p
+p
+name
+res = 0;
+res = 0
+res
+res
+0
+return_unref:	if (iaxs[callno]) {		ast_string_field_set(iaxs[callno], peer, peer);		/* Choose lowest expiry number */		if (expire && (expire < iaxs[callno]->expiry)) {			iaxs[callno]->expiry = expire;		}	}
+return_unref
+if (iaxs[callno]) {		ast_string_field_set(iaxs[callno], peer, peer);		/* Choose lowest expiry number */		if (expire && (expire < iaxs[callno]->expiry)) {			iaxs[callno]->expiry = expire;		}	}
+iaxs[callno]
+iaxs
+iaxs
+callno
+callno
+{		ast_string_field_set(iaxs[callno], peer, peer);		/* Choose lowest expiry number */		if (expire && (expire < iaxs[callno]->expiry)) {			iaxs[callno]->expiry = expire;		}	}
+ast_string_field_set(iaxs[callno], peer, peer);
+ast_string_field_set(iaxs[callno], peer, peer)
+ast_string_field_set
+ast_string_field_set
+iaxs[callno]
+iaxs
+iaxs
+callno
+callno
+peer
+peer
+peer
+peer
+if (expire && (expire < iaxs[callno]->expiry)) {			iaxs[callno]->expiry = expire;		}
+expire && (expire < iaxs[callno]->expiry)
+expire
+expire
+(expire < iaxs[callno]->expiry)
+expire < iaxs[callno]->expiry
+expire
+expire
+iaxs[callno]->expiry
+iaxs[callno]
+iaxs
+iaxs
+callno
+callno
+expiry
+{			iaxs[callno]->expiry = expire;		}
+iaxs[callno]->expiry = expire;
+iaxs[callno]->expiry = expire
+iaxs[callno]->expiry
+iaxs[callno]
+iaxs
+iaxs
+callno
+callno
+expiry
+expire
+expire
+if (p) {		peer_unref(p);	}
+p
+p
+{		peer_unref(p);	}
+peer_unref(p);
+peer_unref(p)
+peer_unref
+peer_unref
+p
+p
+return res;
+res
+res
+-----joern-----
+(32,586,0)
+(237,290,0)
+(476,554,0)
+(341,357,0)
+(384,10,0)
+(82,232,0)
+(333,33,0)
+(559,467,0)
+(56,559,0)
+(447,171,0)
+(494,179,0)
+(160,276,0)
+(100,342,0)
+(440,62,0)
+(503,109,0)
+(263,551,0)
+(242,109,0)
+(162,147,0)
+(530,96,0)
+(78,289,0)
+(278,329,0)
+(561,356,0)
+(47,69,0)
+(243,156,0)
+(537,471,0)
+(472,467,0)
+(313,241,0)
+(390,535,0)
+(159,563,0)
+(12,294,0)
+(369,130,0)
+(362,62,0)
+(36,504,0)
+(306,307,0)
+(445,266,0)
+(365,130,0)
+(411,230,0)
+(421,142,0)
+(106,535,0)
+(225,488,0)
+(404,230,0)
+(213,49,0)
+(342,540,0)
+(435,471,0)
+(420,556,0)
+(41,39,0)
+(127,228,0)
+(80,136,0)
+(65,489,0)
+(185,44,0)
+(414,207,0)
+(383,522,0)
+(265,297,0)
+(176,516,0)
+(485,556,0)
+(202,214,0)
+(145,324,0)
+(29,345,0)
+(318,161,0)
+(395,109,0)
+(566,154,0)
+(268,520,0)
+(551,130,0)
+(543,314,0)
+(110,71,0)
+(2,556,0)
+(505,112,0)
+(546,62,0)
+(427,271,0)
+(206,11,0)
+(87,241,0)
+(208,221,0)
+(44,109,0)
+(484,329,0)
+(310,406,0)
+(303,154,0)
+(255,120,0)
+(192,556,0)
+(280,547,0)
+(532,425,0)
+(470,524,0)
+(328,78,0)
+(292,175,0)
+(207,555,0)
+(273,502,0)
+(149,367,0)
+(547,4,0)
+(187,98,0)
+(588,197,0)
+(34,241,0)
+(357,443,0)
+(557,556,0)
+(148,277,0)
+(316,551,0)
+(307,588,0)
+(511,547,0)
+(44,179,0)
+(452,588,0)
+(398,462,0)
+(175,110,0)
+(336,556,0)
+(544,11,0)
+(312,43,0)
+(296,207,0)
+(93,437,0)
+(281,162,0)
+(461,556,0)
+(469,109,0)
+(381,503,0)
+(282,109,0)
+(231,291,0)
+(497,546,0)
+(229,130,0)
+(489,363,0)
+(199,111,0)
+(488,225,0)
+(333,230,0)
+(463,523,0)
+(214,248,0)
+(274,123,0)
+(343,556,0)
+(533,230,0)
+(30,15,0)
+(95,246,0)
+(586,540,0)
+(496,503,0)
+(553,552,0)
+(252,546,0)
+(329,484,0)
+(108,521,0)
+(388,142,0)
+(460,261,0)
+(144,110,0)
+(475,218,0)
+(187,534,0)
+(166,29,0)
+(571,35,0)
+(521,108,0)
+(385,488,0)
+(401,540,0)
+(414,230,0)
+(405,587,0)
+(11,544,0)
+(588,307,0)
+(168,407,0)
+(263,103,0)
+(152,314,0)
+(416,94,0)
+(6,534,0)
+(291,437,0)
+(165,308,0)
+(542,521,0)
+(307,109,0)
+(302,395,0)
+(167,527,0)
+(146,447,0)
+(4,547,0)
+(237,71,0)
+(86,503,0)
+(39,262,0)
+(349,521,0)
+(269,230,0)
+(564,52,0)
+(441,208,0)
+(546,556,0)
+(164,22,0)
+(322,542,0)
+(355,556,0)
+(395,302,0)
+(239,411,0)
+(269,353,0)
+(298,267,0)
+(67,275,0)
+(212,120,0)
+(560,552,0)
+(15,230,0)
+(177,230,0)
+(70,570,0)
+(156,124,0)
+(211,171,0)
+(249,575,0)
+(271,37,0)
+(259,469,0)
+(332,367,0)
+(131,556,0)
+(483,38,0)
+(338,231,0)
+(474,427,0)
+(119,161,0)
+(271,427,0)
+(531,585,0)
+(378,122,0)
+(13,324,0)
+(443,357,0)
+(550,276,0)
+(277,324,0)
+(509,414,0)
+(34,149,0)
+(69,186,0)
+(459,554,0)
+(272,245,0)
+(207,414,0)
+(432,111,0)
+(182,316,0)
+(39,469,0)
+(277,560,0)
+(19,157,0)
+(352,584,0)
+(57,316,0)
+(60,274,0)
+(559,197,0)
+(490,251,0)
+(504,427,0)
+(256,0,0)
+(101,275,0)
+(0,260,0)
+(33,333,0)
+(301,404,0)
+(11,13,0)
+(251,37,0)
+(141,123,0)
+(268,38,0)
+(459,577,0)
+(122,275,0)
+(267,348,0)
+(62,556,0)
+(472,155,0)
+(154,62,0)
+(180,277,0)
+(149,34,0)
+(504,62,0)
+(393,141,0)
+(375,269,0)
+(552,467,0)
+(491,472,0)
+(573,221,0)
+(194,556,0)
+(562,67,0)
+(584,130,0)
+(257,314,0)
+(141,109,0)
+(398,120,0)
+(14,556,0)
+(274,60,0)
+(157,230,0)
+(356,109,0)
+(439,130,0)
+(7,291,0)
+(347,556,0)
+(346,556,0)
+(345,172,0)
+(213,109,0)
+(138,49,0)
+(288,298,0)
+(112,95,0)
+(129,12,0)
+(403,122,0)
+(189,329,0)
+(554,489,0)
+(578,425,0)
+(132,202,0)
+(142,68,0)
+(169,567,0)
+(464,519,0)
+(143,31,0)
+(537,433,0)
+(40,203,0)
+(465,294,0)
+(126,228,0)
+(143,276,0)
+(358,417,0)
+(330,282,0)
+(276,160,0)
+(351,289,0)
+(77,465,0)
+(97,96,0)
+(108,275,0)
+(373,437,0)
+(171,447,0)
+(521,542,0)
+(78,365,0)
+(42,208,0)
+(370,109,0)
+(8,37,0)
+(554,570,0)
+(392,141,0)
+(546,585,0)
+(522,35,0)
+(71,290,0)
+(471,467,0)
+(512,287,0)
+(479,84,0)
+(133,37,0)
+(69,289,0)
+(33,297,0)
+(250,556,0)
+(454,157,0)
+(28,425,0)
+(98,187,0)
+(325,365,0)
+(302,3,0)
+(529,179,0)
+(264,157,0)
+(233,94,0)
+(394,584,0)
+(534,556,0)
+(150,250,0)
+(317,123,0)
+(400,242,0)
+(415,449,0)
+(535,390,0)
+(124,353,0)
+(386,573,0)
+(161,109,0)
+(443,556,0)
+(345,29,0)
+(105,15,0)
+(221,186,0)
+(1,324,0)
+(576,395,0)
+(76,96,0)
+(423,570,0)
+(521,275,0)
+(195,556,0)
+(71,110,0)
+(87,184,0)
+(291,425,0)
+(387,308,0)
+(232,26,0)
+(184,109,0)
+(543,232,0)
+(71,38,0)
+(279,420,0)
+(493,502,0)
+(276,143,0)
+(585,230,0)
+(68,142,0)
+(3,302,0)
+(35,130,0)
+(449,4,0)
+(52,88,0)
+(563,423,0)
+(43,282,0)
+(139,390,0)
+(4,534,0)
+(506,555,0)
+(25,307,0)
+(297,221,0)
+(226,246,0)
+(329,278,0)
+(468,235,0)
+(558,365,0)
+(162,422,0)
+(315,214,0)
+(518,571,0)
+(444,164,0)
+(242,90,0)
+(105,422,0)
+(459,363,0)
+(569,462,0)
+(519,75,0)
+(420,279,0)
+(402,245,0)
+(535,75,0)
+(372,118,0)
+(203,109,0)
+(123,274,0)
+(324,556,0)
+(409,443,0)
+(178,370,0)
+(197,588,0)
+(282,43,0)
+(492,96,0)
+(528,544,0)
+(577,459,0)
+(111,96,0)
+(164,432,0)
+(225,507,0)
+(175,230,0)
+(410,588,0)
+(173,130,0)
+(589,44,0)
+(113,231,0)
+(218,183,0)
+(22,363,0)
+(433,537,0)
+(123,141,0)
+(153,35,0)
+(9,69,0)
+(209,551,0)
+(580,271,0)
+(183,218,0)
+(191,470,0)
+(22,164,0)
+(579,38,0)
+(31,262,0)
+(422,162,0)
+(190,497,0)
+(397,148,0)
+(214,202,0)
+(364,543,0)
+(371,405,0)
+(266,203,0)
+(482,420,0)
+(539,261,0)
+(89,417,0)
+(248,117,0)
+(462,95,0)
+(436,298,0)
+(202,374,0)
+(510,282,0)
+(466,294,0)
+(508,534,0)
+(18,133,0)
+(142,230,0)
+(573,551,0)
+(370,275,0)
+(99,10,0)
+(298,230,0)
+(93,245,0)
+(326,476,0)
+(517,93,0)
+(450,433,0)
+(353,124,0)
+(157,264,0)
+(477,235,0)
+(16,184,0)
+(71,237,0)
+(471,537,0)
+(95,112,0)
+(523,404,0)
+(488,385,0)
+(360,414,0)
+(3,50,0)
+(179,44,0)
+(481,268,0)
+(316,69,0)
+(348,556,0)
+(109,370,0)
+(501,60,0)
+(267,298,0)
+(58,248,0)
+(544,534,0)
+(214,315,0)
+(404,523,0)
+(359,278,0)
+(437,291,0)
+(111,318,0)
+(413,213,0)
+(526,4,0)
+(585,546,0)
+(132,447,0)
+(241,87,0)
+(12,37,0)
+(28,324,0)
+(248,214,0)
+(155,122,0)
+(234,556,0)
+(405,371,0)
+(430,242,0)
+(151,263,0)
+(299,385,0)
+(284,374,0)
+(0,79,0)
+(425,556,0)
+(527,275,0)
+(258,356,0)
+(121,540,0)
+(541,245,0)
+(66,566,0)
+(244,68,0)
+(171,230,0)
+(308,37,0)
+(55,458,0)
+(204,459,0)
+(79,230,0)
+(202,570,0)
+(525,62,0)
+(497,109,0)
+(50,362,0)
+(4,449,0)
+(434,186,0)
+(462,398,0)
+(565,398,0)
+(28,140,0)
+(246,95,0)
+(574,556,0)
+(124,156,0)
+(566,230,0)
+(107,552,0)
+(125,177,0)
+(431,290,0)
+(536,8,0)
+(449,534,0)
+(390,139,0)
+(241,313,0)
+(216,566,0)
+(247,556,0)
+(156,83,0)
+(554,459,0)
+(311,83,0)
+(172,345,0)
+(442,264,0)
+(188,297,0)
+(221,573,0)
+(196,556,0)
+(305,98,0)
+(469,39,0)
+(197,559,0)
+(94,233,0)
+(120,398,0)
+(428,404,0)
+(548,271,0)
+(321,179,0)
+(215,96,0)
+(160,230,0)
+(148,109,0)
+(104,93,0)
+(348,267,0)
+(304,154,0)
+(379,587,0)
+(309,432,0)
+(294,465,0)
+(320,109,0)
+(441,297,0)
+(587,533,0)
+(35,571,0)
+(412,469,0)
+(447,132,0)
+(50,3,0)
+(49,213,0)
+(423,563,0)
+(61,63,0)
+(250,480,0)
+(277,425,0)
+(29,230,0)
+(90,487,0)
+(11,206,0)
+(260,313,0)
+(512,62,0)
+(241,34,0)
+(456,237,0)
+(334,187,0)
+(154,261,0)
+(98,305,0)
+(473,278,0)
+(540,401,0)
+(262,31,0)
+(260,0,0)
+(583,79,0)
+(344,464,0)
+(90,242,0)
+(587,405,0)
+(300,13,0)
+(507,225,0)
+(264,268,0)
+(120,230,0)
+(363,22,0)
+(23,406,0)
+(136,221,0)
+(427,62,0)
+(235,37,0)
+(219,556,0)
+(139,467,0)
+(250,467,0)
+(122,155,0)
+(277,148,0)
+(174,277,0)
+(350,213,0)
+(68,556,0)
+(268,290,0)
+(91,148,0)
+(81,585,0)
+(366,316,0)
+(46,29,0)
+(582,12,0)
+(289,78,0)
+(486,535,0)
+(337,432,0)
+(240,67,0)
+(116,480,0)
+(59,573,0)
+(552,560,0)
+(572,302,0)
+(128,8,0)
+(20,47,0)
+(135,556,0)
+(567,556,0)
+(313,260,0)
+(362,50,0)
+(222,522,0)
+(408,28,0)
+(45,175,0)
+(201,543,0)
+(286,221,0)
+(13,11,0)
+(53,275,0)
+(74,79,0)
+(15,105,0)
+(547,37,0)
+(432,96,0)
+(487,90,0)
+(233,570,0)
+(137,67,0)
+(140,28,0)
+(323,133,0)
+(72,556,0)
+(103,263,0)
+(374,202,0)
+(297,441,0)
+(246,261,0)
+(73,333,0)
+(17,228,0)
+(480,250,0)
+(339,497,0)
+(202,132,0)
+(385,230,0)
+(48,277,0)
+(581,475,0)
+(538,342,0)
+(38,556,0)
+(380,105,0)
+(427,504,0)
+(503,86,0)
+(223,411,0)
+(554,476,0)
+(68,356,0)
+(253,556,0)
+(254,118,0)
+(220,161,0)
+(203,266,0)
+(293,542,0)
+(102,103,0)
+(560,277,0)
+(287,581,0)
+(227,122,0)
+(109,556,0)
+(283,117,0)
+(342,109,0)
+(285,556,0)
+(340,84,0)
+(418,507,0)
+(163,207,0)
+(134,71,0)
+(237,38,0)
+(287,512,0)
+(545,512,0)
+(429,377,0)
+(5,570,0)
+(308,290,0)
+(573,69,0)
+(367,149,0)
+(523,183,0)
+(262,39,0)
+(21,251,0)
+(103,365,0)
+(331,60,0)
+(391,139,0)
+(275,556,0)
+(364,519,0)
+(500,33,0)
+(79,0,0)
+(543,556,0)
+(294,324,0)
+(155,472,0)
+(437,93,0)
+(549,272,0)
+(294,12,0)
+(88,230,0)
+(305,262,0)
+(95,462,0)
+(406,37,0)
+(114,472,0)
+(117,230,0)
+(489,554,0)
+(92,269,0)
+(115,363,0)
+(542,37,0)
+(318,111,0)
+(422,105,0)
+(47,551,0)
+(484,377,0)
+(371,206,0)
+(389,117,0)
+(498,407,0)
+(170,433,0)
+(448,433,0)
+(540,586,0)
+(513,581,0)
+(208,441,0)
+(35,522,0)
+(457,139,0)
+(43,556,0)
+(453,28,0)
+(205,43,0)
+(297,33,0)
+(193,96,0)
+(475,581,0)
+(319,458,0)
+(470,109,0)
+(478,232,0)
+(465,324,0)
+(183,523,0)
+(314,556,0)
+(49,62,0)
+(354,88,0)
+(291,231,0)
+(399,15,0)
+(581,287,0)
+(502,245,0)
+(290,308,0)
+(218,475,0)
+(522,109,0)
+(540,342,0)
+(51,112,0)
+(377,484,0)
+(433,275,0)
+(353,269,0)
+(60,467,0)
+(279,52,0)
+(327,160,0)
+(382,471,0)
+(361,423,0)
+(179,275,0)
+(297,534,0)
+(207,275,0)
+(446,385,0)
+(184,87,0)
+(546,497,0)
+(110,175,0)
+(198,171,0)
+(289,69,0)
+(85,353,0)
+(368,108,0)
+(396,184,0)
+(54,87,0)
+(507,109,0)
+(356,68,0)
+(231,245,0)
+(238,88,0)
+(278,230,0)
+(551,263,0)
+(52,279,0)
+(514,123,0)
+(419,395,0)
+(568,277,0)
+(224,567,0)
+(367,324,0)
+(335,370,0)
+(154,566,0)
+(172,556,0)
+(533,587,0)
+(206,371,0)
+(438,533,0)
+(31,143,0)
+(117,248,0)
+(295,556,0)
+(581,246,0)
+(88,52,0)
+(181,160,0)
+(270,556,0)
+(64,559,0)
+(161,318,0)
+(262,305,0)
+(200,333,0)
+(499,22,0)
+(217,533,0)
+(543,443,0)
+(451,362,0)
+(455,177,0)
+(250,150,1)
+(206,11,1)
+(445,232,1)
+(363,22,1)
+(442,157,1)
+(292,45,1)
+(9,316,1)
+(543,201,1)
+(585,230,1)
+(79,74,1)
+(547,37,1)
+(307,109,1)
+(163,296,1)
+(239,168,1)
+(260,0,1)
+(305,262,1)
+(41,469,1)
+(389,283,1)
+(68,142,1)
+(213,109,1)
+(469,109,1)
+(153,584,1)
+(55,588,1)
+(406,23,1)
+(348,267,1)
+(145,275,1)
+(428,301,1)
+(382,435,1)
+(572,395,1)
+(427,271,1)
+(512,545,1)
+(344,535,1)
+(268,290,1)
+(166,46,1)
+(272,245,1)
+(430,400,1)
+(18,8,1)
+(470,109,1)
+(177,230,1)
+(239,254,1)
+(286,376,1)
+(44,589,1)
+(160,230,1)
+(239,55,1)
+(33,333,1)
+(406,37,1)
+(476,326,1)
+(548,474,1)
+(240,137,1)
+(290,308,1)
+(263,151,1)
+(465,77,1)
+(307,306,1)
+(421,546,1)
+(586,32,1)
+(268,38,1)
+(239,17,1)
+(420,482,1)
+(318,161,1)
+(294,12,1)
+(504,62,1)
+(271,37,1)
+(199,34,1)
+(29,166,1)
+(59,286,1)
+(493,272,1)
+(553,48,1)
+(366,57,1)
+(398,565,1)
+(11,544,1)
+(365,325,1)
+(28,425,1)
+(445,218,1)
+(115,140,1)
+(218,183,1)
+(157,454,1)
+(122,155,1)
+(109,370,1)
+(503,109,1)
+(241,313,1)
+(67,275,1)
+(354,443,1)
+(271,580,1)
+(464,344,1)
+(401,540,1)
+(25,197,1)
+(497,339,1)
+(403,378,1)
+(61,206,1)
+(462,569,1)
+(17,122,1)
+(108,368,1)
+(177,455,1)
+(277,148,1)
+(142,230,1)
+(294,324,1)
+(52,88,1)
+(188,42,1)
+(116,86,1)
+(329,278,1)
+(580,548,1)
+(252,585,1)
+(94,416,1)
+(297,265,1)
+(339,190,1)
+(22,499,1)
+(450,448,1)
+(510,312,1)
+(581,246,1)
+(148,109,1)
+(39,469,1)
+(143,276,1)
+(543,314,1)
+(423,563,1)
+(526,133,1)
+(217,3,1)
+(31,143,1)
+(112,51,1)
+(519,464,1)
+(560,552,1)
+(297,534,1)
+(119,199,1)
+(40,445,1)
+(408,502,1)
+(387,165,1)
+(546,62,1)
+(573,69,1)
+(468,477,1)
+(150,480,1)
+(18,294,1)
+(367,324,1)
+(549,437,1)
+(79,230,1)
+(266,445,1)
+(154,303,1)
+(246,95,1)
+(239,314,1)
+(429,484,1)
+(525,440,1)
+(80,208,1)
+(225,488,1)
+(179,44,1)
+(92,208,1)
+(550,160,1)
+(121,586,1)
+(54,184,1)
+(489,65,1)
+(302,395,1)
+(149,367,1)
+(433,537,1)
+(536,235,1)
+(540,121,1)
+(543,443,1)
+(276,550,1)
+(324,1,1)
+(385,446,1)
+(251,490,1)
+(64,452,1)
+(284,233,1)
+(90,242,1)
+(386,59,1)
+(161,109,1)
+(208,441,1)
+(218,475,1)
+(328,9,1)
+(123,274,1)
+(443,357,1)
+(395,109,1)
+(528,13,1)
+(587,379,1)
+(124,353,1)
+(533,438,1)
+(202,132,1)
+(411,223,1)
+(22,164,1)
+(60,331,1)
+(409,38,1)
+(239,61,1)
+(554,489,1)
+(136,80,1)
+(490,21,1)
+(413,350,1)
+(236,86,1)
+(213,413,1)
+(438,217,1)
+(515,426,1)
+(162,281,1)
+(232,478,1)
+(362,451,1)
+(397,91,1)
+(164,444,1)
+(185,529,1)
+(117,389,1)
+(82,218,1)
+(359,473,1)
+(157,230,1)
+(257,152,1)
+(502,245,1)
+(87,54,1)
+(172,345,1)
+(507,418,1)
+(289,351,1)
+(8,37,1)
+(538,250,1)
+(139,457,1)
+(384,158,1)
+(527,275,1)
+(400,305,1)
+(303,304,1)
+(12,129,1)
+(377,484,1)
+(89,495,1)
+(111,318,1)
+(545,183,1)
+(306,25,1)
+(239,89,1)
+(371,405,1)
+(503,381,1)
+(191,424,1)
+(564,88,1)
+(201,470,1)
+(314,257,1)
+(282,109,1)
+(212,112,1)
+(81,531,1)
+(168,433,1)
+(446,299,1)
+(105,15,1)
+(7,502,1)
+(523,463,1)
+(500,333,1)
+(447,171,1)
+(98,187,1)
+(416,363,1)
+(466,8,1)
+(522,109,1)
+(377,429,1)
+(110,144,1)
+(93,517,1)
+(231,113,1)
+(133,323,1)
+(8,128,1)
+(85,269,1)
+(208,221,1)
+(459,577,1)
+(453,408,1)
+(47,20,1)
+(77,12,1)
+(34,241,1)
+(67,562,1)
+(274,60,1)
+(34,149,1)
+(463,404,1)
+(296,414,1)
+(431,406,1)
+(71,110,1)
+(224,169,1)
+(69,289,1)
+(579,567,1)
+(313,260,1)
+(258,561,1)
+(405,587,1)
+(558,35,1)
+(333,200,1)
+(543,232,1)
+(320,172,1)
+(276,160,1)
+(197,559,1)
+(433,275,1)
+(404,230,1)
+(28,453,1)
+(457,391,1)
+(277,180,1)
+(472,467,1)
+(282,330,1)
+(211,214,1)
+(410,27,1)
+(237,290,1)
+(482,279,1)
+(581,513,1)
+(452,410,1)
+(291,425,1)
+(298,288,1)
+(65,459,1)
+(160,327,1)
+(505,226,1)
+(141,392,1)
+(237,71,1)
+(35,522,1)
+(278,359,1)
+(154,62,1)
+(0,256,1)
+(184,109,1)
+(156,243,1)
+(582,466,1)
+(310,133,1)
+(356,109,1)
+(11,13,1)
+(432,337,1)
+(24,401,1)
+(420,279,1)
+(585,81,1)
+(477,521,1)
+(376,551,1)
+(71,290,1)
+(223,239,1)
+(573,386,1)
+(541,423,1)
+(264,157,1)
+(499,164,1)
+(404,428,1)
+(563,159,1)
+(414,230,1)
+(164,432,1)
+(481,264,1)
+(576,419,1)
+(578,532,1)
+(587,533,1)
+(114,491,1)
+(175,230,1)
+(190,252,1)
+(471,467,1)
+(323,18,1)
+(509,411,1)
+(39,41,1)
+(454,19,1)
+(73,188,1)
+(0,79,1)
+(326,202,1)
+(202,214,1)
+(38,483,1)
+(480,116,1)
+(571,518,1)
+(551,263,1)
+(309,111,1)
+(317,514,1)
+(297,33,1)
+(432,111,1)
+(567,224,1)
+(227,403,1)
+(395,576,1)
+(456,207,1)
+(28,324,1)
+(262,31,1)
+(441,297,1)
+(23,310,1)
+(287,512,1)
+(451,34,1)
+(133,37,1)
+(235,37,1)
+(250,480,1)
+(507,109,1)
+(171,230,1)
+(415,547,1)
+(521,108,1)
+(374,284,1)
+(110,175,1)
+(122,275,1)
+(269,230,1)
+(299,507,1)
+(171,198,1)
+(469,412,1)
+(259,98,1)
+(473,49,1)
+(399,515,1)
+(418,348,1)
+(588,197,1)
+(266,203,1)
+(424,411,1)
+(15,30,1)
+(331,501,1)
+(367,332,1)
+(170,450,1)
+(29,230,1)
+(444,115,1)
+(102,209,1)
+(305,98,1)
+(552,467,1)
+(275,101,1)
+(447,146,1)
+(162,422,1)
+(36,271,1)
+(88,230,1)
+(316,69,1)
+(337,309,1)
+(242,109,1)
+(517,104,1)
+(584,352,1)
+(351,78,1)
+(474,235,1)
+(511,280,1)
+(422,105,1)
+(113,338,1)
+(21,420,1)
+(327,181,1)
+(316,366,1)
+(209,365,1)
+(16,396,1)
+(335,178,1)
+(475,581,1)
+(45,134,1)
+(44,109,1)
+(89,277,1)
+(168,236,1)
+(396,149,1)
+(205,377,1)
+(56,64,1)
+(302,572,1)
+(129,582,1)
+(448,236,1)
+(495,515,1)
+(325,558,1)
+(78,365,1)
+(472,114,1)
+(265,33,1)
+(4,547,1)
+(180,174,1)
+(201,424,1)
+(288,436,1)
+(233,94,1)
+(115,432,1)
+(47,551,1)
+(184,16,1)
+(91,560,1)
+(478,82,1)
+(175,292,1)
+(4,534,1)
+(353,85,1)
+(523,404,1)
+(304,566,1)
+(352,394,1)
+(250,467,1)
+(379,533,1)
+(139,467,1)
+(134,456,1)
+(283,374,1)
+(542,322,1)
+(501,317,1)
+(491,227,1)
+(264,442,1)
+(19,237,1)
+(308,37,1)
+(136,221,1)
+(58,117,1)
+(330,510,1)
+(445,177,1)
+(167,290,1)
+(279,52,1)
+(513,287,1)
+(547,511,1)
+(202,374,1)
+(251,37,1)
+(55,27,1)
+(167,406,1)
+(370,335,1)
+(117,230,1)
+(4,449,1)
+(437,93,1)
+(350,138,1)
+(484,329,1)
+(144,175,1)
+(559,56,1)
+(3,50,1)
+(204,476,1)
+(388,421,1)
+(546,585,1)
+(248,58,1)
+(158,487,1)
+(411,230,1)
+(225,507,1)
+(521,275,1)
+(101,53,1)
+(148,397,1)
+(583,87,1)
+(203,40,1)
+(239,479,1)
+(508,6,1)
+(9,136,1)
+(50,362,1)
+(155,472,1)
+(263,103,1)
+(412,259,1)
+(1,145,1)
+(244,142,1)
+(214,248,1)
+(381,496,1)
+(569,398,1)
+(455,125,1)
+(151,103,1)
+(198,211,1)
+(393,274,1)
+(462,398,1)
+(174,148,1)
+(103,102,1)
+(370,275,1)
+(42,221,1)
+(375,92,1)
+(87,184,1)
+(459,363,1)
+(529,494,1)
+(161,220,1)
+(241,87,1)
+(537,471,1)
+(512,62,1)
+(562,240,1)
+(527,167,1)
+(502,273,1)
+(496,225,1)
+(483,579,1)
+(566,216,1)
+(95,462,1)
+(333,230,1)
+(103,365,1)
+(321,210,1)
+(51,505,1)
+(189,278,1)
+(262,39,1)
+(278,230,1)
+(349,251,1)
+(568,495,1)
+(515,363,1)
+(169,62,1)
+(561,244,1)
+(205,47,1)
+(391,106,1)
+(449,415,1)
+(589,185,1)
+(220,119,1)
+(394,487,1)
+(15,230,1)
+(237,456,1)
+(100,538,1)
+(308,387,1)
+(544,534,1)
+(140,28,1)
+(235,468,1)
+(479,24,1)
+(310,4,1)
+(187,534,1)
+(12,37,1)
+(398,120,1)
+(74,583,1)
+(449,534,1)
+(93,245,1)
+(106,486,1)
+(540,586,1)
+(280,526,1)
+(206,371,1)
+(269,375,1)
+(200,73,1)
+(248,117,1)
+(32,342,1)
+(552,107,1)
+(205,162,1)
+(493,245,1)
+(71,38,1)
+(581,287,1)
+(142,388,1)
+(425,578,1)
+(540,342,1)
+(488,385,1)
+(181,39,1)
+(426,140,1)
+(334,68,1)
+(60,467,1)
+(49,213,1)
+(402,541,1)
+(487,90,1)
+(46,527,1)
+(424,268,1)
+(368,542,1)
+(392,393,1)
+(565,120,1)
+(156,124,1)
+(435,170,1)
+(216,66,1)
+(380,15,1)
+(268,481,1)
+(203,109,1)
+(239,384,1)
+(47,69,1)
+(182,136,1)
+(362,62,1)
+(125,225,1)
+(205,206,1)
+(554,476,1)
+(427,504,1)
+(311,156,1)
+(522,383,1)
+(521,542,1)
+(291,231,1)
+(300,371,1)
+(573,551,1)
+(486,527,1)
+(293,349,1)
+(518,522,1)
+(20,311,1)
+(272,549,1)
+(542,37,1)
+(301,154,1)
+(254,210,1)
+(294,465,1)
+(152,43,1)
+(52,564,1)
+(120,230,1)
+(322,293,1)
+(105,380,1)
+(35,571,1)
+(243,124,1)
+(414,360,1)
+(254,179,1)
+(49,62,1)
+(104,373,1)
+(43,282,1)
+(277,324,1)
+(566,230,1)
+(364,519,1)
+(277,425,1)
+(459,204,1)
+(66,246,1)
+(297,221,1)
+(353,269,1)
+(3,302,1)
+(86,503,1)
+(222,153,1)
+(154,566,1)
+(384,67,1)
+(128,536,1)
+(108,275,1)
+(588,307,1)
+(138,3,1)
+(477,251,1)
+(256,79,1)
+(535,390,1)
+(207,275,1)
+(208,42,1)
+(267,298,1)
+(504,36,1)
+(424,237,1)
+(345,29,1)
+(329,189,1)
+(226,177,1)
+(341,409,1)
+(178,320,1)
+(514,24,1)
+(255,212,1)
+(165,431,1)
+(137,158,1)
+(378,266,1)
+(30,399,1)
+(312,205,1)
+(20,376,1)
+(373,291,1)
+(385,230,1)
+(141,109,1)
+(361,554,1)
+(342,109,1)
+(360,509,1)
+(281,422,1)
+(159,361,1)
+(364,543,1)
+(6,324,1)
+(221,573,1)
+(544,528,1)
+(289,78,1)
+(376,69,1)
+(13,300,1)
+(298,230,1)
+(479,123,1)
+(356,258,1)
+(357,341,1)
+(53,425,1)
+(436,109,1)
+(489,363,1)
+(179,275,1)
+(68,356,1)
+(210,47,1)
+(27,49,1)
+(277,560,1)
+(440,534,1)
+(78,328,1)
+(419,50,1)
+(62,525,1)
+(132,447,1)
+(107,553,1)
+(95,112,1)
+(207,414,1)
+(48,568,1)
+(214,315,1)
+(437,291,1)
+(57,182,1)
+(533,230,1)
+(342,100,1)
+(427,62,1)
+(546,497,1)
+(207,163,1)
+(390,139,1)
+(187,334,1)
+(332,305,1)
+(123,141,1)
+(531,401,1)
+(120,255,1)
+(338,7,1)
+(534,508,1)
+(559,467,1)
+(383,222,1)
+(13,324,1)
+(242,430,1)
+(237,38,1)
+(245,402,1)
+(88,238,1)
+(470,191,1)
+(494,321,1)
+(554,459,1)
+(17,266,1)
+(465,324,1)
+(231,245,1)
+(497,109,1)
+(183,523,1)
+(238,354,1)
+(471,382,1)
+(316,551,1)
+(146,171,1)
+(33,500,1)
+(273,493,1)
+(536,427,1)
+(338,502,2)
+(318,34,2)
+(108,275,2)
+(456,411,2)
+(241,149,2)
+(316,69,2)
+(332,305,2)
+(48,495,2)
+(512,183,2)
+(12,8,2)
+(588,307,2)
+(333,42,2)
+(87,149,2)
+(277,425,2)
+(322,251,2)
+(314,515,2)
+(307,109,2)
+(13,324,2)
+(381,225,2)
+(427,235,2)
+(473,49,2)
+(507,527,2)
+(139,527,2)
+(466,8,2)
+(471,467,2)
+(197,559,2)
+(449,133,2)
+(181,39,2)
+(152,206,2)
+(362,34,2)
+(412,98,2)
+(202,132,2)
+(377,484,2)
+(154,62,2)
+(235,37,2)
+(510,49,2)
+(233,363,2)
+(33,42,2)
+(182,136,2)
+(370,527,2)
+(233,94,2)
+(589,210,2)
+(122,275,2)
+(398,177,2)
+(12,37,2)
+(80,208,2)
+(469,109,2)
+(563,363,2)
+(67,275,2)
+(42,376,2)
+(218,475,2)
+(154,177,2)
+(156,208,2)
+(225,527,2)
+(92,208,2)
+(17,225,2)
+(177,230,2)
+(214,315,2)
+(453,363,2)
+(172,345,2)
+(269,230,2)
+(267,298,2)
+(413,3,2)
+(503,109,2)
+(95,462,2)
+(325,487,2)
+(502,502,2)
+(198,363,2)
+(256,87,2)
+(95,177,2)
+(404,230,2)
+(429,49,2)
+(302,50,2)
+(342,109,2)
+(522,109,2)
+(120,177,2)
+(211,363,2)
+(455,225,2)
+(305,262,2)
+(542,37,2)
+(3,302,2)
+(488,507,2)
+(107,495,2)
+(316,551,2)
+(294,324,2)
+(443,357,2)
+(470,109,2)
+(342,86,2)
+(177,225,2)
+(263,487,2)
+(303,177,2)
+(22,34,2)
+(546,62,2)
+(282,206,2)
+(296,411,2)
+(487,90,2)
+(237,411,2)
+(521,251,2)
+(206,11,2)
+(244,401,2)
+(35,522,2)
+(418,527,2)
+(494,210,2)
+(221,573,2)
+(360,411,2)
+(489,363,2)
+(274,24,2)
+(257,515,2)
+(383,487,2)
+(549,502,2)
+(349,251,2)
+(558,487,2)
+(300,371,2)
+(161,109,2)
+(421,401,2)
+(122,155,2)
+(297,534,2)
+(115,34,2)
+(435,236,2)
+(45,456,2)
+(125,225,2)
+(282,109,2)
+(122,266,2)
+(329,49,2)
+(472,467,2)
+(366,136,2)
+(551,487,2)
+(105,15,2)
+(401,540,2)
+(46,527,2)
+(394,487,2)
+(69,289,2)
+(34,149,2)
+(50,34,2)
+(132,447,2)
+(374,363,2)
+(60,24,2)
+(255,177,2)
+(175,456,2)
+(497,109,2)
+(98,187,2)
+(250,467,2)
+(179,44,2)
+(112,177,2)
+(246,95,2)
+(140,363,2)
+(445,225,2)
+(509,411,2)
+(150,86,2)
+(223,527,2)
+(271,37,2)
+(499,34,2)
+(58,363,2)
+(469,98,2)
+(156,124,2)
+(201,527,2)
+(138,3,2)
+(139,467,2)
+(361,363,2)
+(263,103,2)
+(49,213,2)
+(478,218,2)
+(377,49,2)
+(43,47,2)
+(252,401,2)
+(370,275,2)
+(109,527,2)
+(155,266,2)
+(569,177,2)
+(158,487,2)
+(220,34,2)
+(212,177,2)
+(580,235,2)
+(28,363,2)
+(86,225,2)
+(294,8,2)
+(438,3,2)
+(43,282,2)
+(185,210,2)
+(367,305,2)
+(388,401,2)
+(452,27,2)
+(243,208,2)
+(493,502,2)
+(281,515,2)
+(110,456,2)
+(313,260,2)
+(543,314,2)
+(24,401,2)
+(437,502,2)
+(311,208,2)
+(411,527,2)
+(77,8,2)
+(519,527,2)
+(588,27,2)
+(379,3,2)
+(31,143,2)
+(143,276,2)
+(231,245,2)
+(121,86,2)
+(573,376,2)
+(497,401,2)
+(427,504,2)
+(403,266,2)
+(387,406,2)
+(136,208,2)
+(543,232,2)
+(309,34,2)
+(457,527,2)
+(428,177,2)
+(444,34,2)
+(178,527,2)
+(79,87,2)
+(11,371,2)
+(171,363,2)
+(191,424,2)
+(22,164,2)
+(546,401,2)
+(71,38,2)
+(291,231,2)
+(562,158,2)
+(454,237,2)
+(163,411,2)
+(554,363,2)
+(277,560,2)
+(320,527,2)
+(155,472,2)
+(362,62,2)
+(73,42,2)
+(510,515,2)
+(113,502,2)
+(114,266,2)
+(160,230,2)
+(294,12,2)
+(416,363,2)
+(86,503,2)
+(51,177,2)
+(537,471,2)
+(493,363,2)
+(94,363,2)
+(183,523,2)
+(271,235,2)
+(90,242,2)
+(389,363,2)
+(286,376,2)
+(365,487,2)
+(480,86,2)
+(448,236,2)
+(28,425,2)
+(227,266,2)
+(560,552,2)
+(123,141,2)
+(108,251,2)
+(115,140,2)
+(352,487,2)
+(277,324,2)
+(35,571,2)
+(154,566,2)
+(199,34,2)
+(153,487,2)
+(174,495,2)
+(264,157,2)
+(510,47,2)
+(316,136,2)
+(548,235,2)
+(159,363,2)
+(91,495,2)
+(423,563,2)
+(79,230,2)
+(141,24,2)
+(432,111,2)
+(162,515,2)
+(132,363,2)
+(260,0,2)
+(166,527,2)
+(44,210,2)
+(390,139,2)
+(57,136,2)
+(306,27,2)
+(437,291,2)
+(214,248,2)
+(179,210,2)
+(359,49,2)
+(565,177,2)
+(385,507,2)
+(82,218,2)
+(106,527,2)
+(268,237,2)
+(44,109,2)
+(205,206,2)
+(265,42,2)
+(290,308,2)
+(375,208,2)
+(203,109,2)
+(513,287,2)
+(109,370,2)
+(142,401,2)
+(197,27,2)
+(442,237,2)
+(423,363,2)
+(117,230,2)
+(514,24,2)
+(431,406,2)
+(81,401,2)
+(314,206,2)
+(411,230,2)
+(404,177,2)
+(462,177,2)
+(436,527,2)
+(52,88,2)
+(0,87,2)
+(462,398,2)
+(499,140,2)
+(164,432,2)
+(422,515,2)
+(218,177,2)
+(301,177,2)
+(134,456,2)
+(41,98,2)
+(588,197,2)
+(232,218,2)
+(447,363,2)
+(321,210,2)
+(426,140,2)
+(4,133,2)
+(250,480,2)
+(287,512,2)
+(7,502,2)
+(470,424,2)
+(538,86,2)
+(152,515,2)
+(262,39,2)
+(25,27,2)
+(586,86,2)
+(257,49,2)
+(414,411,2)
+(313,87,2)
+(399,515,2)
+(267,527,2)
+(34,305,2)
+(241,313,2)
+(367,324,2)
+(318,161,2)
+(152,47,2)
+(546,585,2)
+(149,367,2)
+(133,37,2)
+(15,230,2)
+(398,120,2)
+(476,363,2)
+(124,353,2)
+(68,142,2)
+(264,237,2)
+(432,34,2)
+(149,305,2)
+(317,24,2)
+(544,534,2)
+(251,37,2)
+(136,221,2)
+(240,158,2)
+(450,236,2)
+(430,305,2)
+(29,527,2)
+(162,422,2)
+(337,34,2)
+(268,290,2)
+(368,251,2)
+(427,271,2)
+(151,487,2)
+(486,527,2)
+(495,515,2)
+(213,3,2)
+(559,27,2)
+(585,401,2)
+(415,133,2)
+(206,371,2)
+(66,177,2)
+(393,24,2)
+(554,489,2)
+(29,230,2)
+(554,459,2)
+(400,305,2)
+(67,158,2)
+(218,183,2)
+(50,362,2)
+(546,497,2)
+(540,86,2)
+(465,324,2)
+(68,401,2)
+(544,13,2)
+(511,133,2)
+(528,13,2)
+(3,34,2)
+(291,502,2)
+(540,342,2)
+(282,49,2)
+(90,305,2)
+(237,71,2)
+(88,230,2)
+(535,390,2)
+(56,27,2)
+(465,8,2)
+(414,230,2)
+(551,263,2)
+(9,208,2)
+(152,49,2)
+(32,86,2)
+(190,401,2)
+(378,266,2)
+(584,487,2)
+(330,47,2)
+(49,3,2)
+(395,50,2)
+(200,42,2)
+(481,237,2)
+(297,42,2)
+(552,495,2)
+(571,487,2)
+(8,37,2)
+(424,527,2)
+(484,329,2)
+(277,148,2)
+(104,502,2)
+(280,133,2)
+(550,39,2)
+(474,235,2)
+(475,183,2)
+(396,149,2)
+(30,515,2)
+(248,117,2)
+(540,586,2)
+(330,515,2)
+(314,47,2)
+(282,47,2)
+(241,87,2)
+(11,544,2)
+(339,401,2)
+(449,534,2)
+(380,515,2)
+(302,395,2)
+(496,225,2)
+(427,62,2)
+(405,3,2)
+(537,236,2)
+(207,414,2)
+(529,210,2)
+(236,86,2)
+(31,39,2)
+(43,515,2)
+(3,50,2)
+(257,47,2)
+(351,208,2)
+(289,208,2)
+(541,363,2)
+(260,87,2)
+(19,237,2)
+(189,49,2)
+(129,8,2)
+(293,251,2)
+(59,376,2)
+(297,221,2)
+(335,527,2)
+(353,269,2)
+(55,49,2)
+(20,487,2)
+(545,183,2)
+(146,363,2)
+(384,487,2)
+(148,109,2)
+(268,38,2)
+(105,515,2)
+(68,356,2)
+(581,246,2)
+(103,487,2)
+(526,133,2)
+(464,527,2)
+(110,175,2)
+(298,527,2)
+(364,543,2)
+(93,245,2)
+(531,401,2)
+(326,363,2)
+(93,502,2)
+(408,363,2)
+(353,208,2)
+(547,133,2)
+(547,37,2)
+(164,140,2)
+(441,42,2)
+(246,177,2)
+(472,266,2)
+(391,527,2)
+(298,230,2)
+(78,208,2)
+(278,230,2)
+(65,363,2)
+(518,487,2)
+(447,171,2)
+(187,401,2)
+(521,542,2)
+(47,551,2)
+(87,184,2)
+(382,236,2)
+(36,235,2)
+(307,27,2)
+(43,49,2)
+(217,3,2)
+(272,245,2)
+(269,208,2)
+(257,206,2)
+(184,109,2)
+(208,376,2)
+(214,363,2)
+(254,47,2)
+(356,109,2)
+(406,37,2)
+(180,495,2)
+(54,149,2)
+(581,287,2)
+(401,86,2)
+(47,69,2)
+(172,527,2)
+(371,405,2)
+(543,527,2)
+(512,62,2)
+(205,49,2)
+(433,537,2)
+(299,507,2)
+(203,445,2)
+(207,275,2)
+(420,279,2)
+(433,236,2)
+(242,109,2)
+(123,274,2)
+(60,467,2)
+(363,22,2)
+(11,13,2)
+(33,333,2)
+(552,467,2)
+(71,456,2)
+(259,98,2)
+(111,318,2)
+(345,527,2)
+(273,363,2)
+(576,50,2)
+(85,208,2)
+(39,98,2)
+(276,39,2)
+(208,441,2)
+(278,49,2)
+(276,160,2)
+(175,230,2)
+(262,31,2)
+(327,39,2)
+(272,502,2)
+(560,495,2)
+(210,47,2)
+(207,411,2)
+(262,98,2)
+(28,324,2)
+(289,78,2)
+(515,34,2)
+(78,365,2)
+(572,50,2)
+(312,206,2)
+(231,502,2)
+(573,551,2)
+(13,371,2)
+(561,401,2)
+(330,49,2)
+(535,527,2)
+(143,39,2)
+(308,37,2)
+(441,297,2)
+(222,487,2)
+(491,266,2)
+(225,488,2)
+(331,24,2)
+(487,305,2)
+(205,47,2)
+(205,515,2)
+(69,208,2)
+(521,275,2)
+(568,495,2)
+(405,587,2)
+(157,237,2)
+(587,533,2)
+(312,515,2)
+(202,214,2)
+(446,507,2)
+(507,109,2)
+(160,39,2)
+(297,33,2)
+(344,527,2)
+(170,236,2)
+(386,376,2)
+(521,108,2)
+(501,24,2)
+(402,363,2)
+(314,49,2)
+(371,3,2)
+(433,275,2)
+(522,487,2)
+(587,3,2)
+(294,465,2)
+(34,241,2)
+(523,177,2)
+(581,183,2)
+(171,230,2)
+(334,401,2)
+(61,206,2)
+(188,42,2)
+(475,581,2)
+(250,86,2)
+(266,225,2)
+(216,177,2)
+(279,52,2)
+(39,469,2)
+(49,62,2)
+(488,385,2)
+(502,363,2)
+(225,507,2)
+(89,515,2)
+(144,456,2)
+(533,3,2)
+(363,34,2)
+(348,267,2)
+(308,406,2)
+(4,534,2)
+(395,109,2)
+(288,527,2)
+(419,50,2)
+(305,401,2)
+(242,305,2)
+(64,27,2)
+(237,290,2)
+(517,502,2)
+(364,519,2)
+(111,34,2)
+(459,577,2)
+(397,495,2)
+(312,47,2)
+(184,149,2)
+(161,34,2)
+(304,177,2)
+(503,225,2)
+(437,93,2)
+(165,406,2)
+(345,29,2)
+(204,363,2)
+(523,404,2)
+(542,251,2)
+(157,230,2)
+(179,275,2)
+(527,275,2)
+(356,401,2)
+(141,109,2)
+(350,3,2)
+(287,183,2)
+(245,363,2)
+(484,49,2)
+(471,236,2)
+(15,515,2)
+(202,363,2)
+(47,487,2)
+(137,158,2)
+(117,363,2)
+(102,487,2)
+(40,445,2)
+(566,230,2)
+(533,230,2)
+(273,502,2)
+(504,62,2)
+(410,27,2)
+(459,363,2)
+(554,476,2)
+(463,177,2)
+(35,487,2)
+(390,527,2)
+(213,109,2)
+(553,495,2)
+(239,527,2)
+(187,534,2)
+(328,208,2)
+(385,230,2)
+(168,86,2)
+(312,49,2)
+(148,495,2)
+(373,502,2)
+(504,235,2)
+(582,8,2)
+(226,177,2)
+(100,86,2)
+(376,208,2)
+(95,112,2)
+(43,206,2)
+(505,177,2)
+(444,140,2)
+(208,221,2)
+(221,376,2)
+(202,374,2)
+(559,467,2)
+(451,34,2)
+(305,98,2)
+(376,487,2)
+(4,449,2)
+(543,443,2)
+(510,206,2)
+(116,86,2)
+(124,208,2)
+(282,515,2)
+(266,203,2)
+(573,69,2)
+(209,487,2)
+(164,34,2)
+(479,401,2)
+(566,177,2)
+(348,527,2)
+(292,456,2)
+(585,230,2)
+(123,24,2)
+(274,60,2)
+(392,24,2)
+(422,105,2)
+(283,363,2)
+(140,28,2)
+(103,365,2)
+(290,406,2)
+(119,34,2)
+(500,42,2)
+(120,230,2)
+(206,3,2)
+(583,87,2)
+(284,363,2)
+(4,547,2)
+(502,245,2)
+(330,206,2)
+(291,425,2)
+(71,110,2)
+(333,230,2)
+(237,38,2)
+(329,278,2)
+(22,140,2)
+(27,49,2)
+(71,290,2)
+(142,230,2)
+(16,149,2)
+(74,87,2)
+(0,79,2)
+(277,495,2)
+(363,140,2)
+(248,363,2)
+(258,401,2)
+(183,177,2)
+(98,401,2)
+-----------------------------------
+(0,iaxs[callno]->challenge)
+(1,"")
+(2,if (ies->refresh)
+(3,!ast_strlen_zero(secret)
+(4,ast_copy_string(rsasecret, ies->rsa_result, sizeof(rsasecret)
+(5,if (!strcasecmp(requeststr, md5secret)
+(6,rsasecret)
+(7,requeststr)
+(8,ies->md5_result)
+(9,keyn)
+(10,)
+(11,ast_strlen_zero(md5secret)
+(12,ies->md5_result)
+(13,ast_strlen_zero(md5secret)
+(14,requeststr)
+(15,iaxs[callno])
+(16,authmethods)
+(17,goto return_unref;)
+(18,ies)
+(19,iaxs)
+(20,keyn)
+(21,ies)
+(22,strsep(&stringp, ";")
+(23,refresh)
+(24,authdebug)
+(25,p)
+(26,)
+(27,authdebug)
+(28,strcasecmp(requeststr, md5secret)
+(29,iaxsl[callno])
+(30,callno)
+(31,!ast_strlen_zero(iaxs[callno]->challenge)
+(32,addr)
+(33,iaxs[callno]->challenge)
+(34,!ast_strlen_zero(md5secret)
+(35,ast_copy_string(tmpkeys, p->inkeys, sizeof(tmpkeys)
+(36,secret)
+(37,struct iax_ies *ies)
+(38,expire = 0)
+(39,p->authmethods & IAX_AUTH_RSA)
+(40,p)
+(41,IAX_AUTH_RSA)
+(42,key)
+(43,ast_devstate_changed(AST_DEVICE_UNKNOWN, "IAX2/%s", p->name)
+(44,p->inkeys)
+(45,iaxs)
+(46,iaxsl)
+(47,!keyn)
+(48,"Host %s failed MD5 authentication for \'%s\' (%s != %s)
+(49,strcmp(secret, p->secret)
+(50,!ast_strlen_zero(secret)
+(51,IAX_AUTH_PLAINTEXT)
+(52,iaxs[callno]->state)
+(53,peer)
+(54,IAX_AUTH_MD5)
+(55,goto return_unref;)
+(56,sin_addr)
+(57,"requested inkey \'%s\' does not exist\\n")
+(58,challenge)
+(59,keyn)
+(60,sin->sin_addr)
+(61,goto return_unref;)
+(62,secret[256] = "")
+(63,)
+(64,sin)
+(65,tmppw)
+(66,iaxs)
+(67,ast_log(LOG_NOTICE, "Host \'%s\' trying to do RSA authentication, but we have no inkeys\\n", peer)
+(68,ast_string_field_set(iaxs[callno], inkeys, p->inkeys)
+(69,keyn = strsep(&stringp, ":")
+(70,for (x=0;x<16;x++)
+(71,expire < iaxs[callno]->expiry)
+(72,rsasecret)
+(73,iaxs)
+(74,callno)
+(75,)
+(76,if (tmppw)
+(77,md5secret)
+(78,&stringp)
+(79,iaxs[callno])
+(80,key)
+(81,callno)
+(82,res)
+(83,)
+(84,)
+(85,state)
+(86,!ast_test_flag64(p, IAX_DYNAMIC)
+(87,p->authmethods & IAX_AUTH_MD5)
+(88,iaxs[callno])
+(89,goto return_unref;)
+(90,ast_strlen_zero(p->inkeys)
+(91,p)
+(92,iaxs)
+(93,digest[x])
+(94,&md5)
+(95,(last_authmethod & IAX_AUTH_PLAINTEXT)
+(96,)
+(97,tmppw)
+(98,!ast_strlen_zero(rsasecret)
+(99,if (authdebug)
+(100,acl)
+(101,"")
+(102,stringp)
+(103,&stringp)
+(104,digest)
+(105,iaxs[callno]->state)
+(106,"Empty registration from %s\\n")
+(107,sin_addr)
+(108,sizeof(peer)
+(109,p = find_peer(peer, 1)
+(110,iaxs[callno]->expiry)
+(111,tmppw = ast_strdupa(p->secret)
+(112,last_authmethod & IAX_AUTH_PLAINTEXT)
+(113,1)
+(114,sin_addr)
+(115,tmppw)
+(116,addr)
+(117,iaxs[callno])
+(118,)
+(119,p)
+(120,iaxs[callno])
+(121,"IAX2 Peer ACL: ")
+(122,ast_log(LOG_NOTICE, "No registration for peer \'%s\' (from %s)
+(123,ast_log(LOG_NOTICE, "Host %s denied access to register peer \'%s\'\\n", ast_inet_ntoa(sin->sin_addr)
+(124,&iaxs[callno]->state)
+(125,iaxs)
+(126,if (authdebug && !p)
+(127,if (iaxs[callno])
+(128,md5_result)
+(129,md5_result)
+(130,)
+(131,if (!ast_apply_acl(p->acl, &addr, "IAX2 Peer ACL: ")
+(132,strlen(iaxs[callno]->challenge)
+(133,ies->rsa_result)
+(134,expire)
+(135,p)
+(136,!key)
+(137,LOG_NOTICE)
+(138,secret)
+(139,sin->sin_addr)
+(140,!strcasecmp(requeststr, md5secret)
+(141,p->name)
+(142,iaxs[callno])
+(143,ast_strlen_zero(iaxs[callno]->challenge)
+(144,expiry)
+(145,md5secret)
+(146,challenge)
+(147,)
+(148,p->name)
+(149,!ast_strlen_zero(md5secret)
+(150,sin)
+(151,":")
+(152,res)
+(153,tmpkeys)
+(154,ast_string_field_set(iaxs[callno], secret, "badsecret")
+(155,ast_inet_ntoa(sin->sin_addr)
+(156,ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED)
+(157,iaxs[callno])
+(158,authdebug)
+(159,md5)
+(160,iaxs[callno])
+(161,p->secret)
+(162,ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED)
+(163,peer)
+(164,&stringp)
+(165,ies)
+(166,callno)
+(167,peer)
+(168,goto return_unref;)
+(169,p)
+(170,peer)
+(171,iaxs[callno])
+(172,ast_mutex_unlock(&iaxsl[callno])
+(173,tmpkeys)
+(174,requeststr)
+(175,iaxs[callno])
+(176,if (!ast_strlen_zero(p->inkeys)
+(177,iaxs[callno])
+(178,peer)
+(179,ast_log(LOG_NOTICE, "Host %s failed RSA authentication with inkeys \'%s\'\\n", peer, p->inkeys)
+(180,md5secret)
+(181,iaxs)
+(182,LOG_WARNING)
+(183,ast_strlen_zero(iaxs[callno]->challenge)
+(184,p->authmethods)
+(185,p)
+(186,)
+(187,ast_strlen_zero(rsasecret)
+(188,key)
+(189,state)
+(190,p)
+(191,p)
+(192,if (p)
+(193,digest)
+(194,md5secret)
+(195,keyn)
+(196,if (ies->username)
+(197,ast_inet_ntoa(sin->sin_addr)
+(198,callno)
+(199,tmppw)
+(200,callno)
+(201,res)
+(202,MD5Update(&md5, (unsigned char *)
+(203,!p)
+(204,tmppw)
+(205,AST_DEVICE_UNKNOWN)
+(206,!ast_strlen_zero(iaxs[callno]->challenge)
+(207,ast_string_field_set(iaxs[callno], peer, peer)
+(208,key && !ast_check_signature(key, iaxs[callno]->challenge, rsasecret)
+(209,keyn)
+(210,authdebug)
+(211,iaxs)
+(212,iaxs)
+(213,p->secret)
+(214,(unsigned char *)
+(215,stringp)
+(216,callno)
+(217,iaxs)
+(218,ast_strlen_zero(iaxs[callno]->challenge)
+(219,if (ies->rsa_result)
+(220,secret)
+(221,key = ast_key_get(keyn, AST_KEY_PUBLIC)
+(222,p)
+(223,callno)
+(224,NULL)
+(225,!p || !iaxs[callno])
+(226,plaintext)
+(227,peer)
+(228,)
+(229,while(keyn)
+(230,int callno)
+(231,x << 1)
+(232,res = 0)
+(233,MD5Init(&md5)
+(234,if (!ast_test_flag64(p, IAX_DYNAMIC)
+(235,ies->password)
+(236,authdebug)
+(237,expire && (expire < iaxs[callno]->expiry)
+(238,callno)
+(239,iaxs)
+(240,"Host \'%s\' trying to do RSA authentication, but we have no inkeys\\n")
+(241,(p->authmethods & IAX_AUTH_MD5)
+(242,p->inkeys)
+(243,IAX_STATE_AUTHENTICATED)
+(244,inkeys)
+(245,x=0)
+(246,plaintext = ((last_authmethod & IAX_AUTH_PLAINTEXT)
+(247,if (iaxs[callno])
+(248,iaxs[callno]->challenge)
+(249,if (strcmp(secret, p->secret)
+(250,ast_sockaddr_from_sin(&addr, sin)
+(251,ies->username)
+(252,secret)
+(253,addr)
+(254,goto return_unref;)
+(255,callno)
+(256,challenge)
+(257,0)
+(258,inkeys)
+(259,p)
+(260,ast_strlen_zero(iaxs[callno]->challenge)
+(261,)
+(262,(p->authmethods & IAX_AUTH_RSA)
+(263,strsep(&stringp, ":")
+(264,iaxs[callno]->expiry)
+(265,rsasecret)
+(266,authdebug && !p)
+(267,&iaxsl[callno])
+(268,iaxs[callno]->expiry = expire)
+(269,iaxs[callno])
+(270,peer)
+(271,ies->password)
+(272,x++)
+(273,16)
+(274,ast_inet_ntoa(sin->sin_addr)
+(275,peer[256] = "")
+(276,iaxs[callno]->challenge)
+(277,ast_log(LOG_NOTICE, "Host %s failed MD5 authentication for \'%s\' (%s != %s)
+(278,iaxs[callno])
+(279,&iaxs[callno]->state)
+(280,ies)
+(281,IAX_STATE_AUTHENTICATED)
+(282,p->name)
+(283,iaxs)
+(284,md5)
+(285,return_unref:)
+(286,key)
+(287,!ast_strlen_zero(secret)
+(288,callno)
+(289,strsep(&stringp, ":")
+(290,expire = ies->refresh)
+(291,requeststr + (x << 1)
+(292,callno)
+(293,ies)
+(294,ast_copy_string(md5secret, ies->md5_result, sizeof(md5secret)
+(295,if (ast_strlen_zero(peer)
+(296,peer)
+(297,ast_check_signature(key, iaxs[callno]->challenge, rsasecret)
+(298,iaxsl[callno])
+(299,iaxs)
+(300,md5secret)
+(301,iaxs)
+(302,p->authmethods & IAX_AUTH_PLAINTEXT)
+(303,"badsecret")
+(304,secret)
+(305,!ast_strlen_zero(rsasecret)
+(306,name)
+(307,p->name)
+(308,ies->refresh)
+(309,stringp)
+(310,ies)
+(311,break;)
+(312,"IAX2/%s")
+(313,!ast_strlen_zero(iaxs[callno]->challenge)
+(314,res = 0)
+(315,unsigned char *)
+(316,ast_log(LOG_WARNING, "requested inkey \'%s\' does not exist\\n", keyn)
+(317,"Host %s denied access to register peer \'%s\'\\n")
+(318,ast_strdupa(p->secret)
+(319,if (authdebug)
+(320,p)
+(321,LOG_NOTICE)
+(322,username)
+(323,rsa_result)
+(324,md5secret[256] = "")
+(325,tmpkeys)
+(326,md5)
+(327,callno)
+(328,stringp)
+(329,iaxs[callno]->state)
+(330,name)
+(331,sin_addr)
+(332,md5secret)
+(333,iaxs[callno])
+(334,rsasecret)
+(335,1)
+(336,expire)
+(337,tmppw)
+(338,x)
+(339,secret)
+(340,if (authdebug)
+(341,1)
+(342,p->acl)
+(343,res)
+(344,1)
+(345,&iaxsl[callno])
+(346,key)
+(347,x)
+(348,ast_mutex_lock(&iaxsl[callno])
+(349,peer)
+(350,p)
+(351,":")
+(352,NULL)
+(353,iaxs[callno]->state)
+(354,iaxs)
+(355,secret)
+(356,p->inkeys)
+(357,-1)
+(358,if (authdebug)
+(359,callno)
+(360,callno)
+(361,digest)
+(362,ast_strlen_zero(secret)
+(363,tmppw = strsep(&stringp, ";")
+(364,RET)
+(365,stringp=tmpkeys)
+(366,keyn)
+(367,ast_strlen_zero(md5secret)
+(368,peer)
+(369,if (!keyn)
+(370,find_peer(peer, 1)
+(371,!ast_strlen_zero(iaxs[callno]->challenge)
+(372,if (authdebug)
+(373,"%2.2x")
+(374,&md5)
+(375,callno)
+(376,keyn)
+(377,ast_set_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED)
+(378,LOG_NOTICE)
+(379,challenge)
+(380,state)
+(381,IAX_DYNAMIC)
+(382,sin_addr)
+(383,inkeys)
+(384,goto return_unref;)
+(385,iaxs[callno])
+(386,AST_KEY_PUBLIC)
+(387,refresh)
+(388,callno)
+(389,callno)
+(390,ast_inet_ntoa(sin->sin_addr)
+(391,sin)
+(392,name)
+(393,p)
+(394,stringp)
+(395,p->authmethods)
+(396,p)
+(397,name)
+(398,iaxs[callno]->authmethods)
+(399,iaxs)
+(400,p)
+(401,!ast_apply_acl(p->acl, &addr, "IAX2 Peer ACL: ")
+(402,0)
+(403,"No registration for peer \'%s\' (from %s)
+(404,iaxs[callno])
+(405,ast_strlen_zero(iaxs[callno]->challenge)
+(406,ies->refresh)
+(407,)
+(408,requeststr)
+(409,res)
+(410,LOG_NOTICE)
+(411,iaxs[callno])
+(412,authmethods)
+(413,secret)
+(414,iaxs[callno])
+(415,rsasecret)
+(416,md5)
+(417,)
+(418,p)
+(419,p)
+(420,ast_clear_flag(&iaxs[callno]->state, IAX_STATE_AUTHENTICATED)
+(421,iaxs)
+(422,&iaxs[callno]->state)
+(423,MD5Final(digest, &md5)
+(424,p)
+(425,requeststr[256] = "")
+(426,break;)
+(427,ast_copy_string(secret, ies->password, sizeof(secret)
+(428,callno)
+(429,IAX_STATE_AUTHENTICATED)
+(430,inkeys)
+(431,expire)
+(432,stringp = tmppw)
+(433,ast_log(LOG_NOTICE, "Peer \'%s\' is not dynamic (from %s)
+(434,if (key && !ast_check_signature(key, iaxs[callno]->challenge, rsasecret)
+(435,sin)
+(436,iaxsl)
+(437,sprintf(requeststr + (x << 1)
+(438,callno)
+(439,stringp)
+(440,secret)
+(441,!ast_check_signature(key, iaxs[callno]->challenge, rsasecret)
+(442,expiry)
+(443,res = -1)
+(444,stringp)
+(445,authdebug)
+(446,callno)
+(447,iaxs[callno]->challenge)
+(448,LOG_NOTICE)
+(449,sizeof(rsasecret)
+(450,"Peer \'%s\' is not dynamic (from %s)
+(451,secret)
+(452,"Host %s did not provide proper plaintext password for \'%s\'\\n")
+(453,md5secret)
+(454,callno)
+(455,callno)
+(456,expire)
+(457,sin_addr)
+(458,)
+(459,(unsigned char *)
+(460,plaintext)
+(461,if (ies->password)
+(462,iaxs[callno]->authmethods & IAX_AUTH_PLAINTEXT)
+(463,challenge)
+(464,-1)
+(465,sizeof(md5secret)
+(466,md5secret)
+(467,struct sockaddr_in *sin)
+(468,password)
+(469,p->authmethods)
+(470,peer_unref(p)
+(471,sin->sin_addr)
+(472,sin->sin_addr)
+(473,iaxs)
+(474,secret)
+(475,!(!ast_strlen_zero(secret)
+(476,&md5)
+(477,ies)
+(478,0)
+(479,goto return_unref;)
+(480,&addr)
+(481,expire)
+(482,IAX_STATE_AUTHENTICATED)
+(483,0)
+(484,&iaxs[callno]->state)
+(485,if (!p || !iaxs[callno])
+(486,LOG_NOTICE)
+(487,!ast_strlen_zero(p->inkeys)
+(488,!iaxs[callno])
+(489,strlen(tmppw)
+(490,username)
+(491,sin)
+(492,while((tmppw = strsep(&stringp, ";")
+(493,x)
+(494,"Host %s failed RSA authentication with inkeys \'%s\'\\n")
+(495,authdebug)
+(496,p)
+(497,p->secret)
+(498,if (authdebug)
+(499,";")
+(500,challenge)
+(501,sin)
+(502,x<16)
+(503,ast_test_flag64(p, IAX_DYNAMIC)
+(504,sizeof(secret)
+(505,last_authmethod)
+(506,if (expire && (expire < iaxs[callno]->expiry)
+(507,!p)
+(508,"")
+(509,iaxs)
+(510,p)
+(511,rsa_result)
+(512,ast_strlen_zero(secret)
+(513,plaintext)
+(514,LOG_NOTICE)
+(515,tmppw)
+(516,)
+(517,x)
+(518,tmpkeys)
+(519,return -1;)
+(520,)
+(521,ast_copy_string(peer, ies->username, sizeof(peer)
+(522,p->inkeys)
+(523,iaxs[callno]->challenge)
+(524,)
+(525,"")
+(526,rsasecret)
+(527,ast_strlen_zero(peer)
+(528,rsasecret)
+(529,peer)
+(530,md5)
+(531,iaxs)
+(532,requeststr)
+(533,iaxs[callno])
+(534,rsasecret[256] = "")
+(535,ast_log(LOG_NOTICE, "Empty registration from %s\\n", ast_inet_ntoa(sin->sin_addr)
+(536,ies)
+(537,ast_inet_ntoa(sin->sin_addr)
+(538,p)
+(539,if (ast_strlen_zero(iaxs[callno]->challenge)
+(540,ast_apply_acl(p->acl, &addr, "IAX2 Peer ACL: ")
+(541,x)
+(542,ies->username)
+(543,return res;)
+(544,ast_strlen_zero(rsasecret)
+(545,secret)
+(546,ast_string_field_set(iaxs[callno], secret, p->secret)
+(547,ies->rsa_result)
+(548,ies)
+(549,x)
+(550,challenge)
+(551,keyn = strsep(&stringp, ":")
+(552,sin->sin_addr)
+(553,sin)
+(554,MD5Update(&md5, (unsigned char *)
+(555,)
+(556,)
+(557,if (ies->md5_result)
+(558,stringp)
+(559,sin->sin_addr)
+(560,ast_inet_ntoa(sin->sin_addr)
+(561,p)
+(562,peer)
+(563,&md5)
+(564,state)
+(565,authmethods)
+(566,iaxs[callno])
+(567,*p = NULL)
+(568,LOG_NOTICE)
+(569,IAX_AUTH_PLAINTEXT)
+(570,)
+(571,sizeof(tmpkeys)
+(572,IAX_AUTH_PLAINTEXT)
+(573,ast_key_get(keyn, AST_KEY_PUBLIC)
+(574,if (!ast_strlen_zero(rsasecret)
+(575,)
+(576,authmethods)
+(577,unsigned char *)
+(578,"")
+(579,expire)
+(580,password)
+(581,!ast_strlen_zero(secret)
+(582,ies)
+(583,iaxs)
+(584,*stringp=NULL)
+(585,iaxs[callno])
+(586,&addr)
+(587,iaxs[callno]->challenge)
+(588,ast_log(LOG_NOTICE, "Host %s did not provide proper plaintext password for \'%s\'\\n", ast_inet_ntoa(sin->sin_addr)
+(589,inkeys)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

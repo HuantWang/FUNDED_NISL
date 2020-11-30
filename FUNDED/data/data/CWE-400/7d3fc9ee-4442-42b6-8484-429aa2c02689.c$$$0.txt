@@ -1,0 +1,2606 @@
+-----label-----
+0
+-----code-----
+void
+prefs_init(CCS exe, CCS ext, CCS verbose)
+{
+    CS cfgpath;
+    CS progname;
+    char *exedir;
+    CCS p;
+
+    // Store the short program name for error msgs etc.
+    if ((p = strrchr(exe, '/'))) {
+	progname = putil_strdup(p + 1);
+#if defined(_WIN32)
+    } else if ((p = strrchr(exe, '\\'))) {
+	progname = putil_strdup(p + 1);
+#endif	/*_WIN32*/
+    } else {
+	progname = putil_strdup(exe);
+    }
+
+#if defined(_WIN32)
+    {
+	CS ext;
+
+	if ((ext = strrchr(progname, '.'))) {
+	    *ext = '\0';
+	}
+    }
+#endif	/*_WIN32*/
+
+    prop_put_str(P_PROGNAME, progname);
+    putil_free(progname);
+
+    // Load initial properties from environment
+    prop_load(NULL, verbose, 0);
+
+    if (ext) {
+	CCS app;
+	CS cfgname;
+	CS home;
+	CS sysdir;
+	size_t len;
+
+	app = prop_get_app();
+	len = putil_path_max() + 1;
+
+	// Check for a personal ~/.<app>.properties file. Since
+	// Windows makes it hard to create a file with a leading dot
+	// (you can do it at the command line but not in the GUI)
+	// we also allow the ~/<app>.properties version. And we do that
+	// for both U and W to allow for a consistent site standard.
+	home = (CS)putil_malloc(len);
+	if (putil_get_homedir(home, len)) {
+	    asprintf(&cfgpath, "%s%s.%s%s", home, DIRSEP(), app, ext);
+	    if (!access(cfgpath, F_OK)) {
+		prop_load(cfgpath, verbose, 0);
+	    } else {
+		putil_free(cfgpath);
+		asprintf(&cfgpath, "%s%s%s%s", home, DIRSEP(), app, ext);
+		prop_load(cfgpath, verbose, 0);
+	    }
+	    putil_free(cfgpath);
+	}
+	putil_free(home);
+
+	// Then fall back to system-wide properties from /etc/<app>.properties
+	sysdir = (CS)putil_malloc(len);
+	if (putil_get_systemdir(sysdir, len)) {
+	    asprintf(&cfgpath, "%s%s%s%s", sysdir, DIRSEP(), app, ext);
+	    prop_load(cfgpath, verbose, 0);
+	    putil_free(cfgpath);
+	}
+	putil_free(sysdir);
+
+	// Try a truly global properties file from the dir
+	// the executable is in (Windows) or ../etc from there (Unix).
+	if ((exedir = putil_dirname(exe))) {
+#if defined(_WIN32)
+	    CS globalcfg;
+
+	    asprintf(&globalcfg, "%s%s%s%s", exedir, DIRSEP(), app, ext);
+#else	/*!_WIN32*/
+	    CS globalcfg;
+	    CS appdir;
+
+	    if ((appdir = putil_dirname(exedir))) {
+		asprintf(&globalcfg, "%s/etc/%s%s", appdir, app, ext);
+		putil_free(appdir);
+	    }
+#endif	/*_WIN32*/
+
+	    putil_free(exedir);
+
+	    prop_load(globalcfg, verbose, 0);
+
+	    putil_free(globalcfg);
+	}
+
+	// Finally, find a directory to establish the P_BASE_DIR property.
+	// This one wins over all previous settings.
+	asprintf(&cfgname, ".%s", app);
+	if ((cfgpath = _find_file_up(cfgname))) {
+	    char *pdir;
+	    CS bdcfg;
+
+	    // Look for a properties file in the base dir and try loading it.
+	    asprintf(&bdcfg, "%s%s%s%s", cfgpath, DIRSEP(), app, PROP_EXT);
+	    prop_load(bdcfg, verbose, 1);
+	    putil_free(bdcfg);
+
+	    // The location of this file establishes the default
+	    // project base.
+	    if ((pdir = putil_dirname(cfgpath))) {
+		prop_put_str(P_BASE_DIR,
+		    putil_canon_path(pdir, NULL, 0));
+		putil_free(pdir);
+	    }
+	    putil_free(cfgpath);
+	} else {
+	    CCS cwd;
+
+	    // If no project config file exists, use cwd for project base.
+	    if ((cwd = util_get_cwd())) {
+		prop_put_str(P_BASE_DIR, putil_canon_path((CS)cwd, NULL, 0));
+		putil_free(cwd);
+	    } else {
+		putil_syserr(2, "util_get_cwd()");
+	    }
+	}
+	putil_free(cfgname);
+    }
+
+    // We need to determine what type of platform this is if not Unix.
+#if defined(_WIN32)
+    {
+	char *term;
+	if ((term = putil_getenv("TERM")) && strstr(term, "cygwin")) {
+	    prop_put_str(P_MONITOR_PLATFORM, "c");
+	} else {
+	    prop_put_str(P_MONITOR_PLATFORM, "w");
+	}
+    }
+#endif	/*!_WIN32 */
+
+    // "Strict" is a shorthand for all strict options.
+    if (prop_is_true(P_STRICT)) {
+	prop_set_true(P_STRICT_UPLOAD);
+	prop_set_true(P_STRICT_DOWNLOAD);
+	prop_put_long(P_STRICT_ERROR, 1);
+	prop_set_true(P_STRICT_AUDIT);
+    }
+
+    // This is an opportunity for the user to request that
+    // normally-non-fatal errors be promoted to fatal.
+    if (prop_has_value(P_STRICT_ERROR)) {
+	putil_strict_error(prop_get_long(P_STRICT_ERROR));
+    }
+
+    return;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+5,6
+5,7
+6,7
+8,9
+10,11
+10,12
+11,12
+13,14
+15,16
+15,17
+16,17
+18,19
+20,21
+20,22
+20,23
+20,24
+20,25
+20,26
+20,27
+20,28
+20,29
+20,30
+20,31
+20,32
+21,22
+22,23
+22,24
+23,24
+25,26
+27,28
+28,29
+28,30
+29,30
+31,32
+33,34
+34,35
+34,36
+36,37
+36,38
+39,40
+40,41
+40,42
+41,42
+43,44
+45,46
+45,47
+45,48
+46,47
+47,48
+47,49
+48,49
+50,51
+50,52
+50,53
+51,52
+53,54
+56,57
+57,58
+58,59
+58,60
+59,60
+61,62
+61,63
+62,63
+64,65
+64,66
+65,66
+68,69
+69,70
+70,71
+70,72
+71,72
+73,74
+73,75
+74,75
+76,77
+78,79
+79,80
+79,81
+79,82
+80,81
+82,83
+84,85
+86,87
+87,88
+87,89
+88,89
+90,91
+92,93
+93,94
+93,95
+93,96
+93,97
+94,95
+96,97
+98,99
+101,102
+101,103
+102,103
+104,105
+104,106
+104,107
+104,108
+104,109
+104,110
+104,111
+104,112
+104,113
+104,114
+104,115
+104,116
+104,117
+104,118
+104,119
+104,120
+104,121
+105,106
+106,107
+106,108
+107,108
+109,110
+111,112
+112,113
+112,114
+113,114
+115,116
+117,118
+118,119
+118,120
+119,120
+121,122
+123,124
+124,125
+124,126
+125,126
+127,128
+129,130
+130,131
+130,132
+131,132
+133,134
+135,136
+136,137
+136,138
+137,138
+139,140
+140,141
+142,143
+143,144
+143,145
+144,145
+146,147
+146,148
+147,148
+148,149
+151,152
+152,153
+152,154
+153,154
+155,156
+155,157
+156,157
+156,158
+157,158
+160,161
+160,162
+161,162
+163,164
+165,166
+165,167
+166,167
+166,168
+166,169
+167,168
+169,170
+171,172
+173,174
+173,175
+173,176
+174,175
+175,176
+175,177
+175,178
+175,179
+175,180
+175,181
+175,182
+176,177
+178,179
+179,180
+182,183
+184,185
+185,186
+187,188
+189,190
+191,192
+191,193
+191,194
+192,193
+193,194
+193,195
+193,196
+194,195
+196,197
+198,199
+200,201
+201,202
+202,203
+202,204
+202,205
+202,206
+203,204
+205,206
+207,208
+210,211
+210,212
+210,213
+211,212
+212,213
+212,214
+213,214
+215,216
+217,218
+218,219
+218,220
+218,221
+218,222
+218,223
+218,224
+218,225
+219,220
+221,222
+222,223
+225,226
+227,228
+228,229
+230,231
+232,233
+234,235
+235,236
+235,237
+235,238
+235,239
+236,237
+238,239
+240,241
+243,244
+244,245
+244,246
+245,246
+247,248
+249,250
+250,251
+250,252
+251,252
+253,254
+255,256
+256,257
+256,258
+257,258
+259,260
+259,261
+260,261
+260,262
+261,262
+264,265
+264,266
+265,266
+267,268
+269,270
+269,271
+270,271
+270,272
+270,273
+271,272
+273,274
+275,276
+277,278
+277,279
+277,280
+278,279
+279,280
+279,281
+279,282
+279,283
+279,284
+279,285
+279,286
+280,281
+282,283
+283,284
+286,287
+288,289
+289,290
+291,292
+293,294
+295,296
+296,297
+296,298
+296,299
+296,300
+297,298
+299,300
+301,302
+304,305
+305,306
+305,307
+306,307
+308,309
+310,311
+311,312
+311,313
+312,313
+314,315
+316,317
+316,318
+317,318
+318,319
+318,320
+319,320
+321,322
+321,323
+322,323
+324,325
+326,327
+326,328
+326,329
+326,330
+326,331
+326,332
+327,328
+328,329
+328,330
+329,330
+331,332
+333,334
+334,335
+334,336
+335,336
+337,338
+339,340
+339,341
+340,341
+341,342
+341,343
+342,343
+344,345
+344,346
+345,346
+347,348
+349,350
+349,351
+350,351
+351,352
+351,353
+351,354
+351,355
+351,356
+351,357
+352,353
+354,355
+355,356
+358,359
+360,361
+362,363
+364,365
+365,366
+365,367
+366,367
+368,369
+370,371
+371,372
+371,373
+372,373
+374,375
+376,377
+377,378
+377,379
+377,380
+377,381
+378,379
+380,381
+382,383
+385,386
+386,387
+386,388
+387,388
+389,390
+391,392
+392,393
+392,394
+392,395
+392,396
+393,394
+395,396
+396,397
+399,400
+401,402
+401,403
+401,404
+402,403
+403,404
+403,405
+404,405
+406,407
+406,408
+407,408
+409,410
+411,412
+411,413
+411,414
+411,415
+411,416
+411,417
+411,418
+412,413
+413,414
+413,415
+415,416
+415,417
+418,419
+419,420
+419,421
+420,421
+422,423
+424,425
+425,426
+425,427
+425,428
+425,429
+425,430
+425,431
+425,432
+426,427
+428,429
+429,430
+432,433
+434,435
+435,436
+437,438
+439,440
+441,442
+442,443
+442,444
+442,445
+442,446
+443,444
+445,446
+447,448
+450,451
+451,452
+451,453
+452,453
+454,455
+456,457
+456,458
+457,458
+458,459
+458,460
+459,460
+461,462
+461,463
+462,463
+464,465
+466,467
+466,468
+467,468
+468,469
+468,470
+468,471
+469,470
+471,472
+473,474
+473,475
+473,476
+473,477
+474,475
+476,477
+478,479
+481,482
+482,483
+482,484
+483,484
+485,486
+487,488
+488,489
+488,490
+489,490
+491,492
+493,494
+493,495
+494,495
+495,496
+495,497
+496,497
+498,499
+500,501
+500,502
+500,503
+501,502
+502,503
+502,504
+503,504
+505,506
+506,507
+508,509
+508,510
+509,510
+510,511
+510,512
+510,513
+511,512
+513,514
+515,516
+515,517
+515,518
+515,519
+516,517
+518,519
+518,520
+519,520
+519,521
+520,521
+523,524
+525,526
+528,529
+529,530
+529,531
+530,531
+532,533
+534,535
+535,536
+536,537
+536,538
+536,539
+537,538
+541,542
+542,543
+542,544
+543,544
+545,546
+547,548
+547,549
+548,549
+548,550
+549,550
+551,552
+552,553
+554,555
+554,556
+554,557
+554,558
+555,556
+556,557
+556,558
+557,558
+559,560
+560,561
+562,563
+563,564
+563,565
+564,565
+566,567
+567,568
+569,570
+570,571
+570,572
+570,573
+571,572
+573,574
+576,577
+577,578
+577,579
+578,579
+580,581
+581,582
+583,584
+583,585
+584,585
+584,586
+585,586
+587,588
+588,589
+590,591
+591,592
+592,593
+592,594
+593,594
+595,596
+595,597
+596,597
+598,599
+-----nextToken-----
+2,4,7,9,12,14,17,19,24,26,30,32,35,37,38,42,44,49,52,54,55,60,63,66,67,72,75,77,81,83,85,89,91,95,97,99,100,103,108,110,114,116,120,122,126,128,132,134,138,141,145,149,150,154,158,159,162,164,168,170,172,177,180,181,183,186,188,190,195,197,199,204,206,208,209,214,216,220,223,224,226,229,231,233,237,239,241,242,246,248,252,254,258,262,263,266,268,272,274,276,281,284,285,287,290,292,294,298,300,302,303,307,309,313,315,320,323,325,330,332,336,338,343,346,348,353,356,357,359,361,363,367,369,373,375,379,381,383,384,388,390,394,397,398,400,405,408,410,414,416,417,421,423,427,430,431,433,436,438,440,444,446,448,449,453,455,460,463,465,470,472,475,477,479,480,484,486,490,492,497,499,504,507,512,514,517,521,522,524,526,527,531,533,538,539,540,544,546,550,553,558,561,565,568,572,574,575,579,582,586,589,594,597,599,600
+-----computeFrom-----
+47,48
+47,49
+58,59
+58,60
+64,65
+64,66
+70,71
+70,72
+136,137
+136,138
+143,144
+143,145
+146,147
+146,148
+152,153
+152,154
+256,257
+256,258
+318,319
+318,320
+341,342
+341,343
+403,404
+403,405
+458,459
+458,460
+502,503
+502,504
+-----guardedBy-----
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;IfStatement;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;IfStatement;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;IfStatement;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;IfStatement;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;IfStatement;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;IfStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;
+-----ast_node-----
+voidprefs_init(CCS exe, CCS ext, CCS verbose){    CS cfgpath;    CS progname;    char *exedir;    CCS p;    // Store the short program name for error msgs etc.    if ((p = strrchr(exe, '/'))) {	progname = putil_strdup(p + 1);#if defined(_WIN32)    } else if ((p = strrchr(exe, '\\'))) {	progname = putil_strdup(p + 1);#endif	/*_WIN32*/    } else {	progname = putil_strdup(exe);    }#if defined(_WIN32)    {	CS ext;	if ((ext = strrchr(progname, '.'))) {	    *ext = '\0';	}    }#endif	/*_WIN32*/    prop_put_str(P_PROGNAME, progname);    putil_free(progname);    // Load initial properties from environment    prop_load(NULL, verbose, 0);    if (ext) {	CCS app;	CS cfgname;	CS home;	CS sysdir;	size_t len;	app = prop_get_app();	len = putil_path_max() + 1;	// Check for a personal ~/.<app>.properties file. Since	// Windows makes it hard to create a file with a leading dot	// (you can do it at the command line but not in the GUI)	// we also allow the ~/<app>.properties version. And we do that	// for both U and W to allow for a consistent site standard.	home = (CS)putil_malloc(len);	if (putil_get_homedir(home, len)) {	    asprintf(&cfgpath, "%s%s.%s%s", home, DIRSEP(), app, ext);	    if (!access(cfgpath, F_OK)) {		prop_load(cfgpath, verbose, 0);	    } else {		putil_free(cfgpath);		asprintf(&cfgpath, "%s%s%s%s", home, DIRSEP(), app, ext);		prop_load(cfgpath, verbose, 0);	    }	    putil_free(cfgpath);	}	putil_free(home);	// Then fall back to system-wide properties from /etc/<app>.properties	sysdir = (CS)putil_malloc(len);	if (putil_get_systemdir(sysdir, len)) {	    asprintf(&cfgpath, "%s%s%s%s", sysdir, DIRSEP(), app, ext);	    prop_load(cfgpath, verbose, 0);	    putil_free(cfgpath);	}	putil_free(sysdir);	// Try a truly global properties file from the dir	// the executable is in (Windows) or ../etc from there (Unix).	if ((exedir = putil_dirname(exe))) {#if defined(_WIN32)	    CS globalcfg;	    asprintf(&globalcfg, "%s%s%s%s", exedir, DIRSEP(), app, ext);#else	/*!_WIN32*/	    CS globalcfg;	    CS appdir;	    if ((appdir = putil_dirname(exedir))) {		asprintf(&globalcfg, "%s/etc/%s%s", appdir, app, ext);		putil_free(appdir);	    }#endif	/*_WIN32*/	    putil_free(exedir);	    prop_load(globalcfg, verbose, 0);	    putil_free(globalcfg);	}	// Finally, find a directory to establish the P_BASE_DIR property.	// This one wins over all previous settings.	asprintf(&cfgname, ".%s", app);	if ((cfgpath = _find_file_up(cfgname))) {	    char *pdir;	    CS bdcfg;	    // Look for a properties file in the base dir and try loading it.	    asprintf(&bdcfg, "%s%s%s%s", cfgpath, DIRSEP(), app, PROP_EXT);	    prop_load(bdcfg, verbose, 1);	    putil_free(bdcfg);	    // The location of this file establishes the default	    // project base.	    if ((pdir = putil_dirname(cfgpath))) {		prop_put_str(P_BASE_DIR,		    putil_canon_path(pdir, NULL, 0));		putil_free(pdir);	    }	    putil_free(cfgpath);	} else {	    CCS cwd;	    // If no project config file exists, use cwd for project base.	    if ((cwd = util_get_cwd())) {		prop_put_str(P_BASE_DIR, putil_canon_path((CS)cwd, NULL, 0));		putil_free(cwd);	    } else {		putil_syserr(2, "util_get_cwd()");	    }	}	putil_free(cfgname);    }    // We need to determine what type of platform this is if not Unix.#if defined(_WIN32)    {	char *term;	if ((term = putil_getenv("TERM")) && strstr(term, "cygwin")) {	    prop_put_str(P_MONITOR_PLATFORM, "c");	} else {	    prop_put_str(P_MONITOR_PLATFORM, "w");	}    }#endif	/*!_WIN32 */    // "Strict" is a shorthand for all strict options.    if (prop_is_true(P_STRICT)) {	prop_set_true(P_STRICT_UPLOAD);	prop_set_true(P_STRICT_DOWNLOAD);	prop_put_long(P_STRICT_ERROR, 1);	prop_set_true(P_STRICT_AUDIT);    }    // This is an opportunity for the user to request that    // normally-non-fatal errors be promoted to fatal.    if (prop_has_value(P_STRICT_ERROR)) {	putil_strict_error(prop_get_long(P_STRICT_ERROR));    }    return;}
+void
+prefs_init(CCS exe, CCS ext, CCS verbose)
+prefs_init
+CCS exe
+CCS
+CCS
+exe
+exe
+CCS ext
+CCS
+CCS
+ext
+ext
+CCS verbose
+CCS
+CCS
+verbose
+verbose
+{    CS cfgpath;    CS progname;    char *exedir;    CCS p;    // Store the short program name for error msgs etc.    if ((p = strrchr(exe, '/'))) {	progname = putil_strdup(p + 1);#if defined(_WIN32)    } else if ((p = strrchr(exe, '\\'))) {	progname = putil_strdup(p + 1);#endif	/*_WIN32*/    } else {	progname = putil_strdup(exe);    }#if defined(_WIN32)    {	CS ext;	if ((ext = strrchr(progname, '.'))) {	    *ext = '\0';	}    }#endif	/*_WIN32*/    prop_put_str(P_PROGNAME, progname);    putil_free(progname);    // Load initial properties from environment    prop_load(NULL, verbose, 0);    if (ext) {	CCS app;	CS cfgname;	CS home;	CS sysdir;	size_t len;	app = prop_get_app();	len = putil_path_max() + 1;	// Check for a personal ~/.<app>.properties file. Since	// Windows makes it hard to create a file with a leading dot	// (you can do it at the command line but not in the GUI)	// we also allow the ~/<app>.properties version. And we do that	// for both U and W to allow for a consistent site standard.	home = (CS)putil_malloc(len);	if (putil_get_homedir(home, len)) {	    asprintf(&cfgpath, "%s%s.%s%s", home, DIRSEP(), app, ext);	    if (!access(cfgpath, F_OK)) {		prop_load(cfgpath, verbose, 0);	    } else {		putil_free(cfgpath);		asprintf(&cfgpath, "%s%s%s%s", home, DIRSEP(), app, ext);		prop_load(cfgpath, verbose, 0);	    }	    putil_free(cfgpath);	}	putil_free(home);	// Then fall back to system-wide properties from /etc/<app>.properties	sysdir = (CS)putil_malloc(len);	if (putil_get_systemdir(sysdir, len)) {	    asprintf(&cfgpath, "%s%s%s%s", sysdir, DIRSEP(), app, ext);	    prop_load(cfgpath, verbose, 0);	    putil_free(cfgpath);	}	putil_free(sysdir);	// Try a truly global properties file from the dir	// the executable is in (Windows) or ../etc from there (Unix).	if ((exedir = putil_dirname(exe))) {#if defined(_WIN32)	    CS globalcfg;	    asprintf(&globalcfg, "%s%s%s%s", exedir, DIRSEP(), app, ext);#else	/*!_WIN32*/	    CS globalcfg;	    CS appdir;	    if ((appdir = putil_dirname(exedir))) {		asprintf(&globalcfg, "%s/etc/%s%s", appdir, app, ext);		putil_free(appdir);	    }#endif	/*_WIN32*/	    putil_free(exedir);	    prop_load(globalcfg, verbose, 0);	    putil_free(globalcfg);	}	// Finally, find a directory to establish the P_BASE_DIR property.	// This one wins over all previous settings.	asprintf(&cfgname, ".%s", app);	if ((cfgpath = _find_file_up(cfgname))) {	    char *pdir;	    CS bdcfg;	    // Look for a properties file in the base dir and try loading it.	    asprintf(&bdcfg, "%s%s%s%s", cfgpath, DIRSEP(), app, PROP_EXT);	    prop_load(bdcfg, verbose, 1);	    putil_free(bdcfg);	    // The location of this file establishes the default	    // project base.	    if ((pdir = putil_dirname(cfgpath))) {		prop_put_str(P_BASE_DIR,		    putil_canon_path(pdir, NULL, 0));		putil_free(pdir);	    }	    putil_free(cfgpath);	} else {	    CCS cwd;	    // If no project config file exists, use cwd for project base.	    if ((cwd = util_get_cwd())) {		prop_put_str(P_BASE_DIR, putil_canon_path((CS)cwd, NULL, 0));		putil_free(cwd);	    } else {		putil_syserr(2, "util_get_cwd()");	    }	}	putil_free(cfgname);    }    // We need to determine what type of platform this is if not Unix.#if defined(_WIN32)    {	char *term;	if ((term = putil_getenv("TERM")) && strstr(term, "cygwin")) {	    prop_put_str(P_MONITOR_PLATFORM, "c");	} else {	    prop_put_str(P_MONITOR_PLATFORM, "w");	}    }#endif	/*!_WIN32 */    // "Strict" is a shorthand for all strict options.    if (prop_is_true(P_STRICT)) {	prop_set_true(P_STRICT_UPLOAD);	prop_set_true(P_STRICT_DOWNLOAD);	prop_put_long(P_STRICT_ERROR, 1);	prop_set_true(P_STRICT_AUDIT);    }    // This is an opportunity for the user to request that    // normally-non-fatal errors be promoted to fatal.    if (prop_has_value(P_STRICT_ERROR)) {	putil_strict_error(prop_get_long(P_STRICT_ERROR));    }    return;}
+CS cfgpath;
+CS cfgpath;
+CS
+CS
+cfgpath
+cfgpath
+CS progname;
+CS progname;
+CS
+CS
+progname
+progname
+char *exedir;
+char *exedir;
+char
+*exedir
+*
+exedir
+CCS p;
+CCS p;
+CCS
+CCS
+p
+p
+if ((p = strrchr(exe, '/'))) {	progname = putil_strdup(p + 1);#if defined(_WIN32)    } else if ((p = strrchr(exe, '\\'))) {	progname = putil_strdup(p + 1);#endif	/*_WIN32*/    } else {	progname = putil_strdup(exe);    }
+(p = strrchr(exe, '/'))
+p = strrchr(exe, '/')
+p
+p
+strrchr(exe, '/')
+strrchr
+strrchr
+exe
+exe
+'/'
+{	progname = putil_strdup(p + 1);#if defined(_WIN32)    } else if ((p = strrchr(exe, '\\'))) {	progname = putil_strdup(p + 1);#endif	/*_WIN32*/    }
+progname = putil_strdup(p + 1);
+progname = putil_strdup(p + 1)
+progname
+progname
+putil_strdup(p + 1)
+putil_strdup
+putil_strdup
+p + 1
+p
+p
+1
+{	progname = putil_strdup(exe);    }
+progname = putil_strdup(exe);
+progname = putil_strdup(exe)
+progname
+progname
+putil_strdup(exe)
+putil_strdup
+putil_strdup
+exe
+exe
+prop_put_str(P_PROGNAME, progname);
+prop_put_str(P_PROGNAME, progname)
+prop_put_str
+prop_put_str
+P_PROGNAME
+P_PROGNAME
+progname
+progname
+putil_free(progname);
+putil_free(progname)
+putil_free
+putil_free
+progname
+progname
+prop_load(NULL, verbose, 0);
+prop_load(NULL, verbose, 0)
+prop_load
+prop_load
+NULL
+NULL
+verbose
+verbose
+0
+if (ext) {	CCS app;	CS cfgname;	CS home;	CS sysdir;	size_t len;	app = prop_get_app();	len = putil_path_max() + 1;	// Check for a personal ~/.<app>.properties file. Since	// Windows makes it hard to create a file with a leading dot	// (you can do it at the command line but not in the GUI)	// we also allow the ~/<app>.properties version. And we do that	// for both U and W to allow for a consistent site standard.	home = (CS)putil_malloc(len);	if (putil_get_homedir(home, len)) {	    asprintf(&cfgpath, "%s%s.%s%s", home, DIRSEP(), app, ext);	    if (!access(cfgpath, F_OK)) {		prop_load(cfgpath, verbose, 0);	    } else {		putil_free(cfgpath);		asprintf(&cfgpath, "%s%s%s%s", home, DIRSEP(), app, ext);		prop_load(cfgpath, verbose, 0);	    }	    putil_free(cfgpath);	}	putil_free(home);	// Then fall back to system-wide properties from /etc/<app>.properties	sysdir = (CS)putil_malloc(len);	if (putil_get_systemdir(sysdir, len)) {	    asprintf(&cfgpath, "%s%s%s%s", sysdir, DIRSEP(), app, ext);	    prop_load(cfgpath, verbose, 0);	    putil_free(cfgpath);	}	putil_free(sysdir);	// Try a truly global properties file from the dir	// the executable is in (Windows) or ../etc from there (Unix).	if ((exedir = putil_dirname(exe))) {#if defined(_WIN32)	    CS globalcfg;	    asprintf(&globalcfg, "%s%s%s%s", exedir, DIRSEP(), app, ext);#else	/*!_WIN32*/	    CS globalcfg;	    CS appdir;	    if ((appdir = putil_dirname(exedir))) {		asprintf(&globalcfg, "%s/etc/%s%s", appdir, app, ext);		putil_free(appdir);	    }#endif	/*_WIN32*/	    putil_free(exedir);	    prop_load(globalcfg, verbose, 0);	    putil_free(globalcfg);	}	// Finally, find a directory to establish the P_BASE_DIR property.	// This one wins over all previous settings.	asprintf(&cfgname, ".%s", app);	if ((cfgpath = _find_file_up(cfgname))) {	    char *pdir;	    CS bdcfg;	    // Look for a properties file in the base dir and try loading it.	    asprintf(&bdcfg, "%s%s%s%s", cfgpath, DIRSEP(), app, PROP_EXT);	    prop_load(bdcfg, verbose, 1);	    putil_free(bdcfg);	    // The location of this file establishes the default	    // project base.	    if ((pdir = putil_dirname(cfgpath))) {		prop_put_str(P_BASE_DIR,		    putil_canon_path(pdir, NULL, 0));		putil_free(pdir);	    }	    putil_free(cfgpath);	} else {	    CCS cwd;	    // If no project config file exists, use cwd for project base.	    if ((cwd = util_get_cwd())) {		prop_put_str(P_BASE_DIR, putil_canon_path((CS)cwd, NULL, 0));		putil_free(cwd);	    } else {		putil_syserr(2, "util_get_cwd()");	    }	}	putil_free(cfgname);    }
+ext
+ext
+{	CCS app;	CS cfgname;	CS home;	CS sysdir;	size_t len;	app = prop_get_app();	len = putil_path_max() + 1;	// Check for a personal ~/.<app>.properties file. Since	// Windows makes it hard to create a file with a leading dot	// (you can do it at the command line but not in the GUI)	// we also allow the ~/<app>.properties version. And we do that	// for both U and W to allow for a consistent site standard.	home = (CS)putil_malloc(len);	if (putil_get_homedir(home, len)) {	    asprintf(&cfgpath, "%s%s.%s%s", home, DIRSEP(), app, ext);	    if (!access(cfgpath, F_OK)) {		prop_load(cfgpath, verbose, 0);	    } else {		putil_free(cfgpath);		asprintf(&cfgpath, "%s%s%s%s", home, DIRSEP(), app, ext);		prop_load(cfgpath, verbose, 0);	    }	    putil_free(cfgpath);	}	putil_free(home);	// Then fall back to system-wide properties from /etc/<app>.properties	sysdir = (CS)putil_malloc(len);	if (putil_get_systemdir(sysdir, len)) {	    asprintf(&cfgpath, "%s%s%s%s", sysdir, DIRSEP(), app, ext);	    prop_load(cfgpath, verbose, 0);	    putil_free(cfgpath);	}	putil_free(sysdir);	// Try a truly global properties file from the dir	// the executable is in (Windows) or ../etc from there (Unix).	if ((exedir = putil_dirname(exe))) {#if defined(_WIN32)	    CS globalcfg;	    asprintf(&globalcfg, "%s%s%s%s", exedir, DIRSEP(), app, ext);#else	/*!_WIN32*/	    CS globalcfg;	    CS appdir;	    if ((appdir = putil_dirname(exedir))) {		asprintf(&globalcfg, "%s/etc/%s%s", appdir, app, ext);		putil_free(appdir);	    }#endif	/*_WIN32*/	    putil_free(exedir);	    prop_load(globalcfg, verbose, 0);	    putil_free(globalcfg);	}	// Finally, find a directory to establish the P_BASE_DIR property.	// This one wins over all previous settings.	asprintf(&cfgname, ".%s", app);	if ((cfgpath = _find_file_up(cfgname))) {	    char *pdir;	    CS bdcfg;	    // Look for a properties file in the base dir and try loading it.	    asprintf(&bdcfg, "%s%s%s%s", cfgpath, DIRSEP(), app, PROP_EXT);	    prop_load(bdcfg, verbose, 1);	    putil_free(bdcfg);	    // The location of this file establishes the default	    // project base.	    if ((pdir = putil_dirname(cfgpath))) {		prop_put_str(P_BASE_DIR,		    putil_canon_path(pdir, NULL, 0));		putil_free(pdir);	    }	    putil_free(cfgpath);	} else {	    CCS cwd;	    // If no project config file exists, use cwd for project base.	    if ((cwd = util_get_cwd())) {		prop_put_str(P_BASE_DIR, putil_canon_path((CS)cwd, NULL, 0));		putil_free(cwd);	    } else {		putil_syserr(2, "util_get_cwd()");	    }	}	putil_free(cfgname);    }
+CCS app;
+CCS app;
+CCS
+CCS
+app
+app
+CS cfgname;
+CS cfgname;
+CS
+CS
+cfgname
+cfgname
+CS home;
+CS home;
+CS
+CS
+home
+home
+CS sysdir;
+CS sysdir;
+CS
+CS
+sysdir
+sysdir
+size_t len;
+size_t len;
+size_t
+size_t
+len
+len
+app = prop_get_app();
+app = prop_get_app()
+app
+app
+prop_get_app()
+prop_get_app
+prop_get_app
+len = putil_path_max() + 1;
+len = putil_path_max() + 1
+len
+len
+putil_path_max() + 1
+putil_path_max()
+putil_path_max
+putil_path_max
+1
+home = (CS)putil_malloc(len);
+home = (CS)putil_malloc(len)
+home
+home
+(CS)putil_malloc(len)
+CS
+CS
+CS
+
+putil_malloc(len)
+putil_malloc
+putil_malloc
+len
+len
+if (putil_get_homedir(home, len)) {	    asprintf(&cfgpath, "%s%s.%s%s", home, DIRSEP(), app, ext);	    if (!access(cfgpath, F_OK)) {		prop_load(cfgpath, verbose, 0);	    } else {		putil_free(cfgpath);		asprintf(&cfgpath, "%s%s%s%s", home, DIRSEP(), app, ext);		prop_load(cfgpath, verbose, 0);	    }	    putil_free(cfgpath);	}
+putil_get_homedir(home, len)
+putil_get_homedir
+putil_get_homedir
+home
+home
+len
+len
+{	    asprintf(&cfgpath, "%s%s.%s%s", home, DIRSEP(), app, ext);	    if (!access(cfgpath, F_OK)) {		prop_load(cfgpath, verbose, 0);	    } else {		putil_free(cfgpath);		asprintf(&cfgpath, "%s%s%s%s", home, DIRSEP(), app, ext);		prop_load(cfgpath, verbose, 0);	    }	    putil_free(cfgpath);	}
+asprintf(&cfgpath, "%s%s.%s%s", home, DIRSEP(), app, ext);
+asprintf(&cfgpath, "%s%s.%s%s", home, DIRSEP(), app, ext)
+asprintf
+asprintf
+&cfgpath
+cfgpath
+cfgpath
+"%s%s.%s%s"
+home
+home
+DIRSEP()
+DIRSEP
+DIRSEP
+app
+app
+ext
+ext
+if (!access(cfgpath, F_OK)) {		prop_load(cfgpath, verbose, 0);	    } else {		putil_free(cfgpath);		asprintf(&cfgpath, "%s%s%s%s", home, DIRSEP(), app, ext);		prop_load(cfgpath, verbose, 0);	    }
+!access(cfgpath, F_OK)
+access(cfgpath, F_OK)
+access
+access
+cfgpath
+cfgpath
+F_OK
+F_OK
+{		prop_load(cfgpath, verbose, 0);	    }
+prop_load(cfgpath, verbose, 0);
+prop_load(cfgpath, verbose, 0)
+prop_load
+prop_load
+cfgpath
+cfgpath
+verbose
+verbose
+0
+{		putil_free(cfgpath);		asprintf(&cfgpath, "%s%s%s%s", home, DIRSEP(), app, ext);		prop_load(cfgpath, verbose, 0);	    }
+putil_free(cfgpath);
+putil_free(cfgpath)
+putil_free
+putil_free
+cfgpath
+cfgpath
+asprintf(&cfgpath, "%s%s%s%s", home, DIRSEP(), app, ext);
+asprintf(&cfgpath, "%s%s%s%s", home, DIRSEP(), app, ext)
+asprintf
+asprintf
+&cfgpath
+cfgpath
+cfgpath
+"%s%s%s%s"
+home
+home
+DIRSEP()
+DIRSEP
+DIRSEP
+app
+app
+ext
+ext
+prop_load(cfgpath, verbose, 0);
+prop_load(cfgpath, verbose, 0)
+prop_load
+prop_load
+cfgpath
+cfgpath
+verbose
+verbose
+0
+putil_free(cfgpath);
+putil_free(cfgpath)
+putil_free
+putil_free
+cfgpath
+cfgpath
+putil_free(home);
+putil_free(home)
+putil_free
+putil_free
+home
+home
+sysdir = (CS)putil_malloc(len);
+sysdir = (CS)putil_malloc(len)
+sysdir
+sysdir
+(CS)putil_malloc(len)
+CS
+CS
+CS
+
+putil_malloc(len)
+putil_malloc
+putil_malloc
+len
+len
+if (putil_get_systemdir(sysdir, len)) {	    asprintf(&cfgpath, "%s%s%s%s", sysdir, DIRSEP(), app, ext);	    prop_load(cfgpath, verbose, 0);	    putil_free(cfgpath);	}
+putil_get_systemdir(sysdir, len)
+putil_get_systemdir
+putil_get_systemdir
+sysdir
+sysdir
+len
+len
+{	    asprintf(&cfgpath, "%s%s%s%s", sysdir, DIRSEP(), app, ext);	    prop_load(cfgpath, verbose, 0);	    putil_free(cfgpath);	}
+asprintf(&cfgpath, "%s%s%s%s", sysdir, DIRSEP(), app, ext);
+asprintf(&cfgpath, "%s%s%s%s", sysdir, DIRSEP(), app, ext)
+asprintf
+asprintf
+&cfgpath
+cfgpath
+cfgpath
+"%s%s%s%s"
+sysdir
+sysdir
+DIRSEP()
+DIRSEP
+DIRSEP
+app
+app
+ext
+ext
+prop_load(cfgpath, verbose, 0);
+prop_load(cfgpath, verbose, 0)
+prop_load
+prop_load
+cfgpath
+cfgpath
+verbose
+verbose
+0
+putil_free(cfgpath);
+putil_free(cfgpath)
+putil_free
+putil_free
+cfgpath
+cfgpath
+putil_free(sysdir);
+putil_free(sysdir)
+putil_free
+putil_free
+sysdir
+sysdir
+if ((exedir = putil_dirname(exe))) {#if defined(_WIN32)	    CS globalcfg;	    asprintf(&globalcfg, "%s%s%s%s", exedir, DIRSEP(), app, ext);#else	/*!_WIN32*/	    CS globalcfg;	    CS appdir;	    if ((appdir = putil_dirname(exedir))) {		asprintf(&globalcfg, "%s/etc/%s%s", appdir, app, ext);		putil_free(appdir);	    }#endif	/*_WIN32*/	    putil_free(exedir);	    prop_load(globalcfg, verbose, 0);	    putil_free(globalcfg);	}
+(exedir = putil_dirname(exe))
+exedir = putil_dirname(exe)
+exedir
+exedir
+putil_dirname(exe)
+putil_dirname
+putil_dirname
+exe
+exe
+{#if defined(_WIN32)	    CS globalcfg;	    asprintf(&globalcfg, "%s%s%s%s", exedir, DIRSEP(), app, ext);#else	/*!_WIN32*/	    CS globalcfg;	    CS appdir;	    if ((appdir = putil_dirname(exedir))) {		asprintf(&globalcfg, "%s/etc/%s%s", appdir, app, ext);		putil_free(appdir);	    }#endif	/*_WIN32*/	    putil_free(exedir);	    prop_load(globalcfg, verbose, 0);	    putil_free(globalcfg);	}
+CS globalcfg;
+CS globalcfg;
+CS
+CS
+globalcfg
+globalcfg
+CS appdir;
+CS appdir;
+CS
+CS
+appdir
+appdir
+if ((appdir = putil_dirname(exedir))) {		asprintf(&globalcfg, "%s/etc/%s%s", appdir, app, ext);		putil_free(appdir);	    }
+(appdir = putil_dirname(exedir))
+appdir = putil_dirname(exedir)
+appdir
+appdir
+putil_dirname(exedir)
+putil_dirname
+putil_dirname
+exedir
+exedir
+{		asprintf(&globalcfg, "%s/etc/%s%s", appdir, app, ext);		putil_free(appdir);	    }
+asprintf(&globalcfg, "%s/etc/%s%s", appdir, app, ext);
+asprintf(&globalcfg, "%s/etc/%s%s", appdir, app, ext)
+asprintf
+asprintf
+&globalcfg
+globalcfg
+globalcfg
+"%s/etc/%s%s"
+appdir
+appdir
+app
+app
+ext
+ext
+putil_free(appdir);
+putil_free(appdir)
+putil_free
+putil_free
+appdir
+appdir
+putil_free(exedir);
+putil_free(exedir)
+putil_free
+putil_free
+exedir
+exedir
+prop_load(globalcfg, verbose, 0);
+prop_load(globalcfg, verbose, 0)
+prop_load
+prop_load
+globalcfg
+globalcfg
+verbose
+verbose
+0
+putil_free(globalcfg);
+putil_free(globalcfg)
+putil_free
+putil_free
+globalcfg
+globalcfg
+asprintf(&cfgname, ".%s", app);
+asprintf(&cfgname, ".%s", app)
+asprintf
+asprintf
+&cfgname
+cfgname
+cfgname
+".%s"
+app
+app
+if ((cfgpath = _find_file_up(cfgname))) {	    char *pdir;	    CS bdcfg;	    // Look for a properties file in the base dir and try loading it.	    asprintf(&bdcfg, "%s%s%s%s", cfgpath, DIRSEP(), app, PROP_EXT);	    prop_load(bdcfg, verbose, 1);	    putil_free(bdcfg);	    // The location of this file establishes the default	    // project base.	    if ((pdir = putil_dirname(cfgpath))) {		prop_put_str(P_BASE_DIR,		    putil_canon_path(pdir, NULL, 0));		putil_free(pdir);	    }	    putil_free(cfgpath);	} else {	    CCS cwd;	    // If no project config file exists, use cwd for project base.	    if ((cwd = util_get_cwd())) {		prop_put_str(P_BASE_DIR, putil_canon_path((CS)cwd, NULL, 0));		putil_free(cwd);	    } else {		putil_syserr(2, "util_get_cwd()");	    }	}
+(cfgpath = _find_file_up(cfgname))
+cfgpath = _find_file_up(cfgname)
+cfgpath
+cfgpath
+_find_file_up(cfgname)
+_find_file_up
+_find_file_up
+cfgname
+cfgname
+{	    char *pdir;	    CS bdcfg;	    // Look for a properties file in the base dir and try loading it.	    asprintf(&bdcfg, "%s%s%s%s", cfgpath, DIRSEP(), app, PROP_EXT);	    prop_load(bdcfg, verbose, 1);	    putil_free(bdcfg);	    // The location of this file establishes the default	    // project base.	    if ((pdir = putil_dirname(cfgpath))) {		prop_put_str(P_BASE_DIR,		    putil_canon_path(pdir, NULL, 0));		putil_free(pdir);	    }	    putil_free(cfgpath);	}
+char *pdir;
+char *pdir;
+char
+*pdir
+*
+pdir
+CS bdcfg;
+CS bdcfg;
+CS
+CS
+bdcfg
+bdcfg
+asprintf(&bdcfg, "%s%s%s%s", cfgpath, DIRSEP(), app, PROP_EXT);
+asprintf(&bdcfg, "%s%s%s%s", cfgpath, DIRSEP(), app, PROP_EXT)
+asprintf
+asprintf
+&bdcfg
+bdcfg
+bdcfg
+"%s%s%s%s"
+cfgpath
+cfgpath
+DIRSEP()
+DIRSEP
+DIRSEP
+app
+app
+PROP_EXT
+PROP_EXT
+prop_load(bdcfg, verbose, 1);
+prop_load(bdcfg, verbose, 1)
+prop_load
+prop_load
+bdcfg
+bdcfg
+verbose
+verbose
+1
+putil_free(bdcfg);
+putil_free(bdcfg)
+putil_free
+putil_free
+bdcfg
+bdcfg
+if ((pdir = putil_dirname(cfgpath))) {		prop_put_str(P_BASE_DIR,		    putil_canon_path(pdir, NULL, 0));		putil_free(pdir);	    }
+(pdir = putil_dirname(cfgpath))
+pdir = putil_dirname(cfgpath)
+pdir
+pdir
+putil_dirname(cfgpath)
+putil_dirname
+putil_dirname
+cfgpath
+cfgpath
+{		prop_put_str(P_BASE_DIR,		    putil_canon_path(pdir, NULL, 0));		putil_free(pdir);	    }
+prop_put_str(P_BASE_DIR,		    putil_canon_path(pdir, NULL, 0));
+prop_put_str(P_BASE_DIR,		    putil_canon_path(pdir, NULL, 0))
+prop_put_str
+prop_put_str
+P_BASE_DIR
+P_BASE_DIR
+putil_canon_path(pdir, NULL, 0)
+putil_canon_path
+putil_canon_path
+pdir
+pdir
+NULL
+NULL
+0
+putil_free(pdir);
+putil_free(pdir)
+putil_free
+putil_free
+pdir
+pdir
+putil_free(cfgpath);
+putil_free(cfgpath)
+putil_free
+putil_free
+cfgpath
+cfgpath
+{	    CCS cwd;	    // If no project config file exists, use cwd for project base.	    if ((cwd = util_get_cwd())) {		prop_put_str(P_BASE_DIR, putil_canon_path((CS)cwd, NULL, 0));		putil_free(cwd);	    } else {		putil_syserr(2, "util_get_cwd()");	    }	}
+CCS cwd;
+CCS cwd;
+CCS
+CCS
+cwd
+cwd
+if ((cwd = util_get_cwd())) {		prop_put_str(P_BASE_DIR, putil_canon_path((CS)cwd, NULL, 0));		putil_free(cwd);	    } else {		putil_syserr(2, "util_get_cwd()");	    }
+(cwd = util_get_cwd())
+cwd = util_get_cwd()
+cwd
+cwd
+util_get_cwd()
+util_get_cwd
+util_get_cwd
+{		prop_put_str(P_BASE_DIR, putil_canon_path((CS)cwd, NULL, 0));		putil_free(cwd);	    }
+prop_put_str(P_BASE_DIR, putil_canon_path((CS)cwd, NULL, 0));
+prop_put_str(P_BASE_DIR, putil_canon_path((CS)cwd, NULL, 0))
+prop_put_str
+prop_put_str
+P_BASE_DIR
+P_BASE_DIR
+putil_canon_path((CS)cwd, NULL, 0)
+putil_canon_path
+putil_canon_path
+(CS)cwd
+CS
+CS
+CS
+
+cwd
+cwd
+NULL
+NULL
+0
+putil_free(cwd);
+putil_free(cwd)
+putil_free
+putil_free
+cwd
+cwd
+{		putil_syserr(2, "util_get_cwd()");	    }
+putil_syserr(2, "util_get_cwd()");
+putil_syserr(2, "util_get_cwd()")
+putil_syserr
+putil_syserr
+2
+"util_get_cwd()"
+putil_free(cfgname);
+putil_free(cfgname)
+putil_free
+putil_free
+cfgname
+cfgname
+if (prop_is_true(P_STRICT)) {	prop_set_true(P_STRICT_UPLOAD);	prop_set_true(P_STRICT_DOWNLOAD);	prop_put_long(P_STRICT_ERROR, 1);	prop_set_true(P_STRICT_AUDIT);    }
+prop_is_true(P_STRICT)
+prop_is_true
+prop_is_true
+(P_STRICT)
+P_STRICT
+P_STRICT
+{	prop_set_true(P_STRICT_UPLOAD);	prop_set_true(P_STRICT_DOWNLOAD);	prop_put_long(P_STRICT_ERROR, 1);	prop_set_true(P_STRICT_AUDIT);    }
+prop_set_true(P_STRICT_UPLOAD);
+prop_set_true(P_STRICT_UPLOAD);
+prop_set_true
+prop_set_true
+(P_STRICT_UPLOAD)
+P_STRICT_UPLOAD
+P_STRICT_UPLOAD
+prop_set_true(P_STRICT_DOWNLOAD);
+prop_set_true(P_STRICT_DOWNLOAD);
+prop_set_true
+prop_set_true
+(P_STRICT_DOWNLOAD)
+P_STRICT_DOWNLOAD
+P_STRICT_DOWNLOAD
+prop_put_long(P_STRICT_ERROR, 1);
+prop_put_long(P_STRICT_ERROR, 1)
+prop_put_long
+prop_put_long
+P_STRICT_ERROR
+P_STRICT_ERROR
+1
+prop_set_true(P_STRICT_AUDIT);
+prop_set_true(P_STRICT_AUDIT);
+prop_set_true
+prop_set_true
+(P_STRICT_AUDIT)
+P_STRICT_AUDIT
+P_STRICT_AUDIT
+if (prop_has_value(P_STRICT_ERROR)) {	putil_strict_error(prop_get_long(P_STRICT_ERROR));    }
+prop_has_value(P_STRICT_ERROR)
+prop_has_value
+prop_has_value
+(P_STRICT_ERROR)
+P_STRICT_ERROR
+P_STRICT_ERROR
+{	putil_strict_error(prop_get_long(P_STRICT_ERROR));    }
+putil_strict_error(prop_get_long(P_STRICT_ERROR));
+putil_strict_error(prop_get_long(P_STRICT_ERROR))
+putil_strict_error
+putil_strict_error
+prop_get_long(P_STRICT_ERROR)
+prop_get_long
+prop_get_long
+P_STRICT_ERROR
+P_STRICT_ERROR
+return;
+-----joern-----
+(169,110,0)
+(239,228,0)
+(167,221,0)
+(221,207,0)
+(126,24,0)
+(251,130,0)
+(279,278,0)
+(2,9,0)
+(15,157,0)
+(117,262,0)
+(118,139,0)
+(115,185,0)
+(280,89,0)
+(245,194,0)
+(250,174,0)
+(113,9,0)
+(231,219,0)
+(183,107,0)
+(71,114,0)
+(178,146,0)
+(249,35,0)
+(34,183,0)
+(104,111,0)
+(23,166,0)
+(250,133,0)
+(26,88,0)
+(180,205,0)
+(152,20,0)
+(241,243,0)
+(221,146,0)
+(244,122,0)
+(200,24,0)
+(238,130,0)
+(266,104,0)
+(195,133,0)
+(243,111,0)
+(76,211,0)
+(175,86,0)
+(172,20,0)
+(170,212,0)
+(205,224,0)
+(83,15,0)
+(171,199,0)
+(227,143,0)
+(42,31,0)
+(252,197,0)
+(194,88,0)
+(143,9,0)
+(108,216,0)
+(161,168,0)
+(74,95,0)
+(56,172,0)
+(202,115,0)
+(198,229,0)
+(106,39,0)
+(258,90,0)
+(100,212,0)
+(233,15,0)
+(148,154,0)
+(6,46,0)
+(263,15,0)
+(88,26,0)
+(143,146,0)
+(89,24,0)
+(140,15,0)
+(189,115,0)
+(224,64,0)
+(63,3,0)
+(68,97,0)
+(185,223,0)
+(84,259,0)
+(230,178,0)
+(259,23,0)
+(211,204,0)
+(86,166,0)
+(43,86,0)
+(264,70,0)
+(67,143,0)
+(178,168,0)
+(87,168,0)
+(207,254,0)
+(35,249,0)
+(174,250,0)
+(15,205,0)
+(14,216,0)
+(49,250,0)
+(250,168,0)
+(217,13,0)
+(115,20,0)
+(192,178,0)
+(274,178,0)
+(116,84,0)
+(187,179,0)
+(44,254,0)
+(204,39,0)
+(275,20,0)
+(201,23,0)
+(22,38,0)
+(162,142,0)
+(26,166,0)
+(248,88,0)
+(10,39,0)
+(160,259,0)
+(259,209,0)
+(211,114,0)
+(239,172,0)
+(120,110,0)
+(78,42,0)
+(137,20,0)
+(216,46,0)
+(229,198,0)
+(135,146,0)
+(158,61,0)
+(93,258,0)
+(180,172,0)
+(272,43,0)
+(159,109,0)
+(235,162,0)
+(222,181,0)
+(125,42,0)
+(46,108,0)
+(165,42,0)
+(232,212,0)
+(65,3,0)
+(249,240,0)
+(257,123,0)
+(103,89,0)
+(42,277,0)
+(148,92,0)
+(261,86,0)
+(136,250,0)
+(226,190,0)
+(123,166,0)
+(172,239,0)
+(110,19,0)
+(278,212,0)
+(132,92,0)
+(271,250,0)
+(39,204,0)
+(236,133,0)
+(178,230,0)
+(79,235,0)
+(247,250,0)
+(270,94,0)
+(198,154,0)
+(13,90,0)
+(1,68,0)
+(162,235,0)
+(185,115,0)
+(262,176,0)
+(168,87,0)
+(70,90,0)
+(203,229,0)
+(210,100,0)
+(59,84,0)
+(208,56,0)
+(176,262,0)
+(84,249,0)
+(197,20,0)
+(35,272,0)
+(262,257,0)
+(98,20,0)
+(107,21,0)
+(15,140,0)
+(102,15,0)
+(84,212,0)
+(181,24,0)
+(205,20,0)
+(38,52,0)
+(200,257,0)
+(119,46,0)
+(58,42,0)
+(224,205,0)
+(242,197,0)
+(246,220,0)
+(139,54,0)
+(60,137,0)
+(82,257,0)
+(184,224,0)
+(224,184,0)
+(168,20,0)
+(268,205,0)
+(100,9,0)
+(8,172,0)
+(12,178,0)
+(95,197,0)
+(105,61,0)
+(141,130,0)
+(23,259,0)
+(197,95,0)
+(61,212,0)
+(39,259,0)
+(64,172,0)
+(137,115,0)
+(178,12,0)
+(182,113,0)
+(77,18,0)
+(260,146,0)
+(173,42,0)
+(3,63,0)
+(108,46,0)
+(37,216,0)
+(41,272,0)
+(121,174,0)
+(267,246,0)
+(42,165,0)
+(155,100,0)
+(130,52,0)
+(36,20,0)
+(191,20,0)
+(265,113,0)
+(42,115,0)
+(128,178,0)
+(150,26,0)
+(94,270,0)
+(109,259,0)
+(131,68,0)
+(45,123,0)
+(144,5,0)
+(40,162,0)
+(213,249,0)
+(218,157,0)
+(123,257,0)
+(157,15,0)
+(256,212,0)
+(17,20,0)
+(112,180,0)
+(177,194,0)
+(272,35,0)
+(114,62,0)
+(197,168,0)
+(56,185,0)
+(107,183,0)
+(30,212,0)
+(15,168,0)
+(15,52,0)
+(3,229,0)
+(5,90,0)
+(193,212,0)
+(147,64,0)
+(28,5,0)
+(262,24,0)
+(99,100,0)
+(96,89,0)
+(262,277,0)
+(81,229,0)
+(72,188,0)
+(138,262,0)
+(48,6,0)
+(202,172,0)
+(225,202,0)
+(113,31,0)
+(269,235,0)
+(89,9,0)
+(223,185,0)
+(85,12,0)
+(3,92,0)
+(69,2,0)
+(220,246,0)
+(109,212,0)
+(250,49,0)
+(92,132,0)
+(127,202,0)
+(235,111,0)
+(163,18,0)
+(122,205,0)
+(111,243,0)
+(254,207,0)
+(214,148,0)
+(4,92,0)
+(66,235,0)
+(234,20,0)
+(64,224,0)
+(134,212,0)
+(57,139,0)
+(253,246,0)
+(156,113,0)
+(84,94,0)
+(196,200,0)
+(178,207,0)
+(276,42,0)
+(109,94,0)
+(215,212,0)
+(104,142,0)
+(206,180,0)
+(0,94,0)
+(91,2,0)
+(185,56,0)
+(250,205,0)
+(55,176,0)
+(50,250,0)
+(11,278,0)
+(39,94,0)
+(250,277,0)
+(27,143,0)
+(243,207,0)
+(94,7,0)
+(262,168,0)
+(153,198,0)
+(219,31,0)
+(39,249,0)
+(29,43,0)
+(194,270,0)
+(75,195,0)
+(270,194,0)
+(262,138,0)
+(51,20,0)
+(46,6,0)
+(25,20,0)
+(186,262,0)
+(42,168,0)
+(47,204,0)
+(109,249,0)
+(86,43,0)
+(42,173,0)
+(2,151,0)
+(228,239,0)
+(216,108,0)
+(33,146,0)
+(53,149,0)
+(129,262,0)
+(15,277,0)
+(101,111,0)
+(199,212,0)
+(32,239,0)
+(130,9,0)
+(145,262,0)
+(80,173,0)
+(255,178,0)
+(73,212,0)
+(164,2,0)
+(124,26,0)
+(122,20,0)
+(16,207,0)
+(188,146,0)
+(229,3,0)
+(237,272,0)
+(190,20,0)
+(185,223,1)
+(159,84,1)
+(270,194,1)
+(57,108,1)
+(13,217,1)
+(122,205,1)
+(117,129,1)
+(233,157,1)
+(183,34,1)
+(42,125,1)
+(39,94,1)
+(12,85,1)
+(40,111,1)
+(226,221,1)
+(42,165,1)
+(89,9,1)
+(272,237,1)
+(258,93,1)
+(113,9,1)
+(71,211,1)
+(239,228,1)
+(88,26,1)
+(155,109,1)
+(130,9,1)
+(38,22,1)
+(230,128,1)
+(251,141,1)
+(180,206,1)
+(167,104,1)
+(250,271,1)
+(197,252,1)
+(26,150,1)
+(100,9,1)
+(34,179,1)
+(127,225,1)
+(79,269,1)
+(262,257,1)
+(128,274,1)
+(2,9,1)
+(262,277,1)
+(273,100,1)
+(180,205,1)
+(182,42,1)
+(75,130,1)
+(162,235,1)
+(201,160,1)
+(272,43,1)
+(271,247,1)
+(255,230,1)
+(3,65,1)
+(250,49,1)
+(214,198,1)
+(3,63,1)
+(243,241,1)
+(47,249,1)
+(120,92,1)
+(274,12,1)
+(202,115,1)
+(173,80,1)
+(226,110,1)
+(108,46,1)
+(224,184,1)
+(179,187,1)
+(204,39,1)
+(242,95,1)
+(226,148,1)
+(124,248,1)
+(41,213,1)
+(23,201,1)
+(113,265,1)
+(148,214,1)
+(3,92,1)
+(198,229,1)
+(16,197,1)
+(137,115,1)
+(265,156,1)
+(178,207,1)
+(189,122,1)
+(153,92,1)
+(254,44,1)
+(206,112,1)
+(207,254,1)
+(238,251,1)
+(143,27,1)
+(84,94,1)
+(247,49,1)
+(81,3,1)
+(268,172,1)
+(264,5,1)
+(131,1,1)
+(263,140,1)
+(66,40,1)
+(42,173,1)
+(109,249,1)
+(85,207,1)
+(111,243,1)
+(167,111,1)
+(48,119,1)
+(257,123,1)
+(121,180,1)
+(83,263,1)
+(43,86,1)
+(29,88,1)
+(219,231,1)
+(86,166,1)
+(101,188,1)
+(96,280,1)
+(160,43,1)
+(195,75,1)
+(26,166,1)
+(92,132,1)
+(202,172,1)
+(59,114,1)
+(50,174,1)
+(194,177,1)
+(53,139,1)
+(140,102,1)
+(39,106,1)
+(261,175,1)
+(15,168,1)
+(76,204,1)
+(103,96,1)
+(45,82,1)
+(132,4,1)
+(70,264,1)
+(199,107,1)
+(42,115,1)
+(99,210,1)
+(68,131,1)
+(266,162,1)
+(137,60,1)
+(82,137,1)
+(165,78,1)
+(47,94,1)
+(74,181,1)
+(244,180,1)
+(269,66,1)
+(56,208,1)
+(64,147,1)
+(253,250,1)
+(14,46,1)
+(218,38,1)
+(67,178,1)
+(80,202,1)
+(89,103,1)
+(141,15,1)
+(216,37,1)
+(56,172,1)
+(216,46,1)
+(280,200,1)
+(176,55,1)
+(87,161,1)
+(27,227,1)
+(200,257,1)
+(110,169,1)
+(119,273,1)
+(102,233,1)
+(181,222,1)
+(190,226,1)
+(84,259,1)
+(171,199,1)
+(178,12,1)
+(178,168,1)
+(177,245,1)
+(208,189,1)
+(107,183,1)
+(1,108,1)
+(84,249,1)
+(69,164,1)
+(239,32,1)
+(229,3,1)
+(172,239,1)
+(144,28,1)
+(229,203,1)
+(168,87,1)
+(122,244,1)
+(65,153,1)
+(94,270,1)
+(138,117,1)
+(55,257,1)
+(187,70,1)
+(32,228,1)
+(23,166,1)
+(231,113,1)
+(175,29,1)
+(42,168,1)
+(123,166,1)
+(200,196,1)
+(250,168,1)
+(115,185,1)
+(262,176,1)
+(221,207,1)
+(46,6,1)
+(0,88,1)
+(252,242,1)
+(143,9,1)
+(148,92,1)
+(58,173,1)
+(86,261,1)
+(130,238,1)
+(164,220,1)
+(188,72,1)
+(147,268,1)
+(106,10,1)
+(259,23,1)
+(53,68,1)
+(262,168,1)
+(108,216,1)
+(185,56,1)
+(178,192,1)
+(6,48,1)
+(15,140,1)
+(156,182,1)
+(123,45,1)
+(169,120,1)
+(246,267,1)
+(192,255,1)
+(75,2,1)
+(109,159,1)
+(72,143,1)
+(119,190,1)
+(2,91,1)
+(227,67,1)
+(217,258,1)
+(15,277,1)
+(180,172,1)
+(228,8,1)
+(235,79,1)
+(244,195,1)
+(116,59,1)
+(109,94,1)
+(5,144,1)
+(174,121,1)
+(221,167,1)
+(197,95,1)
+(267,253,1)
+(59,204,1)
+(276,165,1)
+(118,57,1)
+(139,118,1)
+(60,219,1)
+(262,138,1)
+(8,168,1)
+(249,35,1)
+(157,218,1)
+(243,207,1)
+(222,89,1)
+(64,172,1)
+(210,155,1)
+(145,138,1)
+(15,157,1)
+(49,136,1)
+(235,111,1)
+(205,224,1)
+(211,204,1)
+(186,145,1)
+(91,69,1)
+(95,74,1)
+(93,149,1)
+(114,71,1)
+(84,116,1)
+(100,99,1)
+(241,101,1)
+(4,207,1)
+(44,16,1)
+(47,259,1)
+(250,277,1)
+(250,205,1)
+(37,14,1)
+(109,259,1)
+(104,266,1)
+(149,53,1)
+(22,220,1)
+(74,257,1)
+(202,127,1)
+(262,186,1)
+(129,176,1)
+(245,0,1)
+(104,111,1)
+(220,246,1)
+(196,262,1)
+(187,149,1)
+(150,124,1)
+(136,50,1)
+(10,47,1)
+(178,230,1)
+(250,174,1)
+(39,249,1)
+(211,76,1)
+(39,259,1)
+(15,83,1)
+(15,205,1)
+(112,205,1)
+(42,277,1)
+(213,43,1)
+(161,273,1)
+(125,276,1)
+(224,64,1)
+(78,58,1)
+(203,81,1)
+(237,41,1)
+(194,88,1)
+(60,202,1)
+(199,179,1)
+(197,168,1)
+(35,272,1)
+(225,115,1)
+(28,13,1)
+(130,220,2)
+(274,207,2)
+(8,273,2)
+(269,111,2)
+(202,172,2)
+(56,172,2)
+(69,220,2)
+(186,257,2)
+(23,166,2)
+(55,257,2)
+(262,168,2)
+(39,249,2)
+(95,273,2)
+(38,220,2)
+(185,273,2)
+(237,43,2)
+(165,202,2)
+(32,273,2)
+(246,180,2)
+(143,9,2)
+(263,220,2)
+(270,88,2)
+(121,180,2)
+(214,92,2)
+(228,273,2)
+(37,46,2)
+(70,149,2)
+(89,257,2)
+(91,220,2)
+(250,49,2)
+(15,220,2)
+(28,149,2)
+(108,46,2)
+(43,88,2)
+(88,26,2)
+(109,94,2)
+(185,56,2)
+(112,273,2)
+(181,257,2)
+(148,92,2)
+(182,202,2)
+(103,257,2)
+(76,204,2)
+(78,202,2)
+(131,108,2)
+(259,23,2)
+(49,180,2)
+(196,257,2)
+(120,92,2)
+(201,43,2)
+(253,180,2)
+(108,216,2)
+(243,207,2)
+(84,94,2)
+(93,149,2)
+(203,92,2)
+(50,180,2)
+(262,176,2)
+(26,166,2)
+(219,202,2)
+(168,87,2)
+(42,277,2)
+(178,12,2)
+(222,257,2)
+(86,88,2)
+(128,207,2)
+(67,207,2)
+(153,92,2)
+(5,149,2)
+(167,207,2)
+(268,273,2)
+(1,108,2)
+(96,257,2)
+(213,43,2)
+(100,9,2)
+(250,180,2)
+(178,168,2)
+(57,108,2)
+(39,259,2)
+(264,149,2)
+(160,43,2)
+(34,179,2)
+(132,207,2)
+(41,43,2)
+(107,179,2)
+(23,43,2)
+(218,220,2)
+(174,180,2)
+(35,43,2)
+(74,273,2)
+(208,273,2)
+(143,207,2)
+(58,202,2)
+(137,273,2)
+(249,35,2)
+(71,204,2)
+(257,123,2)
+(252,273,2)
+(168,273,2)
+(250,277,2)
+(13,149,2)
+(262,277,2)
+(102,220,2)
+(15,140,2)
+(238,220,2)
+(35,272,2)
+(81,92,2)
+(84,249,2)
+(15,277,2)
+(265,202,2)
+(145,257,2)
+(195,180,2)
+(197,168,2)
+(92,207,2)
+(86,166,2)
+(276,202,2)
+(230,207,2)
+(104,111,2)
+(85,207,2)
+(162,235,2)
+(40,111,2)
+(247,180,2)
+(204,39,2)
+(221,207,2)
+(56,273,2)
+(162,111,2)
+(4,207,2)
+(115,273,2)
+(66,111,2)
+(3,63,2)
+(171,199,2)
+(84,259,2)
+(206,273,2)
+(161,273,2)
+(72,207,2)
+(42,165,2)
+(83,220,2)
+(42,168,2)
+(216,46,2)
+(202,273,2)
+(229,92,2)
+(220,246,2)
+(217,149,2)
+(192,207,2)
+(125,202,2)
+(266,111,2)
+(180,172,2)
+(157,220,2)
+(111,207,2)
+(188,207,2)
+(197,273,2)
+(245,88,2)
+(205,273,2)
+(147,273,2)
+(107,183,2)
+(111,243,2)
+(42,202,2)
+(114,204,2)
+(185,223,2)
+(27,207,2)
+(127,273,2)
+(194,88,2)
+(22,220,2)
+(92,132,2)
+(12,207,2)
+(233,220,2)
+(3,92,2)
+(130,9,2)
+(141,220,2)
+(229,3,2)
+(156,202,2)
+(15,205,2)
+(200,257,2)
+(251,220,2)
+(113,202,2)
+(109,249,2)
+(280,257,2)
+(197,95,2)
+(123,166,2)
+(241,207,2)
+(250,168,2)
+(175,88,2)
+(94,88,2)
+(226,273,2)
+(101,207,2)
+(259,43,2)
+(110,92,2)
+(189,273,2)
+(14,46,2)
+(244,273,2)
+(45,273,2)
+(257,273,2)
+(44,273,2)
+(258,149,2)
+(68,108,2)
+(205,224,2)
+(139,108,2)
+(255,207,2)
+(2,220,2)
+(224,184,2)
+(271,180,2)
+(43,86,2)
+(202,115,2)
+(129,257,2)
+(178,207,2)
+(60,273,2)
+(227,207,2)
+(198,92,2)
+(262,138,2)
+(198,229,2)
+(89,9,2)
+(172,239,2)
+(224,64,2)
+(15,157,2)
+(249,43,2)
+(272,43,2)
+(224,273,2)
+(16,273,2)
+(254,273,2)
+(136,180,2)
+(64,172,2)
+(29,88,2)
+(140,220,2)
+(242,273,2)
+(0,88,2)
+(207,254,2)
+(220,180,2)
+(250,205,2)
+(231,202,2)
+(123,273,2)
+(180,205,2)
+(2,9,2)
+(80,202,2)
+(270,194,2)
+(225,273,2)
+(190,273,2)
+(64,273,2)
+(122,205,2)
+(177,88,2)
+(137,115,2)
+(239,273,2)
+(42,173,2)
+(262,257,2)
+(118,108,2)
+(169,92,2)
+(180,273,2)
+(87,273,2)
+(94,270,2)
+(235,111,2)
+(82,273,2)
+(42,115,2)
+(65,92,2)
+(207,273,2)
+(250,174,2)
+(164,220,2)
+(211,204,2)
+(144,149,2)
+(267,180,2)
+(117,257,2)
+(172,273,2)
+(109,259,2)
+(75,180,2)
+(79,111,2)
+(46,6,2)
+(115,185,2)
+(122,273,2)
+(138,257,2)
+(15,168,2)
+(173,202,2)
+(39,94,2)
+(176,257,2)
+(178,230,2)
+(261,88,2)
+(113,9,2)
+(239,228,2)
+(183,179,2)
+-----------------------------------
+(0,progname)
+(1,P_MONITOR_PLATFORM)
+(2,prop_load(cfgpath, verbose, 0)
+(3,(CS)
+(4,cwd)
+(5,prop_put_long(P_STRICT_ERROR, 1)
+(6,putil_getenv("TERM")
+(7,)
+(8,len)
+(9,CCS verbose)
+(10,progname)
+(11,term)
+(12,&bdcfg)
+(13,prop_set_true(P_STRICT_DOWNLOAD)
+(14,term)
+(15,asprintf(&cfgpath, "%s%s%s%s", home, DIRSEP()
+(16,cfgpath)
+(17,app)
+(18,)
+(19,)
+(20,)
+(21,)
+(22,cfgpath)
+(23,putil_strdup(exe)
+(24,)
+(25,if ((exedir = putil_dirname(exe)
+(26,strrchr(exe, \'/\')
+(27,1)
+(28,P_STRICT_ERROR)
+(29,p)
+(30,exedir)
+(31,)
+(32,1)
+(33,pdir)
+(34,P_STRICT_ERROR)
+(35,putil_strdup(p + 1)
+(36,len)
+(37,"cygwin")
+(38,putil_free(cfgpath)
+(39,strrchr(progname, \'.\')
+(40,P_BASE_DIR)
+(41,p)
+(42,asprintf(&cfgpath, "%s%s%s%s", sysdir, DIRSEP()
+(43,p = strrchr(exe, \'\\\\\')
+(44,cfgname)
+(45,exe)
+(46,term = putil_getenv("TERM")
+(47,ext)
+(48,"TERM")
+(49,DIRSEP()
+(50,"%s%s.%s%s")
+(51,if (putil_get_systemdir(sysdir, len)
+(52,)
+(53,P_STRICT)
+(54,)
+(55,globalcfg)
+(56,putil_malloc(len)
+(57,P_MONITOR_PLATFORM)
+(58,"%s%s%s%s")
+(59,P_PROGNAME)
+(60,sysdir)
+(61,)
+(62,)
+(63,CS)
+(64,putil_malloc(len)
+(65,cwd)
+(66,pdir)
+(67,bdcfg)
+(68,prop_put_str(P_MONITOR_PLATFORM, "w")
+(69,verbose)
+(70,prop_set_true(P_STRICT_AUDIT)
+(71,\'\\0\')
+(72,bdcfg)
+(73,p)
+(74,cfgname)
+(75,cfgpath)
+(76,ext)
+(77,if ((cwd = util_get_cwd()
+(78,sysdir)
+(79,0)
+(80,cfgpath)
+(81,NULL)
+(82,exedir)
+(83,ext)
+(84,prop_put_str(P_PROGNAME, progname)
+(85,bdcfg)
+(86,strrchr(exe, \'\\\\\')
+(87,prop_get_app()
+(88,p = strrchr(exe, \'/\')
+(89,prop_load(globalcfg, verbose, 0)
+(90,)
+(91,0)
+(92,cwd = util_get_cwd()
+(93,P_STRICT_UPLOAD)
+(94,progname = putil_strdup(p + 1)
+(95,&cfgname)
+(96,verbose)
+(97,)
+(98,home)
+(99,0)
+(100,prop_load(NULL, verbose, 0)
+(101,pdir)
+(102,home)
+(103,0)
+(104,putil_free(pdir)
+(105,ext)
+(106,\'.\')
+(107,putil_strict_error(prop_get_long(P_STRICT_ERROR)
+(108,(term = putil_getenv("TERM")
+(109,putil_free(progname)
+(110,putil_syserr(2, "util_get_cwd()
+(111,pdir = putil_dirname(cfgpath)
+(112,home)
+(113,prop_load(cfgpath, verbose, 0)
+(114,*ext = \'\\0\')
+(115,sysdir = (CS)
+(116,progname)
+(117,exedir)
+(118,"c")
+(119,term)
+(120,2)
+(121,cfgpath)
+(122,putil_free(home)
+(123,putil_dirname(exe)
+(124,exe)
+(125,ext)
+(126,globalcfg)
+(127,len)
+(128,cfgpath)
+(129,"%s%s%s%s")
+(130,prop_load(cfgpath, verbose, 0)
+(131,"w")
+(132,util_get_cwd()
+(133,)
+(134,cfgpath)
+(135,bdcfg)
+(136,home)
+(137,putil_free(sysdir)
+(138,DIRSEP()
+(139,prop_put_str(P_MONITOR_PLATFORM, "c")
+(140,DIRSEP()
+(141,cfgpath)
+(142,)
+(143,prop_load(bdcfg, verbose, 1)
+(144,1)
+(145,app)
+(146,)
+(147,len)
+(148,putil_free(cwd)
+(149,prop_is_true(P_STRICT)
+(150,\'/\')
+(151,)
+(152,if ((cfgpath = _find_file_up(cfgname)
+(153,P_BASE_DIR)
+(154,)
+(155,NULL)
+(156,verbose)
+(157,&cfgpath)
+(158,if ((ext = strrchr(progname, \'.\')
+(159,progname)
+(160,progname)
+(161,app)
+(162,prop_put_str(P_BASE_DIR,\n\\n\\t\\t    putil_canon_path(pdir, NULL, 0)
+(163,cwd)
+(164,cfgpath)
+(165,DIRSEP()
+(166,CCS exe)
+(167,cfgpath)
+(168,app = prop_get_app()
+(169,"util_get_cwd()
+(170,if (prop_has_value(P_STRICT_ERROR)
+(171,RET)
+(172,len = putil_path_max()
+(173,&cfgpath)
+(174,&cfgpath)
+(175,exe)
+(176,&globalcfg)
+(177,1)
+(178,asprintf(&bdcfg, "%s%s%s%s", cfgpath, DIRSEP()
+(179,prop_has_value(P_STRICT_ERROR)
+(180,putil_get_homedir(home, len)
+(181,putil_free(globalcfg)
+(182,cfgpath)
+(183,prop_get_long(P_STRICT_ERROR)
+(184,CS)
+(185,(CS)
+(186,ext)
+(187,P_STRICT_ERROR)
+(188,putil_free(bdcfg)
+(189,sysdir)
+(190,putil_free(cfgname)
+(191,if (putil_get_homedir(home, len)
+(192,PROP_EXT)
+(193,progname)
+(194,p + 1)
+(195,putil_free(cfgpath)
+(196,exedir)
+(197,asprintf(&cfgname, ".%s", app)
+(198,prop_put_str(P_BASE_DIR, putil_canon_path((CS)
+(199,return;)
+(200,putil_free(exedir)
+(201,exe)
+(202,putil_get_systemdir(sysdir, len)
+(203,0)
+(204,ext = strrchr(progname, \'.\')
+(205,home = (CS)
+(206,len)
+(207,cfgpath = _find_file_up(cfgname)
+(208,len)
+(209,)
+(210,verbose)
+(211,*ext)
+(212,)
+(213,progname)
+(214,cwd)
+(215,if ((p = strrchr(exe, \'/\')
+(216,strstr(term, "cygwin")
+(217,P_STRICT_DOWNLOAD)
+(218,cfgpath)
+(219,putil_free(cfgpath)
+(220,!access(cfgpath, F_OK)
+(221,putil_free(cfgpath)
+(222,globalcfg)
+(223,CS)
+(224,(CS)
+(225,sysdir)
+(226,cfgname)
+(227,verbose)
+(228,putil_path_max()
+(229,putil_canon_path((CS)
+(230,DIRSEP()
+(231,cfgpath)
+(232,if (ext)
+(233,"%s%s%s%s")
+(234,cfgname)
+(235,putil_canon_path(pdir, NULL, 0)
+(236,if (!access(cfgpath, F_OK)
+(237,1)
+(238,0)
+(239,putil_path_max()
+(240,)
+(241,cfgpath)
+(242,".%s")
+(243,putil_dirname(cfgpath)
+(244,home)
+(245,p)
+(246,access(cfgpath, F_OK)
+(247,app)
+(248,p)
+(249,progname = putil_strdup(p + 1)
+(250,asprintf(&cfgpath, "%s%s.%s%s", home, DIRSEP()
+(251,verbose)
+(252,app)
+(253,cfgpath)
+(254,_find_file_up(cfgname)
+(255,app)
+(256,if (prop_is_true(P_STRICT)
+(257,exedir = putil_dirname(exe)
+(258,prop_set_true(P_STRICT_UPLOAD)
+(259,progname = putil_strdup(exe)
+(260,if ((pdir = putil_dirname(cfgpath)
+(261,\'\\\\\')
+(262,asprintf(&globalcfg, "%s%s%s%s", exedir, DIRSEP()
+(263,app)
+(264,P_STRICT_AUDIT)
+(265,0)
+(266,pdir)
+(267,F_OK)
+(268,home)
+(269,NULL)
+(270,putil_strdup(p + 1)
+(271,ext)
+(272,p + 1)
+(273,ext)
+(274,"%s%s%s%s")
+(275,sysdir)
+(276,app)
+(277,CCS ext)
+(278,)
+(279,if ((term = putil_getenv("TERM")
+(280,globalcfg)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,1042 @@
+-----label-----
+0
+-----code-----
+static void __expire_registry(const void *data)
+{
+	struct iax2_peer *peer = (struct iax2_peer *) data;
+
+	if (!peer)
+		return;
+	if (peer->expire == -1) {
+		/* Removed already (possibly through CLI), ignore */
+		return;
+	}
+
+	peer->expire = -1;
+
+	ast_debug(1, "Expiring registration for peer '%s'\n", peer->name);
+	if (ast_test_flag64((&globalflags), IAX_RTUPDATE) && (ast_test_flag64(peer, IAX_TEMPONLY|IAX_RTCACHEFRIENDS)))
+		realtime_update_peer(peer->name, &peer->addr, 0);
+	manager_event(EVENT_FLAG_SYSTEM, "PeerStatus", "ChannelType: IAX2\r\nPeer: IAX2/%s\r\nPeerStatus: Unregistered\r\nCause: Expired\r\n", peer->name);
+	/* modify entry in peercnts table as _not_ registered */
+	peercnt_modify(0, 0, &peer->addr);
+	/* Reset the address */
+	memset(&peer->addr, 0, sizeof(peer->addr));
+	/* Reset expiry value */
+	peer->expiry = min_reg_expire;
+	if (!ast_test_flag64(peer, IAX_TEMPONLY))
+		ast_db_del("IAX/Registry", peer->name);
+	register_peer_exten(peer, 0);
+	ast_devstate_changed(AST_DEVICE_UNAVAILABLE, AST_DEVSTATE_CACHABLE, "IAX2/%s", peer->name); /* Activate notification */
+	if (iax2_regfunk)
+		iax2_regfunk(peer->name, 0);
+
+	if (ast_test_flag64(peer, IAX_RTAUTOCLEAR))
+		unlink_peer(peer);
+
+	peer_unref(peer);
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+5,6
+5,7
+7,8
+7,9
+10,11
+10,12
+10,13
+10,14
+10,15
+10,16
+10,17
+10,18
+10,19
+10,20
+10,21
+10,22
+10,23
+10,24
+10,25
+10,26
+11,12
+12,13
+12,14
+13,14
+15,16
+15,17
+15,18
+18,19
+19,20
+19,21
+20,21
+20,22
+21,22
+23,24
+25,26
+27,28
+27,29
+28,29
+29,30
+32,33
+32,34
+33,34
+33,35
+34,35
+34,36
+35,36
+38,39
+40,41
+42,43
+43,44
+43,45
+44,45
+44,46
+45,46
+48,49
+50,51
+51,52
+51,53
+51,54
+51,55
+52,53
+56,57
+56,58
+57,58
+60,61
+60,62
+61,62
+61,63
+62,63
+62,64
+62,65
+63,64
+65,66
+66,67
+67,68
+69,70
+71,72
+72,73
+72,74
+72,75
+73,74
+75,76
+77,78
+77,79
+78,79
+80,81
+82,83
+83,84
+83,85
+83,86
+83,87
+84,85
+86,87
+86,88
+87,88
+90,91
+91,92
+91,93
+92,93
+96,97
+97,98
+97,99
+97,100
+97,101
+97,102
+98,99
+100,101
+104,105
+104,106
+105,106
+108,109
+109,110
+109,111
+109,112
+109,113
+110,111
+114,115
+115,116
+115,117
+116,117
+119,120
+120,121
+120,122
+120,123
+120,124
+121,122
+123,124
+124,125
+124,126
+125,126
+129,130
+130,131
+131,132
+131,133
+132,133
+135,136
+136,137
+136,138
+137,138
+137,139
+138,139
+141,142
+143,144
+143,145
+144,145
+145,146
+145,147
+145,148
+146,147
+148,149
+150,151
+152,153
+153,154
+153,155
+153,156
+154,155
+157,158
+157,159
+158,159
+161,162
+162,163
+162,164
+162,165
+163,164
+165,166
+168,169
+169,170
+169,171
+169,172
+169,173
+169,174
+170,171
+172,173
+174,175
+177,178
+177,179
+178,179
+181,182
+181,183
+182,183
+184,185
+185,186
+185,187
+185,188
+186,187
+188,189
+188,190
+189,190
+193,194
+193,195
+194,195
+194,196
+194,197
+195,196
+197,198
+199,200
+201,202
+202,203
+202,204
+203,204
+205,206
+207,208
+208,209
+208,210
+209,210
+211,212
+-----nextToken-----
+2,4,6,8,9,14,16,17,22,24,26,30,31,36,37,39,41,46,47,49,53,54,55,58,59,64,68,70,74,76,79,81,85,88,89,93,94,95,99,101,102,103,106,107,111,112,113,117,118,122,126,127,128,133,134,139,140,142,147,149,151,155,156,159,160,164,166,167,171,173,175,176,179,180,183,187,190,191,192,196,198,200,204,206,210,212
+-----computeFrom-----
+33,34
+33,35
+43,44
+43,45
+61,62
+61,63
+77,78
+77,79
+136,137
+136,138
+-----guardedBy-----
+76,93
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;CastExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;Pointer;IdExpression;Name;IfStatement;UnaryExpression;IdExpression;Name;ReturnStatement;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;LiteralExpression;CompoundStatement;ReturnStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;LiteralExpression;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;UnaryExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;LiteralExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;LiteralExpression;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;UnaryExpression;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;IfStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;
+-----ast_node-----
+static void __expire_registry(const void *data){	struct iax2_peer *peer = (struct iax2_peer *) data;	if (!peer)		return;	if (peer->expire == -1) {		/* Removed already (possibly through CLI), ignore */		return;	}	peer->expire = -1;	ast_debug(1, "Expiring registration for peer '%s'\n", peer->name);	if (ast_test_flag64((&globalflags), IAX_RTUPDATE) && (ast_test_flag64(peer, IAX_TEMPONLY|IAX_RTCACHEFRIENDS)))		realtime_update_peer(peer->name, &peer->addr, 0);	manager_event(EVENT_FLAG_SYSTEM, "PeerStatus", "ChannelType: IAX2\r\nPeer: IAX2/%s\r\nPeerStatus: Unregistered\r\nCause: Expired\r\n", peer->name);	/* modify entry in peercnts table as _not_ registered */	peercnt_modify(0, 0, &peer->addr);	/* Reset the address */	memset(&peer->addr, 0, sizeof(peer->addr));	/* Reset expiry value */	peer->expiry = min_reg_expire;	if (!ast_test_flag64(peer, IAX_TEMPONLY))		ast_db_del("IAX/Registry", peer->name);	register_peer_exten(peer, 0);	ast_devstate_changed(AST_DEVICE_UNAVAILABLE, AST_DEVSTATE_CACHABLE, "IAX2/%s", peer->name); /* Activate notification */	if (iax2_regfunk)		iax2_regfunk(peer->name, 0);	if (ast_test_flag64(peer, IAX_RTAUTOCLEAR))		unlink_peer(peer);	peer_unref(peer);}
+static void
+__expire_registry(const void *data)
+__expire_registry
+const void *data
+const void
+*data
+*
+data
+{	struct iax2_peer *peer = (struct iax2_peer *) data;	if (!peer)		return;	if (peer->expire == -1) {		/* Removed already (possibly through CLI), ignore */		return;	}	peer->expire = -1;	ast_debug(1, "Expiring registration for peer '%s'\n", peer->name);	if (ast_test_flag64((&globalflags), IAX_RTUPDATE) && (ast_test_flag64(peer, IAX_TEMPONLY|IAX_RTCACHEFRIENDS)))		realtime_update_peer(peer->name, &peer->addr, 0);	manager_event(EVENT_FLAG_SYSTEM, "PeerStatus", "ChannelType: IAX2\r\nPeer: IAX2/%s\r\nPeerStatus: Unregistered\r\nCause: Expired\r\n", peer->name);	/* modify entry in peercnts table as _not_ registered */	peercnt_modify(0, 0, &peer->addr);	/* Reset the address */	memset(&peer->addr, 0, sizeof(peer->addr));	/* Reset expiry value */	peer->expiry = min_reg_expire;	if (!ast_test_flag64(peer, IAX_TEMPONLY))		ast_db_del("IAX/Registry", peer->name);	register_peer_exten(peer, 0);	ast_devstate_changed(AST_DEVICE_UNAVAILABLE, AST_DEVSTATE_CACHABLE, "IAX2/%s", peer->name); /* Activate notification */	if (iax2_regfunk)		iax2_regfunk(peer->name, 0);	if (ast_test_flag64(peer, IAX_RTAUTOCLEAR))		unlink_peer(peer);	peer_unref(peer);}
+struct iax2_peer *peer = (struct iax2_peer *) data;
+struct iax2_peer *peer = (struct iax2_peer *) data;
+struct iax2_peer
+iax2_peer
+*peer = (struct iax2_peer *) data
+*
+peer
+= (struct iax2_peer *) data
+(struct iax2_peer *) data
+struct iax2_peer *
+struct iax2_peer
+iax2_peer
+*
+*
+data
+data
+if (!peer)		return;
+!peer
+peer
+peer
+return;
+if (peer->expire == -1) {		/* Removed already (possibly through CLI), ignore */		return;	}
+peer->expire == -1
+peer->expire
+peer
+peer
+expire
+-1
+1
+{		/* Removed already (possibly through CLI), ignore */		return;	}
+return;
+peer->expire = -1;
+peer->expire = -1
+peer->expire
+peer
+peer
+expire
+-1
+1
+ast_debug(1, "Expiring registration for peer '%s'\n", peer->name);
+ast_debug(1, "Expiring registration for peer '%s'\n", peer->name)
+ast_debug
+ast_debug
+1
+"Expiring registration for peer '%s'\n"
+peer->name
+peer
+peer
+name
+if (ast_test_flag64((&globalflags), IAX_RTUPDATE) && (ast_test_flag64(peer, IAX_TEMPONLY|IAX_RTCACHEFRIENDS)))		realtime_update_peer(peer->name, &peer->addr, 0);
+ast_test_flag64((&globalflags), IAX_RTUPDATE) && (ast_test_flag64(peer, IAX_TEMPONLY|IAX_RTCACHEFRIENDS))
+ast_test_flag64((&globalflags), IAX_RTUPDATE)
+ast_test_flag64
+ast_test_flag64
+(&globalflags)
+&globalflags
+globalflags
+globalflags
+IAX_RTUPDATE
+IAX_RTUPDATE
+(ast_test_flag64(peer, IAX_TEMPONLY|IAX_RTCACHEFRIENDS))
+ast_test_flag64(peer, IAX_TEMPONLY|IAX_RTCACHEFRIENDS)
+ast_test_flag64
+ast_test_flag64
+peer
+peer
+IAX_TEMPONLY|IAX_RTCACHEFRIENDS
+IAX_TEMPONLY
+IAX_TEMPONLY
+IAX_RTCACHEFRIENDS
+IAX_RTCACHEFRIENDS
+realtime_update_peer(peer->name, &peer->addr, 0);
+realtime_update_peer(peer->name, &peer->addr, 0)
+realtime_update_peer
+realtime_update_peer
+peer->name
+peer
+peer
+name
+&peer->addr
+peer->addr
+peer
+peer
+addr
+0
+manager_event(EVENT_FLAG_SYSTEM, "PeerStatus", "ChannelType: IAX2\r\nPeer: IAX2/%s\r\nPeerStatus: Unregistered\r\nCause: Expired\r\n", peer->name);
+manager_event(EVENT_FLAG_SYSTEM, "PeerStatus", "ChannelType: IAX2\r\nPeer: IAX2/%s\r\nPeerStatus: Unregistered\r\nCause: Expired\r\n", peer->name)
+manager_event
+manager_event
+EVENT_FLAG_SYSTEM
+EVENT_FLAG_SYSTEM
+"PeerStatus"
+"ChannelType: IAX2\r\nPeer: IAX2/%s\r\nPeerStatus: Unregistered\r\nCause: Expired\r\n"
+peer->name
+peer
+peer
+name
+peercnt_modify(0, 0, &peer->addr);
+peercnt_modify(0, 0, &peer->addr)
+peercnt_modify
+peercnt_modify
+0
+0
+&peer->addr
+peer->addr
+peer
+peer
+addr
+memset(&peer->addr, 0, sizeof(peer->addr));
+memset(&peer->addr, 0, sizeof(peer->addr))
+memset
+memset
+&peer->addr
+peer->addr
+peer
+peer
+addr
+0
+sizeof(peer->addr)
+(peer->addr)
+peer->addr
+peer
+peer
+addr
+peer->expiry = min_reg_expire;
+peer->expiry = min_reg_expire
+peer->expiry
+peer
+peer
+expiry
+min_reg_expire
+min_reg_expire
+if (!ast_test_flag64(peer, IAX_TEMPONLY))		ast_db_del("IAX/Registry", peer->name);
+!ast_test_flag64(peer, IAX_TEMPONLY)
+ast_test_flag64(peer, IAX_TEMPONLY)
+ast_test_flag64
+ast_test_flag64
+peer
+peer
+IAX_TEMPONLY
+IAX_TEMPONLY
+ast_db_del("IAX/Registry", peer->name);
+ast_db_del("IAX/Registry", peer->name)
+ast_db_del
+ast_db_del
+"IAX/Registry"
+peer->name
+peer
+peer
+name
+register_peer_exten(peer, 0);
+register_peer_exten(peer, 0)
+register_peer_exten
+register_peer_exten
+peer
+peer
+0
+ast_devstate_changed(AST_DEVICE_UNAVAILABLE, AST_DEVSTATE_CACHABLE, "IAX2/%s", peer->name);
+ast_devstate_changed(AST_DEVICE_UNAVAILABLE, AST_DEVSTATE_CACHABLE, "IAX2/%s", peer->name)
+ast_devstate_changed
+ast_devstate_changed
+AST_DEVICE_UNAVAILABLE
+AST_DEVICE_UNAVAILABLE
+AST_DEVSTATE_CACHABLE
+AST_DEVSTATE_CACHABLE
+"IAX2/%s"
+peer->name
+peer
+peer
+name
+if (iax2_regfunk)		iax2_regfunk(peer->name, 0);
+iax2_regfunk
+iax2_regfunk
+iax2_regfunk(peer->name, 0);
+iax2_regfunk(peer->name, 0)
+iax2_regfunk
+iax2_regfunk
+peer->name
+peer
+peer
+name
+0
+if (ast_test_flag64(peer, IAX_RTAUTOCLEAR))		unlink_peer(peer);
+ast_test_flag64(peer, IAX_RTAUTOCLEAR)
+ast_test_flag64
+ast_test_flag64
+peer
+peer
+IAX_RTAUTOCLEAR
+IAX_RTAUTOCLEAR
+unlink_peer(peer);
+unlink_peer(peer)
+unlink_peer
+unlink_peer
+peer
+peer
+peer_unref(peer);
+peer_unref(peer)
+peer_unref
+peer_unref
+peer
+peer
+-----joern-----
+(34,51,0)
+(83,79,0)
+(23,72,0)
+(45,79,0)
+(78,45,0)
+(39,11,0)
+(55,79,0)
+(110,81,0)
+(109,21,0)
+(104,51,0)
+(94,109,0)
+(37,50,0)
+(54,21,0)
+(9,77,0)
+(14,108,0)
+(17,59,0)
+(21,109,0)
+(47,109,0)
+(63,91,0)
+(56,45,0)
+(43,86,0)
+(19,51,0)
+(93,78,0)
+(31,80,0)
+(105,51,0)
+(10,79,0)
+(59,17,0)
+(75,117,0)
+(114,0,0)
+(5,89,0)
+(91,60,0)
+(23,51,0)
+(59,115,0)
+(0,9,0)
+(1,117,0)
+(116,34,0)
+(30,58,0)
+(89,51,0)
+(109,79,0)
+(103,50,0)
+(96,107,0)
+(108,72,0)
+(117,51,0)
+(7,79,0)
+(50,103,0)
+(73,66,0)
+(71,36,0)
+(66,51,0)
+(90,68,0)
+(11,51,0)
+(60,98,0)
+(2,34,0)
+(78,51,0)
+(8,68,0)
+(99,79,0)
+(9,79,0)
+(102,40,0)
+(25,17,0)
+(67,24,0)
+(69,105,0)
+(58,40,0)
+(60,91,0)
+(48,86,0)
+(98,74,0)
+(34,2,0)
+(65,51,0)
+(11,84,0)
+(27,105,0)
+(29,91,0)
+(117,75,0)
+(20,59,0)
+(97,105,0)
+(85,117,0)
+(64,89,0)
+(21,51,0)
+(52,0,0)
+(3,65,0)
+(4,107,0)
+(53,66,0)
+(12,90,0)
+(32,107,0)
+(51,11,0)
+(82,79,0)
+(103,51,0)
+(69,86,0)
+(68,90,0)
+(50,37,0)
+(76,109,0)
+(80,79,0)
+(26,77,0)
+(11,16,0)
+(70,65,0)
+(58,79,0)
+(101,51,0)
+(35,103,0)
+(77,9,0)
+(115,90,0)
+(24,51,0)
+(72,23,0)
+(66,7,0)
+(44,58,0)
+(80,51,0)
+(51,79,0)
+(87,51,0)
+(98,60,0)
+(107,4,0)
+(15,79,0)
+(84,11,0)
+(65,79,0)
+(40,58,0)
+(92,24,0)
+(45,78,0)
+(106,21,0)
+(86,69,0)
+(28,103,0)
+(57,40,0)
+(72,108,0)
+(38,7,0)
+(6,45,0)
+(62,79,0)
+(61,104,0)
+(115,59,0)
+(22,101,0)
+(59,51,0)
+(113,75,0)
+(90,115,0)
+(49,104,0)
+(107,51,0)
+(0,51,0)
+(13,78,0)
+(46,34,0)
+(18,2,0)
+(104,108,0)
+(108,104,0)
+(41,58,0)
+(33,23,0)
+(42,37,0)
+(40,51,0)
+(88,98,0)
+(111,23,0)
+(98,79,0)
+(91,51,0)
+(74,24,0)
+(112,87,0)
+(105,69,0)
+(100,17,0)
+(86,79,0)
+(74,98,0)
+(71,110,0)
+(24,74,0)
+(67,92,1)
+(115,59,1)
+(104,51,1)
+(97,48,1)
+(64,95,1)
+(35,28,1)
+(98,74,1)
+(105,51,1)
+(90,12,1)
+(93,13,1)
+(66,51,1)
+(65,51,1)
+(90,68,1)
+(47,65,1)
+(54,106,1)
+(87,51,1)
+(1,85,1)
+(8,45,1)
+(64,2,1)
+(2,34,1)
+(114,50,1)
+(89,51,1)
+(37,42,1)
+(4,107,1)
+(80,51,1)
+(117,1,1)
+(70,75,1)
+(89,5,1)
+(111,33,1)
+(76,94,1)
+(44,30,1)
+(52,114,1)
+(49,61,1)
+(116,46,1)
+(94,47,1)
+(98,60,1)
+(11,39,1)
+(57,41,1)
+(102,57,1)
+(86,69,1)
+(96,32,1)
+(50,103,1)
+(101,22,1)
+(72,23,1)
+(14,72,1)
+(20,90,1)
+(12,68,1)
+(23,51,1)
+(0,52,1)
+(65,3,1)
+(33,104,1)
+(34,51,1)
+(41,44,1)
+(18,34,1)
+(0,51,1)
+(71,36,1)
+(22,51,1)
+(103,51,1)
+(85,113,1)
+(11,84,1)
+(78,93,1)
+(61,115,1)
+(50,37,1)
+(48,43,1)
+(51,11,1)
+(80,31,1)
+(109,21,1)
+(100,20,1)
+(71,110,1)
+(108,72,1)
+(32,7,1)
+(56,9,1)
+(77,26,1)
+(108,104,1)
+(91,51,1)
+(6,56,1)
+(40,102,1)
+(31,89,1)
+(59,51,1)
+(25,100,1)
+(74,24,1)
+(9,77,1)
+(27,97,1)
+(104,49,1)
+(58,40,1)
+(68,8,1)
+(53,73,1)
+(60,91,1)
+(40,51,1)
+(115,90,1)
+(66,53,1)
+(36,101,1)
+(107,96,1)
+(7,38,1)
+(113,4,1)
+(13,6,1)
+(70,4,1)
+(38,66,1)
+(30,108,1)
+(107,51,1)
+(3,70,1)
+(78,51,1)
+(26,0,1)
+(88,60,1)
+(73,98,1)
+(23,111,1)
+(63,86,1)
+(11,16,1)
+(43,58,1)
+(71,80,1)
+(42,103,1)
+(106,76,1)
+(45,78,1)
+(117,51,1)
+(28,101,1)
+(34,116,1)
+(46,95,1)
+(24,67,1)
+(29,63,1)
+(105,27,1)
+(2,18,1)
+(91,29,1)
+(21,51,1)
+(87,112,1)
+(92,88,1)
+(103,35,1)
+(95,109,1)
+(108,14,1)
+(75,117,1)
+(110,50,1)
+(17,25,1)
+(69,105,1)
+(112,89,1)
+(5,64,1)
+(24,51,1)
+(30,115,1)
+(101,51,1)
+(31,87,1)
+(59,17,1)
+(21,54,1)
+(39,19,1)
+(6,50,2)
+(72,115,2)
+(87,51,2)
+(8,50,2)
+(34,51,2)
+(103,101,2)
+(75,4,2)
+(115,59,2)
+(78,50,2)
+(100,90,2)
+(34,95,2)
+(45,50,2)
+(112,89,2)
+(51,11,2)
+(89,50,2)
+(14,115,2)
+(74,50,2)
+(54,50,2)
+(69,105,2)
+(117,51,2)
+(92,50,2)
+(73,50,2)
+(27,50,2)
+(42,101,2)
+(23,51,2)
+(3,50,2)
+(65,50,2)
+(58,40,2)
+(87,89,2)
+(98,74,2)
+(76,50,2)
+(116,95,2)
+(36,101,2)
+(59,17,2)
+(107,50,2)
+(0,50,2)
+(7,50,2)
+(104,51,2)
+(105,51,2)
+(114,50,2)
+(91,51,2)
+(40,51,2)
+(96,50,2)
+(61,115,2)
+(49,115,2)
+(78,51,2)
+(111,115,2)
+(59,90,2)
+(65,51,2)
+(108,104,2)
+(97,50,2)
+(103,51,2)
+(109,50,2)
+(53,50,2)
+(64,50,2)
+(74,24,2)
+(17,90,2)
+(5,50,2)
+(13,50,2)
+(12,50,2)
+(69,50,2)
+(71,36,2)
+(37,101,2)
+(50,101,2)
+(2,34,2)
+(86,69,2)
+(113,4,2)
+(0,51,2)
+(9,77,2)
+(101,51,2)
+(89,51,2)
+(106,50,2)
+(108,115,2)
+(80,50,2)
+(90,50,2)
+(9,50,2)
+(26,50,2)
+(117,4,2)
+(94,50,2)
+(32,50,2)
+(33,115,2)
+(52,50,2)
+(40,50,2)
+(91,50,2)
+(57,50,2)
+(71,110,2)
+(29,50,2)
+(104,115,2)
+(70,50,2)
+(67,50,2)
+(1,4,2)
+(44,50,2)
+(98,50,2)
+(107,51,2)
+(80,51,2)
+(85,4,2)
+(24,51,2)
+(11,16,2)
+(60,91,2)
+(63,50,2)
+(59,51,2)
+(93,50,2)
+(28,101,2)
+(105,50,2)
+(66,51,2)
+(58,50,2)
+(38,50,2)
+(95,50,2)
+(23,115,2)
+(31,50,2)
+(50,37,2)
+(21,50,2)
+(21,51,2)
+(20,90,2)
+(35,101,2)
+(77,50,2)
+(115,50,2)
+(60,50,2)
+(66,50,2)
+(110,50,2)
+(41,50,2)
+(109,21,2)
+(11,84,2)
+(75,117,2)
+(18,95,2)
+(72,23,2)
+(46,95,2)
+(115,90,2)
+(45,78,2)
+(86,50,2)
+(88,50,2)
+(4,50,2)
+(24,50,2)
+(25,90,2)
+(90,68,2)
+(2,95,2)
+(68,50,2)
+(47,50,2)
+(50,103,2)
+(102,50,2)
+(56,50,2)
+(43,50,2)
+(108,72,2)
+(98,60,2)
+(48,50,2)
+(4,107,2)
+(30,50,2)
+-----------------------------------
+(0,peer->expire)
+(1,name)
+(2,iax2_regfunk(peer->name, 0)
+(3,0)
+(4,!ast_test_flag64(peer, IAX_TEMPONLY)
+(5,IAX_RTAUTOCLEAR)
+(6,"Expiring registration for peer \'%s\'\\n")
+(7,peer->expiry = min_reg_expire)
+(8,globalflags)
+(9,peer->expire = -1)
+(10,if (!peer)
+(11,(struct iax2_peer *)
+(12,IAX_RTUPDATE)
+(13,peer)
+(14,0)
+(15,if (peer->expire == -1)
+(16,const void *data)
+(17,IAX_TEMPONLY|IAX_RTCACHEFRIENDS)
+(18,0)
+(19,peer)
+(20,peer)
+(21,peer->name)
+(22,peer)
+(23,peer->addr)
+(24,peer->addr)
+(25,IAX_RTCACHEFRIENDS)
+(26,1)
+(27,addr)
+(28,peer)
+(29,addr)
+(30,EVENT_FLAG_SYSTEM)
+(31,peer)
+(32,peer)
+(33,peer)
+(34,peer->name)
+(35,expire)
+(36,return;)
+(37,-1)
+(38,min_reg_expire)
+(39,data)
+(40,peer->name)
+(41,"ChannelType: IAX2\\r\\nPeer: IAX2/%s\\r\\nPeerStatus: Unregistered\\r\\nCause: Expired\\r\\n")
+(42,1)
+(43,0)
+(44,"PeerStatus")
+(45,ast_debug(1, "Expiring registration for peer \'%s\'\\n", peer->name)
+(46,peer)
+(47,AST_DEVICE_UNAVAILABLE)
+(48,0)
+(49,name)
+(50,peer->expire == -1)
+(51,*peer = (struct iax2_peer *)
+(52,expire)
+(53,expiry)
+(54,name)
+(55,if (ast_test_flag64((&globalflags)
+(56,1)
+(57,peer)
+(58,manager_event(EVENT_FLAG_SYSTEM, "PeerStatus", "ChannelType: IAX2\\r\\nPeer: IAX2/%s\\r\\nPeerStatus: Unregistered\\r\\nCause: Expired\\r\\n", peer->name)
+(59,ast_test_flag64(peer, IAX_TEMPONLY|IAX_RTCACHEFRIENDS)
+(60,&peer->addr)
+(61,peer)
+(62,if (ast_test_flag64(peer, IAX_RTAUTOCLEAR)
+(63,peer)
+(64,peer)
+(65,register_peer_exten(peer, 0)
+(66,peer->expiry)
+(67,addr)
+(68,&globalflags)
+(69,&peer->addr)
+(70,peer)
+(71,RET)
+(72,&peer->addr)
+(73,peer)
+(74,sizeof(peer->addr)
+(75,ast_db_del("IAX/Registry", peer->name)
+(76,"IAX2/%s")
+(77,-1)
+(78,peer->name)
+(79,)
+(80,peer_unref(peer)
+(81,)
+(82,peer)
+(83,if (iax2_regfunk)
+(84,struct iax2_peer *)
+(85,peer)
+(86,peercnt_modify(0, 0, &peer->addr)
+(87,unlink_peer(peer)
+(88,0)
+(89,ast_test_flag64(peer, IAX_RTAUTOCLEAR)
+(90,ast_test_flag64((&globalflags)
+(91,peer->addr)
+(92,peer)
+(93,name)
+(94,AST_DEVSTATE_CACHABLE)
+(95,iax2_regfunk)
+(96,IAX_TEMPONLY)
+(97,peer)
+(98,memset(&peer->addr, 0, sizeof(peer->addr)
+(99,if (!ast_test_flag64(peer, IAX_TEMPONLY)
+(100,IAX_TEMPONLY)
+(101,!peer)
+(102,name)
+(103,peer->expire)
+(104,peer->name)
+(105,peer->addr)
+(106,peer)
+(107,ast_test_flag64(peer, IAX_TEMPONLY)
+(108,realtime_update_peer(peer->name, &peer->addr, 0)
+(109,ast_devstate_changed(AST_DEVICE_UNAVAILABLE, AST_DEVSTATE_CACHABLE, "IAX2/%s", peer->name)
+(110,return;)
+(111,addr)
+(112,peer)
+(113,"IAX/Registry")
+(114,peer)
+(115,ast_test_flag64((&globalflags)
+(116,name)
+(117,peer->name)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

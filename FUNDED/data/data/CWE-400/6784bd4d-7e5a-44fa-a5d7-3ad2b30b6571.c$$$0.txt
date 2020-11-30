@@ -1,0 +1,3427 @@
+-----label-----
+1
+-----code-----
+static RenderedBitmap *new_rendered_fz_pixmap(fz_context *ctx, fz_pixmap *pixmap)
+
+{
+
+    int paletteSize = 0;
+
+    bool hasPalette = false;
+
+
+
+    int w = pixmap->w;
+
+    int h = pixmap->h;
+
+    int rows8 = ((w + 3) / 4) * 4;
+
+
+
+    BITMAPINFO *bmi = (BITMAPINFO *)calloc(1, sizeof(BITMAPINFOHEADER) + 256 * sizeof(RGBQUAD));
+
+
+
+    // always try to produce an 8-bit palette for saving some memory
+
+    unsigned char *bmpData = (unsigned char *)calloc(rows8, h);
+
+    if (!bmpData) {
+
+        free(bmi);
+
+        return NULL;
+
+    }
+
+    fz_pixmap *bgrPixmap = NULL;
+
+    if (bmpData && pixmap->n == 4 &&
+
+        pixmap->colorspace == fz_device_rgb(ctx)) {
+
+        unsigned char *dest = bmpData;
+
+        unsigned char *source = pixmap->samples;
+
+
+
+        for (int j = 0; j < h; j++) {
+
+            for (int i = 0; i < w; i++) {
+
+                RGBQUAD c = { 0 };
+
+
+
+                c.rgbRed = *source++;
+
+                c.rgbGreen = *source++;
+
+                c.rgbBlue = *source++;
+
+                source++;
+
+
+
+                /* find this color in the palette */
+
+                int k;
+
+                for (k = 0; k < paletteSize; k++)
+
+                    if (*(int *)&bmi->bmiColors[k] == *(int *)&c)
+
+                        break;
+
+                /* add it to the palette if it isn't in there and if there's still space left */
+
+                if (k == paletteSize) {
+
+                    if (k >= 256)
+
+                        goto ProducingPaletteDone;
+
+                    *(int *)&bmi->bmiColors[paletteSize] = *(int *)&c;
+
+                    paletteSize++;
+
+                }
+
+                /* 8-bit data consists of indices into the color palette */
+
+                *dest++ = k;
+
+            }
+
+            dest += rows8 - w;
+
+        }
+
+ProducingPaletteDone:
+
+        hasPalette = paletteSize < 256;
+
+    }
+
+    if (!hasPalette) {
+
+        free(bmpData);
+
+        /* BGRA is a GDI compatible format */
+
+        fz_try(ctx) {
+
+            fz_irect bbox;
+
+            fz_colorspace *colorspace = fz_device_bgr(ctx);
+
+            bgrPixmap = fz_new_pixmap_with_bbox(ctx, colorspace, fz_pixmap_bbox(ctx, pixmap, &bbox));
+
+            fz_convert_pixmap(ctx, bgrPixmap, pixmap);
+
+        }
+
+        fz_catch(ctx) {
+
+            free(bmi);
+
+            return NULL;
+
+        }
+
+    }
+
+    AssertCrash(hasPalette || bgrPixmap);
+
+
+
+    bmi->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+
+    bmi->bmiHeader.biWidth = w;
+
+    bmi->bmiHeader.biHeight = -h;
+
+    bmi->bmiHeader.biPlanes = 1;
+
+    bmi->bmiHeader.biCompression = BI_RGB;
+
+    bmi->bmiHeader.biBitCount = hasPalette ? 8 : 32;
+
+    bmi->bmiHeader.biSizeImage = h * (hasPalette ? rows8 : w * 4);
+
+    bmi->bmiHeader.biClrUsed = hasPalette ? paletteSize : 0;
+
+
+
+    HDC hDC = GetDC(NULL);
+
+    HBITMAP hbmp = CreateDIBitmap(hDC, &bmi->bmiHeader, CBM_INIT,
+
+        hasPalette ? bmpData : bgrPixmap->samples, bmi, DIB_RGB_COLORS);
+
+    ReleaseDC(NULL, hDC);
+
+
+
+    if (hasPalette)
+
+        free(bmpData);
+
+    else
+
+        fz_drop_pixmap(ctx, bgrPixmap);
+
+    free(bmi);
+
+
+
+    // return a RenderedBitmap even if hbmp is NULL so that callers can
+
+    // distinguish rendering errors from GDI resource exhaustion
+
+    // (and in the latter case retry using smaller target rectangles)
+
+    return new RenderedBitmap(hbmp, SizeI(pixmap->w, pixmap->h));
+
+}
+-----children-----
+1,2
+1,3
+1,4
+2,3
+4,5
+4,6
+4,7
+4,8
+7,8
+7,9
+8,9
+10,11
+10,12
+13,14
+13,15
+14,15
+16,17
+16,18
+19,20
+19,21
+19,22
+19,23
+19,24
+19,25
+19,26
+19,27
+19,28
+19,29
+19,30
+19,31
+19,32
+19,33
+19,34
+19,35
+19,36
+19,37
+19,38
+19,39
+19,40
+19,41
+19,42
+19,43
+19,44
+19,45
+20,21
+21,22
+21,23
+23,24
+23,25
+25,26
+27,28
+28,29
+28,30
+30,31
+30,32
+32,33
+34,35
+35,36
+35,37
+37,38
+37,39
+39,40
+40,41
+40,42
+41,42
+44,45
+45,46
+45,47
+47,48
+47,49
+49,50
+50,51
+50,52
+51,52
+54,55
+55,56
+55,57
+57,58
+57,59
+59,60
+60,61
+60,62
+61,62
+62,63
+62,64
+63,64
+64,65
+64,66
+65,66
+70,71
+71,72
+71,73
+72,73
+74,75
+74,76
+74,77
+77,78
+78,79
+78,80
+79,80
+79,81
+80,81
+82,83
+84,85
+84,86
+84,87
+85,86
+88,89
+88,90
+89,90
+90,91
+90,92
+91,92
+94,95
+94,96
+96,97
+97,98
+97,99
+98,99
+101,102
+102,103
+102,104
+104,105
+104,106
+104,107
+107,108
+108,109
+108,110
+109,110
+109,111
+111,112
+113,114
+113,115
+113,116
+114,115
+116,117
+118,119
+120,121
+120,122
+121,122
+122,123
+124,125
+124,126
+125,126
+126,127
+126,128
+127,128
+129,130
+131,132
+132,133
+134,135
+135,136
+135,137
+136,137
+138,139
+138,140
+138,141
+141,142
+142,143
+144,145
+144,146
+145,146
+145,147
+146,147
+146,148
+147,148
+149,150
+149,151
+150,151
+150,152
+151,152
+155,156
+155,157
+156,157
+156,158
+157,158
+160,161
+160,162
+161,162
+163,164
+165,166
+165,167
+165,168
+165,169
+166,167
+167,168
+167,169
+169,170
+169,171
+169,172
+172,173
+173,174
+175,176
+176,177
+176,178
+178,179
+178,180
+178,181
+181,182
+182,183
+182,184
+183,184
+186,187
+186,188
+186,189
+186,190
+187,188
+188,189
+188,190
+190,191
+190,192
+192,193
+194,195
+194,196
+195,196
+197,198
+199,200
+200,201
+202,203
+202,204
+203,204
+203,205
+203,206
+203,207
+204,205
+205,206
+205,207
+207,208
+207,209
+209,210
+211,212
+211,213
+212,213
+214,215
+216,217
+217,218
+219,220
+219,221
+219,222
+219,223
+219,224
+219,225
+219,226
+219,227
+219,228
+220,221
+221,222
+221,223
+222,223
+224,225
+224,226
+226,227
+227,228
+229,230
+230,231
+230,232
+231,232
+231,233
+232,233
+235,236
+236,237
+237,238
+239,240
+240,241
+240,242
+241,242
+241,243
+242,243
+245,246
+246,247
+247,248
+249,250
+250,251
+250,252
+251,252
+251,253
+252,253
+255,256
+256,257
+257,258
+259,260
+260,261
+261,262
+263,264
+264,265
+264,266
+266,267
+268,269
+268,270
+268,271
+268,272
+269,270
+270,271
+270,272
+271,272
+274,275
+274,276
+275,276
+277,278
+279,280
+280,281
+282,283
+282,284
+283,284
+283,285
+284,285
+285,286
+285,287
+286,287
+286,288
+288,289
+290,291
+291,292
+291,293
+292,293
+292,294
+293,294
+296,297
+298,299
+299,300
+299,301
+300,301
+300,302
+302,303
+304,305
+305,306
+308,309
+308,310
+309,310
+309,311
+310,311
+312,313
+314,315
+314,316
+314,317
+315,316
+315,317
+316,317
+316,318
+317,318
+320,321
+322,323
+323,324
+323,325
+324,325
+325,326
+325,327
+326,327
+326,328
+328,329
+330,331
+331,332
+331,333
+332,333
+332,334
+333,334
+336,337
+338,339
+339,340
+339,341
+340,341
+340,342
+342,343
+344,345
+345,346
+347,348
+348,349
+349,350
+351,352
+352,353
+352,354
+353,354
+354,355
+355,356
+357,358
+359,360
+360,361
+360,362
+361,362
+363,364
+363,365
+364,365
+366,367
+368,369
+368,370
+370,371
+371,372
+371,373
+372,373
+374,375
+374,376
+375,376
+378,379
+378,380
+379,380
+380,381
+382,383
+382,384
+382,385
+382,386
+382,387
+382,388
+382,389
+383,384
+384,385
+384,386
+385,386
+387,388
+389,390
+390,391
+390,392
+391,392
+393,394
+395,396
+396,397
+396,398
+396,399
+396,400
+397,398
+398,399
+398,400
+399,400
+401,402
+403,404
+404,405
+404,406
+405,406
+407,408
+407,409
+407,410
+410,411
+411,412
+411,413
+412,413
+414,415
+416,417
+417,418
+417,419
+418,419
+420,421
+420,422
+420,423
+420,424
+421,422
+423,424
+425,426
+427,428
+427,429
+427,430
+427,431
+428,429
+430,431
+432,433
+434,435
+435,436
+437,438
+438,439
+438,440
+438,441
+438,442
+439,440
+441,442
+443,444
+445,446
+447,448
+448,449
+448,450
+449,450
+451,452
+453,454
+454,455
+454,456
+455,456
+456,457
+456,458
+457,458
+459,460
+461,462
+462,463
+464,465
+465,466
+465,467
+466,467
+468,469
+468,470
+469,470
+471,472
+473,474
+474,475
+474,476
+475,476
+475,477
+476,477
+476,478
+477,478
+481,482
+482,483
+482,484
+483,484
+486,487
+487,488
+487,489
+488,489
+488,490
+489,490
+489,491
+490,491
+494,495
+496,497
+497,498
+497,499
+498,499
+498,500
+499,500
+499,501
+500,501
+504,505
+505,506
+507,508
+508,509
+508,510
+509,510
+509,511
+510,511
+510,512
+511,512
+516,517
+517,518
+517,519
+518,519
+518,520
+519,520
+519,521
+520,521
+524,525
+526,527
+527,528
+527,529
+528,529
+528,530
+529,530
+529,531
+530,531
+534,535
+534,536
+534,537
+535,536
+539,540
+540,541
+540,542
+541,542
+541,543
+542,543
+542,544
+543,544
+547,548
+547,549
+548,549
+550,551
+551,552
+551,553
+551,554
+552,553
+554,555
+556,557
+556,558
+557,558
+560,561
+561,562
+561,563
+562,563
+562,564
+563,564
+563,565
+564,565
+568,569
+568,570
+568,571
+569,570
+571,572
+574,575
+575,576
+575,577
+576,577
+578,579
+578,580
+580,581
+581,582
+581,583
+582,583
+584,585
+586,587
+587,588
+587,589
+588,589
+590,591
+590,592
+592,593
+593,594
+593,595
+593,596
+593,597
+593,598
+593,599
+593,600
+594,595
+596,597
+598,599
+599,600
+599,601
+600,601
+603,604
+605,606
+605,607
+605,608
+606,607
+608,609
+610,611
+610,612
+611,612
+614,615
+616,617
+618,619
+619,620
+619,621
+619,622
+620,621
+622,623
+624,625
+626,627
+626,628
+626,629
+627,628
+629,630
+630,631
+630,632
+631,632
+633,634
+635,636
+636,637
+636,638
+636,639
+637,638
+639,640
+641,642
+643,644
+644,645
+644,646
+645,646
+647,648
+649,650
+650,651
+650,652
+651,652
+651,653
+652,653
+655,656
+655,657
+656,657
+658,659
+658,660
+658,661
+659,660
+661,662
+661,663
+662,663
+665,666
+665,667
+666,667
+-----nextToken-----
+3,5,6,9,11,12,15,17,18,22,24,26,29,31,33,36,38,42,43,46,48,52,53,56,58,66,67,68,69,73,75,76,81,83,86,87,92,93,95,99,100,103,105,106,110,112,115,117,119,123,128,130,133,137,139,140,143,148,152,153,154,158,159,162,164,168,170,171,174,177,179,180,184,185,189,191,193,196,198,201,206,208,210,213,215,218,223,225,228,233,234,238,243,244,248,253,254,258,262,265,267,272,273,276,278,281,287,289,294,295,297,301,303,306,307,311,313,318,319,321,327,329,334,335,337,341,343,346,350,356,358,362,365,367,369,373,376,377,381,386,388,392,394,400,402,406,408,409,413,415,419,422,424,426,429,431,433,436,440,442,444,446,450,452,458,460,463,467,470,472,478,479,480,484,485,491,492,493,495,501,502,503,506,512,513,514,515,521,522,523,525,531,532,533,536,537,538,544,545,546,549,553,555,558,559,565,566,567,570,572,573,577,579,583,585,589,591,595,597,601,602,604,607,609,612,613,615,617,621,623,625,628,632,634,638,640,642,646,648,653,654,657,660,663,664,667,668
+-----computeFrom-----
+60,61
+60,62
+62,63
+62,64
+64,65
+64,66
+88,89
+88,90
+94,95
+94,96
+145,146
+145,147
+146,147
+146,148
+149,150
+149,151
+155,156
+155,157
+194,195
+194,196
+211,212
+211,213
+230,231
+230,232
+240,241
+240,242
+250,251
+250,252
+270,271
+270,272
+274,275
+274,276
+283,284
+283,285
+309,310
+309,311
+316,317
+316,318
+323,324
+323,325
+352,353
+352,354
+360,361
+360,362
+363,364
+363,365
+371,372
+371,373
+374,375
+374,376
+417,418
+417,419
+468,469
+468,470
+474,475
+474,476
+487,488
+487,489
+497,498
+497,499
+508,509
+508,510
+517,518
+517,519
+527,528
+527,529
+540,541
+540,542
+547,548
+547,549
+556,557
+556,558
+561,562
+561,563
+-----guardedBy-----
+148,174
+158,184
+311,318
+313,350
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;NamedTypeSpecifier;Name;FunctionDeclarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;BinaryExpression;UnaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;LiteralExpression;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;Pointer;FunctionCallExpression;IdExpression;Name;LiteralExpression;BinaryExpression;TypeIdExpression;TypeId;NamedTypeSpecifier;Name;Declarator;BinaryExpression;LiteralExpression;TypeIdExpression;TypeId;NamedTypeSpecifier;Name;Declarator;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;EqualsInitializer;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;EqualsInitializer;FieldReference;IdExpression;Name;Name;ForStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ForStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;InitializerList;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;UnaryExpression;IdExpression;Name;ExpressionStatement;UnaryExpression;IdExpression;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;UnaryExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;UnaryExpression;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;UnaryExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;UnaryExpression;IdExpression;Name;BreakStatement;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;GotoStatement;Name;ExpressionStatement;BinaryExpression;UnaryExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;UnaryExpression;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;UnaryExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;UnaryExpression;IdExpression;Name;ExpressionStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;UnaryExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;LabelStatement;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ProblemStatement;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ProblemStatement;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;TypeIdExpression;TypeId;NamedTypeSpecifier;Name;Declarator;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;ConditionalExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;BinaryExpression;IdExpression;Name;UnaryExpression;ConditionalExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;ConditionalExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ConditionalExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;NewExpression;TypeId;NamedTypeSpecifier;Name;Declarator;ConstructorInitializer;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;
+-----ast_node-----
+static RenderedBitmap *new_rendered_fz_pixmap(fz_context *ctx, fz_pixmap *pixmap){    int paletteSize = 0;    bool hasPalette = false;    int w = pixmap->w;    int h = pixmap->h;    int rows8 = ((w + 3) / 4) * 4;    BITMAPINFO *bmi = (BITMAPINFO *)calloc(1, sizeof(BITMAPINFOHEADER) + 256 * sizeof(RGBQUAD));    // always try to produce an 8-bit palette for saving some memory    unsigned char *bmpData = (unsigned char *)calloc(rows8, h);    if (!bmpData) {        free(bmi);        return NULL;    }    fz_pixmap *bgrPixmap = NULL;    if (bmpData && pixmap->n == 4 &&        pixmap->colorspace == fz_device_rgb(ctx)) {        unsigned char *dest = bmpData;        unsigned char *source = pixmap->samples;        for (int j = 0; j < h; j++) {            for (int i = 0; i < w; i++) {                RGBQUAD c = { 0 };                c.rgbRed = *source++;                c.rgbGreen = *source++;                c.rgbBlue = *source++;                source++;                /* find this color in the palette */                int k;                for (k = 0; k < paletteSize; k++)                    if (*(int *)&bmi->bmiColors[k] == *(int *)&c)                        break;                /* add it to the palette if it isn't in there and if there's still space left */                if (k == paletteSize) {                    if (k >= 256)                        goto ProducingPaletteDone;                    *(int *)&bmi->bmiColors[paletteSize] = *(int *)&c;                    paletteSize++;                }                /* 8-bit data consists of indices into the color palette */                *dest++ = k;            }            dest += rows8 - w;        }ProducingPaletteDone:        hasPalette = paletteSize < 256;    }    if (!hasPalette) {        free(bmpData);        /* BGRA is a GDI compatible format */        fz_try(ctx) {            fz_irect bbox;            fz_colorspace *colorspace = fz_device_bgr(ctx);            bgrPixmap = fz_new_pixmap_with_bbox(ctx, colorspace, fz_pixmap_bbox(ctx, pixmap, &bbox));            fz_convert_pixmap(ctx, bgrPixmap, pixmap);        }        fz_catch(ctx) {            free(bmi);            return NULL;        }    }    AssertCrash(hasPalette || bgrPixmap);    bmi->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);    bmi->bmiHeader.biWidth = w;    bmi->bmiHeader.biHeight = -h;    bmi->bmiHeader.biPlanes = 1;    bmi->bmiHeader.biCompression = BI_RGB;    bmi->bmiHeader.biBitCount = hasPalette ? 8 : 32;    bmi->bmiHeader.biSizeImage = h * (hasPalette ? rows8 : w * 4);    bmi->bmiHeader.biClrUsed = hasPalette ? paletteSize : 0;    HDC hDC = GetDC(NULL);    HBITMAP hbmp = CreateDIBitmap(hDC, &bmi->bmiHeader, CBM_INIT,        hasPalette ? bmpData : bgrPixmap->samples, bmi, DIB_RGB_COLORS);    ReleaseDC(NULL, hDC);    if (hasPalette)        free(bmpData);    else        fz_drop_pixmap(ctx, bgrPixmap);    free(bmi);    // return a RenderedBitmap even if hbmp is NULL so that callers can    // distinguish rendering errors from GDI resource exhaustion    // (and in the latter case retry using smaller target rectangles)    return new RenderedBitmap(hbmp, SizeI(pixmap->w, pixmap->h));}
+static RenderedBitmap
+RenderedBitmap
+*new_rendered_fz_pixmap(fz_context *ctx, fz_pixmap *pixmap)
+*
+new_rendered_fz_pixmap
+fz_context *ctx
+fz_context
+fz_context
+*ctx
+*
+ctx
+fz_pixmap *pixmap
+fz_pixmap
+fz_pixmap
+*pixmap
+*
+pixmap
+{    int paletteSize = 0;    bool hasPalette = false;    int w = pixmap->w;    int h = pixmap->h;    int rows8 = ((w + 3) / 4) * 4;    BITMAPINFO *bmi = (BITMAPINFO *)calloc(1, sizeof(BITMAPINFOHEADER) + 256 * sizeof(RGBQUAD));    // always try to produce an 8-bit palette for saving some memory    unsigned char *bmpData = (unsigned char *)calloc(rows8, h);    if (!bmpData) {        free(bmi);        return NULL;    }    fz_pixmap *bgrPixmap = NULL;    if (bmpData && pixmap->n == 4 &&        pixmap->colorspace == fz_device_rgb(ctx)) {        unsigned char *dest = bmpData;        unsigned char *source = pixmap->samples;        for (int j = 0; j < h; j++) {            for (int i = 0; i < w; i++) {                RGBQUAD c = { 0 };                c.rgbRed = *source++;                c.rgbGreen = *source++;                c.rgbBlue = *source++;                source++;                /* find this color in the palette */                int k;                for (k = 0; k < paletteSize; k++)                    if (*(int *)&bmi->bmiColors[k] == *(int *)&c)                        break;                /* add it to the palette if it isn't in there and if there's still space left */                if (k == paletteSize) {                    if (k >= 256)                        goto ProducingPaletteDone;                    *(int *)&bmi->bmiColors[paletteSize] = *(int *)&c;                    paletteSize++;                }                /* 8-bit data consists of indices into the color palette */                *dest++ = k;            }            dest += rows8 - w;        }ProducingPaletteDone:        hasPalette = paletteSize < 256;    }    if (!hasPalette) {        free(bmpData);        /* BGRA is a GDI compatible format */        fz_try(ctx) {            fz_irect bbox;            fz_colorspace *colorspace = fz_device_bgr(ctx);            bgrPixmap = fz_new_pixmap_with_bbox(ctx, colorspace, fz_pixmap_bbox(ctx, pixmap, &bbox));            fz_convert_pixmap(ctx, bgrPixmap, pixmap);        }        fz_catch(ctx) {            free(bmi);            return NULL;        }    }    AssertCrash(hasPalette || bgrPixmap);    bmi->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);    bmi->bmiHeader.biWidth = w;    bmi->bmiHeader.biHeight = -h;    bmi->bmiHeader.biPlanes = 1;    bmi->bmiHeader.biCompression = BI_RGB;    bmi->bmiHeader.biBitCount = hasPalette ? 8 : 32;    bmi->bmiHeader.biSizeImage = h * (hasPalette ? rows8 : w * 4);    bmi->bmiHeader.biClrUsed = hasPalette ? paletteSize : 0;    HDC hDC = GetDC(NULL);    HBITMAP hbmp = CreateDIBitmap(hDC, &bmi->bmiHeader, CBM_INIT,        hasPalette ? bmpData : bgrPixmap->samples, bmi, DIB_RGB_COLORS);    ReleaseDC(NULL, hDC);    if (hasPalette)        free(bmpData);    else        fz_drop_pixmap(ctx, bgrPixmap);    free(bmi);    // return a RenderedBitmap even if hbmp is NULL so that callers can    // distinguish rendering errors from GDI resource exhaustion    // (and in the latter case retry using smaller target rectangles)    return new RenderedBitmap(hbmp, SizeI(pixmap->w, pixmap->h));}
+int paletteSize = 0;
+int paletteSize = 0;
+int
+paletteSize = 0
+paletteSize
+= 0
+0
+bool hasPalette = false;
+bool hasPalette = false;
+bool
+hasPalette = false
+hasPalette
+= false
+false
+int w = pixmap->w;
+int w = pixmap->w;
+int
+w = pixmap->w
+w
+= pixmap->w
+pixmap->w
+pixmap
+pixmap
+w
+int h = pixmap->h;
+int h = pixmap->h;
+int
+h = pixmap->h
+h
+= pixmap->h
+pixmap->h
+pixmap
+pixmap
+h
+int rows8 = ((w + 3) / 4) * 4;
+int rows8 = ((w + 3) / 4) * 4;
+int
+rows8 = ((w + 3) / 4) * 4
+rows8
+= ((w + 3) / 4) * 4
+((w + 3) / 4) * 4
+((w + 3) / 4)
+(w + 3) / 4
+(w + 3)
+w + 3
+w
+w
+3
+4
+4
+BITMAPINFO *bmi = (BITMAPINFO *)calloc(1, sizeof(BITMAPINFOHEADER) + 256 * sizeof(RGBQUAD));
+BITMAPINFO *bmi = (BITMAPINFO *)calloc(1, sizeof(BITMAPINFOHEADER) + 256 * sizeof(RGBQUAD));
+BITMAPINFO
+BITMAPINFO
+*bmi = (BITMAPINFO *)calloc(1, sizeof(BITMAPINFOHEADER) + 256 * sizeof(RGBQUAD))
+*
+bmi
+= (BITMAPINFO *)calloc(1, sizeof(BITMAPINFOHEADER) + 256 * sizeof(RGBQUAD))
+(BITMAPINFO *)calloc(1, sizeof(BITMAPINFOHEADER) + 256 * sizeof(RGBQUAD))
+BITMAPINFO *
+BITMAPINFO
+BITMAPINFO
+*
+*
+calloc(1, sizeof(BITMAPINFOHEADER) + 256 * sizeof(RGBQUAD))
+calloc
+calloc
+1
+sizeof(BITMAPINFOHEADER) + 256 * sizeof(RGBQUAD)
+sizeof(BITMAPINFOHEADER)
+BITMAPINFOHEADER
+BITMAPINFOHEADER
+BITMAPINFOHEADER
+
+256 * sizeof(RGBQUAD)
+256
+sizeof(RGBQUAD)
+RGBQUAD
+RGBQUAD
+RGBQUAD
+
+unsigned char *bmpData = (unsigned char *)calloc(rows8, h);
+unsigned char *bmpData = (unsigned char *)calloc(rows8, h);
+unsigned char
+*bmpData = (unsigned char *)calloc(rows8, h)
+*
+bmpData
+= (unsigned char *)calloc(rows8, h)
+(unsigned char *)calloc(rows8, h)
+unsigned char *
+unsigned char
+*
+*
+calloc(rows8, h)
+calloc
+calloc
+rows8
+rows8
+h
+h
+if (!bmpData) {        free(bmi);        return NULL;    }
+!bmpData
+bmpData
+bmpData
+{        free(bmi);        return NULL;    }
+free(bmi);
+free(bmi)
+free
+free
+bmi
+bmi
+return NULL;
+NULL
+NULL
+fz_pixmap *bgrPixmap = NULL;
+fz_pixmap *bgrPixmap = NULL;
+fz_pixmap
+fz_pixmap
+*bgrPixmap = NULL
+*
+bgrPixmap
+= NULL
+NULL
+NULL
+if (bmpData && pixmap->n == 4 &&        pixmap->colorspace == fz_device_rgb(ctx)) {        unsigned char *dest = bmpData;        unsigned char *source = pixmap->samples;        for (int j = 0; j < h; j++) {            for (int i = 0; i < w; i++) {                RGBQUAD c = { 0 };                c.rgbRed = *source++;                c.rgbGreen = *source++;                c.rgbBlue = *source++;                source++;                /* find this color in the palette */                int k;                for (k = 0; k < paletteSize; k++)                    if (*(int *)&bmi->bmiColors[k] == *(int *)&c)                        break;                /* add it to the palette if it isn't in there and if there's still space left */                if (k == paletteSize) {                    if (k >= 256)                        goto ProducingPaletteDone;                    *(int *)&bmi->bmiColors[paletteSize] = *(int *)&c;                    paletteSize++;                }                /* 8-bit data consists of indices into the color palette */                *dest++ = k;            }            dest += rows8 - w;        }ProducingPaletteDone:        hasPalette = paletteSize < 256;    }
+bmpData && pixmap->n == 4 &&        pixmap->colorspace == fz_device_rgb(ctx)
+bmpData && pixmap->n == 4
+bmpData
+bmpData
+pixmap->n == 4
+pixmap->n
+pixmap
+pixmap
+n
+4
+pixmap->colorspace == fz_device_rgb(ctx)
+pixmap->colorspace
+pixmap
+pixmap
+colorspace
+fz_device_rgb(ctx)
+fz_device_rgb
+fz_device_rgb
+ctx
+ctx
+{        unsigned char *dest = bmpData;        unsigned char *source = pixmap->samples;        for (int j = 0; j < h; j++) {            for (int i = 0; i < w; i++) {                RGBQUAD c = { 0 };                c.rgbRed = *source++;                c.rgbGreen = *source++;                c.rgbBlue = *source++;                source++;                /* find this color in the palette */                int k;                for (k = 0; k < paletteSize; k++)                    if (*(int *)&bmi->bmiColors[k] == *(int *)&c)                        break;                /* add it to the palette if it isn't in there and if there's still space left */                if (k == paletteSize) {                    if (k >= 256)                        goto ProducingPaletteDone;                    *(int *)&bmi->bmiColors[paletteSize] = *(int *)&c;                    paletteSize++;                }                /* 8-bit data consists of indices into the color palette */                *dest++ = k;            }            dest += rows8 - w;        }ProducingPaletteDone:        hasPalette = paletteSize < 256;    }
+unsigned char *dest = bmpData;
+unsigned char *dest = bmpData;
+unsigned char
+*dest = bmpData
+*
+dest
+= bmpData
+bmpData
+bmpData
+unsigned char *source = pixmap->samples;
+unsigned char *source = pixmap->samples;
+unsigned char
+*source = pixmap->samples
+*
+source
+= pixmap->samples
+pixmap->samples
+pixmap
+pixmap
+samples
+for (int j = 0; j < h; j++) {            for (int i = 0; i < w; i++) {                RGBQUAD c = { 0 };                c.rgbRed = *source++;                c.rgbGreen = *source++;                c.rgbBlue = *source++;                source++;                /* find this color in the palette */                int k;                for (k = 0; k < paletteSize; k++)                    if (*(int *)&bmi->bmiColors[k] == *(int *)&c)                        break;                /* add it to the palette if it isn't in there and if there's still space left */                if (k == paletteSize) {                    if (k >= 256)                        goto ProducingPaletteDone;                    *(int *)&bmi->bmiColors[paletteSize] = *(int *)&c;                    paletteSize++;                }                /* 8-bit data consists of indices into the color palette */                *dest++ = k;            }            dest += rows8 - w;        }
+int j = 0;
+int j = 0;
+int
+j = 0
+j
+= 0
+0
+j < h
+j
+j
+h
+h
+j++
+j
+j
+{            for (int i = 0; i < w; i++) {                RGBQUAD c = { 0 };                c.rgbRed = *source++;                c.rgbGreen = *source++;                c.rgbBlue = *source++;                source++;                /* find this color in the palette */                int k;                for (k = 0; k < paletteSize; k++)                    if (*(int *)&bmi->bmiColors[k] == *(int *)&c)                        break;                /* add it to the palette if it isn't in there and if there's still space left */                if (k == paletteSize) {                    if (k >= 256)                        goto ProducingPaletteDone;                    *(int *)&bmi->bmiColors[paletteSize] = *(int *)&c;                    paletteSize++;                }                /* 8-bit data consists of indices into the color palette */                *dest++ = k;            }            dest += rows8 - w;        }
+for (int i = 0; i < w; i++) {                RGBQUAD c = { 0 };                c.rgbRed = *source++;                c.rgbGreen = *source++;                c.rgbBlue = *source++;                source++;                /* find this color in the palette */                int k;                for (k = 0; k < paletteSize; k++)                    if (*(int *)&bmi->bmiColors[k] == *(int *)&c)                        break;                /* add it to the palette if it isn't in there and if there's still space left */                if (k == paletteSize) {                    if (k >= 256)                        goto ProducingPaletteDone;                    *(int *)&bmi->bmiColors[paletteSize] = *(int *)&c;                    paletteSize++;                }                /* 8-bit data consists of indices into the color palette */                *dest++ = k;            }
+int i = 0;
+int i = 0;
+int
+i = 0
+i
+= 0
+0
+i < w
+i
+i
+w
+w
+i++
+i
+i
+{                RGBQUAD c = { 0 };                c.rgbRed = *source++;                c.rgbGreen = *source++;                c.rgbBlue = *source++;                source++;                /* find this color in the palette */                int k;                for (k = 0; k < paletteSize; k++)                    if (*(int *)&bmi->bmiColors[k] == *(int *)&c)                        break;                /* add it to the palette if it isn't in there and if there's still space left */                if (k == paletteSize) {                    if (k >= 256)                        goto ProducingPaletteDone;                    *(int *)&bmi->bmiColors[paletteSize] = *(int *)&c;                    paletteSize++;                }                /* 8-bit data consists of indices into the color palette */                *dest++ = k;            }
+RGBQUAD c = { 0 };
+RGBQUAD c = { 0 };
+RGBQUAD
+RGBQUAD
+c = { 0 }
+c
+= { 0 }
+{ 0 }
+0
+c.rgbRed = *source++;
+c.rgbRed = *source++
+c.rgbRed
+c
+c
+rgbRed
+*source++
+source++
+source
+source
+c.rgbGreen = *source++;
+c.rgbGreen = *source++
+c.rgbGreen
+c
+c
+rgbGreen
+*source++
+source++
+source
+source
+c.rgbBlue = *source++;
+c.rgbBlue = *source++
+c.rgbBlue
+c
+c
+rgbBlue
+*source++
+source++
+source
+source
+source++;
+source++
+source
+source
+int k;
+int k;
+int
+k
+k
+for (k = 0; k < paletteSize; k++)                    if (*(int *)&bmi->bmiColors[k] == *(int *)&c)                        break;
+k = 0;
+k = 0
+k
+k
+0
+k < paletteSize
+k
+k
+paletteSize
+paletteSize
+k++
+k
+k
+if (*(int *)&bmi->bmiColors[k] == *(int *)&c)                        break;
+*(int *)&bmi->bmiColors[k] == *(int *)&c
+*(int *)&bmi->bmiColors[k]
+(int *)&bmi->bmiColors[k]
+int *
+int
+*
+*
+&bmi->bmiColors[k]
+bmi->bmiColors[k]
+bmi->bmiColors
+bmi
+bmi
+bmiColors
+k
+k
+*(int *)&c
+(int *)&c
+int *
+int
+*
+*
+&c
+c
+c
+break;
+if (k == paletteSize) {                    if (k >= 256)                        goto ProducingPaletteDone;                    *(int *)&bmi->bmiColors[paletteSize] = *(int *)&c;                    paletteSize++;                }
+k == paletteSize
+k
+k
+paletteSize
+paletteSize
+{                    if (k >= 256)                        goto ProducingPaletteDone;                    *(int *)&bmi->bmiColors[paletteSize] = *(int *)&c;                    paletteSize++;                }
+if (k >= 256)                        goto ProducingPaletteDone;
+k >= 256
+k
+k
+256
+goto ProducingPaletteDone;
+ProducingPaletteDone
+*(int *)&bmi->bmiColors[paletteSize] = *(int *)&c;
+*(int *)&bmi->bmiColors[paletteSize] = *(int *)&c
+*(int *)&bmi->bmiColors[paletteSize]
+(int *)&bmi->bmiColors[paletteSize]
+int *
+int
+*
+*
+&bmi->bmiColors[paletteSize]
+bmi->bmiColors[paletteSize]
+bmi->bmiColors
+bmi
+bmi
+bmiColors
+paletteSize
+paletteSize
+*(int *)&c
+(int *)&c
+int *
+int
+*
+*
+&c
+c
+c
+paletteSize++;
+paletteSize++
+paletteSize
+paletteSize
+*dest++ = k;
+*dest++ = k
+*dest++
+dest++
+dest
+dest
+k
+k
+dest += rows8 - w;
+dest += rows8 - w
+dest
+dest
+rows8 - w
+rows8
+rows8
+w
+w
+ProducingPaletteDone:        hasPalette = paletteSize < 256;
+ProducingPaletteDone
+hasPalette = paletteSize < 256;
+hasPalette = paletteSize < 256
+hasPalette
+hasPalette
+paletteSize < 256
+paletteSize
+paletteSize
+256
+if (!hasPalette) {        free(bmpData);        /* BGRA is a GDI compatible format */        fz_try(ctx) {            fz_irect bbox;            fz_colorspace *colorspace = fz_device_bgr(ctx);            bgrPixmap = fz_new_pixmap_with_bbox(ctx, colorspace, fz_pixmap_bbox(ctx, pixmap, &bbox));            fz_convert_pixmap(ctx, bgrPixmap, pixmap);        }        fz_catch(ctx) {            free(bmi);            return NULL;        }    }
+!hasPalette
+hasPalette
+hasPalette
+{        free(bmpData);        /* BGRA is a GDI compatible format */        fz_try(ctx) {            fz_irect bbox;            fz_colorspace *colorspace = fz_device_bgr(ctx);            bgrPixmap = fz_new_pixmap_with_bbox(ctx, colorspace, fz_pixmap_bbox(ctx, pixmap, &bbox));            fz_convert_pixmap(ctx, bgrPixmap, pixmap);        }        fz_catch(ctx) {            free(bmi);            return NULL;        }    }
+free(bmpData);
+free(bmpData)
+free
+free
+bmpData
+bmpData
+fz_try(ctx)
+fz_try(ctx)
+fz_try
+fz_try
+ctx
+ctx
+)
+{            fz_irect bbox;            fz_colorspace *colorspace = fz_device_bgr(ctx);            bgrPixmap = fz_new_pixmap_with_bbox(ctx, colorspace, fz_pixmap_bbox(ctx, pixmap, &bbox));            fz_convert_pixmap(ctx, bgrPixmap, pixmap);        }
+fz_irect bbox;
+fz_irect bbox;
+fz_irect
+fz_irect
+bbox
+bbox
+fz_colorspace *colorspace = fz_device_bgr(ctx);
+fz_colorspace *colorspace = fz_device_bgr(ctx);
+fz_colorspace
+fz_colorspace
+*colorspace = fz_device_bgr(ctx)
+*
+colorspace
+= fz_device_bgr(ctx)
+fz_device_bgr(ctx)
+fz_device_bgr
+fz_device_bgr
+ctx
+ctx
+bgrPixmap = fz_new_pixmap_with_bbox(ctx, colorspace, fz_pixmap_bbox(ctx, pixmap, &bbox));
+bgrPixmap = fz_new_pixmap_with_bbox(ctx, colorspace, fz_pixmap_bbox(ctx, pixmap, &bbox))
+bgrPixmap
+bgrPixmap
+fz_new_pixmap_with_bbox(ctx, colorspace, fz_pixmap_bbox(ctx, pixmap, &bbox))
+fz_new_pixmap_with_bbox
+fz_new_pixmap_with_bbox
+ctx
+ctx
+colorspace
+colorspace
+fz_pixmap_bbox(ctx, pixmap, &bbox)
+fz_pixmap_bbox
+fz_pixmap_bbox
+ctx
+ctx
+pixmap
+pixmap
+&bbox
+bbox
+bbox
+fz_convert_pixmap(ctx, bgrPixmap, pixmap);
+fz_convert_pixmap(ctx, bgrPixmap, pixmap)
+fz_convert_pixmap
+fz_convert_pixmap
+ctx
+ctx
+bgrPixmap
+bgrPixmap
+pixmap
+pixmap
+fz_catch(ctx)
+fz_catch(ctx)
+fz_catch
+fz_catch
+ctx
+ctx
+)
+{            free(bmi);            return NULL;        }
+free(bmi);
+free(bmi)
+free
+free
+bmi
+bmi
+return NULL;
+NULL
+NULL
+AssertCrash(hasPalette || bgrPixmap);
+AssertCrash(hasPalette || bgrPixmap)
+AssertCrash
+AssertCrash
+hasPalette || bgrPixmap
+hasPalette
+hasPalette
+bgrPixmap
+bgrPixmap
+bmi->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+bmi->bmiHeader.biSize = sizeof(BITMAPINFOHEADER)
+bmi->bmiHeader.biSize
+bmi->bmiHeader
+bmi
+bmi
+bmiHeader
+biSize
+sizeof(BITMAPINFOHEADER)
+BITMAPINFOHEADER
+BITMAPINFOHEADER
+BITMAPINFOHEADER
+
+bmi->bmiHeader.biWidth = w;
+bmi->bmiHeader.biWidth = w
+bmi->bmiHeader.biWidth
+bmi->bmiHeader
+bmi
+bmi
+bmiHeader
+biWidth
+w
+w
+bmi->bmiHeader.biHeight = -h;
+bmi->bmiHeader.biHeight = -h
+bmi->bmiHeader.biHeight
+bmi->bmiHeader
+bmi
+bmi
+bmiHeader
+biHeight
+-h
+h
+h
+bmi->bmiHeader.biPlanes = 1;
+bmi->bmiHeader.biPlanes = 1
+bmi->bmiHeader.biPlanes
+bmi->bmiHeader
+bmi
+bmi
+bmiHeader
+biPlanes
+1
+bmi->bmiHeader.biCompression = BI_RGB;
+bmi->bmiHeader.biCompression = BI_RGB
+bmi->bmiHeader.biCompression
+bmi->bmiHeader
+bmi
+bmi
+bmiHeader
+biCompression
+BI_RGB
+BI_RGB
+bmi->bmiHeader.biBitCount = hasPalette ? 8 : 32;
+bmi->bmiHeader.biBitCount = hasPalette ? 8 : 32
+bmi->bmiHeader.biBitCount
+bmi->bmiHeader
+bmi
+bmi
+bmiHeader
+biBitCount
+hasPalette ? 8 : 32
+hasPalette
+hasPalette
+8
+32
+bmi->bmiHeader.biSizeImage = h * (hasPalette ? rows8 : w * 4);
+bmi->bmiHeader.biSizeImage = h * (hasPalette ? rows8 : w * 4)
+bmi->bmiHeader.biSizeImage
+bmi->bmiHeader
+bmi
+bmi
+bmiHeader
+biSizeImage
+h * (hasPalette ? rows8 : w * 4)
+h
+h
+(hasPalette ? rows8 : w * 4)
+hasPalette ? rows8 : w * 4
+hasPalette
+hasPalette
+rows8
+rows8
+w * 4
+w
+w
+4
+bmi->bmiHeader.biClrUsed = hasPalette ? paletteSize : 0;
+bmi->bmiHeader.biClrUsed = hasPalette ? paletteSize : 0
+bmi->bmiHeader.biClrUsed
+bmi->bmiHeader
+bmi
+bmi
+bmiHeader
+biClrUsed
+hasPalette ? paletteSize : 0
+hasPalette
+hasPalette
+paletteSize
+paletteSize
+0
+HDC hDC = GetDC(NULL);
+HDC hDC = GetDC(NULL);
+HDC
+HDC
+hDC = GetDC(NULL)
+hDC
+= GetDC(NULL)
+GetDC(NULL)
+GetDC
+GetDC
+NULL
+NULL
+HBITMAP hbmp = CreateDIBitmap(hDC, &bmi->bmiHeader, CBM_INIT,        hasPalette ? bmpData : bgrPixmap->samples, bmi, DIB_RGB_COLORS);
+HBITMAP hbmp = CreateDIBitmap(hDC, &bmi->bmiHeader, CBM_INIT,        hasPalette ? bmpData : bgrPixmap->samples, bmi, DIB_RGB_COLORS);
+HBITMAP
+HBITMAP
+hbmp = CreateDIBitmap(hDC, &bmi->bmiHeader, CBM_INIT,        hasPalette ? bmpData : bgrPixmap->samples, bmi, DIB_RGB_COLORS)
+hbmp
+= CreateDIBitmap(hDC, &bmi->bmiHeader, CBM_INIT,        hasPalette ? bmpData : bgrPixmap->samples, bmi, DIB_RGB_COLORS)
+CreateDIBitmap(hDC, &bmi->bmiHeader, CBM_INIT,        hasPalette ? bmpData : bgrPixmap->samples, bmi, DIB_RGB_COLORS)
+CreateDIBitmap
+CreateDIBitmap
+hDC
+hDC
+&bmi->bmiHeader
+bmi->bmiHeader
+bmi
+bmi
+bmiHeader
+CBM_INIT
+CBM_INIT
+hasPalette ? bmpData : bgrPixmap->samples
+hasPalette
+hasPalette
+bmpData
+bmpData
+bgrPixmap->samples
+bgrPixmap
+bgrPixmap
+samples
+bmi
+bmi
+DIB_RGB_COLORS
+DIB_RGB_COLORS
+ReleaseDC(NULL, hDC);
+ReleaseDC(NULL, hDC)
+ReleaseDC
+ReleaseDC
+NULL
+NULL
+hDC
+hDC
+if (hasPalette)        free(bmpData);    else        fz_drop_pixmap(ctx, bgrPixmap);
+hasPalette
+hasPalette
+free(bmpData);
+free(bmpData)
+free
+free
+bmpData
+bmpData
+fz_drop_pixmap(ctx, bgrPixmap);
+fz_drop_pixmap(ctx, bgrPixmap)
+fz_drop_pixmap
+fz_drop_pixmap
+ctx
+ctx
+bgrPixmap
+bgrPixmap
+free(bmi);
+free(bmi)
+free
+free
+bmi
+bmi
+return new RenderedBitmap(hbmp, SizeI(pixmap->w, pixmap->h));
+new RenderedBitmap(hbmp, SizeI(pixmap->w, pixmap->h))
+RenderedBitmap
+RenderedBitmap
+RenderedBitmap
+
+(hbmp, SizeI(pixmap->w, pixmap->h))
+hbmp
+hbmp
+SizeI(pixmap->w, pixmap->h)
+SizeI
+SizeI
+pixmap->w
+pixmap
+pixmap
+w
+pixmap->h
+pixmap
+pixmap
+h
+-----joern-----
+(73,177,0)
+(261,299,0)
+(36,179,0)
+(22,316,0)
+(174,253,0)
+(210,256,0)
+(350,192,0)
+(76,108,0)
+(279,115,0)
+(124,246,0)
+(28,200,0)
+(142,337,0)
+(294,48,0)
+(338,301,0)
+(230,325,0)
+(32,80,0)
+(124,236,0)
+(257,60,0)
+(14,89,0)
+(108,124,0)
+(170,179,0)
+(150,173,0)
+(107,8,0)
+(293,27,0)
+(2,67,0)
+(214,74,0)
+(205,6,0)
+(162,38,0)
+(93,90,0)
+(159,96,0)
+(161,79,0)
+(290,247,0)
+(121,342,0)
+(78,95,0)
+(208,233,0)
+(26,151,0)
+(21,175,0)
+(78,76,0)
+(107,258,0)
+(178,261,0)
+(228,112,0)
+(85,244,0)
+(329,128,0)
+(218,102,0)
+(63,34,0)
+(353,48,0)
+(6,134,0)
+(350,158,0)
+(269,56,0)
+(185,130,0)
+(192,102,0)
+(236,320,0)
+(140,25,0)
+(90,198,0)
+(39,184,0)
+(80,32,0)
+(139,315,0)
+(78,229,0)
+(185,245,0)
+(128,244,0)
+(62,134,0)
+(224,198,0)
+(34,8,0)
+(307,233,0)
+(152,73,0)
+(121,14,0)
+(217,42,0)
+(257,235,0)
+(328,149,0)
+(287,245,0)
+(69,271,0)
+(23,13,0)
+(282,301,0)
+(84,344,0)
+(99,175,0)
+(283,175,0)
+(45,299,0)
+(192,95,0)
+(225,198,0)
+(80,245,0)
+(78,146,0)
+(8,91,0)
+(11,13,0)
+(132,79,0)
+(49,328,0)
+(173,219,0)
+(295,297,0)
+(66,177,0)
+(337,72,0)
+(15,273,0)
+(342,299,0)
+(308,63,0)
+(88,134,0)
+(274,175,0)
+(68,161,0)
+(280,306,0)
+(315,60,0)
+(234,95,0)
+(22,175,0)
+(37,257,0)
+(30,316,0)
+(154,175,0)
+(315,235,0)
+(78,65,0)
+(320,236,0)
+(5,38,0)
+(302,272,0)
+(265,321,0)
+(171,148,0)
+(261,89,0)
+(230,179,0)
+(215,242,0)
+(286,67,0)
+(208,307,0)
+(163,168,0)
+(239,24,0)
+(347,22,0)
+(78,161,0)
+(354,331,0)
+(95,287,0)
+(307,315,0)
+(103,124,0)
+(258,107,0)
+(145,311,0)
+(314,325,0)
+(78,132,0)
+(320,177,0)
+(301,38,0)
+(243,177,0)
+(184,348,0)
+(206,89,0)
+(195,233,0)
+(78,302,0)
+(306,354,0)
+(183,321,0)
+(346,140,0)
+(306,246,0)
+(314,38,0)
+(326,161,0)
+(157,89,0)
+(335,246,0)
+(270,115,0)
+(54,25,0)
+(211,96,0)
+(105,219,0)
+(278,4,0)
+(14,121,0)
+(192,161,0)
+(33,237,0)
+(129,134,0)
+(251,132,0)
+(61,175,0)
+(5,50,0)
+(202,20,0)
+(74,34,0)
+(157,315,0)
+(115,34,0)
+(323,278,0)
+(36,98,0)
+(313,205,0)
+(53,205,0)
+(166,355,0)
+(73,52,0)
+(149,217,0)
+(303,106,0)
+(354,34,0)
+(168,61,0)
+(354,306,0)
+(104,65,0)
+(186,230,0)
+(44,36,0)
+(199,179,0)
+(263,349,0)
+(52,73,0)
+(25,140,0)
+(304,265,0)
+(120,74,0)
+(112,6,0)
+(233,9,0)
+(218,34,0)
+(179,56,0)
+(111,124,0)
+(223,247,0)
+(50,194,0)
+(146,2,0)
+(342,121,0)
+(51,156,0)
+(173,34,0)
+(306,265,0)
+(209,67,0)
+(8,107,0)
+(187,63,0)
+(337,142,0)
+(325,194,0)
+(278,94,0)
+(94,278,0)
+(78,83,0)
+(255,34,0)
+(301,237,0)
+(309,236,0)
+(73,277,0)
+(157,327,0)
+(29,170,0)
+(277,292,0)
+(161,80,0)
+(193,106,0)
+(354,316,0)
+(222,175,0)
+(113,315,0)
+(91,8,0)
+(102,9,0)
+(61,170,0)
+(265,306,0)
+(41,52,0)
+(46,242,0)
+(234,10,0)
+(151,34,0)
+(47,302,0)
+(7,148,0)
+(221,134,0)
+(95,234,0)
+(288,175,0)
+(296,34,0)
+(220,149,0)
+(216,354,0)
+(35,5,0)
+(235,257,0)
+(182,158,0)
+(72,337,0)
+(349,79,0)
+(75,143,0)
+(327,157,0)
+(192,146,0)
+(69,39,0)
+(340,314,0)
+(299,342,0)
+(130,185,0)
+(247,177,0)
+(115,331,0)
+(213,27,0)
+(122,221,0)
+(77,306,0)
+(78,48,0)
+(297,336,0)
+(210,34,0)
+(331,354,0)
+(314,10,0)
+(179,175,0)
+(19,245,0)
+(311,170,0)
+(8,34,0)
+(59,302,0)
+(337,271,0)
+(275,149,0)
+(108,175,0)
+(50,5,0)
+(78,175,0)
+(121,249,0)
+(128,177,0)
+(344,355,0)
+(12,189,0)
+(190,24,0)
+(315,157,0)
+(339,335,0)
+(260,258,0)
+(191,193,0)
+(82,297,0)
+(331,115,0)
+(48,79,0)
+(352,208,0)
+(322,133,0)
+(137,255,0)
+(189,78,0)
+(98,36,0)
+(132,303,0)
+(78,168,0)
+(273,34,0)
+(4,2,0)
+(227,173,0)
+(168,74,0)
+(258,260,0)
+(70,157,0)
+(311,236,0)
+(208,60,0)
+(238,81,0)
+(106,303,0)
+(79,245,0)
+(272,175,0)
+(259,156,0)
+(38,175,0)
+(176,135,0)
+(348,184,0)
+(306,149,0)
+(147,206,0)
+(142,219,0)
+(226,321,0)
+(4,278,0)
+(39,69,0)
+(324,14,0)
+(65,239,0)
+(354,288,0)
+(167,247,0)
+(110,247,0)
+(78,133,0)
+(351,246,0)
+(133,143,0)
+(112,130,0)
+(109,272,0)
+(31,128,0)
+(43,56,0)
+(288,354,0)
+(230,217,0)
+(253,6,0)
+(40,134,0)
+(38,206,0)
+(315,307,0)
+(200,38,0)
+(298,273,0)
+(164,244,0)
+(316,175,0)
+(56,179,0)
+(203,149,0)
+(194,50,0)
+(249,60,0)
+(1,192,0)
+(119,124,0)
+(6,205,0)
+(3,260,0)
+(321,175,0)
+(98,175,0)
+(153,94,0)
+(92,325,0)
+(146,292,0)
+(254,164,0)
+(205,89,0)
+(117,307,0)
+(292,277,0)
+(188,235,0)
+(229,98,0)
+(297,321,0)
+(177,175,0)
+(300,86,0)
+(34,175,0)
+(275,342,0)
+(87,229,0)
+(343,76,0)
+(220,9,0)
+(292,165,0)
+(217,230,0)
+(48,185,0)
+(247,167,0)
+(341,285,0)
+(2,4,0)
+(303,245,0)
+(325,175,0)
+(221,149,0)
+(184,39,0)
+(141,209,0)
+(198,90,0)
+(118,134,0)
+(287,244,0)
+(212,175,0)
+(311,13,0)
+(55,157,0)
+(310,356,0)
+(52,34,0)
+(292,146,0)
+(27,355,0)
+(297,246,0)
+(140,258,0)
+(76,151,0)
+(248,175,0)
+(59,34,0)
+(267,320,0)
+(255,133,0)
+(135,316,0)
+(83,273,0)
+(268,220,0)
+(133,255,0)
+(232,132,0)
+(197,234,0)
+(96,65,0)
+(24,239,0)
+(42,217,0)
+(209,177,0)
+(149,175,0)
+(86,6,0)
+(281,320,0)
+(318,354,0)
+(32,253,0)
+(219,142,0)
+(253,32,0)
+(58,6,0)
+(278,323,0)
+(13,311,0)
+(10,10,0)
+(231,246,0)
+(184,349,0)
+(20,34,0)
+(219,173,0)
+(94,79,0)
+(246,175,0)
+(350,78,0)
+(65,96,0)
+(266,255,0)
+(302,59,0)
+(17,14,0)
+(273,83,0)
+(316,135,0)
+(127,354,0)
+(181,151,0)
+(157,60,0)
+(208,89,0)
+(200,175,0)
+(10,221,0)
+(276,245,0)
+(74,168,0)
+(96,34,0)
+(90,200,0)
+(101,221,0)
+(250,175,0)
+(131,265,0)
+(170,311,0)
+(57,22,0)
+(144,10,0)
+(335,236,0)
+(277,73,0)
+(196,175,0)
+(242,60,0)
+(169,175,0)
+(155,175,0)
+(240,233,0)
+(81,237,0)
+(247,246,0)
+(198,34,0)
+(13,38,0)
+(71,107,0)
+(207,59,0)
+(242,321,0)
+(258,140,0)
+(356,149,0)
+(116,218,0)
+(252,164,0)
+(229,63,0)
+(156,244,0)
+(239,175,0)
+(332,314,0)
+(78,90,0)
+(305,208,0)
+(27,179,0)
+(236,134,0)
+(333,175,0)
+(311,325,0)
+(204,245,0)
+(192,132,0)
+(217,149,0)
+(97,208,0)
+(336,297,0)
+(63,229,0)
+(194,325,0)
+(156,177,0)
+(151,76,0)
+(138,287,0)
+(336,175,0)
+(192,48,0)
+(247,236,0)
+(317,288,0)
+(143,175,0)
+(285,244,0)
+(167,175,0)
+(193,6,0)
+(219,244,0)
+(10,148,0)
+(165,292,0)
+(289,275,0)
+(56,89,0)
+(100,206,0)
+(20,175,0)
+(299,261,0)
+(271,69,0)
+(10,314,0)
+(201,5,0)
+(106,193,0)
+(234,221,0)
+(83,167,0)
+(124,108,0)
+(86,245,0)
+(330,311,0)
+(291,52,0)
+(249,121,0)
+(264,237,0)
+(206,38,0)
+(235,233,0)
+(158,256,0)
+(126,245,0)
+(64,354,0)
+(297,236,0)
+(284,59,0)
+(262,230,0)
+(241,194,0)
+(160,210,0)
+(130,112,0)
+(334,175,0)
+(18,244,0)
+(125,50,0)
+(319,79,0)
+(312,327,0)
+(170,61,0)
+(311,246,0)
+(306,236,0)
+(349,184,0)
+(136,83,0)
+(342,275,0)
+(271,337,0)
+(16,261,0)
+(345,249,0)
+(180,355,0)
+(269,199,1)
+(146,292,1)
+(58,221,1)
+(192,48,1)
+(167,247,1)
+(279,270,1)
+(354,306,1)
+(79,319,1)
+(235,257,1)
+(151,34,1)
+(56,89,1)
+(51,244,1)
+(16,289,1)
+(78,83,1)
+(73,177,1)
+(6,205,1)
+(350,78,1)
+(282,237,1)
+(174,161,1)
+(260,3,1)
+(10,10,1)
+(172,69,1)
+(104,96,1)
+(265,321,1)
+(147,162,1)
+(20,202,1)
+(329,172,1)
+(119,76,1)
+(247,177,1)
+(128,31,1)
+(170,311,1)
+(132,79,1)
+(299,261,1)
+(351,177,1)
+(46,114,1)
+(295,335,1)
+(2,4,1)
+(142,219,1)
+(94,153,1)
+(249,345,1)
+(271,337,1)
+(114,22,1)
+(1,218,1)
+(3,71,1)
+(311,145,1)
+(306,236,1)
+(112,6,1)
+(198,224,1)
+(297,246,1)
+(227,156,1)
+(350,192,1)
+(287,138,1)
+(220,268,1)
+(311,13,1)
+(213,344,1)
+(230,179,1)
+(238,287,1)
+(22,347,1)
+(259,51,1)
+(301,338,1)
+(177,243,1)
+(202,242,1)
+(306,77,1)
+(231,351,1)
+(168,163,1)
+(137,266,1)
+(205,53,1)
+(210,160,1)
+(90,93,1)
+(268,335,1)
+(149,217,1)
+(96,34,1)
+(159,211,1)
+(85,18,1)
+(52,34,1)
+(78,76,1)
+(281,267,1)
+(214,108,1)
+(335,246,1)
+(8,91,1)
+(87,63,1)
+(315,60,1)
+(297,321,1)
+(10,314,1)
+(82,295,1)
+(308,200,1)
+(264,27,1)
+(73,152,1)
+(192,161,1)
+(112,228,1)
+(78,168,1)
+(190,65,1)
+(354,331,1)
+(265,131,1)
+(292,277,1)
+(261,89,1)
+(249,60,1)
+(75,133,1)
+(194,50,1)
+(309,27,1)
+(145,330,1)
+(261,178,1)
+(209,177,1)
+(49,114,1)
+(81,238,1)
+(69,39,1)
+(354,34,1)
+(59,207,1)
+(192,1,1)
+(280,318,1)
+(183,226,1)
+(98,36,1)
+(206,100,1)
+(242,321,1)
+(43,269,1)
+(124,111,1)
+(162,246,1)
+(328,149,1)
+(68,79,1)
+(344,84,1)
+(349,263,1)
+(78,302,1)
+(203,34,1)
+(192,95,1)
+(211,336,1)
+(328,49,1)
+(188,220,1)
+(150,227,1)
+(257,37,1)
+(219,244,1)
+(199,38,1)
+(193,6,1)
+(160,356,1)
+(234,197,1)
+(156,259,1)
+(138,95,1)
+(218,116,1)
+(275,149,1)
+(115,279,1)
+(275,289,1)
+(13,11,1)
+(217,42,1)
+(74,34,1)
+(350,158,1)
+(311,246,1)
+(309,123,1)
+(294,353,1)
+(111,119,1)
+(11,23,1)
+(178,16,1)
+(316,135,1)
+(282,81,1)
+(57,288,1)
+(330,29,1)
+(319,301,1)
+(55,139,1)
+(94,79,1)
+(247,223,1)
+(47,59,1)
+(176,30,1)
+(273,34,1)
+(312,70,1)
+(210,34,1)
+(267,309,1)
+(127,306,1)
+(345,14,1)
+(242,215,1)
+(23,330,1)
+(297,236,1)
+(306,265,1)
+(193,191,1)
+(179,56,1)
+(78,90,1)
+(8,107,1)
+(189,20,1)
+(325,194,1)
+(157,89,1)
+(50,5,1)
+(213,355,1)
+(237,33,1)
+(69,271,1)
+(76,151,1)
+(322,255,1)
+(229,87,1)
+(215,46,1)
+(64,317,1)
+(26,272,1)
+(153,146,1)
+(123,164,1)
+(56,43,1)
+(78,133,1)
+(128,244,1)
+(125,5,1)
+(131,304,1)
+(209,141,1)
+(70,55,1)
+(14,89,1)
+(164,252,1)
+(208,352,1)
+(109,302,1)
+(84,10,1)
+(284,143,1)
+(337,72,1)
+(349,79,1)
+(78,189,1)
+(124,246,1)
+(257,60,1)
+(239,24,1)
+(116,208,1)
+(255,34,1)
+(191,132,1)
+(182,210,1)
+(135,176,1)
+(352,97,1)
+(50,125,1)
+(20,34,1)
+(10,221,1)
+(108,124,1)
+(78,95,1)
+(278,94,1)
+(36,179,1)
+(202,328,1)
+(339,275,1)
+(197,128,1)
+(311,325,1)
+(130,112,1)
+(292,165,1)
+(157,327,1)
+(275,342,1)
+(354,316,1)
+(122,275,1)
+(315,157,1)
+(164,244,1)
+(306,246,1)
+(185,130,1)
+(251,232,1)
+(236,320,1)
+(166,180,1)
+(277,73,1)
+(27,179,1)
+(207,284,1)
+(93,198,1)
+(24,190,1)
+(51,285,1)
+(315,235,1)
+(161,326,1)
+(253,174,1)
+(141,2,1)
+(144,301,1)
+(45,261,1)
+(289,321,1)
+(192,146,1)
+(121,14,1)
+(225,239,1)
+(243,66,1)
+(314,38,1)
+(342,299,1)
+(151,181,1)
+(344,355,1)
+(86,300,1)
+(163,74,1)
+(90,198,1)
+(30,167,1)
+(262,186,1)
+(258,140,1)
+(77,280,1)
+(217,230,1)
+(278,323,1)
+(81,237,1)
+(263,271,1)
+(353,303,1)
+(152,52,1)
+(338,282,1)
+(320,281,1)
+(273,15,1)
+(73,52,1)
+(304,280,1)
+(356,149,1)
+(86,6,1)
+(311,236,1)
+(22,316,1)
+(254,128,1)
+(78,146,1)
+(31,329,1)
+(232,80,1)
+(187,308,1)
+(80,32,1)
+(252,254,1)
+(143,75,1)
+(230,325,1)
+(136,273,1)
+(29,168,1)
+(354,216,1)
+(303,106,1)
+(101,122,1)
+(285,341,1)
+(48,79,1)
+(78,65,1)
+(226,356,1)
+(314,325,1)
+(216,127,1)
+(38,206,1)
+(103,119,1)
+(200,28,1)
+(266,98,1)
+(321,183,1)
+(318,331,1)
+(206,89,1)
+(33,264,1)
+(52,291,1)
+(253,6,1)
+(14,17,1)
+(107,258,1)
+(335,339,1)
+(342,121,1)
+(173,150,1)
+(36,44,1)
+(331,115,1)
+(34,8,1)
+(27,355,1)
+(219,105,1)
+(78,48,1)
+(74,120,1)
+(339,236,1)
+(17,324,1)
+(336,297,1)
+(314,332,1)
+(156,177,1)
+(270,64,1)
+(105,173,1)
+(83,136,1)
+(170,179,1)
+(229,63,1)
+(301,38,1)
+(158,182,1)
+(224,225,1)
+(285,244,1)
+(341,69,1)
+(327,312,1)
+(255,137,1)
+(96,159,1)
+(208,89,1)
+(63,34,1)
+(48,294,1)
+(37,188,1)
+(133,322,1)
+(78,161,1)
+(247,290,1)
+(59,34,1)
+(41,164,1)
+(124,103,1)
+(302,59,1)
+(301,237,1)
+(313,58,1)
+(241,50,1)
+(302,47,1)
+(5,35,1)
+(287,244,1)
+(310,149,1)
+(106,193,1)
+(332,340,1)
+(297,82,1)
+(110,83,1)
+(184,349,1)
+(113,117,1)
+(317,316,1)
+(221,101,1)
+(156,244,1)
+(100,147,1)
+(297,295,1)
+(18,86,1)
+(346,260,1)
+(39,184,1)
+(121,249,1)
+(92,179,1)
+(247,236,1)
+(197,209,1)
+(173,34,1)
+(157,60,1)
+(343,151,1)
+(320,177,1)
+(133,255,1)
+(335,236,1)
+(242,60,1)
+(54,346,1)
+(208,60,1)
+(298,61,1)
+(44,229,1)
+(65,104,1)
+(291,41,1)
+(168,74,1)
+(234,221,1)
+(347,57,1)
+(337,142,1)
+(299,45,1)
+(120,214,1)
+(5,38,1)
+(76,343,1)
+(181,26,1)
+(194,241,1)
+(247,246,1)
+(28,90,1)
+(27,293,1)
+(139,113,1)
+(356,310,1)
+(128,177,1)
+(95,234,1)
+(200,38,1)
+(219,173,1)
+(63,187,1)
+(32,253,1)
+(272,109,1)
+(246,231,1)
+(15,298,1)
+(180,6,1)
+(53,313,1)
+(201,92,1)
+(306,149,1)
+(198,34,1)
+(355,166,1)
+(161,79,1)
+(65,96,1)
+(115,34,1)
+(184,348,1)
+(208,307,1)
+(258,260,1)
+(223,110,1)
+(35,201,1)
+(293,213,1)
+(329,156,1)
+(25,54,1)
+(234,10,1)
+(326,68,1)
+(228,48,1)
+(300,185,1)
+(71,296,1)
+(218,34,1)
+(78,229,1)
+(340,144,1)
+(124,236,1)
+(13,38,1)
+(305,307,1)
+(132,251,1)
+(4,278,1)
+(221,149,1)
+(78,132,1)
+(244,85,1)
+(307,315,1)
+(140,25,1)
+(61,170,1)
+(97,305,1)
+(296,325,1)
+(83,273,1)
+(290,110,1)
+(117,235,1)
+(324,299,1)
+(230,262,1)
+(192,132,1)
+(186,203,1)
+(205,89,1)
+(288,354,1)
+(220,149,1)
+(213,275,2)
+(151,335,2)
+(170,311,2)
+(236,320,2)
+(146,164,2)
+(33,27,2)
+(163,335,2)
+(352,335,2)
+(123,164,2)
+(354,335,2)
+(305,335,2)
+(282,27,2)
+(208,60,2)
+(138,128,2)
+(156,301,2)
+(80,32,2)
+(41,164,2)
+(107,258,2)
+(142,219,2)
+(90,335,2)
+(98,36,2)
+(27,301,2)
+(242,114,2)
+(78,161,2)
+(331,115,2)
+(124,236,2)
+(63,34,2)
+(70,335,2)
+(271,337,2)
+(282,128,2)
+(198,335,2)
+(109,335,2)
+(277,164,2)
+(73,177,2)
+(178,289,2)
+(287,128,2)
+(139,335,2)
+(238,164,2)
+(292,277,2)
+(20,34,2)
+(59,335,2)
+(298,335,2)
+(200,38,2)
+(8,107,2)
+(86,6,2)
+(221,275,2)
+(185,301,2)
+(273,335,2)
+(128,301,2)
+(288,354,2)
+(268,335,2)
+(322,335,2)
+(78,48,2)
+(223,110,2)
+(257,335,2)
+(354,34,2)
+(234,128,2)
+(133,335,2)
+(205,89,2)
+(342,121,2)
+(96,34,2)
+(85,301,2)
+(189,335,2)
+(267,275,2)
+(194,50,2)
+(293,275,2)
+(316,335,2)
+(311,325,2)
+(314,325,2)
+(293,301,2)
+(184,348,2)
+(87,335,2)
+(278,164,2)
+(259,69,2)
+(130,112,2)
+(10,314,2)
+(258,140,2)
+(218,34,2)
+(287,164,2)
+(220,335,2)
+(135,335,2)
+(173,34,2)
+(164,128,2)
+(8,91,2)
+(356,149,2)
+(306,236,2)
+(257,60,2)
+(314,301,2)
+(198,34,2)
+(234,221,2)
+(78,302,2)
+(78,65,2)
+(73,164,2)
+(338,27,2)
+(325,194,2)
+(297,236,2)
+(184,156,2)
+(157,60,2)
+(350,158,2)
+(258,260,2)
+(344,355,2)
+(184,349,2)
+(251,301,2)
+(167,335,2)
+(64,335,2)
+(329,301,2)
+(265,321,2)
+(63,335,2)
+(306,335,2)
+(208,307,2)
+(48,79,2)
+(151,34,2)
+(342,299,2)
+(347,335,2)
+(95,128,2)
+(156,177,2)
+(101,275,2)
+(219,156,2)
+(332,301,2)
+(78,168,2)
+(261,289,2)
+(205,275,2)
+(224,335,2)
+(39,184,2)
+(75,335,2)
+(29,335,2)
+(78,133,2)
+(81,128,2)
+(315,235,2)
+(221,149,2)
+(208,89,2)
+(342,289,2)
+(103,119,2)
+(36,179,2)
+(39,156,2)
+(232,301,2)
+(10,10,2)
+(278,323,2)
+(301,164,2)
+(52,164,2)
+(192,95,2)
+(301,237,2)
+(132,79,2)
+(90,198,2)
+(254,128,2)
+(27,355,2)
+(318,335,2)
+(354,316,2)
+(297,335,2)
+(275,342,2)
+(28,335,2)
+(93,335,2)
+(193,6,2)
+(308,335,2)
+(314,38,2)
+(301,38,2)
+(48,301,2)
+(47,335,2)
+(172,69,2)
+(343,335,2)
+(226,356,2)
+(337,156,2)
+(330,335,2)
+(81,237,2)
+(304,280,2)
+(170,335,2)
+(242,60,2)
+(56,89,2)
+(55,335,2)
+(10,301,2)
+(160,356,2)
+(51,301,2)
+(5,38,2)
+(300,301,2)
+(301,27,2)
+(337,142,2)
+(78,95,2)
+(320,275,2)
+(206,89,2)
+(61,170,2)
+(106,301,2)
+(166,275,2)
+(234,10,2)
+(14,299,2)
+(95,164,2)
+(37,335,2)
+(264,27,2)
+(86,301,2)
+(208,335,2)
+(65,96,2)
+(306,149,2)
+(311,236,2)
+(247,177,2)
+(94,79,2)
+(317,335,2)
+(288,335,2)
+(112,301,2)
+(120,335,2)
+(179,56,2)
+(46,114,2)
+(156,244,2)
+(249,299,2)
+(114,335,2)
+(294,301,2)
+(312,335,2)
+(220,149,2)
+(106,193,2)
+(235,257,2)
+(98,335,2)
+(193,301,2)
+(57,335,2)
+(315,157,2)
+(253,301,2)
+(255,34,2)
+(303,301,2)
+(292,164,2)
+(187,335,2)
+(10,221,2)
+(299,289,2)
+(105,156,2)
+(82,295,2)
+(307,315,2)
+(190,335,2)
+(301,128,2)
+(61,335,2)
+(168,74,2)
+(182,356,2)
+(104,335,2)
+(235,335,2)
+(94,164,2)
+(265,280,2)
+(247,246,2)
+(137,335,2)
+(131,280,2)
+(115,34,2)
+(78,132,2)
+(157,89,2)
+(271,156,2)
+(319,301,2)
+(229,335,2)
+(52,34,2)
+(275,149,2)
+(30,335,2)
+(132,301,2)
+(354,306,2)
+(14,89,2)
+(230,325,2)
+(158,356,2)
+(119,335,2)
+(74,34,2)
+(291,164,2)
+(84,301,2)
+(13,38,2)
+(275,356,2)
+(297,246,2)
+(350,78,2)
+(77,280,2)
+(117,335,2)
+(266,335,2)
+(237,27,2)
+(16,289,2)
+(161,301,2)
+(210,356,2)
+(341,69,2)
+(287,244,2)
+(316,135,2)
+(149,217,2)
+(108,335,2)
+(270,335,2)
+(22,335,2)
+(225,335,2)
+(236,275,2)
+(306,246,2)
+(78,83,2)
+(247,236,2)
+(96,335,2)
+(153,164,2)
+(130,301,2)
+(1,335,2)
+(181,335,2)
+(115,335,2)
+(174,301,2)
+(122,275,2)
+(168,335,2)
+(27,275,2)
+(315,60,2)
+(79,301,2)
+(133,255,2)
+(289,356,2)
+(20,335,2)
+(128,244,2)
+(282,164,2)
+(34,8,2)
+(211,335,2)
+(76,335,2)
+(230,179,2)
+(192,335,2)
+(295,335,2)
+(303,106,2)
+(145,330,2)
+(156,69,2)
+(173,156,2)
+(121,249,2)
+(31,301,2)
+(142,156,2)
+(277,73,2)
+(78,335,2)
+(344,301,2)
+(185,130,2)
+(336,297,2)
+(192,161,2)
+(78,229,2)
+(338,128,2)
+(83,273,2)
+(26,335,2)
+(69,156,2)
+(45,289,2)
+(340,301,2)
+(95,234,2)
+(138,164,2)
+(331,335,2)
+(191,301,2)
+(69,271,2)
+(128,177,2)
+(216,335,2)
+(219,173,2)
+(209,177,2)
+(144,301,2)
+(336,335,2)
+(24,335,2)
+(242,321,2)
+(143,335,2)
+(209,164,2)
+(214,335,2)
+(228,301,2)
+(252,128,2)
+(292,165,2)
+(280,335,2)
+(313,275,2)
+(311,246,2)
+(207,335,2)
+(320,177,2)
+(335,356,2)
+(152,164,2)
+(238,128,2)
+(49,114,2)
+(124,246,2)
+(150,156,2)
+(65,335,2)
+(111,119,2)
+(53,275,2)
+(127,335,2)
+(176,335,2)
+(78,90,2)
+(18,301,2)
+(281,275,2)
+(244,301,2)
+(234,164,2)
+(36,335,2)
+(51,69,2)
+(83,335,2)
+(335,236,2)
+(273,34,2)
+(335,246,2)
+(217,230,2)
+(311,13,2)
+(355,275,2)
+(11,330,2)
+(58,275,2)
+(140,25,2)
+(22,316,2)
+(315,335,2)
+(247,335,2)
+(124,335,2)
+(13,330,2)
+(161,79,2)
+(121,14,2)
+(81,164,2)
+(345,299,2)
+(197,164,2)
+(309,275,2)
+(324,299,2)
+(50,5,2)
+(80,301,2)
+(215,114,2)
+(6,205,2)
+(2,4,2)
+(17,299,2)
+(263,156,2)
+(170,179,2)
+(279,335,2)
+(337,72,2)
+(78,146,2)
+(255,335,2)
+(97,335,2)
+(302,335,2)
+(218,335,2)
+(121,299,2)
+(302,59,2)
+(311,335,2)
+(327,335,2)
+(113,335,2)
+(44,335,2)
+(349,79,2)
+(259,301,2)
+(328,149,2)
+(272,335,2)
+(278,94,2)
+(339,356,2)
+(306,265,2)
+(354,331,2)
+(4,278,2)
+(59,34,2)
+(4,164,2)
+(192,48,2)
+(200,335,2)
+(108,124,2)
+(249,60,2)
+(2,164,2)
+(188,335,2)
+(326,301,2)
+(27,179,2)
+(350,192,2)
+(328,114,2)
+(290,110,2)
+(338,164,2)
+(32,253,2)
+(217,42,2)
+(74,335,2)
+(197,128,2)
+(183,356,2)
+(73,52,2)
+(167,247,2)
+(299,261,2)
+(202,335,2)
+(307,335,2)
+(213,301,2)
+(146,292,2)
+(321,356,2)
+(180,275,2)
+(353,301,2)
+(284,335,2)
+(15,335,2)
+(116,335,2)
+(78,76,2)
+(32,301,2)
+(261,89,2)
+(297,321,2)
+(164,244,2)
+(157,327,2)
+(285,244,2)
+(112,6,2)
+(253,6,2)
+(192,146,2)
+(349,156,2)
+(239,335,2)
+(68,301,2)
+(136,335,2)
+(110,335,2)
+(6,275,2)
+(210,34,2)
+(229,63,2)
+(69,39,2)
+(141,164,2)
+(23,330,2)
+(157,335,2)
+(192,132,2)
+(76,151,2)
+(239,24,2)
+(227,156,2)
+(159,335,2)
+(38,206,2)
+(285,69,2)
+(219,244,2)
+-----------------------------------
+(0, sizeof(BITMAPINFOHEADER)
+(1,NULL)
+(2,*(int *)
+(3,BITMAPINFOHEADER)
+(4,*(int *)
+(5,w + 3)
+(6,*source = pixmap->samples)
+(7,i)
+(8,(BITMAPINFO *)
+(9,)
+(10,dest += rows8 - w)
+(11,4)
+(12,RenderedBitmap)
+(13,w * 4)
+(14,pixmap->colorspace)
+(15,bmiHeader)
+(16,pixmap)
+(17,colorspace)
+(18,k)
+(19,for (k = 0; k < paletteSize; k++)
+(20,free(bmi)
+(21,bmi)
+(22,ReleaseDC(NULL, hDC)
+(23,w)
+(24,sizeof(BITMAPINFOHEADER)
+(25,sizeof(RGBQUAD)
+(26,bmi)
+(27,j < h)
+(28,w)
+(29,h)
+(30,hDC)
+(31,paletteSize)
+(32,*source++)
+(33,0)
+(34,*bmi = (BITMAPINFO *)
+(35,3)
+(36,-h)
+(37,ctx)
+(38,w = pixmap->w)
+(39,*(int *)
+(40,dest)
+(41,bmi)
+(42,unsigned char *)
+(43,h)
+(44,h)
+(45,4)
+(46,ctx)
+(47,biCompression)
+(48,c.rgbBlue)
+(49,bmpData)
+(50,(w + 3)
+(51,k)
+(52,bmi->bmiColors)
+(53,samples)
+(54,RGBQUAD)
+(55,ctx)
+(56,pixmap->h)
+(57,NULL)
+(58,source)
+(59,bmi->bmiHeader)
+(60,fz_context *ctx)
+(61,bmi->bmiHeader.biSizeImage = h * (hasPalette ? rows8 : w * 4)
+(62,for (int j = 0; j < h; j++)
+(63,bmi->bmiHeader)
+(64,hDC)
+(65,bmi->bmiHeader.biSize)
+(66,paletteSize)
+(67,)
+(68,c)
+(69,*(int *)
+(70,pixmap)
+(71,1)
+(72,int *)
+(73,bmi->bmiColors[paletteSize])
+(74,bmi->bmiHeader)
+(75,1)
+(76,bmi->bmiHeader.biBitCount)
+(77,bmpData)
+(78,return new RenderedBitmap(hbmp, SizeI(pixmap->w, pixmap->h)
+(79,c = { 0 })
+(80,c.rgbRed = *source++)
+(81,i++)
+(82,bgrPixmap)
+(83,bmi->bmiHeader.biClrUsed)
+(84,j)
+(85,0)
+(86,source++)
+(87,biHeight)
+(88,j)
+(89,fz_pixmap *pixmap)
+(90,bmi->bmiHeader.biWidth)
+(91,BITMAPINFO *)
+(92,rows8)
+(93,biWidth)
+(94,&c)
+(95,*dest++)
+(96,bmi->bmiHeader)
+(97,bgrPixmap)
+(98,bmi->bmiHeader.biHeight = -h)
+(99,h)
+(100,w)
+(101,bmpData)
+(102,)
+(103,32)
+(104,biSize)
+(105,k)
+(106,*source++)
+(107,calloc(1, sizeof(BITMAPINFOHEADER)
+(108,bmi->bmiHeader.biBitCount = hasPalette ? 8 : 32)
+(109,BI_RGB)
+(110,hasPalette)
+(111,8)
+(112,source++)
+(113,ctx)
+(114,hasPalette)
+(115,bmi->bmiHeader)
+(116,bmi)
+(117,bgrPixmap)
+(118,source)
+(119,hasPalette)
+(120,bmiHeader)
+(121,pixmap->colorspace == fz_device_rgb(ctx)
+(122,dest)
+(123,goto ProducingPaletteDone;)
+(124,hasPalette ? 8 : 32)
+(125,4)
+(126,if (k == paletteSize)
+(127,bmi)
+(128,k == paletteSize)
+(129,ProducingPaletteDone:)
+(130,*source++)
+(131,samples)
+(132,c.rgbGreen)
+(133,bmi->bmiHeader.biPlanes)
+(134,)
+(135,GetDC(NULL)
+(136,biClrUsed)
+(137,bmiHeader)
+(138,k)
+(139,colorspace)
+(140,256 * sizeof(RGBQUAD)
+(141,paletteSize)
+(142,&bmi->bmiColors[k])
+(143,bmi->bmiHeader.biPlanes = 1)
+(144,dest)
+(145,rows8)
+(146,*(int *)
+(147,pixmap)
+(148,)
+(149,*bmpData = (unsigned char *)
+(150,bmiColors)
+(151,bmi->bmiHeader)
+(152,paletteSize)
+(153,c)
+(154,bgrPixmap)
+(155,w)
+(156,k < paletteSize)
+(157,fz_pixmap_bbox(ctx, pixmap, &bbox)
+(158,return NULL;)
+(159,bmiHeader)
+(160,bmi)
+(161,c.rgbRed)
+(162,w)
+(163,biSizeImage)
+(164,k >= 256)
+(165,int *)
+(166,0)
+(167,bmi->bmiHeader.biClrUsed = hasPalette ? paletteSize : 0)
+(168,bmi->bmiHeader.biSizeImage)
+(169,if (bmpData && pixmap->n == 4 &&\n\\n\n\\n        pixmap->colorspace == fz_device_rgb(ctx)
+(170,h * (hasPalette ? rows8 : w * 4)
+(171,for (int i = 0; i < w; i++)
+(172,break;)
+(173,bmi->bmiColors)
+(174,source)
+(175,)
+(176,NULL)
+(177,paletteSize = 0)
+(178,n)
+(179,h = pixmap->h)
+(180,j)
+(181,bmiHeader)
+(182,NULL)
+(183,NULL)
+(184,(int *)
+(185,c.rgbBlue = *source++)
+(186,rows8)
+(187,bmiHeader)
+(188,colorspace)
+(189,new RenderedBitmap(hbmp, SizeI(pixmap->w, pixmap->h)
+(190,BITMAPINFOHEADER)
+(191,source)
+(192,return NULL;)
+(193,source++)
+(194,((w + 3)
+(195,colorspace)
+(196,hbmp)
+(197,dest)
+(198,bmi->bmiHeader)
+(199,h)
+(200,bmi->bmiHeader.biWidth = w)
+(201,w)
+(202,bmi)
+(203,bmpData)
+(204,c)
+(205,pixmap->samples)
+(206,pixmap->w)
+(207,bmiHeader)
+(208,fz_convert_pixmap(ctx, bgrPixmap, pixmap)
+(209,paletteSize++)
+(210,free(bmi)
+(211,bmi)
+(212,if (hasPalette)
+(213,j)
+(214,bmi)
+(215,bgrPixmap)
+(216,DIB_RGB_COLORS)
+(217,(unsigned char *)
+(218,free(bmi)
+(219,bmi->bmiColors[k])
+(220,free(bmpData)
+(221,*dest = bmpData)
+(222,bmpData)
+(223,0)
+(224,bmiHeader)
+(225,bmi)
+(226,bgrPixmap)
+(227,bmi)
+(228,source)
+(229,bmi->bmiHeader.biHeight)
+(230,calloc(rows8, h)
+(231,false)
+(232,c)
+(233,)
+(234,dest++)
+(235,*colorspace = fz_device_bgr(ctx)
+(236,hasPalette = paletteSize < 256)
+(237,i = 0)
+(238,i)
+(239,bmi->bmiHeader.biSize = sizeof(BITMAPINFOHEADER)
+(240,bbox)
+(241,4)
+(242,fz_drop_pixmap(ctx, bgrPixmap)
+(243,0)
+(244,k = 0)
+(245,)
+(246,hasPalette = false)
+(247,hasPalette ? paletteSize : 0)
+(248,hDC)
+(249,fz_device_rgb(ctx)
+(250,if (!hasPalette)
+(251,rgbGreen)
+(252,256)
+(253,source++)
+(254,k)
+(255,bmi->bmiHeader)
+(256,)
+(257,fz_device_bgr(ctx)
+(258,sizeof(BITMAPINFOHEADER)
+(259,paletteSize)
+(260,sizeof(BITMAPINFOHEADER)
+(261,pixmap->n)
+(262,h)
+(263,c)
+(264,i)
+(265,bgrPixmap->samples)
+(266,bmi)
+(267,paletteSize)
+(268,bmpData)
+(269,pixmap)
+(270,bmi)
+(271,*(int *)
+(272,bmi->bmiHeader.biCompression = BI_RGB)
+(273,bmi->bmiHeader)
+(274,if (!bmpData)
+(275,bmpData && pixmap->n == 4 &&\n\\n\n\\n        pixmap->colorspace == fz_device_rgb(ctx)
+(276,k)
+(277,&bmi->bmiColors[paletteSize])
+(278,(int *)
+(279,bmiHeader)
+(280,hasPalette)
+(281,256)
+(282,i)
+(283,paletteSize)
+(284,bmi)
+(285,k++)
+(286,if (k >= 256)
+(287,*dest++ = k)
+(288,hbmp = CreateDIBitmap(hDC, &bmi->bmiHeader, CBM_INIT,\n\\n\n\\n        hasPalette ? bmpData : bgrPixmap->samples, bmi, DIB_RGB_COLORS)
+(289,bmpData)
+(290,paletteSize)
+(291,bmiColors)
+(292,(int *)
+(293,h)
+(294,rgbBlue)
+(295,hasPalette)
+(296,bmi)
+(297,hasPalette || bgrPixmap)
+(298,bmi)
+(299,pixmap->n == 4)
+(300,source)
+(301,i < w)
+(302,bmi->bmiHeader.biCompression)
+(303,c.rgbGreen = *source++)
+(304,bgrPixmap)
+(305,ctx)
+(306,hasPalette ? bmpData : bgrPixmap->samples)
+(307,bgrPixmap = fz_new_pixmap_with_bbox(ctx, colorspace, fz_pixmap_bbox(ctx, pixmap, &bbox)
+(308,bmi)
+(309,hasPalette)
+(310,bmpData)
+(311,hasPalette ? rows8 : w * 4)
+(312,bbox)
+(313,pixmap)
+(314,rows8 - w)
+(315,fz_new_pixmap_with_bbox(ctx, colorspace, fz_pixmap_bbox(ctx, pixmap, &bbox)
+(316,hDC = GetDC(NULL)
+(317,hbmp)
+(318,CBM_INIT)
+(319,c)
+(320,paletteSize < 256)
+(321,*bgrPixmap = NULL)
+(322,biPlanes)
+(323,int *)
+(324,pixmap)
+(325,rows8 = ((w + 3)
+(326,rgbRed)
+(327,&bbox)
+(328,free(bmpData)
+(329,k)
+(330,hasPalette)
+(331,&bmi->bmiHeader)
+(332,w)
+(333,hasPalette)
+(334,rows8)
+(335,!hasPalette)
+(336,AssertCrash(hasPalette || bgrPixmap)
+(337,(int *)
+(338,w)
+(339,hasPalette)
+(340,rows8)
+(341,k)
+(342,pixmap->n == 4 &&\n\\n\n\\n        pixmap->colorspace == fz_device_rgb(ctx)
+(343,biBitCount)
+(344,j++)
+(345,ctx)
+(346,256)
+(347,hDC)
+(348,int *)
+(349,&c)
+(350,RET)
+(351,hasPalette)
+(352,pixmap)
+(353,c)
+(354,CreateDIBitmap(hDC, &bmi->bmiHeader, CBM_INIT,\n\\n\n\\n        hasPalette ? bmpData : bgrPixmap->samples, bmi, DIB_RGB_COLORS)
+(355,j = 0)
+(356,!bmpData)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

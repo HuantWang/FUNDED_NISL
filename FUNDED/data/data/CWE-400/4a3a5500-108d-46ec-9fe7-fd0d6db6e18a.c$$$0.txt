@@ -1,0 +1,1316 @@
+-----label-----
+1
+-----code-----
+static int add_to_queue(const char *queuename, const char *interface, const char *membername, int penalty, int paused, int dump, const char *state_interface)
+{
+	struct call_queue *q;
+	struct member *new_member, *old_member;
+	int res = RES_NOSUCHQUEUE;
+
+	/*! \note Ensure the appropriate realtime queue is loaded.  Note that this
+	 * short-circuits if the queue is already in memory. */
+	if (!(q = find_load_queue_rt_friendly(queuename))) {
+		return res;
+	}
+
+	ao2_lock(q);
+	if ((old_member = interface_exists(q, interface)) == NULL) {
+		if ((new_member = create_queue_member(interface, membername, penalty, paused, state_interface, q->ringinuse))) {
+			new_member->ringinuse = q->ringinuse;
+			new_member->dynamic = 1;
+			member_add_to_queue(q, new_member);
+			/*** DOCUMENTATION
+			<managerEventInstance>
+				<synopsis>Raised when a member is added to the queue.</synopsis>
+				<syntax>
+					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />
+					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />
+					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />
+					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='StateInterface'])" />
+					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Membership'])" />
+					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Penalty'])" />
+					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='CallsTaken'])" />
+					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='LastCall'])" />
+					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Status'])" />
+					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />
+				</syntax>
+				<see-also>
+					<ref type="managerEvent">QueueMemberRemoved</ref>
+					<ref type="application">AddQueueMember</ref>
+				</see-also>
+			</managerEventInstance>
+			***/
+			manager_event(EVENT_FLAG_AGENT, "QueueMemberAdded",
+				"Queue: %s\r\n"
+				"Location: %s\r\n"
+				"MemberName: %s\r\n"
+				"StateInterface: %s\r\n"
+				"Membership: %s\r\n"
+				"Penalty: %d\r\n"
+				"CallsTaken: %d\r\n"
+				"LastCall: %d\r\n"
+				"Status: %d\r\n"
+				"Paused: %d\r\n",
+				q->name, new_member->interface, new_member->membername, state_interface,
+				"dynamic",
+				new_member->penalty, new_member->calls, (int) new_member->lastcall,
+				new_member->status, new_member->paused);
+
+			if (is_member_available(new_member)) {
+				ast_devstate_changed(AST_DEVICE_NOT_INUSE, AST_DEVSTATE_CACHABLE, "Queue:%s_avail", q->name);
+			}
+
+			ao2_ref(new_member, -1);
+			new_member = NULL;
+
+			if (dump) {
+				dump_queue_members(q);
+			}
+
+			res = RES_OKAY;
+		} else {
+			res = RES_OUTOFMEMORY;
+		}
+	} else {
+		ao2_ref(old_member, -1);
+		res = RES_EXISTS;
+	}
+	ao2_unlock(q);
+	queue_t_unref(q, "Expiring temporary reference");
+
+	return res;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+3,8
+3,9
+3,10
+3,11
+5,6
+5,7
+7,8
+7,9
+10,11
+10,12
+12,13
+12,14
+15,16
+15,17
+17,18
+17,19
+20,21
+20,22
+22,23
+24,25
+24,26
+26,27
+28,29
+28,30
+30,31
+32,33
+32,34
+34,35
+34,36
+37,38
+37,39
+37,40
+37,41
+37,42
+37,43
+37,44
+37,45
+37,46
+38,39
+39,40
+39,41
+40,41
+42,43
+42,44
+45,46
+46,47
+46,48
+46,49
+47,48
+49,50
+49,51
+52,53
+52,54
+55,56
+56,57
+56,58
+58,59
+58,60
+60,61
+61,62
+63,64
+63,65
+64,65
+65,66
+66,67
+66,68
+67,68
+69,70
+69,71
+70,71
+72,73
+74,75
+75,76
+76,77
+78,79
+79,80
+79,81
+80,81
+82,83
+84,85
+84,86
+84,87
+85,86
+85,87
+86,87
+87,88
+87,89
+88,89
+90,91
+90,92
+90,93
+91,92
+93,94
+95,96
+97,98
+99,100
+100,101
+100,102
+100,103
+101,102
+102,103
+102,104
+103,104
+105,106
+105,107
+105,108
+105,109
+105,110
+105,111
+105,112
+106,107
+108,109
+110,111
+112,113
+114,115
+116,117
+118,119
+118,120
+119,120
+122,123
+122,124
+122,125
+122,126
+122,127
+122,128
+122,129
+122,130
+122,131
+123,124
+124,125
+124,126
+125,126
+125,127
+126,127
+129,130
+129,131
+130,131
+133,134
+134,135
+134,136
+135,136
+135,137
+136,137
+140,141
+141,142
+141,143
+141,144
+142,143
+144,145
+146,147
+148,149
+149,150
+149,151
+149,152
+149,153
+149,154
+149,155
+149,156
+149,157
+149,158
+149,159
+149,160
+149,161
+149,162
+149,163
+150,151
+152,153
+156,157
+156,158
+157,158
+160,161
+160,162
+161,162
+164,165
+164,166
+165,166
+168,169
+171,172
+171,173
+172,173
+175,176
+175,177
+176,177
+179,180
+179,181
+180,181
+180,182
+183,184
+183,185
+184,185
+187,188
+187,189
+188,189
+191,192
+191,193
+192,193
+195,196
+195,197
+196,197
+196,198
+197,198
+199,200
+201,202
+202,203
+203,204
+203,205
+203,206
+203,207
+203,208
+204,205
+206,207
+208,209
+211,212
+211,213
+212,213
+215,216
+216,217
+216,218
+216,219
+217,218
+219,220
+221,222
+223,224
+224,225
+224,226
+225,226
+227,228
+229,230
+229,231
+230,231
+232,233
+233,234
+234,235
+234,236
+235,236
+237,238
+239,240
+240,241
+240,242
+241,242
+243,244
+245,246
+246,247
+247,248
+247,249
+248,249
+250,251
+252,253
+252,254
+253,254
+254,255
+254,256
+254,257
+255,256
+257,258
+259,260
+261,262
+262,263
+262,264
+263,264
+265,266
+267,268
+268,269
+268,270
+269,270
+271,272
+273,274
+274,275
+274,276
+274,277
+275,276
+277,278
+280,281
+281,282
+-----nextToken-----
+2,4,6,8,9,11,13,14,16,18,19,21,23,25,27,29,31,33,35,36,41,43,44,48,50,51,53,54,57,59,62,68,71,73,77,81,83,89,92,94,96,98,104,107,109,111,113,115,117,120,121,127,128,131,132,137,138,139,143,145,147,151,153,154,155,158,159,162,163,166,167,169,170,173,174,177,178,181,182,185,186,189,190,193,194,198,200,205,207,209,210,213,214,218,220,222,226,228,231,236,238,242,244,249,251,256,258,260,264,266,270,272,276,278,279,282
+-----computeFrom-----
+66,67
+66,68
+85,86
+85,87
+87,88
+87,89
+102,103
+102,104
+124,125
+124,126
+134,135
+134,136
+224,225
+224,226
+240,241
+240,242
+247,248
+247,249
+262,263
+262,264
+-----guardedBy-----
+94,238
+98,228
+96,163
+-----guardedByNegation-----
+89,258
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;IdExpression;Name;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ReturnStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;IfStatement;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;LiteralExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+static int add_to_queue(const char *queuename, const char *interface, const char *membername, int penalty, int paused, int dump, const char *state_interface){	struct call_queue *q;	struct member *new_member, *old_member;	int res = RES_NOSUCHQUEUE;	/*! \note Ensure the appropriate realtime queue is loaded.  Note that this	 * short-circuits if the queue is already in memory. */	if (!(q = find_load_queue_rt_friendly(queuename))) {		return res;	}	ao2_lock(q);	if ((old_member = interface_exists(q, interface)) == NULL) {		if ((new_member = create_queue_member(interface, membername, penalty, paused, state_interface, q->ringinuse))) {			new_member->ringinuse = q->ringinuse;			new_member->dynamic = 1;			member_add_to_queue(q, new_member);			/*** DOCUMENTATION			<managerEventInstance>				<synopsis>Raised when a member is added to the queue.</synopsis>				<syntax>					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='StateInterface'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Membership'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Penalty'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='CallsTaken'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='LastCall'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Status'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />				</syntax>				<see-also>					<ref type="managerEvent">QueueMemberRemoved</ref>					<ref type="application">AddQueueMember</ref>				</see-also>			</managerEventInstance>			***/			manager_event(EVENT_FLAG_AGENT, "QueueMemberAdded",				"Queue: %s\r\n"				"Location: %s\r\n"				"MemberName: %s\r\n"				"StateInterface: %s\r\n"				"Membership: %s\r\n"				"Penalty: %d\r\n"				"CallsTaken: %d\r\n"				"LastCall: %d\r\n"				"Status: %d\r\n"				"Paused: %d\r\n",				q->name, new_member->interface, new_member->membername, state_interface,				"dynamic",				new_member->penalty, new_member->calls, (int) new_member->lastcall,				new_member->status, new_member->paused);			if (is_member_available(new_member)) {				ast_devstate_changed(AST_DEVICE_NOT_INUSE, AST_DEVSTATE_CACHABLE, "Queue:%s_avail", q->name);			}			ao2_ref(new_member, -1);			new_member = NULL;			if (dump) {				dump_queue_members(q);			}			res = RES_OKAY;		} else {			res = RES_OUTOFMEMORY;		}	} else {		ao2_ref(old_member, -1);		res = RES_EXISTS;	}	ao2_unlock(q);	queue_t_unref(q, "Expiring temporary reference");	return res;}
+static int
+add_to_queue(const char *queuename, const char *interface, const char *membername, int penalty, int paused, int dump, const char *state_interface)
+add_to_queue
+const char *queuename
+const char
+*queuename
+*
+queuename
+const char *interface
+const char
+*interface
+*
+interface
+const char *membername
+const char
+*membername
+*
+membername
+int penalty
+int
+penalty
+penalty
+int paused
+int
+paused
+paused
+int dump
+int
+dump
+dump
+const char *state_interface
+const char
+*state_interface
+*
+state_interface
+{	struct call_queue *q;	struct member *new_member, *old_member;	int res = RES_NOSUCHQUEUE;	/*! \note Ensure the appropriate realtime queue is loaded.  Note that this	 * short-circuits if the queue is already in memory. */	if (!(q = find_load_queue_rt_friendly(queuename))) {		return res;	}	ao2_lock(q);	if ((old_member = interface_exists(q, interface)) == NULL) {		if ((new_member = create_queue_member(interface, membername, penalty, paused, state_interface, q->ringinuse))) {			new_member->ringinuse = q->ringinuse;			new_member->dynamic = 1;			member_add_to_queue(q, new_member);			/*** DOCUMENTATION			<managerEventInstance>				<synopsis>Raised when a member is added to the queue.</synopsis>				<syntax>					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='StateInterface'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Membership'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Penalty'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='CallsTaken'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='LastCall'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Status'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />				</syntax>				<see-also>					<ref type="managerEvent">QueueMemberRemoved</ref>					<ref type="application">AddQueueMember</ref>				</see-also>			</managerEventInstance>			***/			manager_event(EVENT_FLAG_AGENT, "QueueMemberAdded",				"Queue: %s\r\n"				"Location: %s\r\n"				"MemberName: %s\r\n"				"StateInterface: %s\r\n"				"Membership: %s\r\n"				"Penalty: %d\r\n"				"CallsTaken: %d\r\n"				"LastCall: %d\r\n"				"Status: %d\r\n"				"Paused: %d\r\n",				q->name, new_member->interface, new_member->membername, state_interface,				"dynamic",				new_member->penalty, new_member->calls, (int) new_member->lastcall,				new_member->status, new_member->paused);			if (is_member_available(new_member)) {				ast_devstate_changed(AST_DEVICE_NOT_INUSE, AST_DEVSTATE_CACHABLE, "Queue:%s_avail", q->name);			}			ao2_ref(new_member, -1);			new_member = NULL;			if (dump) {				dump_queue_members(q);			}			res = RES_OKAY;		} else {			res = RES_OUTOFMEMORY;		}	} else {		ao2_ref(old_member, -1);		res = RES_EXISTS;	}	ao2_unlock(q);	queue_t_unref(q, "Expiring temporary reference");	return res;}
+struct call_queue *q;
+struct call_queue *q;
+struct call_queue
+call_queue
+*q
+*
+q
+struct member *new_member, *old_member;
+struct member *new_member, *old_member;
+struct member
+member
+*new_member
+*
+new_member
+*old_member
+*
+old_member
+int res = RES_NOSUCHQUEUE;
+int res = RES_NOSUCHQUEUE;
+int
+res = RES_NOSUCHQUEUE
+res
+= RES_NOSUCHQUEUE
+RES_NOSUCHQUEUE
+RES_NOSUCHQUEUE
+if (!(q = find_load_queue_rt_friendly(queuename))) {		return res;	}
+!(q = find_load_queue_rt_friendly(queuename))
+(q = find_load_queue_rt_friendly(queuename))
+q = find_load_queue_rt_friendly(queuename)
+q
+q
+find_load_queue_rt_friendly(queuename)
+find_load_queue_rt_friendly
+find_load_queue_rt_friendly
+queuename
+queuename
+{		return res;	}
+return res;
+res
+res
+ao2_lock(q);
+ao2_lock(q)
+ao2_lock
+ao2_lock
+q
+q
+if ((old_member = interface_exists(q, interface)) == NULL) {		if ((new_member = create_queue_member(interface, membername, penalty, paused, state_interface, q->ringinuse))) {			new_member->ringinuse = q->ringinuse;			new_member->dynamic = 1;			member_add_to_queue(q, new_member);			/*** DOCUMENTATION			<managerEventInstance>				<synopsis>Raised when a member is added to the queue.</synopsis>				<syntax>					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='StateInterface'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Membership'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Penalty'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='CallsTaken'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='LastCall'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Status'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />				</syntax>				<see-also>					<ref type="managerEvent">QueueMemberRemoved</ref>					<ref type="application">AddQueueMember</ref>				</see-also>			</managerEventInstance>			***/			manager_event(EVENT_FLAG_AGENT, "QueueMemberAdded",				"Queue: %s\r\n"				"Location: %s\r\n"				"MemberName: %s\r\n"				"StateInterface: %s\r\n"				"Membership: %s\r\n"				"Penalty: %d\r\n"				"CallsTaken: %d\r\n"				"LastCall: %d\r\n"				"Status: %d\r\n"				"Paused: %d\r\n",				q->name, new_member->interface, new_member->membername, state_interface,				"dynamic",				new_member->penalty, new_member->calls, (int) new_member->lastcall,				new_member->status, new_member->paused);			if (is_member_available(new_member)) {				ast_devstate_changed(AST_DEVICE_NOT_INUSE, AST_DEVSTATE_CACHABLE, "Queue:%s_avail", q->name);			}			ao2_ref(new_member, -1);			new_member = NULL;			if (dump) {				dump_queue_members(q);			}			res = RES_OKAY;		} else {			res = RES_OUTOFMEMORY;		}	} else {		ao2_ref(old_member, -1);		res = RES_EXISTS;	}
+(old_member = interface_exists(q, interface)) == NULL
+(old_member = interface_exists(q, interface))
+old_member = interface_exists(q, interface)
+old_member
+old_member
+interface_exists(q, interface)
+interface_exists
+interface_exists
+q
+q
+interface
+interface
+NULL
+NULL
+{		if ((new_member = create_queue_member(interface, membername, penalty, paused, state_interface, q->ringinuse))) {			new_member->ringinuse = q->ringinuse;			new_member->dynamic = 1;			member_add_to_queue(q, new_member);			/*** DOCUMENTATION			<managerEventInstance>				<synopsis>Raised when a member is added to the queue.</synopsis>				<syntax>					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='StateInterface'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Membership'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Penalty'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='CallsTaken'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='LastCall'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Status'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />				</syntax>				<see-also>					<ref type="managerEvent">QueueMemberRemoved</ref>					<ref type="application">AddQueueMember</ref>				</see-also>			</managerEventInstance>			***/			manager_event(EVENT_FLAG_AGENT, "QueueMemberAdded",				"Queue: %s\r\n"				"Location: %s\r\n"				"MemberName: %s\r\n"				"StateInterface: %s\r\n"				"Membership: %s\r\n"				"Penalty: %d\r\n"				"CallsTaken: %d\r\n"				"LastCall: %d\r\n"				"Status: %d\r\n"				"Paused: %d\r\n",				q->name, new_member->interface, new_member->membername, state_interface,				"dynamic",				new_member->penalty, new_member->calls, (int) new_member->lastcall,				new_member->status, new_member->paused);			if (is_member_available(new_member)) {				ast_devstate_changed(AST_DEVICE_NOT_INUSE, AST_DEVSTATE_CACHABLE, "Queue:%s_avail", q->name);			}			ao2_ref(new_member, -1);			new_member = NULL;			if (dump) {				dump_queue_members(q);			}			res = RES_OKAY;		} else {			res = RES_OUTOFMEMORY;		}	}
+if ((new_member = create_queue_member(interface, membername, penalty, paused, state_interface, q->ringinuse))) {			new_member->ringinuse = q->ringinuse;			new_member->dynamic = 1;			member_add_to_queue(q, new_member);			/*** DOCUMENTATION			<managerEventInstance>				<synopsis>Raised when a member is added to the queue.</synopsis>				<syntax>					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='StateInterface'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Membership'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Penalty'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='CallsTaken'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='LastCall'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Status'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />				</syntax>				<see-also>					<ref type="managerEvent">QueueMemberRemoved</ref>					<ref type="application">AddQueueMember</ref>				</see-also>			</managerEventInstance>			***/			manager_event(EVENT_FLAG_AGENT, "QueueMemberAdded",				"Queue: %s\r\n"				"Location: %s\r\n"				"MemberName: %s\r\n"				"StateInterface: %s\r\n"				"Membership: %s\r\n"				"Penalty: %d\r\n"				"CallsTaken: %d\r\n"				"LastCall: %d\r\n"				"Status: %d\r\n"				"Paused: %d\r\n",				q->name, new_member->interface, new_member->membername, state_interface,				"dynamic",				new_member->penalty, new_member->calls, (int) new_member->lastcall,				new_member->status, new_member->paused);			if (is_member_available(new_member)) {				ast_devstate_changed(AST_DEVICE_NOT_INUSE, AST_DEVSTATE_CACHABLE, "Queue:%s_avail", q->name);			}			ao2_ref(new_member, -1);			new_member = NULL;			if (dump) {				dump_queue_members(q);			}			res = RES_OKAY;		} else {			res = RES_OUTOFMEMORY;		}
+(new_member = create_queue_member(interface, membername, penalty, paused, state_interface, q->ringinuse))
+new_member = create_queue_member(interface, membername, penalty, paused, state_interface, q->ringinuse)
+new_member
+new_member
+create_queue_member(interface, membername, penalty, paused, state_interface, q->ringinuse)
+create_queue_member
+create_queue_member
+interface
+interface
+membername
+membername
+penalty
+penalty
+paused
+paused
+state_interface
+state_interface
+q->ringinuse
+q
+q
+ringinuse
+{			new_member->ringinuse = q->ringinuse;			new_member->dynamic = 1;			member_add_to_queue(q, new_member);			/*** DOCUMENTATION			<managerEventInstance>				<synopsis>Raised when a member is added to the queue.</synopsis>				<syntax>					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Location'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='MemberName'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='StateInterface'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Membership'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Penalty'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='CallsTaken'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='LastCall'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Status'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Paused'])" />				</syntax>				<see-also>					<ref type="managerEvent">QueueMemberRemoved</ref>					<ref type="application">AddQueueMember</ref>				</see-also>			</managerEventInstance>			***/			manager_event(EVENT_FLAG_AGENT, "QueueMemberAdded",				"Queue: %s\r\n"				"Location: %s\r\n"				"MemberName: %s\r\n"				"StateInterface: %s\r\n"				"Membership: %s\r\n"				"Penalty: %d\r\n"				"CallsTaken: %d\r\n"				"LastCall: %d\r\n"				"Status: %d\r\n"				"Paused: %d\r\n",				q->name, new_member->interface, new_member->membername, state_interface,				"dynamic",				new_member->penalty, new_member->calls, (int) new_member->lastcall,				new_member->status, new_member->paused);			if (is_member_available(new_member)) {				ast_devstate_changed(AST_DEVICE_NOT_INUSE, AST_DEVSTATE_CACHABLE, "Queue:%s_avail", q->name);			}			ao2_ref(new_member, -1);			new_member = NULL;			if (dump) {				dump_queue_members(q);			}			res = RES_OKAY;		}
+new_member->ringinuse = q->ringinuse;
+new_member->ringinuse = q->ringinuse
+new_member->ringinuse
+new_member
+new_member
+ringinuse
+q->ringinuse
+q
+q
+ringinuse
+new_member->dynamic = 1;
+new_member->dynamic = 1
+new_member->dynamic
+new_member
+new_member
+dynamic
+1
+member_add_to_queue(q, new_member);
+member_add_to_queue(q, new_member)
+member_add_to_queue
+member_add_to_queue
+q
+q
+new_member
+new_member
+manager_event(EVENT_FLAG_AGENT, "QueueMemberAdded",				"Queue: %s\r\n"				"Location: %s\r\n"				"MemberName: %s\r\n"				"StateInterface: %s\r\n"				"Membership: %s\r\n"				"Penalty: %d\r\n"				"CallsTaken: %d\r\n"				"LastCall: %d\r\n"				"Status: %d\r\n"				"Paused: %d\r\n",				q->name, new_member->interface, new_member->membername, state_interface,				"dynamic",				new_member->penalty, new_member->calls, (int) new_member->lastcall,				new_member->status, new_member->paused);
+manager_event(EVENT_FLAG_AGENT, "QueueMemberAdded",				"Queue: %s\r\n"				"Location: %s\r\n"				"MemberName: %s\r\n"				"StateInterface: %s\r\n"				"Membership: %s\r\n"				"Penalty: %d\r\n"				"CallsTaken: %d\r\n"				"LastCall: %d\r\n"				"Status: %d\r\n"				"Paused: %d\r\n",				q->name, new_member->interface, new_member->membername, state_interface,				"dynamic",				new_member->penalty, new_member->calls, (int) new_member->lastcall,				new_member->status, new_member->paused)
+manager_event
+manager_event
+EVENT_FLAG_AGENT
+EVENT_FLAG_AGENT
+"QueueMemberAdded"
+"Queue: %s\r\n"				"Location: %s\r\n"				"MemberName: %s\r\n"				"StateInterface: %s\r\n"				"Membership: %s\r\n"				"Penalty: %d\r\n"				"CallsTaken: %d\r\n"				"LastCall: %d\r\n"				"Status: %d\r\n"				"Paused: %d\r\n"
+q->name
+q
+q
+name
+new_member->interface
+new_member
+new_member
+interface
+new_member->membername
+new_member
+new_member
+membername
+state_interface
+state_interface
+"dynamic"
+new_member->penalty
+new_member
+new_member
+penalty
+new_member->calls
+new_member
+new_member
+calls
+(int) new_member->lastcall
+int
+int
+
+new_member->lastcall
+new_member
+new_member
+lastcall
+new_member->status
+new_member
+new_member
+status
+new_member->paused
+new_member
+new_member
+paused
+if (is_member_available(new_member)) {				ast_devstate_changed(AST_DEVICE_NOT_INUSE, AST_DEVSTATE_CACHABLE, "Queue:%s_avail", q->name);			}
+is_member_available(new_member)
+is_member_available
+is_member_available
+new_member
+new_member
+{				ast_devstate_changed(AST_DEVICE_NOT_INUSE, AST_DEVSTATE_CACHABLE, "Queue:%s_avail", q->name);			}
+ast_devstate_changed(AST_DEVICE_NOT_INUSE, AST_DEVSTATE_CACHABLE, "Queue:%s_avail", q->name);
+ast_devstate_changed(AST_DEVICE_NOT_INUSE, AST_DEVSTATE_CACHABLE, "Queue:%s_avail", q->name)
+ast_devstate_changed
+ast_devstate_changed
+AST_DEVICE_NOT_INUSE
+AST_DEVICE_NOT_INUSE
+AST_DEVSTATE_CACHABLE
+AST_DEVSTATE_CACHABLE
+"Queue:%s_avail"
+q->name
+q
+q
+name
+ao2_ref(new_member, -1);
+ao2_ref(new_member, -1)
+ao2_ref
+ao2_ref
+new_member
+new_member
+-1
+1
+new_member = NULL;
+new_member = NULL
+new_member
+new_member
+NULL
+NULL
+if (dump) {				dump_queue_members(q);			}
+dump
+dump
+{				dump_queue_members(q);			}
+dump_queue_members(q);
+dump_queue_members(q)
+dump_queue_members
+dump_queue_members
+q
+q
+res = RES_OKAY;
+res = RES_OKAY
+res
+res
+RES_OKAY
+RES_OKAY
+{			res = RES_OUTOFMEMORY;		}
+res = RES_OUTOFMEMORY;
+res = RES_OUTOFMEMORY
+res
+res
+RES_OUTOFMEMORY
+RES_OUTOFMEMORY
+{		ao2_ref(old_member, -1);		res = RES_EXISTS;	}
+ao2_ref(old_member, -1);
+ao2_ref(old_member, -1)
+ao2_ref
+ao2_ref
+old_member
+old_member
+-1
+1
+res = RES_EXISTS;
+res = RES_EXISTS
+res
+res
+RES_EXISTS
+RES_EXISTS
+ao2_unlock(q);
+ao2_unlock(q)
+ao2_unlock
+ao2_unlock
+q
+q
+queue_t_unref(q, "Expiring temporary reference");
+queue_t_unref(q, "Expiring temporary reference")
+queue_t_unref
+queue_t_unref
+q
+q
+"Expiring temporary reference"
+return res;
+res
+res
+-----joern-----
+(90,86,0)
+(30,116,0)
+(33,136,0)
+(31,52,0)
+(122,54,0)
+(74,73,0)
+(126,45,0)
+(101,74,0)
+(19,113,0)
+(9,10,0)
+(43,6,0)
+(116,28,0)
+(55,36,0)
+(94,9,0)
+(62,74,0)
+(46,16,0)
+(132,2,0)
+(110,117,0)
+(90,9,0)
+(107,11,0)
+(96,136,0)
+(136,86,0)
+(113,19,0)
+(5,80,0)
+(29,70,0)
+(118,70,0)
+(136,137,0)
+(6,9,0)
+(8,6,0)
+(28,86,0)
+(9,52,0)
+(124,86,0)
+(104,121,0)
+(52,31,0)
+(4,136,0)
+(112,16,0)
+(55,13,0)
+(9,90,0)
+(102,76,0)
+(123,16,0)
+(127,80,0)
+(113,16,0)
+(55,76,0)
+(1,76,0)
+(9,6,0)
+(38,106,0)
+(10,16,0)
+(119,88,0)
+(129,16,0)
+(123,63,0)
+(25,17,0)
+(139,4,0)
+(29,16,0)
+(26,10,0)
+(78,123,0)
+(93,133,0)
+(87,9,0)
+(52,89,0)
+(47,133,0)
+(48,20,0)
+(9,137,0)
+(42,91,0)
+(53,55,0)
+(66,119,0)
+(109,113,0)
+(20,16,0)
+(46,74,0)
+(41,111,0)
+(95,126,0)
+(3,136,0)
+(98,74,0)
+(61,29,0)
+(99,76,0)
+(16,112,0)
+(100,36,0)
+(10,9,0)
+(36,37,0)
+(18,46,0)
+(28,70,0)
+(11,70,0)
+(80,5,0)
+(136,103,0)
+(79,16,0)
+(6,86,0)
+(52,9,0)
+(49,70,0)
+(5,123,0)
+(106,19,0)
+(51,46,0)
+(86,136,0)
+(123,5,0)
+(20,14,0)
+(92,94,0)
+(4,16,0)
+(35,89,0)
+(136,135,0)
+(39,123,0)
+(16,20,0)
+(21,34,0)
+(54,86,0)
+(108,90,0)
+(15,25,0)
+(68,5,0)
+(44,9,0)
+(119,115,0)
+(19,70,0)
+(126,95,0)
+(9,54,0)
+(138,55,0)
+(74,46,0)
+(9,70,0)
+(53,119,0)
+(34,45,0)
+(55,34,0)
+(105,9,0)
+(79,76,0)
+(2,76,0)
+(128,34,0)
+(58,70,0)
+(24,136,0)
+(126,5,0)
+(134,90,0)
+(12,29,0)
+(72,4,0)
+(133,9,0)
+(84,117,0)
+(117,11,0)
+(22,13,0)
+(7,126,0)
+(89,52,0)
+(106,86,0)
+(65,36,0)
+(25,16,0)
+(27,28,0)
+(111,16,0)
+(0,86,0)
+(91,86,0)
+(54,9,0)
+(9,0,0)
+(9,94,0)
+(75,9,0)
+(64,106,0)
+(136,57,0)
+(131,0,0)
+(69,136,0)
+(114,49,0)
+(59,79,0)
+(111,76,0)
+(67,54,0)
+(71,9,0)
+(136,4,0)
+(120,89,0)
+(28,116,0)
+(13,70,0)
+(117,86,0)
+(133,86,0)
+(40,0,0)
+(130,49,0)
+(0,9,0)
+(97,10,0)
+(85,76,0)
+(32,95,0)
+(82,76,0)
+(115,76,0)
+(81,111,0)
+(94,86,0)
+(60,94,0)
+(136,63,0)
+(2,16,0)
+(89,86,0)
+(50,13,0)
+(56,115,0)
+(77,115,0)
+(9,133,0)
+(29,86,0)
+(125,76,0)
+(23,113,0)
+(123,78,1)
+(91,42,1)
+(80,5,1)
+(52,89,1)
+(19,113,1)
+(25,16,1)
+(47,90,1)
+(81,41,1)
+(51,18,1)
+(55,13,1)
+(10,97,1)
+(48,129,1)
+(71,133,1)
+(50,83,1)
+(9,54,1)
+(64,86,1)
+(136,135,1)
+(79,16,1)
+(28,116,1)
+(25,15,1)
+(55,138,1)
+(133,86,1)
+(116,30,1)
+(29,16,1)
+(87,75,1)
+(53,55,1)
+(65,86,1)
+(100,65,1)
+(132,34,1)
+(92,52,1)
+(61,12,1)
+(28,86,1)
+(95,32,1)
+(120,0,1)
+(107,117,1)
+(33,96,1)
+(40,131,1)
+(9,94,1)
+(8,44,1)
+(52,31,1)
+(136,103,1)
+(110,84,1)
+(30,27,1)
+(43,8,1)
+(134,108,1)
+(90,134,1)
+(115,56,1)
+(55,36,1)
+(9,10,1)
+(35,120,1)
+(29,86,1)
+(39,68,1)
+(53,119,1)
+(132,13,1)
+(68,79,1)
+(3,124,1)
+(62,91,1)
+(16,20,1)
+(128,126,1)
+(108,10,1)
+(80,127,1)
+(129,115,1)
+(89,86,1)
+(27,91,1)
+(15,83,1)
+(111,16,1)
+(136,63,1)
+(94,86,1)
+(132,36,1)
+(123,63,1)
+(27,74,1)
+(44,71,1)
+(139,72,1)
+(4,16,1)
+(74,46,1)
+(24,33,1)
+(112,16,1)
+(21,128,1)
+(86,136,1)
+(69,24,1)
+(36,100,1)
+(20,14,1)
+(126,5,1)
+(124,80,1)
+(72,69,1)
+(130,114,1)
+(46,51,1)
+(123,16,1)
+(97,26,1)
+(94,60,1)
+(34,21,1)
+(119,66,1)
+(20,48,1)
+(117,110,1)
+(6,43,1)
+(10,16,1)
+(136,4,1)
+(9,6,1)
+(50,25,1)
+(54,122,1)
+(23,106,1)
+(101,98,1)
+(9,0,1)
+(42,9,1)
+(6,86,1)
+(117,86,1)
+(9,133,1)
+(9,52,1)
+(83,49,1)
+(26,87,1)
+(93,47,1)
+(9,137,1)
+(138,111,1)
+(131,6,1)
+(54,86,1)
+(49,130,1)
+(109,23,1)
+(106,38,1)
+(18,101,1)
+(91,86,1)
+(136,137,1)
+(133,93,1)
+(38,64,1)
+(111,81,1)
+(127,5,1)
+(126,95,1)
+(4,139,1)
+(89,35,1)
+(113,16,1)
+(136,57,1)
+(9,90,1)
+(56,77,1)
+(114,28,1)
+(78,39,1)
+(67,94,1)
+(2,16,1)
+(0,40,1)
+(122,67,1)
+(2,132,1)
+(5,123,1)
+(29,61,1)
+(106,86,1)
+(96,3,1)
+(46,16,1)
+(105,29,1)
+(11,107,1)
+(98,62,1)
+(90,86,1)
+(12,11,1)
+(7,80,1)
+(13,22,1)
+(22,50,1)
+(113,109,1)
+(66,112,1)
+(79,59,1)
+(60,92,1)
+(119,115,1)
+(32,7,1)
+(41,2,1)
+(75,105,1)
+(55,34,1)
+(59,112,1)
+(0,86,1)
+(84,19,1)
+(9,90,2)
+(136,63,2)
+(29,16,2)
+(15,83,2)
+(94,86,2)
+(50,86,2)
+(96,80,2)
+(132,112,2)
+(131,86,2)
+(112,16,2)
+(55,13,2)
+(10,16,2)
+(52,89,2)
+(8,86,2)
+(28,86,2)
+(25,83,2)
+(44,86,2)
+(114,86,2)
+(2,16,2)
+(16,20,2)
+(130,86,2)
+(119,112,2)
+(75,86,2)
+(53,55,2)
+(21,80,2)
+(97,86,2)
+(80,112,2)
+(11,86,2)
+(134,86,2)
+(72,80,2)
+(62,91,2)
+(128,80,2)
+(9,10,2)
+(38,86,2)
+(59,112,2)
+(120,86,2)
+(136,4,2)
+(119,115,2)
+(126,80,2)
+(55,112,2)
+(9,133,2)
+(10,86,2)
+(89,86,2)
+(52,31,2)
+(79,16,2)
+(122,86,2)
+(5,123,2)
+(29,86,2)
+(39,112,2)
+(68,112,2)
+(49,86,2)
+(23,86,2)
+(136,103,2)
+(6,86,2)
+(55,36,2)
+(74,91,2)
+(105,86,2)
+(126,95,2)
+(74,46,2)
+(5,112,2)
+(9,54,2)
+(136,137,2)
+(106,86,2)
+(43,86,2)
+(69,80,2)
+(133,86,2)
+(111,112,2)
+(81,112,2)
+(54,86,2)
+(139,80,2)
+(127,112,2)
+(136,135,2)
+(66,112,2)
+(71,86,2)
+(4,80,2)
+(55,34,2)
+(36,86,2)
+(51,91,2)
+(110,86,2)
+(12,86,2)
+(67,86,2)
+(65,86,2)
+(4,16,2)
+(35,86,2)
+(123,16,2)
+(136,57,2)
+(0,86,2)
+(100,86,2)
+(136,80,2)
+(90,86,2)
+(25,16,2)
+(84,86,2)
+(60,86,2)
+(32,80,2)
+(3,80,2)
+(109,86,2)
+(116,86,2)
+(53,119,2)
+(80,5,2)
+(64,86,2)
+(40,86,2)
+(123,112,2)
+(113,86,2)
+(78,112,2)
+(9,94,2)
+(18,91,2)
+(83,86,2)
+(117,86,2)
+(24,80,2)
+(27,86,2)
+(7,80,2)
+(107,86,2)
+(61,86,2)
+(101,91,2)
+(46,91,2)
+(9,6,2)
+(138,112,2)
+(126,5,2)
+(30,86,2)
+(52,86,2)
+(13,86,2)
+(108,86,2)
+(93,86,2)
+(2,112,2)
+(42,86,2)
+(9,0,2)
+(34,80,2)
+(91,86,2)
+(124,80,2)
+(19,86,2)
+(20,14,2)
+(123,63,2)
+(33,80,2)
+(26,86,2)
+(47,86,2)
+(98,91,2)
+(19,113,2)
+(87,86,2)
+(9,86,2)
+(92,86,2)
+(41,112,2)
+(79,112,2)
+(9,137,2)
+(28,116,2)
+(22,86,2)
+(113,16,2)
+(86,136,2)
+(46,16,2)
+(86,80,2)
+(111,16,2)
+(95,80,2)
+(9,52,2)
+-----------------------------------
+(0,new_member->calls)
+(1,if (!(q = find_load_queue_rt_friendly(queuename)
+(2,ao2_unlock(q)
+(3,interface)
+(4,q->ringinuse)
+(5,old_member = interface_exists(q, interface)
+(6,new_member->penalty)
+(7,old_member)
+(8,new_member)
+(9,manager_event(EVENT_FLAG_AGENT, "QueueMemberAdded",\n\\n\\t\\t\\t\\t"Queue: %s\\r\\n"\n\\n\\t\\t\\t\\t"Location: %s\\r\\n"\n\\n\\t\\t\\t\\t"MemberName: %s\\r\\n"\n\\n\\t\\t\\t\\t"StateInterface: %s\\r\\n"\n\\n\\t\\t\\t\\t"Membership: %s\\r\\n"\n\\n\\t\\t\\t\\t"Penalty: %d\\r\\n"\n\\n\\t\\t\\t\\t"CallsTaken: %d\\r\\n"\n\\n\\t\\t\\t\\t"LastCall: %d\\r\\n"\n\\n\\t\\t\\t\\t"Status: %d\\r\\n"\n\\n\\t\\t\\t\\t"Paused: %d\\r\\n",\n\\n\\t\\t\\t\\tq->name, new_member->interface, new_member->membername, state_interface,\n\\n\\t\\t\\t\\t"dynamic",\n\\n\\t\\t\\t\\tnew_member->penalty, new_member->calls, (int)
+(10,q->name)
+(11,new_member->dynamic = 1)
+(12,q)
+(13,res = RES_OKAY)
+(14,const char *queuename)
+(15,q)
+(16,q = find_load_queue_rt_friendly(queuename)
+(17,)
+(18,q)
+(19,new_member->ringinuse = q->ringinuse)
+(20,find_load_queue_rt_friendly(queuename)
+(21,RES_EXISTS)
+(22,RES_OKAY)
+(23,q)
+(24,paused)
+(25,dump_queue_members(q)
+(26,q)
+(27,new_member)
+(28,ao2_ref(new_member, -1)
+(29,member_add_to_queue(q, new_member)
+(30,1)
+(31,int)
+(32,1)
+(33,penalty)
+(34,res = RES_EXISTS)
+(35,lastcall)
+(36,res = RES_OUTOFMEMORY)
+(37,)
+(38,ringinuse)
+(39,q)
+(40,calls)
+(41,q)
+(42,new_member)
+(43,penalty)
+(44,"dynamic")
+(45,)
+(46,q->name)
+(47,new_member)
+(48,queuename)
+(49,new_member = NULL)
+(50,res)
+(51,name)
+(52,(int)
+(53,RET)
+(54,new_member->paused)
+(55,return res;)
+(56,RES_NOSUCHQUEUE)
+(57,const char *membername)
+(58,if (dump)
+(59,q)
+(60,status)
+(61,new_member)
+(62,AST_DEVICE_NOT_INUSE)
+(63,const char *interface)
+(64,new_member)
+(65,res)
+(66,res)
+(67,new_member)
+(68,old_member)
+(69,state_interface)
+(70,)
+(71,state_interface)
+(72,q)
+(73,)
+(74,ast_devstate_changed(AST_DEVICE_NOT_INUSE, AST_DEVSTATE_CACHABLE, "Queue:%s_avail", q->name)
+(75,"QueueMemberAdded")
+(76,)
+(77,res)
+(78,interface)
+(79,ao2_lock(q)
+(80,(old_member = interface_exists(q, interface)
+(81,"Expiring temporary reference")
+(82,q)
+(83,dump)
+(84,new_member)
+(85,res)
+(86,new_member = create_queue_member(interface, membername, penalty, paused, state_interface, q->ringinuse)
+(87,"Queue: %s\\r\\n"\n\\n\\t\\t\\t\\t"Location: %s\\r\\n"\n\\n\\t\\t\\t\\t"MemberName: %s\\r\\n"\n\\n\\t\\t\\t\\t"StateInterface: %s\\r\\n"\n\\n\\t\\t\\t\\t"Membership: %s\\r\\n"\n\\n\\t\\t\\t\\t"Penalty: %d\\r\\n"\n\\n\\t\\t\\t\\t"CallsTaken: %d\\r\\n"\n\\n\\t\\t\\t\\t"LastCall: %d\\r\\n"\n\\n\\t\\t\\t\\t"Status: %d\\r\\n"\n\\n\\t\\t\\t\\t"Paused: %d\\r\\n")
+(88,)
+(89,new_member->lastcall)
+(90,new_member->interface)
+(91,is_member_available(new_member)
+(92,new_member)
+(93,membername)
+(94,new_member->status)
+(95,-1)
+(96,membername)
+(97,name)
+(98,AST_DEVSTATE_CACHABLE)
+(99,new_member)
+(100,RES_OUTOFMEMORY)
+(101,"Queue:%s_avail")
+(102,if ((old_member = interface_exists(q, interface)
+(103,int penalty)
+(104,if ((new_member = create_queue_member(interface, membername, penalty, paused, state_interface, q->ringinuse)
+(105,EVENT_FLAG_AGENT)
+(106,new_member->ringinuse)
+(107,1)
+(108,new_member)
+(109,ringinuse)
+(110,dynamic)
+(111,queue_t_unref(q, "Expiring temporary reference")
+(112,!(q = find_load_queue_rt_friendly(queuename)
+(113,q->ringinuse)
+(114,new_member)
+(115,res = RES_NOSUCHQUEUE)
+(116,-1)
+(117,new_member->dynamic)
+(118,if (is_member_available(new_member)
+(119,return res;)
+(120,new_member)
+(121,)
+(122,paused)
+(123,interface_exists(q, interface)
+(124,new_member)
+(125,old_member)
+(126,ao2_ref(old_member, -1)
+(127,NULL)
+(128,res)
+(129,q)
+(130,NULL)
+(131,new_member)
+(132,q)
+(133,new_member->membername)
+(134,interface)
+(135,int paused)
+(136,create_queue_member(interface, membername, penalty, paused, state_interface, q->ringinuse)
+(137,const char *state_interface)
+(138,res)
+(139,ringinuse)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,1673 @@
+-----label-----
+1
+-----code-----
+void CWE789_Uncontrolled_Mem_Alloc__malloc_wchar_t_listen_socket_31_bad()
+{
+    size_t data;
+    /* Initialize data */
+    data = 0;
+    {
+#ifdef _WIN32
+        WSADATA wsaData;
+        int wsaDataInit = 0;
+#endif
+        int recvResult;
+        struct sockaddr_in service;
+        SOCKET listenSocket = INVALID_SOCKET;
+        SOCKET acceptSocket = INVALID_SOCKET;
+        char inputBuffer[CHAR_ARRAY_SIZE];
+        do
+        {
+#ifdef _WIN32
+            if (WSAStartup(MAKEWORD(2,2), &wsaData) != NO_ERROR)
+            {
+                break;
+            }
+            wsaDataInit = 1;
+#endif
+            /* POTENTIAL FLAW: Read data using a listen socket */
+            listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+            if (listenSocket == INVALID_SOCKET)
+            {
+                break;
+            }
+            memset(&service, 0, sizeof(service));
+            service.sin_family = AF_INET;
+            service.sin_addr.s_addr = INADDR_ANY;
+            service.sin_port = htons(TCP_PORT);
+            if (bind(listenSocket, (struct sockaddr*)&service, sizeof(service)) == SOCKET_ERROR)
+            {
+                break;
+            }
+            if (listen(listenSocket, LISTEN_BACKLOG) == SOCKET_ERROR)
+            {
+                break;
+            }
+            acceptSocket = accept(listenSocket, NULL, NULL);
+            if (acceptSocket == SOCKET_ERROR)
+            {
+                break;
+            }
+            /* Abort on error or the connection was closed */
+            recvResult = recv(acceptSocket, inputBuffer, CHAR_ARRAY_SIZE - 1, 0);
+            if (recvResult == SOCKET_ERROR || recvResult == 0)
+            {
+                break;
+            }
+            /* NUL-terminate the string */
+            inputBuffer[recvResult] = '\0';
+            /* Convert to unsigned int */
+            data = strtoul(inputBuffer, NULL, 0);
+        }
+        while (0);
+        if (listenSocket != INVALID_SOCKET)
+        {
+            CLOSE_SOCKET(listenSocket);
+        }
+        if (acceptSocket != INVALID_SOCKET)
+        {
+            CLOSE_SOCKET(acceptSocket);
+        }
+#ifdef _WIN32
+        if (wsaDataInit)
+        {
+            WSACleanup();
+        }
+#endif
+    }
+    {
+        size_t dataCopy = data;
+        size_t data = dataCopy;
+        {
+            wchar_t * myString;
+            /* POTENTIAL FLAW: No MAXIMUM limitation for memory allocation, but ensure data is large enough
+             * for the wcscpy() function to not cause a buffer overflow */
+            /* INCIDENTAL FLAW: The source could cause a type overrun in data or in the memory allocation */
+            if (data > wcslen(HELLO_STRING))
+            {
+                myString = (wchar_t *)malloc(data*sizeof(wchar_t));
+                if (myString == NULL) {exit(-1);}
+                /* Copy a small string into myString */
+                wcscpy(myString, HELLO_STRING);
+                printWLine(myString);
+                free(myString);
+            }
+            else
+            {
+                printLine("Input is less than the length of the source string");
+            }
+        }
+    }
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+5,6
+5,7
+5,8
+5,9
+6,7
+7,8
+7,9
+8,9
+10,11
+12,13
+13,14
+13,15
+14,15
+17,18
+17,19
+17,20
+17,21
+17,22
+17,23
+17,24
+17,25
+18,19
+19,20
+19,21
+21,22
+23,24
+24,25
+24,26
+25,26
+27,28
+29,30
+30,31
+30,32
+31,32
+33,34
+33,35
+35,36
+36,37
+38,39
+39,40
+39,41
+40,41
+42,43
+42,44
+44,45
+45,46
+47,48
+48,49
+48,50
+50,51
+50,52
+52,53
+53,54
+55,56
+55,57
+56,57
+56,58
+56,59
+56,60
+56,61
+56,62
+56,63
+56,64
+56,65
+56,66
+56,67
+56,68
+56,69
+56,70
+57,58
+58,59
+58,60
+59,60
+61,62
+61,63
+61,64
+61,65
+62,63
+64,65
+66,67
+68,69
+70,71
+70,72
+71,72
+71,73
+72,73
+74,75
+76,77
+78,79
+79,80
+79,81
+79,82
+79,83
+80,81
+82,83
+83,84
+86,87
+87,88
+88,89
+90,91
+91,92
+91,93
+92,93
+92,94
+93,94
+96,97
+98,99
+99,100
+99,101
+100,101
+100,102
+101,102
+101,103
+102,103
+106,107
+108,109
+109,110
+109,111
+110,111
+110,112
+111,112
+114,115
+114,116
+115,116
+117,118
+119,120
+119,121
+120,121
+120,122
+121,122
+121,123
+121,124
+121,125
+122,123
+124,125
+126,127
+126,128
+127,128
+127,129
+128,129
+130,131
+132,133
+133,134
+135,136
+136,137
+137,138
+139,140
+141,142
+143,144
+143,145
+144,145
+144,146
+145,146
+145,147
+145,148
+146,147
+148,149
+150,151
+152,153
+154,155
+156,157
+157,158
+157,159
+158,159
+160,161
+160,162
+160,163
+160,164
+161,162
+163,164
+165,166
+167,168
+169,170
+169,171
+170,171
+170,172
+171,172
+173,174
+175,176
+177,178
+178,179
+178,180
+179,180
+181,182
+181,183
+181,184
+181,185
+181,186
+182,183
+184,185
+186,187
+188,189
+188,190
+189,190
+193,194
+193,195
+194,195
+194,196
+195,196
+195,197
+196,197
+198,199
+200,201
+200,202
+201,202
+204,205
+206,207
+207,208
+207,209
+208,209
+208,210
+209,210
+211,212
+214,215
+215,216
+215,217
+216,217
+218,219
+218,220
+218,221
+218,222
+219,220
+221,222
+223,224
+227,228
+227,229
+228,229
+228,230
+229,230
+231,232
+233,234
+234,235
+235,236
+235,237
+236,237
+238,239
+240,241
+240,242
+241,242
+241,243
+242,243
+244,245
+246,247
+247,248
+248,249
+248,250
+249,250
+251,252
+253,254
+253,255
+253,256
+254,255
+255,256
+255,257
+256,257
+258,259
+258,260
+260,261
+261,262
+263,264
+264,265
+264,266
+265,266
+267,268
+267,269
+269,270
+270,271
+272,273
+272,274
+273,274
+274,275
+274,276
+276,277
+276,278
+279,280
+279,281
+279,282
+280,281
+280,282
+281,282
+283,284
+283,285
+284,285
+286,287
+288,289
+288,290
+288,291
+288,292
+288,293
+289,290
+290,291
+290,292
+291,292
+293,294
+293,295
+294,295
+294,296
+296,297
+298,299
+298,300
+299,300
+301,302
+301,303
+302,303
+304,305
+305,306
+305,307
+308,309
+308,310
+309,310
+309,311
+310,311
+312,313
+314,315
+315,316
+316,317
+316,318
+317,318
+319,320
+321,322
+322,323
+322,324
+322,325
+323,324
+325,326
+327,328
+329,330
+330,331
+330,332
+331,332
+333,334
+335,336
+336,337
+336,338
+337,338
+339,340
+341,342
+342,343
+343,344
+343,345
+344,345
+-----nextToken-----
+2,4,9,11,15,16,20,22,26,28,32,34,37,41,43,46,49,51,54,60,63,65,67,69,73,75,77,81,84,85,89,94,95,97,103,104,105,107,112,113,116,118,123,125,129,131,134,138,140,142,147,149,151,153,155,159,162,164,166,168,172,174,176,180,183,185,187,190,191,192,197,199,202,203,205,210,212,213,217,220,222,224,225,226,230,232,237,239,243,245,250,252,257,259,262,266,268,271,275,277,278,282,285,287,292,295,297,300,303,306,307,311,313,318,320,324,326,328,332,334,338,340,345,346
+-----computeFrom-----
+13,14
+13,15
+58,59
+58,60
+71,72
+71,73
+91,92
+91,93
+99,100
+99,101
+109,110
+109,111
+120,121
+120,122
+144,145
+144,146
+157,158
+157,159
+170,171
+170,172
+178,179
+178,180
+188,189
+188,190
+194,195
+194,196
+195,196
+195,197
+200,201
+200,202
+207,208
+207,209
+215,216
+215,217
+228,229
+228,230
+241,242
+241,243
+280,281
+280,282
+290,291
+290,292
+301,302
+301,303
+309,310
+309,311
+-----guardedBy-----
+230,239
+243,252
+287,328
+282,303
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;ArrayDeclarator;Name;ArrayModifier;IdExpression;Name;DoStatement;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;BreakStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;UnaryExpression;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CastExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;Pointer;UnaryExpression;IdExpression;Name;UnaryExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;BreakStatement;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;BreakStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;BreakStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;BreakStatement;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;IfStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;TypeIdExpression;TypeId;SimpleDeclSpecifier;Declarator;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;
+-----ast_node-----
+void CWE789_Uncontrolled_Mem_Alloc__malloc_wchar_t_listen_socket_31_bad(){    size_t data;    /* Initialize data */    data = 0;    {#ifdef _WIN32        WSADATA wsaData;        int wsaDataInit = 0;#endif        int recvResult;        struct sockaddr_in service;        SOCKET listenSocket = INVALID_SOCKET;        SOCKET acceptSocket = INVALID_SOCKET;        char inputBuffer[CHAR_ARRAY_SIZE];        do        {#ifdef _WIN32            if (WSAStartup(MAKEWORD(2,2), &wsaData) != NO_ERROR)            {                break;            }            wsaDataInit = 1;#endif            /* POTENTIAL FLAW: Read data using a listen socket */            listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);            if (listenSocket == INVALID_SOCKET)            {                break;            }            memset(&service, 0, sizeof(service));            service.sin_family = AF_INET;            service.sin_addr.s_addr = INADDR_ANY;            service.sin_port = htons(TCP_PORT);            if (bind(listenSocket, (struct sockaddr*)&service, sizeof(service)) == SOCKET_ERROR)            {                break;            }            if (listen(listenSocket, LISTEN_BACKLOG) == SOCKET_ERROR)            {                break;            }            acceptSocket = accept(listenSocket, NULL, NULL);            if (acceptSocket == SOCKET_ERROR)            {                break;            }            /* Abort on error or the connection was closed */            recvResult = recv(acceptSocket, inputBuffer, CHAR_ARRAY_SIZE - 1, 0);            if (recvResult == SOCKET_ERROR || recvResult == 0)            {                break;            }            /* NUL-terminate the string */            inputBuffer[recvResult] = '\0';            /* Convert to unsigned int */            data = strtoul(inputBuffer, NULL, 0);        }        while (0);        if (listenSocket != INVALID_SOCKET)        {            CLOSE_SOCKET(listenSocket);        }        if (acceptSocket != INVALID_SOCKET)        {            CLOSE_SOCKET(acceptSocket);        }#ifdef _WIN32        if (wsaDataInit)        {            WSACleanup();        }#endif    }    {        size_t dataCopy = data;        size_t data = dataCopy;        {            wchar_t * myString;            /* POTENTIAL FLAW: No MAXIMUM limitation for memory allocation, but ensure data is large enough             * for the wcscpy() function to not cause a buffer overflow */            /* INCIDENTAL FLAW: The source could cause a type overrun in data or in the memory allocation */            if (data > wcslen(HELLO_STRING))            {                myString = (wchar_t *)malloc(data*sizeof(wchar_t));                if (myString == NULL) {exit(-1);}                /* Copy a small string into myString */                wcscpy(myString, HELLO_STRING);                printWLine(myString);                free(myString);            }            else            {                printLine("Input is less than the length of the source string");            }        }    }}
+void
+CWE789_Uncontrolled_Mem_Alloc__malloc_wchar_t_listen_socket_31_bad()
+CWE789_Uncontrolled_Mem_Alloc__malloc_wchar_t_listen_socket_31_bad
+{    size_t data;    /* Initialize data */    data = 0;    {#ifdef _WIN32        WSADATA wsaData;        int wsaDataInit = 0;#endif        int recvResult;        struct sockaddr_in service;        SOCKET listenSocket = INVALID_SOCKET;        SOCKET acceptSocket = INVALID_SOCKET;        char inputBuffer[CHAR_ARRAY_SIZE];        do        {#ifdef _WIN32            if (WSAStartup(MAKEWORD(2,2), &wsaData) != NO_ERROR)            {                break;            }            wsaDataInit = 1;#endif            /* POTENTIAL FLAW: Read data using a listen socket */            listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);            if (listenSocket == INVALID_SOCKET)            {                break;            }            memset(&service, 0, sizeof(service));            service.sin_family = AF_INET;            service.sin_addr.s_addr = INADDR_ANY;            service.sin_port = htons(TCP_PORT);            if (bind(listenSocket, (struct sockaddr*)&service, sizeof(service)) == SOCKET_ERROR)            {                break;            }            if (listen(listenSocket, LISTEN_BACKLOG) == SOCKET_ERROR)            {                break;            }            acceptSocket = accept(listenSocket, NULL, NULL);            if (acceptSocket == SOCKET_ERROR)            {                break;            }            /* Abort on error or the connection was closed */            recvResult = recv(acceptSocket, inputBuffer, CHAR_ARRAY_SIZE - 1, 0);            if (recvResult == SOCKET_ERROR || recvResult == 0)            {                break;            }            /* NUL-terminate the string */            inputBuffer[recvResult] = '\0';            /* Convert to unsigned int */            data = strtoul(inputBuffer, NULL, 0);        }        while (0);        if (listenSocket != INVALID_SOCKET)        {            CLOSE_SOCKET(listenSocket);        }        if (acceptSocket != INVALID_SOCKET)        {            CLOSE_SOCKET(acceptSocket);        }#ifdef _WIN32        if (wsaDataInit)        {            WSACleanup();        }#endif    }    {        size_t dataCopy = data;        size_t data = dataCopy;        {            wchar_t * myString;            /* POTENTIAL FLAW: No MAXIMUM limitation for memory allocation, but ensure data is large enough             * for the wcscpy() function to not cause a buffer overflow */            /* INCIDENTAL FLAW: The source could cause a type overrun in data or in the memory allocation */            if (data > wcslen(HELLO_STRING))            {                myString = (wchar_t *)malloc(data*sizeof(wchar_t));                if (myString == NULL) {exit(-1);}                /* Copy a small string into myString */                wcscpy(myString, HELLO_STRING);                printWLine(myString);                free(myString);            }            else            {                printLine("Input is less than the length of the source string");            }        }    }}
+size_t data;
+size_t data;
+size_t
+size_t
+data
+data
+data = 0;
+data = 0
+data
+data
+0
+{#ifdef _WIN32        WSADATA wsaData;        int wsaDataInit = 0;#endif        int recvResult;        struct sockaddr_in service;        SOCKET listenSocket = INVALID_SOCKET;        SOCKET acceptSocket = INVALID_SOCKET;        char inputBuffer[CHAR_ARRAY_SIZE];        do        {#ifdef _WIN32            if (WSAStartup(MAKEWORD(2,2), &wsaData) != NO_ERROR)            {                break;            }            wsaDataInit = 1;#endif            /* POTENTIAL FLAW: Read data using a listen socket */            listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);            if (listenSocket == INVALID_SOCKET)            {                break;            }            memset(&service, 0, sizeof(service));            service.sin_family = AF_INET;            service.sin_addr.s_addr = INADDR_ANY;            service.sin_port = htons(TCP_PORT);            if (bind(listenSocket, (struct sockaddr*)&service, sizeof(service)) == SOCKET_ERROR)            {                break;            }            if (listen(listenSocket, LISTEN_BACKLOG) == SOCKET_ERROR)            {                break;            }            acceptSocket = accept(listenSocket, NULL, NULL);            if (acceptSocket == SOCKET_ERROR)            {                break;            }            /* Abort on error or the connection was closed */            recvResult = recv(acceptSocket, inputBuffer, CHAR_ARRAY_SIZE - 1, 0);            if (recvResult == SOCKET_ERROR || recvResult == 0)            {                break;            }            /* NUL-terminate the string */            inputBuffer[recvResult] = '\0';            /* Convert to unsigned int */            data = strtoul(inputBuffer, NULL, 0);        }        while (0);        if (listenSocket != INVALID_SOCKET)        {            CLOSE_SOCKET(listenSocket);        }        if (acceptSocket != INVALID_SOCKET)        {            CLOSE_SOCKET(acceptSocket);        }#ifdef _WIN32        if (wsaDataInit)        {            WSACleanup();        }#endif    }
+int recvResult;
+int recvResult;
+int
+recvResult
+recvResult
+struct sockaddr_in service;
+struct sockaddr_in service;
+struct sockaddr_in
+sockaddr_in
+service
+service
+SOCKET listenSocket = INVALID_SOCKET;
+SOCKET listenSocket = INVALID_SOCKET;
+SOCKET
+SOCKET
+listenSocket = INVALID_SOCKET
+listenSocket
+= INVALID_SOCKET
+INVALID_SOCKET
+INVALID_SOCKET
+SOCKET acceptSocket = INVALID_SOCKET;
+SOCKET acceptSocket = INVALID_SOCKET;
+SOCKET
+SOCKET
+acceptSocket = INVALID_SOCKET
+acceptSocket
+= INVALID_SOCKET
+INVALID_SOCKET
+INVALID_SOCKET
+char inputBuffer[CHAR_ARRAY_SIZE];
+char inputBuffer[CHAR_ARRAY_SIZE];
+char
+inputBuffer[CHAR_ARRAY_SIZE]
+inputBuffer
+[CHAR_ARRAY_SIZE]
+CHAR_ARRAY_SIZE
+CHAR_ARRAY_SIZE
+do        {#ifdef _WIN32            if (WSAStartup(MAKEWORD(2,2), &wsaData) != NO_ERROR)            {                break;            }            wsaDataInit = 1;#endif            /* POTENTIAL FLAW: Read data using a listen socket */            listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);            if (listenSocket == INVALID_SOCKET)            {                break;            }            memset(&service, 0, sizeof(service));            service.sin_family = AF_INET;            service.sin_addr.s_addr = INADDR_ANY;            service.sin_port = htons(TCP_PORT);            if (bind(listenSocket, (struct sockaddr*)&service, sizeof(service)) == SOCKET_ERROR)            {                break;            }            if (listen(listenSocket, LISTEN_BACKLOG) == SOCKET_ERROR)            {                break;            }            acceptSocket = accept(listenSocket, NULL, NULL);            if (acceptSocket == SOCKET_ERROR)            {                break;            }            /* Abort on error or the connection was closed */            recvResult = recv(acceptSocket, inputBuffer, CHAR_ARRAY_SIZE - 1, 0);            if (recvResult == SOCKET_ERROR || recvResult == 0)            {                break;            }            /* NUL-terminate the string */            inputBuffer[recvResult] = '\0';            /* Convert to unsigned int */            data = strtoul(inputBuffer, NULL, 0);        }        while (0);
+{#ifdef _WIN32            if (WSAStartup(MAKEWORD(2,2), &wsaData) != NO_ERROR)            {                break;            }            wsaDataInit = 1;#endif            /* POTENTIAL FLAW: Read data using a listen socket */            listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);            if (listenSocket == INVALID_SOCKET)            {                break;            }            memset(&service, 0, sizeof(service));            service.sin_family = AF_INET;            service.sin_addr.s_addr = INADDR_ANY;            service.sin_port = htons(TCP_PORT);            if (bind(listenSocket, (struct sockaddr*)&service, sizeof(service)) == SOCKET_ERROR)            {                break;            }            if (listen(listenSocket, LISTEN_BACKLOG) == SOCKET_ERROR)            {                break;            }            acceptSocket = accept(listenSocket, NULL, NULL);            if (acceptSocket == SOCKET_ERROR)            {                break;            }            /* Abort on error or the connection was closed */            recvResult = recv(acceptSocket, inputBuffer, CHAR_ARRAY_SIZE - 1, 0);            if (recvResult == SOCKET_ERROR || recvResult == 0)            {                break;            }            /* NUL-terminate the string */            inputBuffer[recvResult] = '\0';            /* Convert to unsigned int */            data = strtoul(inputBuffer, NULL, 0);        }
+listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+listenSocket
+listenSocket
+socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+socket
+socket
+AF_INET
+AF_INET
+SOCK_STREAM
+SOCK_STREAM
+IPPROTO_TCP
+IPPROTO_TCP
+if (listenSocket == INVALID_SOCKET)            {                break;            }
+listenSocket == INVALID_SOCKET
+listenSocket
+listenSocket
+INVALID_SOCKET
+INVALID_SOCKET
+{                break;            }
+break;
+memset(&service, 0, sizeof(service));
+memset(&service, 0, sizeof(service))
+memset
+memset
+&service
+service
+service
+0
+sizeof(service)
+(service)
+service
+service
+service.sin_family = AF_INET;
+service.sin_family = AF_INET
+service.sin_family
+service
+service
+sin_family
+AF_INET
+AF_INET
+service.sin_addr.s_addr = INADDR_ANY;
+service.sin_addr.s_addr = INADDR_ANY
+service.sin_addr.s_addr
+service.sin_addr
+service
+service
+sin_addr
+s_addr
+INADDR_ANY
+INADDR_ANY
+service.sin_port = htons(TCP_PORT);
+service.sin_port = htons(TCP_PORT)
+service.sin_port
+service
+service
+sin_port
+htons(TCP_PORT)
+htons
+htons
+TCP_PORT
+TCP_PORT
+if (bind(listenSocket, (struct sockaddr*)&service, sizeof(service)) == SOCKET_ERROR)            {                break;            }
+bind(listenSocket, (struct sockaddr*)&service, sizeof(service)) == SOCKET_ERROR
+bind(listenSocket, (struct sockaddr*)&service, sizeof(service))
+bind
+bind
+listenSocket
+listenSocket
+(struct sockaddr*)&service
+struct sockaddr*
+struct sockaddr
+sockaddr
+*
+*
+&service
+service
+service
+sizeof(service)
+(service)
+service
+service
+SOCKET_ERROR
+SOCKET_ERROR
+{                break;            }
+break;
+if (listen(listenSocket, LISTEN_BACKLOG) == SOCKET_ERROR)            {                break;            }
+listen(listenSocket, LISTEN_BACKLOG) == SOCKET_ERROR
+listen(listenSocket, LISTEN_BACKLOG)
+listen
+listen
+listenSocket
+listenSocket
+LISTEN_BACKLOG
+LISTEN_BACKLOG
+SOCKET_ERROR
+SOCKET_ERROR
+{                break;            }
+break;
+acceptSocket = accept(listenSocket, NULL, NULL);
+acceptSocket = accept(listenSocket, NULL, NULL)
+acceptSocket
+acceptSocket
+accept(listenSocket, NULL, NULL)
+accept
+accept
+listenSocket
+listenSocket
+NULL
+NULL
+NULL
+NULL
+if (acceptSocket == SOCKET_ERROR)            {                break;            }
+acceptSocket == SOCKET_ERROR
+acceptSocket
+acceptSocket
+SOCKET_ERROR
+SOCKET_ERROR
+{                break;            }
+break;
+recvResult = recv(acceptSocket, inputBuffer, CHAR_ARRAY_SIZE - 1, 0);
+recvResult = recv(acceptSocket, inputBuffer, CHAR_ARRAY_SIZE - 1, 0)
+recvResult
+recvResult
+recv(acceptSocket, inputBuffer, CHAR_ARRAY_SIZE - 1, 0)
+recv
+recv
+acceptSocket
+acceptSocket
+inputBuffer
+inputBuffer
+CHAR_ARRAY_SIZE - 1
+CHAR_ARRAY_SIZE
+CHAR_ARRAY_SIZE
+1
+0
+if (recvResult == SOCKET_ERROR || recvResult == 0)            {                break;            }
+recvResult == SOCKET_ERROR || recvResult == 0
+recvResult == SOCKET_ERROR
+recvResult
+recvResult
+SOCKET_ERROR
+SOCKET_ERROR
+recvResult == 0
+recvResult
+recvResult
+0
+{                break;            }
+break;
+inputBuffer[recvResult] = '\0';
+inputBuffer[recvResult] = '\0'
+inputBuffer[recvResult]
+inputBuffer
+inputBuffer
+recvResult
+recvResult
+'\0'
+data = strtoul(inputBuffer, NULL, 0);
+data = strtoul(inputBuffer, NULL, 0)
+data
+data
+strtoul(inputBuffer, NULL, 0)
+strtoul
+strtoul
+inputBuffer
+inputBuffer
+NULL
+NULL
+0
+0
+if (listenSocket != INVALID_SOCKET)        {            CLOSE_SOCKET(listenSocket);        }
+listenSocket != INVALID_SOCKET
+listenSocket
+listenSocket
+INVALID_SOCKET
+INVALID_SOCKET
+{            CLOSE_SOCKET(listenSocket);        }
+CLOSE_SOCKET(listenSocket);
+CLOSE_SOCKET(listenSocket)
+CLOSE_SOCKET
+CLOSE_SOCKET
+listenSocket
+listenSocket
+if (acceptSocket != INVALID_SOCKET)        {            CLOSE_SOCKET(acceptSocket);        }
+acceptSocket != INVALID_SOCKET
+acceptSocket
+acceptSocket
+INVALID_SOCKET
+INVALID_SOCKET
+{            CLOSE_SOCKET(acceptSocket);        }
+CLOSE_SOCKET(acceptSocket);
+CLOSE_SOCKET(acceptSocket)
+CLOSE_SOCKET
+CLOSE_SOCKET
+acceptSocket
+acceptSocket
+{        size_t dataCopy = data;        size_t data = dataCopy;        {            wchar_t * myString;            /* POTENTIAL FLAW: No MAXIMUM limitation for memory allocation, but ensure data is large enough             * for the wcscpy() function to not cause a buffer overflow */            /* INCIDENTAL FLAW: The source could cause a type overrun in data or in the memory allocation */            if (data > wcslen(HELLO_STRING))            {                myString = (wchar_t *)malloc(data*sizeof(wchar_t));                if (myString == NULL) {exit(-1);}                /* Copy a small string into myString */                wcscpy(myString, HELLO_STRING);                printWLine(myString);                free(myString);            }            else            {                printLine("Input is less than the length of the source string");            }        }    }
+size_t dataCopy = data;
+size_t dataCopy = data;
+size_t
+size_t
+dataCopy = data
+dataCopy
+= data
+data
+data
+size_t data = dataCopy;
+size_t data = dataCopy;
+size_t
+size_t
+data = dataCopy
+data
+= dataCopy
+dataCopy
+dataCopy
+{            wchar_t * myString;            /* POTENTIAL FLAW: No MAXIMUM limitation for memory allocation, but ensure data is large enough             * for the wcscpy() function to not cause a buffer overflow */            /* INCIDENTAL FLAW: The source could cause a type overrun in data or in the memory allocation */            if (data > wcslen(HELLO_STRING))            {                myString = (wchar_t *)malloc(data*sizeof(wchar_t));                if (myString == NULL) {exit(-1);}                /* Copy a small string into myString */                wcscpy(myString, HELLO_STRING);                printWLine(myString);                free(myString);            }            else            {                printLine("Input is less than the length of the source string");            }        }
+wchar_t * myString;
+wchar_t * myString;
+wchar_t
+* myString
+*
+myString
+if (data > wcslen(HELLO_STRING))            {                myString = (wchar_t *)malloc(data*sizeof(wchar_t));                if (myString == NULL) {exit(-1);}                /* Copy a small string into myString */                wcscpy(myString, HELLO_STRING);                printWLine(myString);                free(myString);            }            else            {                printLine("Input is less than the length of the source string");            }
+data > wcslen(HELLO_STRING)
+data
+data
+wcslen(HELLO_STRING)
+wcslen
+wcslen
+HELLO_STRING
+HELLO_STRING
+{                myString = (wchar_t *)malloc(data*sizeof(wchar_t));                if (myString == NULL) {exit(-1);}                /* Copy a small string into myString */                wcscpy(myString, HELLO_STRING);                printWLine(myString);                free(myString);            }
+myString = (wchar_t *)malloc(data*sizeof(wchar_t));
+myString = (wchar_t *)malloc(data*sizeof(wchar_t))
+myString
+myString
+(wchar_t *)malloc(data*sizeof(wchar_t))
+wchar_t *
+wchar_t
+*
+*
+malloc(data*sizeof(wchar_t))
+malloc
+malloc
+data*sizeof(wchar_t)
+data
+data
+sizeof(wchar_t)
+wchar_t
+wchar_t
+
+if (myString == NULL) {exit(-1);}
+myString == NULL
+myString
+myString
+NULL
+NULL
+{exit(-1);}
+exit(-1);
+exit(-1)
+exit
+exit
+-1
+1
+wcscpy(myString, HELLO_STRING);
+wcscpy(myString, HELLO_STRING)
+wcscpy
+wcscpy
+myString
+myString
+HELLO_STRING
+HELLO_STRING
+printWLine(myString);
+printWLine(myString)
+printWLine
+printWLine
+myString
+myString
+free(myString);
+free(myString)
+free
+free
+myString
+myString
+{                printLine("Input is less than the length of the source string");            }
+printLine("Input is less than the length of the source string");
+printLine("Input is less than the length of the source string")
+printLine
+printLine
+"Input is less than the length of the source string"
+-----joern-----
+(159,147,0)
+(99,69,0)
+(127,112,0)
+(163,38,0)
+(49,37,0)
+(94,187,0)
+(8,194,0)
+(187,83,0)
+(178,111,0)
+(49,180,0)
+(70,168,0)
+(123,23,0)
+(161,73,0)
+(58,131,0)
+(171,32,0)
+(148,187,0)
+(110,17,0)
+(2,116,0)
+(137,148,0)
+(55,190,0)
+(170,40,0)
+(30,48,0)
+(121,148,0)
+(143,87,0)
+(17,84,0)
+(171,190,0)
+(110,35,0)
+(9,131,0)
+(68,23,0)
+(157,144,0)
+(174,42,0)
+(54,36,0)
+(75,66,0)
+(24,194,0)
+(144,180,0)
+(108,181,0)
+(7,58,0)
+(25,24,0)
+(119,196,0)
+(35,110,0)
+(38,48,0)
+(183,141,0)
+(3,73,0)
+(125,131,0)
+(59,192,0)
+(88,99,0)
+(10,131,0)
+(134,23,0)
+(71,30,0)
+(199,22,0)
+(41,20,0)
+(86,77,0)
+(193,148,0)
+(17,110,0)
+(166,147,0)
+(81,192,0)
+(17,26,0)
+(192,180,0)
+(173,19,0)
+(80,19,0)
+(65,131,0)
+(126,198,0)
+(197,29,0)
+(107,131,0)
+(102,131,0)
+(187,148,0)
+(22,37,0)
+(66,83,0)
+(83,66,0)
+(72,130,0)
+(198,139,0)
+(194,24,0)
+(91,83,0)
+(36,176,0)
+(28,29,0)
+(32,23,0)
+(120,22,0)
+(110,1,0)
+(106,23,0)
+(149,23,0)
+(93,137,0)
+(6,66,0)
+(11,173,0)
+(138,19,0)
+(83,23,0)
+(19,173,0)
+(24,23,0)
+(113,109,0)
+(28,139,0)
+(47,83,0)
+(192,81,0)
+(116,92,0)
+(131,176,0)
+(19,139,0)
+(105,68,0)
+(90,23,0)
+(137,58,0)
+(186,36,0)
+(136,10,0)
+(124,158,0)
+(53,88,0)
+(84,17,0)
+(45,67,0)
+(21,10,0)
+(104,105,0)
+(79,37,0)
+(61,187,0)
+(158,32,0)
+(60,87,0)
+(77,12,0)
+(77,59,0)
+(135,28,0)
+(177,38,0)
+(180,192,0)
+(192,59,0)
+(139,19,0)
+(129,56,0)
+(56,37,0)
+(103,35,0)
+(82,83,0)
+(160,145,0)
+(1,110,0)
+(59,77,0)
+(89,91,0)
+(51,13,0)
+(200,13,0)
+(14,198,0)
+(188,83,0)
+(169,110,0)
+(165,195,0)
+(96,1,0)
+(151,42,0)
+(148,23,0)
+(153,91,0)
+(44,111,0)
+(73,131,0)
+(196,34,0)
+(74,131,0)
+(26,17,0)
+(87,15,0)
+(191,131,0)
+(182,12,0)
+(48,38,0)
+(82,164,0)
+(185,66,0)
+(154,58,0)
+(50,92,0)
+(42,23,0)
+(155,19,0)
+(133,130,0)
+(27,34,0)
+(118,171,0)
+(24,40,0)
+(97,173,0)
+(147,73,0)
+(18,32,0)
+(172,47,0)
+(115,158,0)
+(150,15,0)
+(82,73,0)
+(111,139,0)
+(142,131,0)
+(4,23,0)
+(140,196,0)
+(146,180,0)
+(56,180,0)
+(62,82,0)
+(85,121,0)
+(198,132,0)
+(139,23,0)
+(156,190,0)
+(92,116,0)
+(19,148,0)
+(167,20,0)
+(114,131,0)
+(132,198,0)
+(168,36,0)
+(137,101,0)
+(189,183,0)
+(46,123,0)
+(180,37,0)
+(13,36,0)
+(20,148,0)
+(57,47,0)
+(34,23,0)
+(22,180,0)
+(132,111,0)
+(171,36,0)
+(0,121,0)
+(47,57,0)
+(181,48,0)
+(147,83,0)
+(39,26,0)
+(110,83,0)
+(98,47,0)
+(32,158,0)
+(15,123,0)
+(29,23,0)
+(31,78,0)
+(121,58,0)
+(48,30,0)
+(100,171,0)
+(128,131,0)
+(77,13,0)
+(179,49,0)
+(130,68,0)
+(64,23,0)
+(13,171,0)
+(68,105,0)
+(15,87,0)
+(92,13,0)
+(12,77,0)
+(48,181,0)
+(122,139,0)
+(175,144,0)
+(16,168,0)
+(152,28,0)
+(190,176,0)
+(33,187,0)
+(40,24,0)
+(43,158,0)
+(63,131,0)
+(162,57,0)
+(95,117,0)
+(99,88,0)
+(5,176,0)
+(111,132,0)
+(77,13,1)
+(32,158,1)
+(17,26,1)
+(194,8,1)
+(197,28,1)
+(0,147,1)
+(3,161,1)
+(118,52,1)
+(40,170,1)
+(19,155,1)
+(73,3,1)
+(13,171,1)
+(171,190,1)
+(15,150,1)
+(187,33,1)
+(177,184,1)
+(1,96,1)
+(146,92,1)
+(121,85,1)
+(62,147,1)
+(188,42,1)
+(133,72,1)
+(136,190,1)
+(72,123,1)
+(20,167,1)
+(49,179,1)
+(157,175,1)
+(91,89,1)
+(110,35,1)
+(193,57,1)
+(144,180,1)
+(43,124,1)
+(19,173,1)
+(174,151,1)
+(144,157,1)
+(167,41,1)
+(35,103,1)
+(147,83,1)
+(123,46,1)
+(138,122,1)
+(121,58,1)
+(51,171,1)
+(49,180,1)
+(10,21,1)
+(181,48,1)
+(83,66,1)
+(111,139,1)
+(103,17,1)
+(177,58,1)
+(29,197,1)
+(22,120,1)
+(30,71,1)
+(38,163,1)
+(25,194,1)
+(28,139,1)
+(15,87,1)
+(48,38,1)
+(80,138,1)
+(163,177,1)
+(159,184,1)
+(166,159,1)
+(159,45,1)
+(160,52,1)
+(153,83,1)
+(196,119,1)
+(61,94,1)
+(18,29,1)
+(94,193,1)
+(58,154,1)
+(118,160,1)
+(56,180,1)
+(28,152,1)
+(199,144,1)
+(104,130,1)
+(170,25,1)
+(110,17,1)
+(189,92,1)
+(184,32,1)
+(152,135,1)
+(147,73,1)
+(182,86,1)
+(165,20,1)
+(13,200,1)
+(11,80,1)
+(82,73,1)
+(155,173,1)
+(143,34,1)
+(52,121,1)
+(192,59,1)
+(113,57,1)
+(159,31,1)
+(50,13,1)
+(89,153,1)
+(158,115,1)
+(97,11,1)
+(105,104,1)
+(2,50,1)
+(31,91,1)
+(181,108,1)
+(96,110,1)
+(8,91,1)
+(119,140,1)
+(100,118,1)
+(59,77,1)
+(66,185,1)
+(140,24,1)
+(20,148,1)
+(91,83,1)
+(135,132,1)
+(159,127,1)
+(86,146,1)
+(98,172,1)
+(199,99,1)
+(108,48,1)
+(120,199,1)
+(41,148,1)
+(47,98,1)
+(53,144,1)
+(14,126,1)
+(99,88,1)
+(171,32,1)
+(68,105,1)
+(17,84,1)
+(137,58,1)
+(27,196,1)
+(137,148,1)
+(42,174,1)
+(92,116,1)
+(180,192,1)
+(57,47,1)
+(173,97,1)
+(48,30,1)
+(6,188,1)
+(137,93,1)
+(39,169,1)
+(92,13,1)
+(60,143,1)
+(110,83,1)
+(77,12,1)
+(139,19,1)
+(93,121,1)
+(26,39,1)
+(33,61,1)
+(150,87,1)
+(132,198,1)
+(183,189,1)
+(24,40,1)
+(116,2,1)
+(169,68,1)
+(111,178,1)
+(115,43,1)
+(52,137,1)
+(200,51,1)
+(161,10,1)
+(159,95,1)
+(171,100,1)
+(34,27,1)
+(159,113,1)
+(190,156,1)
+(132,111,1)
+(198,14,1)
+(154,7,1)
+(19,148,1)
+(12,182,1)
+(24,194,1)
+(122,20,1)
+(0,82,1)
+(126,111,1)
+(71,38,1)
+(1,110,1)
+(82,62,1)
+(44,139,1)
+(46,15,1)
+(21,136,1)
+(57,162,1)
+(192,81,1)
+(198,139,1)
+(172,1,1)
+(179,56,1)
+(75,6,1)
+(76,183,1)
+(47,83,1)
+(7,73,1)
+(185,75,1)
+(162,47,1)
+(127,1,1)
+(56,129,1)
+(129,22,1)
+(121,148,1)
+(95,132,1)
+(82,83,1)
+(88,53,1)
+(147,166,1)
+(159,165,1)
+(45,181,1)
+(178,44,1)
+(124,18,1)
+(187,83,1)
+(148,187,1)
+(175,180,1)
+(76,49,1)
+(151,181,1)
+(156,55,1)
+(22,180,1)
+(87,60,1)
+(130,133,1)
+(85,0,1)
+(171,32,2)
+(72,91,2)
+(56,92,2)
+(66,181,2)
+(44,20,2)
+(25,91,2)
+(111,139,2)
+(17,84,2)
+(34,91,2)
+(110,17,2)
+(132,111,2)
+(82,147,2)
+(103,91,2)
+(91,83,2)
+(28,132,2)
+(48,38,2)
+(198,111,2)
+(28,139,2)
+(24,91,2)
+(132,20,2)
+(77,92,2)
+(33,57,2)
+(170,91,2)
+(137,148,2)
+(184,132,2)
+(175,92,2)
+(178,20,2)
+(135,132,2)
+(197,132,2)
+(82,73,2)
+(46,91,2)
+(192,92,2)
+(35,91,2)
+(157,92,2)
+(155,20,2)
+(42,181,2)
+(22,92,2)
+(121,148,2)
+(77,13,2)
+(32,132,2)
+(121,58,2)
+(172,1,2)
+(68,105,2)
+(179,92,2)
+(192,81,2)
+(98,1,2)
+(132,198,2)
+(1,91,2)
+(62,147,2)
+(59,92,2)
+(104,91,2)
+(94,57,2)
+(95,132,2)
+(38,184,2)
+(115,132,2)
+(182,92,2)
+(77,12,2)
+(75,181,2)
+(32,158,2)
+(19,20,2)
+(97,20,2)
+(49,92,2)
+(153,181,2)
+(92,116,2)
+(144,180,2)
+(17,26,2)
+(18,132,2)
+(148,187,2)
+(147,73,2)
+(122,20,2)
+(20,148,2)
+(53,144,2)
+(11,20,2)
+(89,181,2)
+(31,91,2)
+(177,184,2)
+(17,91,2)
+(14,111,2)
+(92,13,2)
+(110,35,2)
+(15,91,2)
+(110,83,2)
+(199,92,2)
+(137,58,2)
+(29,132,2)
+(60,91,2)
+(162,1,2)
+(180,92,2)
+(61,57,2)
+(96,91,2)
+(40,91,2)
+(152,132,2)
+(181,184,2)
+(22,180,2)
+(126,111,2)
+(59,77,2)
+(19,148,2)
+(48,30,2)
+(138,20,2)
+(99,144,2)
+(150,91,2)
+(8,91,2)
+(173,20,2)
+(111,20,2)
+(174,181,2)
+(6,181,2)
+(19,173,2)
+(123,91,2)
+(165,20,2)
+(45,181,2)
+(124,132,2)
+(80,20,2)
+(129,92,2)
+(192,59,2)
+(169,91,2)
+(57,47,2)
+(151,181,2)
+(119,91,2)
+(99,88,2)
+(49,180,2)
+(91,181,2)
+(1,110,2)
+(158,132,2)
+(83,66,2)
+(41,57,2)
+(83,181,2)
+(160,52,2)
+(88,144,2)
+(110,91,2)
+(196,91,2)
+(47,1,2)
+(108,184,2)
+(193,57,2)
+(120,92,2)
+(26,91,2)
+(15,87,2)
+(57,1,2)
+(194,91,2)
+(47,83,2)
+(127,1,2)
+(113,57,2)
+(24,194,2)
+(148,57,2)
+(12,92,2)
+(93,121,2)
+(147,83,2)
+(13,171,2)
+(43,132,2)
+(189,92,2)
+(30,184,2)
+(187,57,2)
+(105,91,2)
+(56,180,2)
+(133,91,2)
+(146,92,2)
+(188,181,2)
+(82,83,2)
+(27,91,2)
+(198,139,2)
+(87,91,2)
+(187,83,2)
+(139,19,2)
+(68,91,2)
+(24,40,2)
+(48,184,2)
+(183,92,2)
+(130,91,2)
+(20,57,2)
+(180,192,2)
+(143,91,2)
+(181,48,2)
+(86,92,2)
+(137,121,2)
+(140,91,2)
+(139,20,2)
+(144,92,2)
+(163,184,2)
+(39,91,2)
+(185,181,2)
+(71,184,2)
+(167,57,2)
+(171,190,2)
+-----------------------------------
+(0,acceptSocket)
+(1,bind(listenSocket, (struct sockaddr*)
+(2,HELLO_STRING)
+(3,INVALID_SOCKET)
+(4,if (acceptSocket == SOCKET_ERROR)
+(5,data)
+(6,AF_INET)
+(7,acceptSocket)
+(8,service)
+(9,if (wsaDataInit)
+(10,wsaDataInit = 0)
+(11,CHAR_ARRAY_SIZE)
+(12,sizeof(wchar_t)
+(13,data = dataCopy)
+(14,0)
+(15,service.sin_addr.s_addr)
+(16,myString)
+(17,(struct sockaddr*)
+(18,data)
+(19,recv(acceptSocket, inputBuffer, CHAR_ARRAY_SIZE - 1, 0)
+(20,acceptSocket == SOCKET_ERROR)
+(21,0)
+(22,wcscpy(myString, HELLO_STRING)
+(23,)
+(24,memset(&service, 0, sizeof(service)
+(25,0)
+(26,&service)
+(27,AF_INET)
+(28,inputBuffer[recvResult])
+(29,inputBuffer[recvResult] = \'\\0\')
+(30,&wsaData)
+(31,break;)
+(32,data = strtoul(inputBuffer, NULL, 0)
+(33,NULL)
+(34,service.sin_family = AF_INET)
+(35,sizeof(service)
+(36,)
+(37,)
+(38,MAKEWORD(2,2)
+(39,service)
+(40,sizeof(service)
+(41,acceptSocket)
+(42,wsaDataInit = 1)
+(43,NULL)
+(44,recvResult)
+(45,break;)
+(46,INADDR_ANY)
+(47,listen(listenSocket, LISTEN_BACKLOG)
+(48,WSAStartup(MAKEWORD(2,2)
+(49,free(myString)
+(50,data)
+(51,data)
+(52,wsaDataInit)
+(53,1)
+(54,dataCopy)
+(55,data)
+(56,printWLine(myString)
+(57,listen(listenSocket, LISTEN_BACKLOG)
+(58,acceptSocket = INVALID_SOCKET)
+(59,malloc(data*sizeof(wchar_t)
+(60,sin_addr)
+(61,NULL)
+(62,listenSocket)
+(63,recvResult)
+(64,if (WSAStartup(MAKEWORD(2,2)
+(65,service)
+(66,socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+(67,)
+(68,service.sin_port = htons(TCP_PORT)
+(69,)
+(70,if (data > wcslen(HELLO_STRING)
+(71,wsaData)
+(72,service)
+(73,listenSocket = INVALID_SOCKET)
+(74,wsaDataInit)
+(75,SOCK_STREAM)
+(76,RET)
+(77,data*sizeof(wchar_t)
+(78,)
+(79,if (myString == NULL)
+(80,inputBuffer)
+(81,wchar_t *)
+(82,CLOSE_SOCKET(listenSocket)
+(83,listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+(84,struct sockaddr*)
+(85,INVALID_SOCKET)
+(86,data)
+(87,service.sin_addr)
+(88,-1)
+(89,INVALID_SOCKET)
+(90,if (listenSocket == INVALID_SOCKET)
+(91,listenSocket == INVALID_SOCKET)
+(92,data > wcslen(HELLO_STRING)
+(93,acceptSocket)
+(94,listenSocket)
+(95,break;)
+(96,SOCKET_ERROR)
+(97,1)
+(98,LISTEN_BACKLOG)
+(99,exit(-1)
+(100,data)
+(101,)
+(102,wsaData)
+(103,service)
+(104,TCP_PORT)
+(105,htons(TCP_PORT)
+(106,if (listen(listenSocket, LISTEN_BACKLOG)
+(107,if (listenSocket != INVALID_SOCKET)
+(108,NO_ERROR)
+(109,)
+(110,bind(listenSocket, (struct sockaddr*)
+(111,recvResult == SOCKET_ERROR)
+(112,)
+(113,break;)
+(114,do)
+(115,0)
+(116,wcslen(HELLO_STRING)
+(117,)
+(118,dataCopy)
+(119,sin_family)
+(120,HELLO_STRING)
+(121,acceptSocket != INVALID_SOCKET)
+(122,recvResult)
+(123,service.sin_addr.s_addr = INADDR_ANY)
+(124,inputBuffer)
+(125,listenSocket)
+(126,recvResult)
+(127,break;)
+(128,acceptSocket)
+(129,myString)
+(130,service.sin_port)
+(131,)
+(132,recvResult == SOCKET_ERROR || recvResult == 0)
+(133,sin_port)
+(134,if (bind(listenSocket, (struct sockaddr*)
+(135,inputBuffer)
+(136,wsaDataInit)
+(137,CLOSE_SOCKET(acceptSocket)
+(138,acceptSocket)
+(139,recvResult = recv(acceptSocket, inputBuffer, CHAR_ARRAY_SIZE - 1, 0)
+(140,service)
+(141,)
+(142,if (acceptSocket != INVALID_SOCKET)
+(143,service)
+(144,myString == NULL)
+(145,)
+(146,myString)
+(147,listenSocket != INVALID_SOCKET)
+(148,acceptSocket = accept(listenSocket, NULL, NULL)
+(149,if (recvResult == SOCKET_ERROR || recvResult == 0)
+(150,s_addr)
+(151,wsaDataInit)
+(152,recvResult)
+(153,listenSocket)
+(154,INVALID_SOCKET)
+(155,0)
+(156,0)
+(157,NULL)
+(158,strtoul(inputBuffer, NULL, 0)
+(159,listenSocket)
+(160,WSACleanup()
+(161,listenSocket)
+(162,SOCKET_ERROR)
+(163,2)
+(164,)
+(165,break;)
+(166,INVALID_SOCKET)
+(167,SOCKET_ERROR)
+(168,)
+(169,listenSocket)
+(170,service)
+(171,dataCopy = data)
+(172,listenSocket)
+(173,CHAR_ARRAY_SIZE - 1)
+(174,1)
+(175,myString)
+(176,)
+(177,2)
+(178,SOCKET_ERROR)
+(179,myString)
+(180,myString = (wchar_t *)
+(181,WSAStartup(MAKEWORD(2,2)
+(182,wchar_t)
+(183,printLine("Input is less than the length of the source string")
+(184,0)
+(185,IPPROTO_TCP)
+(186,data)
+(187,accept(listenSocket, NULL, NULL)
+(188,listenSocket)
+(189,"Input is less than the length of the source string")
+(190,data = 0)
+(191,inputBuffer)
+(192,(wchar_t *)
+(193,acceptSocket)
+(194,&service)
+(195,)
+(196,service.sin_family)
+(197,\'\\0\')
+(198,recvResult == 0)
+(199,myString)
+(200,dataCopy)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

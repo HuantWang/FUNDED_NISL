@@ -1,0 +1,4959 @@
+-----label-----
+1
+-----code-----
+int
+tcp_reass(struct tcpcb *tp, struct tcphdr *th, int *tlenp, struct mbuf *m)
+{
+	struct tseg_qent *q;
+	struct tseg_qent *p = NULL;
+	struct tseg_qent *nq;
+	struct tseg_qent *te = NULL;
+	struct socket *so = tp->t_inpcb->inp_socket;
+	char *s = NULL;
+	int flags;
+	struct tseg_qent tqs;
+
+	INP_WLOCK_ASSERT(tp->t_inpcb);
+
+	/*
+	 * XXX: tcp_reass() is rather inefficient with its data structures
+	 * and should be rewritten (see NetBSD for optimizations).
+	 */
+
+	/*
+	 * Call with th==NULL after become established to
+	 * force pre-ESTABLISHED data up to user socket.
+	 */
+	if (th == NULL)
+		goto present;
+
+	/*
+	 * Limit the number of segments that can be queued to reduce the
+	 * potential for mbuf exhaustion. For best performance, we want to be
+	 * able to queue a full window's worth of segments. The size of the
+	 * socket receive buffer determines our advertised window and grows
+	 * automatically when socket buffer autotuning is enabled. Use it as the
+	 * basis for our queue limit.
+	 * Always let the missing segment through which caused this queue.
+	 * NB: Access to the socket buffer is left intentionally unlocked as we
+	 * can tolerate stale information here.
+	 *
+	 * XXXLAS: Using sbspace(so->so_rcv) instead of so->so_rcv.sb_hiwat
+	 * should work but causes packets to be dropped when they shouldn't.
+	 * Investigate why and re-evaluate the below limit after the behaviour
+	 * is understood.
+	 */
+	if ((th->th_seq != tp->rcv_nxt || !TCPS_HAVEESTABLISHED(tp->t_state)) &&
+	    tp->t_segqlen >= (so->so_rcv.sb_hiwat / tp->t_maxseg) + 1) {
+		tcp_reass_overflows++;
+		TCPSTAT_INC(tcps_rcvmemdrop);
+		m_freem(m);
+		*tlenp = 0;
+		if ((s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL, NULL))) {
+			log(LOG_DEBUG, "%s; %s: queue limit reached, "
+			    "segment dropped\n", s, __func__);
+			free(s, M_TCPLOG);
+		}
+		return (0);
+	}
+
+	/*
+	 * Allocate a new queue entry. If we can't, or hit the zone limit
+	 * just drop the pkt.
+	 *
+	 * Use a temporary structure on the stack for the missing segment
+	 * when the zone is exhausted. Otherwise we may get stuck.
+	 */
+	te = uma_zalloc(tcp_reass_zone, M_NOWAIT);
+	if (te == NULL) {
+		if (th->th_seq != tp->rcv_nxt || !TCPS_HAVEESTABLISHED(tp->t_state)) {
+			TCPSTAT_INC(tcps_rcvmemdrop);
+			m_freem(m);
+			*tlenp = 0;
+			if ((s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,
+			    NULL))) {
+				log(LOG_DEBUG, "%s; %s: global zone limit "
+				    "reached, segment dropped\n", s, __func__);
+				free(s, M_TCPLOG);
+			}
+			return (0);
+		} else {
+			bzero(&tqs, sizeof(struct tseg_qent));
+			te = &tqs;
+			if ((s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,
+			    NULL))) {
+				log(LOG_DEBUG,
+				    "%s; %s: global zone limit reached, using "
+				    "stack for missing segment\n", s, __func__);
+				free(s, M_TCPLOG);
+			}
+		}
+	}
+	tp->t_segqlen++;
+
+	/*
+	 * Find a segment which begins after this one does.
+	 */
+	LIST_FOREACH(q, &tp->t_segq, tqe_q) {
+		if (SEQ_GT(q->tqe_th->th_seq, th->th_seq))
+			break;
+		p = q;
+	}
+
+	/*
+	 * If there is a preceding segment, it may provide some of
+	 * our data already.  If so, drop the data from the incoming
+	 * segment.  If it provides all of our data, drop us.
+	 */
+	if (p != NULL) {
+		int i;
+		/* conversion to int (in i) handles seq wraparound */
+		i = p->tqe_th->th_seq + p->tqe_len - th->th_seq;
+		if (i > 0) {
+			if (i >= *tlenp) {
+				TCPSTAT_INC(tcps_rcvduppack);
+				TCPSTAT_ADD(tcps_rcvdupbyte, *tlenp);
+				m_freem(m);
+				if (te != &tqs)
+					uma_zfree(tcp_reass_zone, te);
+				tp->t_segqlen--;
+				/*
+				 * Try to present any queued data
+				 * at the left window edge to the user.
+				 * This is needed after the 3-WHS
+				 * completes.
+				 */
+				goto present;	/* ??? */
+			}
+			m_adj(m, i);
+			*tlenp -= i;
+			th->th_seq += i;
+		}
+	}
+	tp->t_rcvoopack++;
+	TCPSTAT_INC(tcps_rcvoopack);
+	TCPSTAT_ADD(tcps_rcvoobyte, *tlenp);
+
+	/*
+	 * While we overlap succeeding segments trim them or,
+	 * if they are completely covered, dequeue them.
+	 */
+	while (q) {
+		int i = (th->th_seq + *tlenp) - q->tqe_th->th_seq;
+		if (i <= 0)
+			break;
+		if (i < q->tqe_len) {
+			q->tqe_th->th_seq += i;
+			q->tqe_len -= i;
+			m_adj(q->tqe_m, i);
+			break;
+		}
+
+		nq = LIST_NEXT(q, tqe_q);
+		LIST_REMOVE(q, tqe_q);
+		m_freem(q->tqe_m);
+		uma_zfree(tcp_reass_zone, q);
+		tp->t_segqlen--;
+		q = nq;
+	}
+
+	/* Insert the new segment queue entry into place. */
+	te->tqe_m = m;
+	te->tqe_th = th;
+	te->tqe_len = *tlenp;
+
+	if (p == NULL) {
+		LIST_INSERT_HEAD(&tp->t_segq, te, tqe_q);
+	} else {
+		KASSERT(te != &tqs, ("%s: temporary stack based entry not "
+		    "first element in queue", __func__));
+		LIST_INSERT_AFTER(p, te, tqe_q);
+	}
+
+present:
+	/*
+	 * Present data to user, advancing rcv_nxt through
+	 * completed sequence space.
+	 */
+	if (!TCPS_HAVEESTABLISHED(tp->t_state))
+		return (0);
+	q = LIST_FIRST(&tp->t_segq);
+	if (!q || q->tqe_th->th_seq != tp->rcv_nxt)
+		return (0);
+	SOCKBUF_LOCK(&so->so_rcv);
+	do {
+		tp->rcv_nxt += q->tqe_len;
+		flags = q->tqe_th->th_flags & TH_FIN;
+		nq = LIST_NEXT(q, tqe_q);
+		LIST_REMOVE(q, tqe_q);
+		if (so->so_rcv.sb_state & SBS_CANTRCVMORE)
+			m_freem(q->tqe_m);
+		else
+			sbappendstream_locked(&so->so_rcv, q->tqe_m);
+		if (q != &tqs)
+			uma_zfree(tcp_reass_zone, q);
+		tp->t_segqlen--;
+		q = nq;
+	} while (q && q->tqe_th->th_seq == tp->rcv_nxt);
+	ND6_HINT(tp);
+	sorwakeup_locked(so);
+	return (flags);
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+3,8
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+17,19
+19,20
+19,21
+22,23
+22,24
+23,24
+25,26
+25,27
+28,29
+28,30
+28,31
+28,32
+28,33
+28,34
+28,35
+28,36
+28,37
+28,38
+28,39
+28,40
+28,41
+28,42
+28,43
+28,44
+28,45
+28,46
+28,47
+28,48
+28,49
+28,50
+28,51
+28,52
+28,53
+28,54
+28,55
+28,56
+28,57
+28,58
+28,59
+28,60
+28,61
+28,62
+29,30
+30,31
+30,32
+31,32
+33,34
+33,35
+36,37
+37,38
+37,39
+38,39
+40,41
+40,42
+40,43
+43,44
+44,45
+46,47
+47,48
+47,49
+48,49
+50,51
+50,52
+53,54
+54,55
+54,56
+55,56
+57,58
+57,59
+57,60
+60,61
+61,62
+63,64
+64,65
+64,66
+65,66
+67,68
+67,69
+67,70
+70,71
+71,72
+71,73
+72,73
+72,74
+73,74
+77,78
+78,79
+78,80
+80,81
+80,82
+80,83
+83,84
+84,85
+86,87
+87,88
+87,89
+89,90
+91,92
+92,93
+92,94
+93,94
+95,96
+97,98
+98,99
+98,100
+99,100
+101,102
+101,103
+102,103
+105,106
+105,107
+106,107
+106,108
+107,108
+109,110
+111,112
+113,114
+113,115
+114,115
+114,116
+115,116
+116,117
+116,118
+117,118
+117,119
+118,119
+118,120
+119,120
+122,123
+122,124
+123,124
+126,127
+127,128
+127,129
+128,129
+130,131
+130,132
+131,132
+134,135
+134,136
+135,136
+135,137
+136,137
+139,140
+139,141
+140,141
+141,142
+141,143
+142,143
+142,144
+143,144
+143,145
+144,145
+148,149
+148,150
+149,150
+153,154
+153,155
+153,156
+153,157
+153,158
+153,159
+154,155
+155,156
+156,157
+158,159
+159,160
+159,161
+160,161
+162,163
+163,164
+165,166
+166,167
+166,168
+167,168
+169,170
+171,172
+172,173
+172,174
+173,174
+174,175
+177,178
+177,179
+178,179
+179,180
+179,181
+180,181
+182,183
+182,184
+182,185
+182,186
+182,187
+183,184
+185,186
+186,187
+186,188
+187,188
+187,189
+188,189
+192,193
+194,195
+196,197
+198,199
+198,200
+199,200
+200,201
+200,202
+200,203
+200,204
+200,205
+201,202
+203,204
+206,207
+208,209
+210,211
+211,212
+211,213
+211,214
+212,213
+214,215
+216,217
+218,219
+219,220
+221,222
+222,223
+222,224
+223,224
+225,226
+225,227
+225,228
+226,227
+228,229
+230,231
+232,233
+232,234
+233,234
+233,235
+234,235
+236,237
+238,239
+239,240
+239,241
+239,242
+240,241
+240,242
+241,242
+241,243
+242,243
+242,244
+243,244
+246,247
+246,248
+247,248
+250,251
+251,252
+251,253
+252,253
+254,255
+254,256
+255,256
+258,259
+258,260
+258,261
+258,262
+258,263
+259,260
+260,261
+260,262
+261,262
+263,264
+264,265
+266,267
+267,268
+267,269
+268,269
+270,271
+272,273
+273,274
+273,275
+274,275
+275,276
+278,279
+278,280
+279,280
+280,281
+280,282
+281,282
+283,284
+283,285
+283,286
+283,287
+283,288
+284,285
+286,287
+287,288
+287,289
+288,289
+288,290
+289,290
+293,294
+295,296
+297,298
+299,300
+299,301
+300,301
+301,302
+301,303
+301,304
+301,305
+301,306
+302,303
+304,305
+307,308
+309,310
+311,312
+312,313
+312,314
+312,315
+313,314
+315,316
+317,318
+319,320
+320,321
+322,323
+322,324
+322,325
+323,324
+324,325
+324,326
+324,327
+325,326
+327,328
+328,329
+330,331
+331,332
+331,333
+332,333
+335,336
+336,337
+336,338
+337,338
+339,340
+340,341
+342,343
+342,344
+343,344
+344,345
+344,346
+345,346
+347,348
+347,349
+347,350
+347,351
+347,352
+348,349
+350,351
+351,352
+351,353
+352,353
+352,354
+353,354
+357,358
+359,360
+361,362
+363,364
+363,365
+364,365
+365,366
+365,367
+365,368
+365,369
+365,370
+366,367
+368,369
+371,372
+373,374
+375,376
+376,377
+376,378
+376,379
+377,378
+379,380
+381,382
+383,384
+384,385
+385,386
+385,387
+386,387
+389,390
+390,391
+390,392
+390,393
+390,394
+391,392
+393,394
+395,396
+396,397
+396,398
+397,398
+400,401
+402,403
+403,404
+403,405
+404,405
+404,406
+405,406
+405,407
+405,408
+406,407
+408,409
+408,410
+409,410
+409,411
+410,411
+414,415
+414,416
+415,416
+419,420
+420,421
+420,422
+421,422
+423,424
+425,426
+425,427
+426,427
+426,428
+427,428
+429,430
+431,432
+431,433
+431,434
+432,433
+433,434
+433,435
+435,436
+437,438
+438,439
+438,440
+439,440
+441,442
+441,443
+442,443
+442,444
+443,444
+443,445
+444,445
+444,446
+445,446
+449,450
+449,451
+450,451
+453,454
+453,455
+454,455
+457,458
+457,459
+458,459
+458,460
+459,460
+462,463
+462,464
+462,465
+462,466
+463,464
+463,465
+464,465
+464,466
+465,466
+467,468
+468,469
+470,471
+470,472
+470,473
+470,474
+470,475
+470,476
+471,472
+472,473
+472,474
+473,474
+475,476
+476,477
+478,479
+479,480
+479,481
+479,482
+480,481
+482,483
+484,485
+485,486
+487,488
+488,489
+488,490
+489,490
+491,492
+493,494
+493,495
+494,495
+494,496
+495,496
+497,498
+498,499
+500,501
+501,502
+501,503
+501,504
+502,503
+504,505
+506,507
+508,509
+509,510
+510,511
+510,512
+511,512
+514,515
+516,517
+517,518
+517,519
+517,520
+518,519
+520,521
+522,523
+524,525
+525,526
+525,527
+526,527
+527,528
+529,530
+531,532
+532,533
+532,534
+533,534
+533,535
+534,535
+537,538
+539,540
+540,541
+541,542
+541,543
+542,543
+545,546
+546,547
+546,548
+547,548
+549,550
+550,551
+552,553
+553,554
+553,555
+553,556
+554,555
+556,557
+558,559
+559,560
+561,562
+561,563
+562,563
+564,565
+564,566
+564,567
+564,568
+564,569
+564,570
+564,571
+564,572
+564,573
+565,566
+566,567
+566,568
+568,569
+568,570
+570,571
+571,572
+571,573
+572,573
+573,574
+573,575
+574,575
+574,576
+575,576
+578,579
+579,580
+581,582
+581,583
+582,583
+582,584
+583,584
+587,588
+587,589
+588,589
+588,590
+589,590
+593,594
+593,595
+594,595
+594,596
+595,596
+597,598
+597,599
+598,599
+601,602
+601,603
+601,604
+601,605
+602,603
+603,604
+603,605
+604,605
+604,606
+605,606
+605,607
+606,607
+610,611
+612,613
+613,614
+613,615
+614,615
+614,616
+615,616
+618,619
+620,621
+621,622
+621,623
+621,624
+622,623
+624,625
+624,626
+625,626
+628,629
+631,632
+632,633
+632,634
+633,634
+635,636
+635,637
+635,638
+636,637
+638,639
+640,641
+642,643
+643,644
+643,645
+643,646
+644,645
+646,647
+648,649
+650,651
+651,652
+651,653
+652,653
+654,655
+654,656
+655,656
+658,659
+659,660
+659,661
+659,662
+660,661
+662,663
+664,665
+666,667
+667,668
+668,669
+668,670
+669,670
+672,673
+673,674
+673,675
+674,675
+676,677
+678,679
+679,680
+679,681
+680,681
+680,682
+681,682
+684,685
+686,687
+687,688
+687,689
+688,689
+688,690
+689,690
+692,693
+694,695
+695,696
+695,697
+696,697
+696,698
+697,698
+700,701
+701,702
+703,704
+703,705
+703,706
+704,705
+704,706
+705,706
+707,708
+709,710
+710,711
+711,712
+711,713
+711,714
+711,715
+712,713
+714,715
+715,716
+715,717
+716,717
+719,720
+721,722
+723,724
+723,725
+724,725
+725,726
+725,727
+725,728
+726,727
+728,729
+728,730
+729,730
+731,732
+732,733
+734,735
+735,736
+735,737
+737,738
+739,740
+740,741
+740,742
+740,743
+740,744
+741,742
+743,744
+745,746
+747,748
+749,750
+749,751
+751,752
+751,753
+752,753
+753,754
+753,755
+754,755
+756,757
+756,758
+757,758
+760,761
+761,762
+763,764
+764,765
+764,766
+765,766
+767,768
+767,769
+768,769
+770,771
+771,772
+771,773
+772,773
+775,776
+775,777
+776,777
+776,778
+777,778
+778,779
+780,781
+780,782
+781,782
+781,783
+782,783
+782,784
+783,784
+787,788
+787,789
+788,789
+791,792
+792,793
+794,795
+795,796
+795,797
+796,797
+798,799
+799,800
+799,801
+800,801
+803,804
+803,805
+804,805
+804,806
+804,807
+804,808
+804,809
+804,810
+804,811
+804,812
+805,806
+806,807
+806,808
+807,808
+807,809
+808,809
+811,812
+811,813
+812,813
+815,816
+816,817
+816,818
+817,818
+819,820
+819,821
+820,821
+820,822
+821,822
+821,823
+822,823
+826,827
+828,829
+829,830
+829,831
+830,831
+832,833
+832,834
+832,835
+833,834
+835,836
+837,838
+839,840
+840,841
+840,842
+840,843
+841,842
+843,844
+845,846
+847,848
+847,849
+847,850
+848,849
+848,850
+849,850
+849,851
+850,851
+850,852
+851,852
+855,856
+857,858
+858,859
+858,860
+859,860
+861,862
+861,863
+862,863
+865,866
+866,867
+866,868
+866,869
+867,868
+869,870
+870,871
+870,872
+871,872
+874,875
+874,876
+875,876
+878,879
+878,880
+879,880
+879,881
+880,881
+882,883
+883,884
+885,886
+886,887
+886,888
+886,889
+887,888
+889,890
+891,892
+893,894
+894,895
+895,896
+895,897
+896,897
+899,900
+900,901
+900,902
+901,902
+903,904
+905,906
+905,907
+906,907
+908,909
+908,910
+909,910
+909,911
+910,911
+910,912
+911,912
+915,916
+915,917
+916,917
+919,920
+920,921
+920,922
+921,922
+923,924
+925,926
+926,927
+926,928
+927,928
+929,930
+931,932
+932,933
+933,934
+-----nextToken-----
+2,4,7,9,10,13,15,16,18,20,21,24,26,27,32,34,35,39,41,42,45,49,51,52,56,58,59,62,66,68,69,74,75,76,79,81,82,85,88,90,94,96,100,103,104,108,110,112,120,121,124,125,129,132,133,137,138,145,146,147,150,151,152,157,161,164,168,170,175,176,181,184,189,190,191,193,195,197,202,204,205,207,209,213,215,217,220,224,227,229,231,235,237,244,245,248,249,253,256,257,262,265,269,271,276,277,282,285,290,291,292,294,296,298,303,305,306,308,310,314,316,318,321,326,329,333,334,338,341,346,349,354,355,356,358,360,362,367,369,370,372,374,378,380,382,387,388,392,394,398,399,401,407,411,412,413,416,417,418,422,424,428,430,434,436,440,446,447,448,451,452,455,456,460,461,466,469,474,477,481,483,486,490,492,496,499,503,505,507,512,513,515,519,521,523,528,530,535,536,538,543,544,548,551,555,557,560,563,567,569,576,577,580,584,585,586,590,591,592,596,599,600,607,608,609,611,616,617,619,623,626,627,629,630,634,637,639,641,645,647,649,653,656,657,661,663,665,670,671,675,677,682,683,685,690,691,693,698,699,702,706,708,713,717,718,720,722,727,730,733,736,738,742,744,746,748,750,755,758,759,762,766,769,773,774,779,784,785,786,789,790,793,797,801,802,809,810,813,814,818,823,824,825,827,831,834,836,838,842,844,846,852,853,854,856,860,863,864,868,872,873,876,877,881,884,888,890,892,897,898,902,904,907,912,913,914,917,918,922,924,928,930,934
+-----computeFrom-----
+106,107
+106,108
+114,115
+114,116
+116,117
+116,118
+117,118
+117,119
+134,135
+134,136
+139,140
+139,141
+141,142
+141,143
+172,173
+172,174
+179,180
+179,181
+222,223
+222,224
+233,234
+233,235
+240,241
+240,242
+241,242
+241,243
+273,274
+273,275
+280,281
+280,282
+336,337
+336,338
+344,345
+344,346
+420,421
+420,422
+426,427
+426,428
+438,439
+438,440
+441,442
+441,443
+442,443
+442,444
+458,459
+458,460
+464,465
+464,466
+494,495
+494,496
+525,526
+525,527
+532,533
+532,534
+571,572
+571,573
+573,574
+573,575
+588,589
+588,590
+594,595
+594,596
+603,604
+603,605
+613,614
+613,615
+632,633
+632,634
+673,674
+673,675
+679,680
+679,681
+687,688
+687,689
+695,696
+695,697
+704,705
+704,706
+728,729
+728,730
+764,765
+764,766
+776,777
+776,778
+780,781
+780,782
+806,807
+806,808
+816,817
+816,818
+819,820
+819,821
+829,830
+829,831
+848,849
+848,850
+879,880
+879,881
+900,901
+900,902
+905,906
+905,907
+908,909
+908,910
+-----guardedBy-----
+120,193
+150,189
+235,338
+237,362
+244,294
+256,290
+428,451
+460,538
+469,486
+496,507
+599,626
+596,629
+600,617
+881,892
+-----guardedByNegation-----
+244,358
+256,354
+706,744
+853,873
+852,872
+-----lastLexicalUse-----
+244,358
+256,354
+-----jump-----
+244,358
+256,354
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FieldReference;FieldReference;IdExpression;Name;Name;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;GotoStatement;Name;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;UnaryExpression;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;CompoundStatement;ExpressionStatement;UnaryExpression;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;UnaryExpression;IdExpression;Name;LiteralExpression;IfStatement;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ReturnStatement;UnaryExpression;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;UnaryExpression;IdExpression;Name;LiteralExpression;IfStatement;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ReturnStatement;UnaryExpression;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;TypeIdExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ProblemStatement;CompoundStatement;IfStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;FieldReference;IdExpression;Name;Name;BreakStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;IfStatement;BinaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;GotoStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;WhileStatement;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;BinaryExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BreakStatement;IfStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;BreakStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;UnaryExpression;ExpressionList;LiteralExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;LabelStatement;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ReturnStatement;UnaryExpression;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;UnaryExpression;IdExpression;Name;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;FieldReference;IdExpression;Name;Name;ReturnStatement;UnaryExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;DoStatement;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;UnaryExpression;IdExpression;Name;
+-----ast_node-----
+inttcp_reass(struct tcpcb *tp, struct tcphdr *th, int *tlenp, struct mbuf *m){	struct tseg_qent *q;	struct tseg_qent *p = NULL;	struct tseg_qent *nq;	struct tseg_qent *te = NULL;	struct socket *so = tp->t_inpcb->inp_socket;	char *s = NULL;	int flags;	struct tseg_qent tqs;	INP_WLOCK_ASSERT(tp->t_inpcb);	/*	 * XXX: tcp_reass() is rather inefficient with its data structures	 * and should be rewritten (see NetBSD for optimizations).	 */	/*	 * Call with th==NULL after become established to	 * force pre-ESTABLISHED data up to user socket.	 */	if (th == NULL)		goto present;	/*	 * Limit the number of segments that can be queued to reduce the	 * potential for mbuf exhaustion. For best performance, we want to be	 * able to queue a full window's worth of segments. The size of the	 * socket receive buffer determines our advertised window and grows	 * automatically when socket buffer autotuning is enabled. Use it as the	 * basis for our queue limit.	 * Always let the missing segment through which caused this queue.	 * NB: Access to the socket buffer is left intentionally unlocked as we	 * can tolerate stale information here.	 *	 * XXXLAS: Using sbspace(so->so_rcv) instead of so->so_rcv.sb_hiwat	 * should work but causes packets to be dropped when they shouldn't.	 * Investigate why and re-evaluate the below limit after the behaviour	 * is understood.	 */	if ((th->th_seq != tp->rcv_nxt || !TCPS_HAVEESTABLISHED(tp->t_state)) &&	    tp->t_segqlen >= (so->so_rcv.sb_hiwat / tp->t_maxseg) + 1) {		tcp_reass_overflows++;		TCPSTAT_INC(tcps_rcvmemdrop);		m_freem(m);		*tlenp = 0;		if ((s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL, NULL))) {			log(LOG_DEBUG, "%s; %s: queue limit reached, "			    "segment dropped\n", s, __func__);			free(s, M_TCPLOG);		}		return (0);	}	/*	 * Allocate a new queue entry. If we can't, or hit the zone limit	 * just drop the pkt.	 *	 * Use a temporary structure on the stack for the missing segment	 * when the zone is exhausted. Otherwise we may get stuck.	 */	te = uma_zalloc(tcp_reass_zone, M_NOWAIT);	if (te == NULL) {		if (th->th_seq != tp->rcv_nxt || !TCPS_HAVEESTABLISHED(tp->t_state)) {			TCPSTAT_INC(tcps_rcvmemdrop);			m_freem(m);			*tlenp = 0;			if ((s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,			    NULL))) {				log(LOG_DEBUG, "%s; %s: global zone limit "				    "reached, segment dropped\n", s, __func__);				free(s, M_TCPLOG);			}			return (0);		} else {			bzero(&tqs, sizeof(struct tseg_qent));			te = &tqs;			if ((s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,			    NULL))) {				log(LOG_DEBUG,				    "%s; %s: global zone limit reached, using "				    "stack for missing segment\n", s, __func__);				free(s, M_TCPLOG);			}		}	}	tp->t_segqlen++;	/*	 * Find a segment which begins after this one does.	 */	LIST_FOREACH(q, &tp->t_segq, tqe_q) {		if (SEQ_GT(q->tqe_th->th_seq, th->th_seq))			break;		p = q;	}	/*	 * If there is a preceding segment, it may provide some of	 * our data already.  If so, drop the data from the incoming	 * segment.  If it provides all of our data, drop us.	 */	if (p != NULL) {		int i;		/* conversion to int (in i) handles seq wraparound */		i = p->tqe_th->th_seq + p->tqe_len - th->th_seq;		if (i > 0) {			if (i >= *tlenp) {				TCPSTAT_INC(tcps_rcvduppack);				TCPSTAT_ADD(tcps_rcvdupbyte, *tlenp);				m_freem(m);				if (te != &tqs)					uma_zfree(tcp_reass_zone, te);				tp->t_segqlen--;				/*				 * Try to present any queued data				 * at the left window edge to the user.				 * This is needed after the 3-WHS				 * completes.				 */				goto present;	/* ??? */			}			m_adj(m, i);			*tlenp -= i;			th->th_seq += i;		}	}	tp->t_rcvoopack++;	TCPSTAT_INC(tcps_rcvoopack);	TCPSTAT_ADD(tcps_rcvoobyte, *tlenp);	/*	 * While we overlap succeeding segments trim them or,	 * if they are completely covered, dequeue them.	 */	while (q) {		int i = (th->th_seq + *tlenp) - q->tqe_th->th_seq;		if (i <= 0)			break;		if (i < q->tqe_len) {			q->tqe_th->th_seq += i;			q->tqe_len -= i;			m_adj(q->tqe_m, i);			break;		}		nq = LIST_NEXT(q, tqe_q);		LIST_REMOVE(q, tqe_q);		m_freem(q->tqe_m);		uma_zfree(tcp_reass_zone, q);		tp->t_segqlen--;		q = nq;	}	/* Insert the new segment queue entry into place. */	te->tqe_m = m;	te->tqe_th = th;	te->tqe_len = *tlenp;	if (p == NULL) {		LIST_INSERT_HEAD(&tp->t_segq, te, tqe_q);	} else {		KASSERT(te != &tqs, ("%s: temporary stack based entry not "		    "first element in queue", __func__));		LIST_INSERT_AFTER(p, te, tqe_q);	}present:	/*	 * Present data to user, advancing rcv_nxt through	 * completed sequence space.	 */	if (!TCPS_HAVEESTABLISHED(tp->t_state))		return (0);	q = LIST_FIRST(&tp->t_segq);	if (!q || q->tqe_th->th_seq != tp->rcv_nxt)		return (0);	SOCKBUF_LOCK(&so->so_rcv);	do {		tp->rcv_nxt += q->tqe_len;		flags = q->tqe_th->th_flags & TH_FIN;		nq = LIST_NEXT(q, tqe_q);		LIST_REMOVE(q, tqe_q);		if (so->so_rcv.sb_state & SBS_CANTRCVMORE)			m_freem(q->tqe_m);		else			sbappendstream_locked(&so->so_rcv, q->tqe_m);		if (q != &tqs)			uma_zfree(tcp_reass_zone, q);		tp->t_segqlen--;		q = nq;	} while (q && q->tqe_th->th_seq == tp->rcv_nxt);	ND6_HINT(tp);	sorwakeup_locked(so);	return (flags);}
+int
+tcp_reass(struct tcpcb *tp, struct tcphdr *th, int *tlenp, struct mbuf *m)
+tcp_reass
+struct tcpcb *tp
+struct tcpcb
+tcpcb
+*tp
+*
+tp
+struct tcphdr *th
+struct tcphdr
+tcphdr
+*th
+*
+th
+int *tlenp
+int
+*tlenp
+*
+tlenp
+struct mbuf *m
+struct mbuf
+mbuf
+*m
+*
+m
+{	struct tseg_qent *q;	struct tseg_qent *p = NULL;	struct tseg_qent *nq;	struct tseg_qent *te = NULL;	struct socket *so = tp->t_inpcb->inp_socket;	char *s = NULL;	int flags;	struct tseg_qent tqs;	INP_WLOCK_ASSERT(tp->t_inpcb);	/*	 * XXX: tcp_reass() is rather inefficient with its data structures	 * and should be rewritten (see NetBSD for optimizations).	 */	/*	 * Call with th==NULL after become established to	 * force pre-ESTABLISHED data up to user socket.	 */	if (th == NULL)		goto present;	/*	 * Limit the number of segments that can be queued to reduce the	 * potential for mbuf exhaustion. For best performance, we want to be	 * able to queue a full window's worth of segments. The size of the	 * socket receive buffer determines our advertised window and grows	 * automatically when socket buffer autotuning is enabled. Use it as the	 * basis for our queue limit.	 * Always let the missing segment through which caused this queue.	 * NB: Access to the socket buffer is left intentionally unlocked as we	 * can tolerate stale information here.	 *	 * XXXLAS: Using sbspace(so->so_rcv) instead of so->so_rcv.sb_hiwat	 * should work but causes packets to be dropped when they shouldn't.	 * Investigate why and re-evaluate the below limit after the behaviour	 * is understood.	 */	if ((th->th_seq != tp->rcv_nxt || !TCPS_HAVEESTABLISHED(tp->t_state)) &&	    tp->t_segqlen >= (so->so_rcv.sb_hiwat / tp->t_maxseg) + 1) {		tcp_reass_overflows++;		TCPSTAT_INC(tcps_rcvmemdrop);		m_freem(m);		*tlenp = 0;		if ((s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL, NULL))) {			log(LOG_DEBUG, "%s; %s: queue limit reached, "			    "segment dropped\n", s, __func__);			free(s, M_TCPLOG);		}		return (0);	}	/*	 * Allocate a new queue entry. If we can't, or hit the zone limit	 * just drop the pkt.	 *	 * Use a temporary structure on the stack for the missing segment	 * when the zone is exhausted. Otherwise we may get stuck.	 */	te = uma_zalloc(tcp_reass_zone, M_NOWAIT);	if (te == NULL) {		if (th->th_seq != tp->rcv_nxt || !TCPS_HAVEESTABLISHED(tp->t_state)) {			TCPSTAT_INC(tcps_rcvmemdrop);			m_freem(m);			*tlenp = 0;			if ((s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,			    NULL))) {				log(LOG_DEBUG, "%s; %s: global zone limit "				    "reached, segment dropped\n", s, __func__);				free(s, M_TCPLOG);			}			return (0);		} else {			bzero(&tqs, sizeof(struct tseg_qent));			te = &tqs;			if ((s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,			    NULL))) {				log(LOG_DEBUG,				    "%s; %s: global zone limit reached, using "				    "stack for missing segment\n", s, __func__);				free(s, M_TCPLOG);			}		}	}	tp->t_segqlen++;	/*	 * Find a segment which begins after this one does.	 */	LIST_FOREACH(q, &tp->t_segq, tqe_q) {		if (SEQ_GT(q->tqe_th->th_seq, th->th_seq))			break;		p = q;	}	/*	 * If there is a preceding segment, it may provide some of	 * our data already.  If so, drop the data from the incoming	 * segment.  If it provides all of our data, drop us.	 */	if (p != NULL) {		int i;		/* conversion to int (in i) handles seq wraparound */		i = p->tqe_th->th_seq + p->tqe_len - th->th_seq;		if (i > 0) {			if (i >= *tlenp) {				TCPSTAT_INC(tcps_rcvduppack);				TCPSTAT_ADD(tcps_rcvdupbyte, *tlenp);				m_freem(m);				if (te != &tqs)					uma_zfree(tcp_reass_zone, te);				tp->t_segqlen--;				/*				 * Try to present any queued data				 * at the left window edge to the user.				 * This is needed after the 3-WHS				 * completes.				 */				goto present;	/* ??? */			}			m_adj(m, i);			*tlenp -= i;			th->th_seq += i;		}	}	tp->t_rcvoopack++;	TCPSTAT_INC(tcps_rcvoopack);	TCPSTAT_ADD(tcps_rcvoobyte, *tlenp);	/*	 * While we overlap succeeding segments trim them or,	 * if they are completely covered, dequeue them.	 */	while (q) {		int i = (th->th_seq + *tlenp) - q->tqe_th->th_seq;		if (i <= 0)			break;		if (i < q->tqe_len) {			q->tqe_th->th_seq += i;			q->tqe_len -= i;			m_adj(q->tqe_m, i);			break;		}		nq = LIST_NEXT(q, tqe_q);		LIST_REMOVE(q, tqe_q);		m_freem(q->tqe_m);		uma_zfree(tcp_reass_zone, q);		tp->t_segqlen--;		q = nq;	}	/* Insert the new segment queue entry into place. */	te->tqe_m = m;	te->tqe_th = th;	te->tqe_len = *tlenp;	if (p == NULL) {		LIST_INSERT_HEAD(&tp->t_segq, te, tqe_q);	} else {		KASSERT(te != &tqs, ("%s: temporary stack based entry not "		    "first element in queue", __func__));		LIST_INSERT_AFTER(p, te, tqe_q);	}present:	/*	 * Present data to user, advancing rcv_nxt through	 * completed sequence space.	 */	if (!TCPS_HAVEESTABLISHED(tp->t_state))		return (0);	q = LIST_FIRST(&tp->t_segq);	if (!q || q->tqe_th->th_seq != tp->rcv_nxt)		return (0);	SOCKBUF_LOCK(&so->so_rcv);	do {		tp->rcv_nxt += q->tqe_len;		flags = q->tqe_th->th_flags & TH_FIN;		nq = LIST_NEXT(q, tqe_q);		LIST_REMOVE(q, tqe_q);		if (so->so_rcv.sb_state & SBS_CANTRCVMORE)			m_freem(q->tqe_m);		else			sbappendstream_locked(&so->so_rcv, q->tqe_m);		if (q != &tqs)			uma_zfree(tcp_reass_zone, q);		tp->t_segqlen--;		q = nq;	} while (q && q->tqe_th->th_seq == tp->rcv_nxt);	ND6_HINT(tp);	sorwakeup_locked(so);	return (flags);}
+struct tseg_qent *q;
+struct tseg_qent *q;
+struct tseg_qent
+tseg_qent
+*q
+*
+q
+struct tseg_qent *p = NULL;
+struct tseg_qent *p = NULL;
+struct tseg_qent
+tseg_qent
+*p = NULL
+*
+p
+= NULL
+NULL
+NULL
+struct tseg_qent *nq;
+struct tseg_qent *nq;
+struct tseg_qent
+tseg_qent
+*nq
+*
+nq
+struct tseg_qent *te = NULL;
+struct tseg_qent *te = NULL;
+struct tseg_qent
+tseg_qent
+*te = NULL
+*
+te
+= NULL
+NULL
+NULL
+struct socket *so = tp->t_inpcb->inp_socket;
+struct socket *so = tp->t_inpcb->inp_socket;
+struct socket
+socket
+*so = tp->t_inpcb->inp_socket
+*
+so
+= tp->t_inpcb->inp_socket
+tp->t_inpcb->inp_socket
+tp->t_inpcb
+tp
+tp
+t_inpcb
+inp_socket
+char *s = NULL;
+char *s = NULL;
+char
+*s = NULL
+*
+s
+= NULL
+NULL
+NULL
+int flags;
+int flags;
+int
+flags
+flags
+struct tseg_qent tqs;
+struct tseg_qent tqs;
+struct tseg_qent
+tseg_qent
+tqs
+tqs
+INP_WLOCK_ASSERT(tp->t_inpcb);
+INP_WLOCK_ASSERT(tp->t_inpcb)
+INP_WLOCK_ASSERT
+INP_WLOCK_ASSERT
+tp->t_inpcb
+tp
+tp
+t_inpcb
+if (th == NULL)		goto present;
+th == NULL
+th
+th
+NULL
+NULL
+goto present;
+present
+if ((th->th_seq != tp->rcv_nxt || !TCPS_HAVEESTABLISHED(tp->t_state)) &&	    tp->t_segqlen >= (so->so_rcv.sb_hiwat / tp->t_maxseg) + 1) {		tcp_reass_overflows++;		TCPSTAT_INC(tcps_rcvmemdrop);		m_freem(m);		*tlenp = 0;		if ((s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL, NULL))) {			log(LOG_DEBUG, "%s; %s: queue limit reached, "			    "segment dropped\n", s, __func__);			free(s, M_TCPLOG);		}		return (0);	}
+(th->th_seq != tp->rcv_nxt || !TCPS_HAVEESTABLISHED(tp->t_state)) &&	    tp->t_segqlen >= (so->so_rcv.sb_hiwat / tp->t_maxseg) + 1
+(th->th_seq != tp->rcv_nxt || !TCPS_HAVEESTABLISHED(tp->t_state))
+th->th_seq != tp->rcv_nxt || !TCPS_HAVEESTABLISHED(tp->t_state)
+th->th_seq != tp->rcv_nxt
+th->th_seq
+th
+th
+th_seq
+tp->rcv_nxt
+tp
+tp
+rcv_nxt
+!TCPS_HAVEESTABLISHED(tp->t_state)
+TCPS_HAVEESTABLISHED(tp->t_state)
+TCPS_HAVEESTABLISHED
+TCPS_HAVEESTABLISHED
+tp->t_state
+tp
+tp
+t_state
+tp->t_segqlen >= (so->so_rcv.sb_hiwat / tp->t_maxseg) + 1
+tp->t_segqlen
+tp
+tp
+t_segqlen
+(so->so_rcv.sb_hiwat / tp->t_maxseg) + 1
+(so->so_rcv.sb_hiwat / tp->t_maxseg)
+so->so_rcv.sb_hiwat / tp->t_maxseg
+so->so_rcv.sb_hiwat
+so->so_rcv
+so
+so
+so_rcv
+sb_hiwat
+tp->t_maxseg
+tp
+tp
+t_maxseg
+1
+{		tcp_reass_overflows++;		TCPSTAT_INC(tcps_rcvmemdrop);		m_freem(m);		*tlenp = 0;		if ((s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL, NULL))) {			log(LOG_DEBUG, "%s; %s: queue limit reached, "			    "segment dropped\n", s, __func__);			free(s, M_TCPLOG);		}		return (0);	}
+tcp_reass_overflows++;
+tcp_reass_overflows++
+tcp_reass_overflows
+tcp_reass_overflows
+TCPSTAT_INC(tcps_rcvmemdrop);
+TCPSTAT_INC(tcps_rcvmemdrop);
+TCPSTAT_INC
+TCPSTAT_INC
+(tcps_rcvmemdrop)
+tcps_rcvmemdrop
+tcps_rcvmemdrop
+m_freem(m);
+m_freem(m)
+m_freem
+m_freem
+m
+m
+*tlenp = 0;
+*tlenp = 0
+*tlenp
+tlenp
+tlenp
+0
+if ((s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL, NULL))) {			log(LOG_DEBUG, "%s; %s: queue limit reached, "			    "segment dropped\n", s, __func__);			free(s, M_TCPLOG);		}
+(s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL, NULL))
+s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL, NULL)
+s
+s
+tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL, NULL)
+tcp_log_addrs
+tcp_log_addrs
+&tp->t_inpcb->inp_inc
+tp->t_inpcb->inp_inc
+tp->t_inpcb
+tp
+tp
+t_inpcb
+inp_inc
+th
+th
+NULL
+NULL
+NULL
+NULL
+{			log(LOG_DEBUG, "%s; %s: queue limit reached, "			    "segment dropped\n", s, __func__);			free(s, M_TCPLOG);		}
+log(LOG_DEBUG, "%s; %s: queue limit reached, "			    "segment dropped\n", s, __func__);
+log(LOG_DEBUG, "%s; %s: queue limit reached, "			    "segment dropped\n", s, __func__)
+log
+log
+LOG_DEBUG
+LOG_DEBUG
+"%s; %s: queue limit reached, "			    "segment dropped\n"
+s
+s
+__func__
+__func__
+free(s, M_TCPLOG);
+free(s, M_TCPLOG)
+free
+free
+s
+s
+M_TCPLOG
+M_TCPLOG
+return (0);
+(0)
+0
+te = uma_zalloc(tcp_reass_zone, M_NOWAIT);
+te = uma_zalloc(tcp_reass_zone, M_NOWAIT)
+te
+te
+uma_zalloc(tcp_reass_zone, M_NOWAIT)
+uma_zalloc
+uma_zalloc
+tcp_reass_zone
+tcp_reass_zone
+M_NOWAIT
+M_NOWAIT
+if (te == NULL) {		if (th->th_seq != tp->rcv_nxt || !TCPS_HAVEESTABLISHED(tp->t_state)) {			TCPSTAT_INC(tcps_rcvmemdrop);			m_freem(m);			*tlenp = 0;			if ((s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,			    NULL))) {				log(LOG_DEBUG, "%s; %s: global zone limit "				    "reached, segment dropped\n", s, __func__);				free(s, M_TCPLOG);			}			return (0);		} else {			bzero(&tqs, sizeof(struct tseg_qent));			te = &tqs;			if ((s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,			    NULL))) {				log(LOG_DEBUG,				    "%s; %s: global zone limit reached, using "				    "stack for missing segment\n", s, __func__);				free(s, M_TCPLOG);			}		}	}
+te == NULL
+te
+te
+NULL
+NULL
+{		if (th->th_seq != tp->rcv_nxt || !TCPS_HAVEESTABLISHED(tp->t_state)) {			TCPSTAT_INC(tcps_rcvmemdrop);			m_freem(m);			*tlenp = 0;			if ((s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,			    NULL))) {				log(LOG_DEBUG, "%s; %s: global zone limit "				    "reached, segment dropped\n", s, __func__);				free(s, M_TCPLOG);			}			return (0);		} else {			bzero(&tqs, sizeof(struct tseg_qent));			te = &tqs;			if ((s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,			    NULL))) {				log(LOG_DEBUG,				    "%s; %s: global zone limit reached, using "				    "stack for missing segment\n", s, __func__);				free(s, M_TCPLOG);			}		}	}
+if (th->th_seq != tp->rcv_nxt || !TCPS_HAVEESTABLISHED(tp->t_state)) {			TCPSTAT_INC(tcps_rcvmemdrop);			m_freem(m);			*tlenp = 0;			if ((s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,			    NULL))) {				log(LOG_DEBUG, "%s; %s: global zone limit "				    "reached, segment dropped\n", s, __func__);				free(s, M_TCPLOG);			}			return (0);		} else {			bzero(&tqs, sizeof(struct tseg_qent));			te = &tqs;			if ((s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,			    NULL))) {				log(LOG_DEBUG,				    "%s; %s: global zone limit reached, using "				    "stack for missing segment\n", s, __func__);				free(s, M_TCPLOG);			}		}
+th->th_seq != tp->rcv_nxt || !TCPS_HAVEESTABLISHED(tp->t_state)
+th->th_seq != tp->rcv_nxt
+th->th_seq
+th
+th
+th_seq
+tp->rcv_nxt
+tp
+tp
+rcv_nxt
+!TCPS_HAVEESTABLISHED(tp->t_state)
+TCPS_HAVEESTABLISHED(tp->t_state)
+TCPS_HAVEESTABLISHED
+TCPS_HAVEESTABLISHED
+tp->t_state
+tp
+tp
+t_state
+{			TCPSTAT_INC(tcps_rcvmemdrop);			m_freem(m);			*tlenp = 0;			if ((s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,			    NULL))) {				log(LOG_DEBUG, "%s; %s: global zone limit "				    "reached, segment dropped\n", s, __func__);				free(s, M_TCPLOG);			}			return (0);		}
+TCPSTAT_INC(tcps_rcvmemdrop);
+TCPSTAT_INC(tcps_rcvmemdrop);
+TCPSTAT_INC
+TCPSTAT_INC
+(tcps_rcvmemdrop)
+tcps_rcvmemdrop
+tcps_rcvmemdrop
+m_freem(m);
+m_freem(m)
+m_freem
+m_freem
+m
+m
+*tlenp = 0;
+*tlenp = 0
+*tlenp
+tlenp
+tlenp
+0
+if ((s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,			    NULL))) {				log(LOG_DEBUG, "%s; %s: global zone limit "				    "reached, segment dropped\n", s, __func__);				free(s, M_TCPLOG);			}
+(s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,			    NULL))
+s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,			    NULL)
+s
+s
+tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,			    NULL)
+tcp_log_addrs
+tcp_log_addrs
+&tp->t_inpcb->inp_inc
+tp->t_inpcb->inp_inc
+tp->t_inpcb
+tp
+tp
+t_inpcb
+inp_inc
+th
+th
+NULL
+NULL
+NULL
+NULL
+{				log(LOG_DEBUG, "%s; %s: global zone limit "				    "reached, segment dropped\n", s, __func__);				free(s, M_TCPLOG);			}
+log(LOG_DEBUG, "%s; %s: global zone limit "				    "reached, segment dropped\n", s, __func__);
+log(LOG_DEBUG, "%s; %s: global zone limit "				    "reached, segment dropped\n", s, __func__)
+log
+log
+LOG_DEBUG
+LOG_DEBUG
+"%s; %s: global zone limit "				    "reached, segment dropped\n"
+s
+s
+__func__
+__func__
+free(s, M_TCPLOG);
+free(s, M_TCPLOG)
+free
+free
+s
+s
+M_TCPLOG
+M_TCPLOG
+return (0);
+(0)
+0
+{			bzero(&tqs, sizeof(struct tseg_qent));			te = &tqs;			if ((s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,			    NULL))) {				log(LOG_DEBUG,				    "%s; %s: global zone limit reached, using "				    "stack for missing segment\n", s, __func__);				free(s, M_TCPLOG);			}		}
+bzero(&tqs, sizeof(struct tseg_qent));
+bzero(&tqs, sizeof(struct tseg_qent))
+bzero
+bzero
+&tqs
+tqs
+tqs
+sizeof(struct tseg_qent)
+struct tseg_qent
+struct tseg_qent
+tseg_qent
+
+te = &tqs;
+te = &tqs
+te
+te
+&tqs
+tqs
+tqs
+if ((s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,			    NULL))) {				log(LOG_DEBUG,				    "%s; %s: global zone limit reached, using "				    "stack for missing segment\n", s, __func__);				free(s, M_TCPLOG);			}
+(s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,			    NULL))
+s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,			    NULL)
+s
+s
+tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,			    NULL)
+tcp_log_addrs
+tcp_log_addrs
+&tp->t_inpcb->inp_inc
+tp->t_inpcb->inp_inc
+tp->t_inpcb
+tp
+tp
+t_inpcb
+inp_inc
+th
+th
+NULL
+NULL
+NULL
+NULL
+{				log(LOG_DEBUG,				    "%s; %s: global zone limit reached, using "				    "stack for missing segment\n", s, __func__);				free(s, M_TCPLOG);			}
+log(LOG_DEBUG,				    "%s; %s: global zone limit reached, using "				    "stack for missing segment\n", s, __func__);
+log(LOG_DEBUG,				    "%s; %s: global zone limit reached, using "				    "stack for missing segment\n", s, __func__)
+log
+log
+LOG_DEBUG
+LOG_DEBUG
+"%s; %s: global zone limit reached, using "				    "stack for missing segment\n"
+s
+s
+__func__
+__func__
+free(s, M_TCPLOG);
+free(s, M_TCPLOG)
+free
+free
+s
+s
+M_TCPLOG
+M_TCPLOG
+tp->t_segqlen++;
+tp->t_segqlen++
+tp->t_segqlen
+tp
+tp
+t_segqlen
+LIST_FOREACH(q, &tp->t_segq, tqe_q)
+LIST_FOREACH(q, &tp->t_segq, tqe_q)
+LIST_FOREACH
+LIST_FOREACH
+q
+q
+&tp->t_segq
+tp->t_segq
+tp
+tp
+t_segq
+tqe_q
+tqe_q
+)
+{		if (SEQ_GT(q->tqe_th->th_seq, th->th_seq))			break;		p = q;	}
+if (SEQ_GT(q->tqe_th->th_seq, th->th_seq))			break;
+SEQ_GT(q->tqe_th->th_seq, th->th_seq)
+SEQ_GT
+SEQ_GT
+q->tqe_th->th_seq
+q->tqe_th
+q
+q
+tqe_th
+th_seq
+th->th_seq
+th
+th
+th_seq
+break;
+p = q;
+p = q
+p
+p
+q
+q
+if (p != NULL) {		int i;		/* conversion to int (in i) handles seq wraparound */		i = p->tqe_th->th_seq + p->tqe_len - th->th_seq;		if (i > 0) {			if (i >= *tlenp) {				TCPSTAT_INC(tcps_rcvduppack);				TCPSTAT_ADD(tcps_rcvdupbyte, *tlenp);				m_freem(m);				if (te != &tqs)					uma_zfree(tcp_reass_zone, te);				tp->t_segqlen--;				/*				 * Try to present any queued data				 * at the left window edge to the user.				 * This is needed after the 3-WHS				 * completes.				 */				goto present;	/* ??? */			}			m_adj(m, i);			*tlenp -= i;			th->th_seq += i;		}	}
+p != NULL
+p
+p
+NULL
+NULL
+{		int i;		/* conversion to int (in i) handles seq wraparound */		i = p->tqe_th->th_seq + p->tqe_len - th->th_seq;		if (i > 0) {			if (i >= *tlenp) {				TCPSTAT_INC(tcps_rcvduppack);				TCPSTAT_ADD(tcps_rcvdupbyte, *tlenp);				m_freem(m);				if (te != &tqs)					uma_zfree(tcp_reass_zone, te);				tp->t_segqlen--;				/*				 * Try to present any queued data				 * at the left window edge to the user.				 * This is needed after the 3-WHS				 * completes.				 */				goto present;	/* ??? */			}			m_adj(m, i);			*tlenp -= i;			th->th_seq += i;		}	}
+int i;
+int i;
+int
+i
+i
+i = p->tqe_th->th_seq + p->tqe_len - th->th_seq;
+i = p->tqe_th->th_seq + p->tqe_len - th->th_seq
+i
+i
+p->tqe_th->th_seq + p->tqe_len - th->th_seq
+p->tqe_th->th_seq + p->tqe_len
+p->tqe_th->th_seq
+p->tqe_th
+p
+p
+tqe_th
+th_seq
+p->tqe_len
+p
+p
+tqe_len
+th->th_seq
+th
+th
+th_seq
+if (i > 0) {			if (i >= *tlenp) {				TCPSTAT_INC(tcps_rcvduppack);				TCPSTAT_ADD(tcps_rcvdupbyte, *tlenp);				m_freem(m);				if (te != &tqs)					uma_zfree(tcp_reass_zone, te);				tp->t_segqlen--;				/*				 * Try to present any queued data				 * at the left window edge to the user.				 * This is needed after the 3-WHS				 * completes.				 */				goto present;	/* ??? */			}			m_adj(m, i);			*tlenp -= i;			th->th_seq += i;		}
+i > 0
+i
+i
+0
+{			if (i >= *tlenp) {				TCPSTAT_INC(tcps_rcvduppack);				TCPSTAT_ADD(tcps_rcvdupbyte, *tlenp);				m_freem(m);				if (te != &tqs)					uma_zfree(tcp_reass_zone, te);				tp->t_segqlen--;				/*				 * Try to present any queued data				 * at the left window edge to the user.				 * This is needed after the 3-WHS				 * completes.				 */				goto present;	/* ??? */			}			m_adj(m, i);			*tlenp -= i;			th->th_seq += i;		}
+if (i >= *tlenp) {				TCPSTAT_INC(tcps_rcvduppack);				TCPSTAT_ADD(tcps_rcvdupbyte, *tlenp);				m_freem(m);				if (te != &tqs)					uma_zfree(tcp_reass_zone, te);				tp->t_segqlen--;				/*				 * Try to present any queued data				 * at the left window edge to the user.				 * This is needed after the 3-WHS				 * completes.				 */				goto present;	/* ??? */			}
+i >= *tlenp
+i
+i
+*tlenp
+tlenp
+tlenp
+{				TCPSTAT_INC(tcps_rcvduppack);				TCPSTAT_ADD(tcps_rcvdupbyte, *tlenp);				m_freem(m);				if (te != &tqs)					uma_zfree(tcp_reass_zone, te);				tp->t_segqlen--;				/*				 * Try to present any queued data				 * at the left window edge to the user.				 * This is needed after the 3-WHS				 * completes.				 */				goto present;	/* ??? */			}
+TCPSTAT_INC(tcps_rcvduppack);
+TCPSTAT_INC(tcps_rcvduppack);
+TCPSTAT_INC
+TCPSTAT_INC
+(tcps_rcvduppack)
+tcps_rcvduppack
+tcps_rcvduppack
+TCPSTAT_ADD(tcps_rcvdupbyte, *tlenp);
+TCPSTAT_ADD(tcps_rcvdupbyte, *tlenp)
+TCPSTAT_ADD
+TCPSTAT_ADD
+tcps_rcvdupbyte
+tcps_rcvdupbyte
+*tlenp
+tlenp
+tlenp
+m_freem(m);
+m_freem(m)
+m_freem
+m_freem
+m
+m
+if (te != &tqs)					uma_zfree(tcp_reass_zone, te);
+te != &tqs
+te
+te
+&tqs
+tqs
+tqs
+uma_zfree(tcp_reass_zone, te);
+uma_zfree(tcp_reass_zone, te)
+uma_zfree
+uma_zfree
+tcp_reass_zone
+tcp_reass_zone
+te
+te
+tp->t_segqlen--;
+tp->t_segqlen--
+tp->t_segqlen
+tp
+tp
+t_segqlen
+goto present;
+present
+m_adj(m, i);
+m_adj(m, i)
+m_adj
+m_adj
+m
+m
+i
+i
+*tlenp -= i;
+*tlenp -= i
+*tlenp
+tlenp
+tlenp
+i
+i
+th->th_seq += i;
+th->th_seq += i
+th->th_seq
+th
+th
+th_seq
+i
+i
+tp->t_rcvoopack++;
+tp->t_rcvoopack++
+tp->t_rcvoopack
+tp
+tp
+t_rcvoopack
+TCPSTAT_INC(tcps_rcvoopack);
+TCPSTAT_INC(tcps_rcvoopack);
+TCPSTAT_INC
+TCPSTAT_INC
+(tcps_rcvoopack)
+tcps_rcvoopack
+tcps_rcvoopack
+TCPSTAT_ADD(tcps_rcvoobyte, *tlenp);
+TCPSTAT_ADD(tcps_rcvoobyte, *tlenp)
+TCPSTAT_ADD
+TCPSTAT_ADD
+tcps_rcvoobyte
+tcps_rcvoobyte
+*tlenp
+tlenp
+tlenp
+while (q) {		int i = (th->th_seq + *tlenp) - q->tqe_th->th_seq;		if (i <= 0)			break;		if (i < q->tqe_len) {			q->tqe_th->th_seq += i;			q->tqe_len -= i;			m_adj(q->tqe_m, i);			break;		}		nq = LIST_NEXT(q, tqe_q);		LIST_REMOVE(q, tqe_q);		m_freem(q->tqe_m);		uma_zfree(tcp_reass_zone, q);		tp->t_segqlen--;		q = nq;	}
+q
+q
+{		int i = (th->th_seq + *tlenp) - q->tqe_th->th_seq;		if (i <= 0)			break;		if (i < q->tqe_len) {			q->tqe_th->th_seq += i;			q->tqe_len -= i;			m_adj(q->tqe_m, i);			break;		}		nq = LIST_NEXT(q, tqe_q);		LIST_REMOVE(q, tqe_q);		m_freem(q->tqe_m);		uma_zfree(tcp_reass_zone, q);		tp->t_segqlen--;		q = nq;	}
+int i = (th->th_seq + *tlenp) - q->tqe_th->th_seq;
+int i = (th->th_seq + *tlenp) - q->tqe_th->th_seq;
+int
+i = (th->th_seq + *tlenp) - q->tqe_th->th_seq
+i
+= (th->th_seq + *tlenp) - q->tqe_th->th_seq
+(th->th_seq + *tlenp) - q->tqe_th->th_seq
+(th->th_seq + *tlenp)
+th->th_seq + *tlenp
+th->th_seq
+th
+th
+th_seq
+*tlenp
+tlenp
+tlenp
+q->tqe_th->th_seq
+q->tqe_th
+q
+q
+tqe_th
+th_seq
+if (i <= 0)			break;
+i <= 0
+i
+i
+0
+break;
+if (i < q->tqe_len) {			q->tqe_th->th_seq += i;			q->tqe_len -= i;			m_adj(q->tqe_m, i);			break;		}
+i < q->tqe_len
+i
+i
+q->tqe_len
+q
+q
+tqe_len
+{			q->tqe_th->th_seq += i;			q->tqe_len -= i;			m_adj(q->tqe_m, i);			break;		}
+q->tqe_th->th_seq += i;
+q->tqe_th->th_seq += i
+q->tqe_th->th_seq
+q->tqe_th
+q
+q
+tqe_th
+th_seq
+i
+i
+q->tqe_len -= i;
+q->tqe_len -= i
+q->tqe_len
+q
+q
+tqe_len
+i
+i
+m_adj(q->tqe_m, i);
+m_adj(q->tqe_m, i)
+m_adj
+m_adj
+q->tqe_m
+q
+q
+tqe_m
+i
+i
+break;
+nq = LIST_NEXT(q, tqe_q);
+nq = LIST_NEXT(q, tqe_q)
+nq
+nq
+LIST_NEXT(q, tqe_q)
+LIST_NEXT
+LIST_NEXT
+q
+q
+tqe_q
+tqe_q
+LIST_REMOVE(q, tqe_q);
+LIST_REMOVE(q, tqe_q)
+LIST_REMOVE
+LIST_REMOVE
+q
+q
+tqe_q
+tqe_q
+m_freem(q->tqe_m);
+m_freem(q->tqe_m)
+m_freem
+m_freem
+q->tqe_m
+q
+q
+tqe_m
+uma_zfree(tcp_reass_zone, q);
+uma_zfree(tcp_reass_zone, q)
+uma_zfree
+uma_zfree
+tcp_reass_zone
+tcp_reass_zone
+q
+q
+tp->t_segqlen--;
+tp->t_segqlen--
+tp->t_segqlen
+tp
+tp
+t_segqlen
+q = nq;
+q = nq
+q
+q
+nq
+nq
+te->tqe_m = m;
+te->tqe_m = m
+te->tqe_m
+te
+te
+tqe_m
+m
+m
+te->tqe_th = th;
+te->tqe_th = th
+te->tqe_th
+te
+te
+tqe_th
+th
+th
+te->tqe_len = *tlenp;
+te->tqe_len = *tlenp
+te->tqe_len
+te
+te
+tqe_len
+*tlenp
+tlenp
+tlenp
+if (p == NULL) {		LIST_INSERT_HEAD(&tp->t_segq, te, tqe_q);	} else {		KASSERT(te != &tqs, ("%s: temporary stack based entry not "		    "first element in queue", __func__));		LIST_INSERT_AFTER(p, te, tqe_q);	}
+p == NULL
+p
+p
+NULL
+NULL
+{		LIST_INSERT_HEAD(&tp->t_segq, te, tqe_q);	}
+LIST_INSERT_HEAD(&tp->t_segq, te, tqe_q);
+LIST_INSERT_HEAD(&tp->t_segq, te, tqe_q)
+LIST_INSERT_HEAD
+LIST_INSERT_HEAD
+&tp->t_segq
+tp->t_segq
+tp
+tp
+t_segq
+te
+te
+tqe_q
+tqe_q
+{		KASSERT(te != &tqs, ("%s: temporary stack based entry not "		    "first element in queue", __func__));		LIST_INSERT_AFTER(p, te, tqe_q);	}
+KASSERT(te != &tqs, ("%s: temporary stack based entry not "		    "first element in queue", __func__));
+KASSERT(te != &tqs, ("%s: temporary stack based entry not "		    "first element in queue", __func__))
+KASSERT
+KASSERT
+te != &tqs
+te
+te
+&tqs
+tqs
+tqs
+("%s: temporary stack based entry not "		    "first element in queue", __func__)
+"%s: temporary stack based entry not "		    "first element in queue", __func__
+"%s: temporary stack based entry not "		    "first element in queue"
+__func__
+__func__
+LIST_INSERT_AFTER(p, te, tqe_q);
+LIST_INSERT_AFTER(p, te, tqe_q)
+LIST_INSERT_AFTER
+LIST_INSERT_AFTER
+p
+p
+te
+te
+tqe_q
+tqe_q
+present:	/*	 * Present data to user, advancing rcv_nxt through	 * completed sequence space.	 */	if (!TCPS_HAVEESTABLISHED(tp->t_state))		return (0);
+present
+if (!TCPS_HAVEESTABLISHED(tp->t_state))		return (0);
+!TCPS_HAVEESTABLISHED(tp->t_state)
+TCPS_HAVEESTABLISHED(tp->t_state)
+TCPS_HAVEESTABLISHED
+TCPS_HAVEESTABLISHED
+tp->t_state
+tp
+tp
+t_state
+return (0);
+(0)
+0
+q = LIST_FIRST(&tp->t_segq);
+q = LIST_FIRST(&tp->t_segq)
+q
+q
+LIST_FIRST(&tp->t_segq)
+LIST_FIRST
+LIST_FIRST
+&tp->t_segq
+tp->t_segq
+tp
+tp
+t_segq
+if (!q || q->tqe_th->th_seq != tp->rcv_nxt)		return (0);
+!q || q->tqe_th->th_seq != tp->rcv_nxt
+!q
+q
+q
+q->tqe_th->th_seq != tp->rcv_nxt
+q->tqe_th->th_seq
+q->tqe_th
+q
+q
+tqe_th
+th_seq
+tp->rcv_nxt
+tp
+tp
+rcv_nxt
+return (0);
+(0)
+0
+SOCKBUF_LOCK(&so->so_rcv);
+SOCKBUF_LOCK(&so->so_rcv)
+SOCKBUF_LOCK
+SOCKBUF_LOCK
+&so->so_rcv
+so->so_rcv
+so
+so
+so_rcv
+do {		tp->rcv_nxt += q->tqe_len;		flags = q->tqe_th->th_flags & TH_FIN;		nq = LIST_NEXT(q, tqe_q);		LIST_REMOVE(q, tqe_q);		if (so->so_rcv.sb_state & SBS_CANTRCVMORE)			m_freem(q->tqe_m);		else			sbappendstream_locked(&so->so_rcv, q->tqe_m);		if (q != &tqs)			uma_zfree(tcp_reass_zone, q);		tp->t_segqlen--;		q = nq;	} while (q && q->tqe_th->th_seq == tp->rcv_nxt);
+{		tp->rcv_nxt += q->tqe_len;		flags = q->tqe_th->th_flags & TH_FIN;		nq = LIST_NEXT(q, tqe_q);		LIST_REMOVE(q, tqe_q);		if (so->so_rcv.sb_state & SBS_CANTRCVMORE)			m_freem(q->tqe_m);		else			sbappendstream_locked(&so->so_rcv, q->tqe_m);		if (q != &tqs)			uma_zfree(tcp_reass_zone, q);		tp->t_segqlen--;		q = nq;	}
+tp->rcv_nxt += q->tqe_len;
+tp->rcv_nxt += q->tqe_len
+tp->rcv_nxt
+tp
+tp
+rcv_nxt
+q->tqe_len
+q
+q
+tqe_len
+flags = q->tqe_th->th_flags & TH_FIN;
+flags = q->tqe_th->th_flags & TH_FIN
+flags
+flags
+q->tqe_th->th_flags & TH_FIN
+q->tqe_th->th_flags
+q->tqe_th
+q
+q
+tqe_th
+th_flags
+TH_FIN
+TH_FIN
+nq = LIST_NEXT(q, tqe_q);
+nq = LIST_NEXT(q, tqe_q)
+nq
+nq
+LIST_NEXT(q, tqe_q)
+LIST_NEXT
+LIST_NEXT
+q
+q
+tqe_q
+tqe_q
+LIST_REMOVE(q, tqe_q);
+LIST_REMOVE(q, tqe_q)
+LIST_REMOVE
+LIST_REMOVE
+q
+q
+tqe_q
+tqe_q
+if (so->so_rcv.sb_state & SBS_CANTRCVMORE)			m_freem(q->tqe_m);		else			sbappendstream_locked(&so->so_rcv, q->tqe_m);
+so->so_rcv.sb_state & SBS_CANTRCVMORE
+so->so_rcv.sb_state
+so->so_rcv
+so
+so
+so_rcv
+sb_state
+SBS_CANTRCVMORE
+SBS_CANTRCVMORE
+m_freem(q->tqe_m);
+m_freem(q->tqe_m)
+m_freem
+m_freem
+q->tqe_m
+q
+q
+tqe_m
+sbappendstream_locked(&so->so_rcv, q->tqe_m);
+sbappendstream_locked(&so->so_rcv, q->tqe_m)
+sbappendstream_locked
+sbappendstream_locked
+&so->so_rcv
+so->so_rcv
+so
+so
+so_rcv
+q->tqe_m
+q
+q
+tqe_m
+if (q != &tqs)			uma_zfree(tcp_reass_zone, q);
+q != &tqs
+q
+q
+&tqs
+tqs
+tqs
+uma_zfree(tcp_reass_zone, q);
+uma_zfree(tcp_reass_zone, q)
+uma_zfree
+uma_zfree
+tcp_reass_zone
+tcp_reass_zone
+q
+q
+tp->t_segqlen--;
+tp->t_segqlen--
+tp->t_segqlen
+tp
+tp
+t_segqlen
+q = nq;
+q = nq
+q
+q
+nq
+nq
+q && q->tqe_th->th_seq == tp->rcv_nxt
+q
+q
+q->tqe_th->th_seq == tp->rcv_nxt
+q->tqe_th->th_seq
+q->tqe_th
+q
+q
+tqe_th
+th_seq
+tp->rcv_nxt
+tp
+tp
+rcv_nxt
+ND6_HINT(tp);
+ND6_HINT(tp)
+ND6_HINT
+ND6_HINT
+tp
+tp
+sorwakeup_locked(so);
+sorwakeup_locked(so)
+sorwakeup_locked
+sorwakeup_locked
+so
+so
+return (flags);
+(flags)
+flags
+flags
+-----joern-----
+(433,441,0)
+(457,410,0)
+(333,302,0)
+(413,220,0)
+(6,388,0)
+(258,242,0)
+(2,325,0)
+(182,84,0)
+(302,490,0)
+(327,353,0)
+(384,19,0)
+(237,463,0)
+(468,471,0)
+(361,464,0)
+(310,84,0)
+(175,355,0)
+(300,260,0)
+(203,427,0)
+(109,219,0)
+(96,471,0)
+(299,449,0)
+(462,197,0)
+(390,499,0)
+(354,5,0)
+(159,133,0)
+(356,2,0)
+(23,440,0)
+(4,64,0)
+(493,170,0)
+(174,175,0)
+(478,437,0)
+(212,260,0)
+(482,485,0)
+(71,433,0)
+(150,457,0)
+(269,306,0)
+(511,358,0)
+(249,454,0)
+(61,330,0)
+(387,306,0)
+(136,470,0)
+(198,120,0)
+(428,6,0)
+(478,272,0)
+(90,429,0)
+(498,473,0)
+(381,102,0)
+(439,19,0)
+(69,137,0)
+(496,497,0)
+(350,248,0)
+(227,97,0)
+(487,433,0)
+(239,463,0)
+(393,478,0)
+(437,506,0)
+(467,449,0)
+(497,496,0)
+(501,19,0)
+(317,395,0)
+(58,159,0)
+(200,233,0)
+(490,302,0)
+(285,96,0)
+(159,260,0)
+(268,272,0)
+(133,97,0)
+(418,29,0)
+(96,285,0)
+(304,61,0)
+(380,84,0)
+(234,403,0)
+(393,383,0)
+(64,440,0)
+(491,471,0)
+(497,410,0)
+(153,354,0)
+(295,230,0)
+(279,21,0)
+(505,230,0)
+(381,363,0)
+(485,499,0)
+(298,477,0)
+(135,133,0)
+(135,358,0)
+(10,21,0)
+(388,27,0)
+(193,167,0)
+(315,460,0)
+(236,21,0)
+(248,285,0)
+(180,477,0)
+(431,410,0)
+(286,363,0)
+(73,84,0)
+(455,506,0)
+(200,168,0)
+(506,204,0)
+(138,383,0)
+(316,468,0)
+(479,477,0)
+(362,221,0)
+(489,294,0)
+(368,174,0)
+(343,96,0)
+(277,442,0)
+(233,282,0)
+(323,440,0)
+(373,200,0)
+(186,34,0)
+(473,248,0)
+(351,439,0)
+(175,379,0)
+(212,235,0)
+(264,471,0)
+(294,489,0)
+(107,330,0)
+(383,437,0)
+(329,442,0)
+(403,471,0)
+(372,248,0)
+(407,430,0)
+(123,366,0)
+(478,424,0)
+(410,84,0)
+(275,471,0)
+(38,357,0)
+(131,275,0)
+(151,325,0)
+(230,471,0)
+(256,101,0)
+(345,404,0)
+(15,358,0)
+(284,84,0)
+(355,260,0)
+(191,401,0)
+(167,471,0)
+(508,386,0)
+(230,47,0)
+(479,427,0)
+(375,27,0)
+(492,364,0)
+(81,477,0)
+(495,479,0)
+(19,501,0)
+(240,102,0)
+(383,479,0)
+(83,242,0)
+(247,16,0)
+(444,306,0)
+(100,84,0)
+(85,297,0)
+(367,97,0)
+(383,424,0)
+(151,144,0)
+(349,325,0)
+(456,77,0)
+(296,67,0)
+(474,84,0)
+(33,322,0)
+(379,330,0)
+(337,81,0)
+(5,27,0)
+(370,132,0)
+(177,379,0)
+(250,136,0)
+(107,72,0)
+(484,296,0)
+(165,84,0)
+(9,371,0)
+(425,477,0)
+(24,270,0)
+(393,216,0)
+(483,499,0)
+(22,471,0)
+(336,205,0)
+(140,358,0)
+(364,432,0)
+(195,59,0)
+(291,130,0)
+(274,167,0)
+(137,471,0)
+(484,137,0)
+(346,355,0)
+(2,330,0)
+(3,56,0)
+(215,330,0)
+(179,61,0)
+(136,487,0)
+(276,27,0)
+(213,84,0)
+(309,444,0)
+(224,31,0)
+(12,59,0)
+(457,357,0)
+(45,132,0)
+(70,370,0)
+(50,120,0)
+(446,6,0)
+(31,306,0)
+(300,323,0)
+(117,349,0)
+(103,354,0)
+(424,221,0)
+(404,345,0)
+(261,95,0)
+(175,27,0)
+(278,300,0)
+(298,506,0)
+(270,355,0)
+(121,376,0)
+(175,174,0)
+(252,293,0)
+(82,342,0)
+(369,447,0)
+(421,256,0)
+(67,275,0)
+(192,395,0)
+(66,43,0)
+(324,248,0)
+(159,64,0)
+(485,294,0)
+(148,107,0)
+(161,220,0)
+(399,85,0)
+(214,342,0)
+(93,33,0)
+(332,473,0)
+(226,48,0)
+(459,43,0)
+(403,101,0)
+(63,387,0)
+(293,330,0)
+(289,291,0)
+(19,330,0)
+(417,260,0)
+(8,54,0)
+(473,160,0)
+(221,424,0)
+(95,21,0)
+(225,43,0)
+(347,121,0)
+(360,287,0)
+(419,353,0)
+(255,501,0)
+(160,473,0)
+(431,388,0)
+(266,388,0)
+(262,216,0)
+(130,291,0)
+(72,107,0)
+(74,137,0)
+(365,400,0)
+(205,336,0)
+(113,348,0)
+(494,349,0)
+(125,391,0)
+(53,296,0)
+(496,447,0)
+(425,57,0)
+(401,206,0)
+(452,205,0)
+(194,84,0)
+(381,199,0)
+(374,104,0)
+(76,306,0)
+(502,349,0)
+(253,467,0)
+(243,197,0)
+(245,199,0)
+(170,355,0)
+(237,84,0)
+(18,237,0)
+(455,477,0)
+(296,484,0)
+(438,455,0)
+(92,327,0)
+(5,354,0)
+(267,468,0)
+(297,21,0)
+(55,487,0)
+(175,298,0)
+(421,67,0)
+(377,285,0)
+(110,293,0)
+(56,471,0)
+(119,350,0)
+(121,347,0)
+(383,272,0)
+(425,506,0)
+(204,506,0)
+(369,48,0)
+(19,439,0)
+(238,506,0)
+(256,347,0)
+(33,471,0)
+(184,334,0)
+(49,348,0)
+(364,168,0)
+(40,84,0)
+(472,376,0)
+(20,364,0)
+(94,61,0)
+(170,379,0)
+(12,477,0)
+(145,71,0)
+(59,12,0)
+(484,214,0)
+(325,2,0)
+(86,275,0)
+(231,417,0)
+(98,151,0)
+(477,363,0)
+(378,242,0)
+(214,484,0)
+(67,421,0)
+(282,172,0)
+(251,168,0)
+(350,49,0)
+(293,101,0)
+(78,84,0)
+(445,258,0)
+(470,136,0)
+(127,197,0)
+(391,388,0)
+(340,378,0)
+(447,434,0)
+(290,12,0)
+(130,120,0)
+(229,433,0)
+(415,27,0)
+(378,375,0)
+(347,256,0)
+(101,403,0)
+(127,2,0)
+(303,419,0)
+(175,437,0)
+(370,64,0)
+(392,434,0)
+(335,21,0)
+(348,49,0)
+(77,456,0)
+(80,33,0)
+(232,460,0)
+(183,387,0)
+(178,325,0)
+(507,425,0)
+(75,345,0)
+(444,271,0)
+(26,375,0)
+(132,84,0)
+(331,219,0)
+(460,232,0)
+(64,430,0)
+(156,84,0)
+(469,431,0)
+(141,19,0)
+(440,470,0)
+(272,306,0)
+(282,233,0)
+(447,369,0)
+(30,425,0)
+(61,304,0)
+(470,232,0)
+(354,471,0)
+(294,485,0)
+(173,215,0)
+(91,455,0)
+(54,388,0)
+(172,282,0)
+(475,477,0)
+(454,249,0)
+(464,491,0)
+(395,84,0)
+(394,85,0)
+(480,355,0)
+(166,403,0)
+(453,342,0)
+(134,2,0)
+(409,77,0)
+(126,506,0)
+(407,440,0)
+(436,248,0)
+(7,478,0)
+(199,381,0)
+(243,471,0)
+(28,430,0)
+(376,471,0)
+(341,232,0)
+(175,272,0)
+(246,460,0)
+(106,81,0)
+(157,206,0)
+(258,410,0)
+(242,258,0)
+(46,397,0)
+(420,345,0)
+(398,71,0)
+(271,358,0)
+(443,258,0)
+(0,84,0)
+(442,255,0)
+(253,206,0)
+(406,271,0)
+(400,440,0)
+(216,353,0)
+(499,388,0)
+(431,249,0)
+(95,31,0)
+(393,26,0)
+(322,21,0)
+(60,243,0)
+(114,229,0)
+(201,496,0)
+(197,127,0)
+(386,306,0)
+(37,238,0)
+(449,206,0)
+(158,341,0)
+(34,294,0)
+(169,84,0)
+(29,84,0)
+(319,50,0)
+(336,84,0)
+(72,461,0)
+(416,400,0)
+(298,237,0)
+(427,203,0)
+(81,506,0)
+(222,433,0)
+(154,84,0)
+(389,47,0)
+(81,433,0)
+(241,282,0)
+(437,477,0)
+(100,160,0)
+(408,200,0)
+(164,81,0)
+(189,264,0)
+(288,239,0)
+(175,264,0)
+(34,175,0)
+(146,497,0)
+(456,135,0)
+(99,84,0)
+(41,366,0)
+(17,31,0)
+(487,136,0)
+(287,304,0)
+(270,429,0)
+(79,174,0)
+(425,181,0)
+(259,220,0)
+(499,485,0)
+(255,442,0)
+(478,379,0)
+(375,378,0)
+(264,175,0)
+(143,353,0)
+(391,410,0)
+(155,379,0)
+(174,388,0)
+(11,349,0)
+(422,96,0)
+(359,172,0)
+(137,484,0)
+(486,84,0)
+(468,72,0)
+(34,471,0)
+(207,471,0)
+(210,431,0)
+(139,438,0)
+(271,444,0)
+(140,429,0)
+(510,229,0)
+(167,396,0)
+(480,430,0)
+(244,324,0)
+(254,207,0)
+(65,433,0)
+(47,230,0)
+(102,381,0)
+(447,496,0)
+(411,497,0)
+(259,27,0)
+(379,480,0)
+(31,95,0)
+(440,16,0)
+(170,429,0)
+(477,475,0)
+(233,200,0)
+(218,407,0)
+(500,386,0)
+(450,437,0)
+(272,270,0)
+(376,121,0)
+(2,127,0)
+(238,477,0)
+(67,296,0)
+(6,27,0)
+(12,506,0)
+(275,67,0)
+(122,407,0)
+(228,22,0)
+(48,410,0)
+(391,488,0)
+(162,279,0)
+(270,358,0)
+(232,341,0)
+(371,120,0)
+(412,366,0)
+(448,391,0)
+(281,156,0)
+(22,84,0)
+(427,84,0)
+(216,212,0)
+(112,120,0)
+(104,353,0)
+(62,264,0)
+(172,471,0)
+(258,388,0)
+(249,431,0)
+(285,248,0)
+(217,444,0)
+(232,470,0)
+(297,85,0)
+(196,486,0)
+(292,324,0)
+(434,471,0)
+(221,306,0)
+(51,259,0)
+(265,238,0)
+(358,21,0)
+(357,457,0)
+(506,84,0)
+(355,64,0)
+(170,358,0)
+(322,33,0)
+(291,471,0)
+(442,471,0)
+(43,439,0)
+(435,491,0)
+(57,425,0)
+(342,214,0)
+(235,353,0)
+(77,306,0)
+(371,417,0)
+(116,350,0)
+(56,154,0)
+(404,84,0)
+(1,253,0)
+(490,42,0)
+(455,490,0)
+(85,306,0)
+(175,424,0)
+(174,410,0)
+(209,479,0)
+(479,506,0)
+(135,456,0)
+(32,29,0)
+(383,355,0)
+(345,471,0)
+(460,330,0)
+(434,447,0)
+(455,438,0)
+(273,78,0)
+(104,463,0)
+(102,240,0)
+(405,2,0)
+(115,172,0)
+(383,379,0)
+(372,84,0)
+(220,410,0)
+(366,168,0)
+(105,151,0)
+(97,133,0)
+(339,205,0)
+(280,506,0)
+(313,298,0)
+(202,15,0)
+(185,34,0)
+(256,421,0)
+(270,424,0)
+(437,486,0)
+(174,270,0)
+(306,95,0)
+(407,463,0)
+(461,361,0)
+(132,370,0)
+(396,129,0)
+(321,255,0)
+(35,272,0)
+(197,243,0)
+(382,341,0)
+(211,388,0)
+(323,300,0)
+(72,468,0)
+(68,49,0)
+(118,376,0)
+(301,372,0)
+(49,350,0)
+(393,253,0)
+(486,330,0)
+(480,440,0)
+(48,369,0)
+(318,215,0)
+(263,441,0)
+(294,34,0)
+(504,291,0)
+(308,200,0)
+(307,56,0)
+(149,424,0)
+(89,84,0)
+(326,437,0)
+(366,432,0)
+(36,439,0)
+(476,203,0)
+(248,84,0)
+(279,306,0)
+(283,366,0)
+(341,433,0)
+(467,260,0)
+(426,54,0)
+(129,396,0)
+(168,200,0)
+(361,461,0)
+(387,140,0)
+(423,26,0)
+(454,324,0)
+(287,219,0)
+(441,84,0)
+(101,293,0)
+(490,455,0)
+(142,491,0)
+(190,434,0)
+(13,243,0)
+(128,280,0)
+(188,480,0)
+(219,287,0)
+(457,388,0)
+(352,84,0)
+(410,129,0)
+(203,260,0)
+(54,410,0)
+(97,480,0)
+(478,355,0)
+(129,410,0)
+(458,351,0)
+(349,144,0)
+(220,388,0)
+(320,351,0)
+(334,206,0)
+(491,464,0)
+(383,298,0)
+(338,77,0)
+(176,235,0)
+(205,471,0)
+(111,43,0)
+(163,204,0)
+(334,463,0)
+(223,204,0)
+(257,107,0)
+(239,120,0)
+(311,487,0)
+(43,14,0)
+(461,72,0)
+(242,378,0)
+(396,167,0)
+(344,302,0)
+(414,467,0)
+(200,330,0)
+(488,391,0)
+(402,280,0)
+(154,56,0)
+(88,19,0)
+(108,156,0)
+(351,14,0)
+(133,135,0)
+(501,255,0)
+(385,140,0)
+(171,84,0)
+(175,479,0)
+(101,256,0)
+(478,298,0)
+(147,489,0)
+(424,170,0)
+(6,410,0)
+(97,330,0)
+(466,84,0)
+(152,475,0)
+(44,214,0)
+(187,207,0)
+(328,84,0)
+(509,298,0)
+(270,379,0)
+(370,260,0)
+(496,170,0)
+(489,388,0)
+(478,479,0)
+(388,259,0)
+(342,248,0)
+(203,64,0)
+(417,371,0)
+(220,259,0)
+(304,287,0)
+(386,21,0)
+(160,100,0)
+(324,454,0)
+(314,375,0)
+(26,84,0)
+(358,135,0)
+(39,15,0)
+(470,440,0)
+(306,21,0)
+(87,410,0)
+(47,389,0)
+(25,221,0)
+(503,456,0)
+(133,159,0)
+(207,57,0)
+(485,170,0)
+(140,387,0)
+(81,42,0)
+(312,212,0)
+(124,279,0)
+(464,361,0)
+(57,207,0)
+(52,323,0)
+(465,16,0)
+(97,480,1)
+(402,506,1)
+(135,133,1)
+(56,3,1)
+(175,174,1)
+(267,107,1)
+(334,463,1)
+(178,449,1)
+(183,270,1)
+(142,72,1)
+(225,111,1)
+(309,406,1)
+(478,379,1)
+(121,376,1)
+(221,306,1)
+(18,298,1)
+(431,469,1)
+(376,118,1)
+(230,295,1)
+(391,410,1)
+(239,463,1)
+(370,70,1)
+(220,388,1)
+(94,179,1)
+(238,37,1)
+(298,506,1)
+(15,358,1)
+(88,501,1)
+(205,452,1)
+(128,402,1)
+(279,306,1)
+(2,127,1)
+(161,413,1)
+(391,448,1)
+(289,504,1)
+(381,102,1)
+(325,2,1)
+(296,484,1)
+(396,167,1)
+(307,280,1)
+(235,176,1)
+(470,136,1)
+(366,412,1)
+(2,356,1)
+(214,44,1)
+(393,216,1)
+(313,481,1)
+(67,296,1)
+(150,488,1)
+(418,156,1)
+(221,25,1)
+(383,272,1)
+(76,322,1)
+(193,274,1)
+(355,346,1)
+(374,419,1)
+(196,437,1)
+(256,101,1)
+(331,154,1)
+(130,291,1)
+(257,148,1)
+(65,304,1)
+(245,461,1)
+(141,384,1)
+(383,379,1)
+(50,319,1)
+(140,385,1)
+(324,248,1)
+(446,428,1)
+(426,457,1)
+(57,207,1)
+(77,409,1)
+(122,323,1)
+(139,91,1)
+(93,80,1)
+(268,170,1)
+(295,505,1)
+(95,31,1)
+(237,18,1)
+(317,192,1)
+(479,477,1)
+(421,256,1)
+(365,416,1)
+(201,497,1)
+(167,193,1)
+(316,267,1)
+(401,191,1)
+(55,23,1)
+(297,85,1)
+(19,330,1)
+(499,388,1)
+(228,489,1)
+(204,163,1)
+(214,342,1)
+(433,222,1)
+(304,287,1)
+(43,439,1)
+(23,71,1)
+(12,506,1)
+(7,389,1)
+(54,388,1)
+(329,277,1)
+(174,410,1)
+(175,264,1)
+(48,410,1)
+(253,467,1)
+(79,264,1)
+(265,12,1)
+(216,212,1)
+(174,270,1)
+(188,379,1)
+(393,253,1)
+(71,433,1)
+(323,440,1)
+(239,288,1)
+(324,244,1)
+(179,287,1)
+(427,203,1)
+(487,433,1)
+(291,289,1)
+(1,325,1)
+(386,500,1)
+(478,424,1)
+(71,145,1)
+(175,298,1)
+(505,425,1)
+(150,249,1)
+(133,159,1)
+(242,258,1)
+(227,511,1)
+(176,212,1)
+(218,122,1)
+(62,100,1)
+(211,266,1)
+(250,487,1)
+(299,467,1)
+(490,455,1)
+(388,259,1)
+(304,61,1)
+(486,330,1)
+(100,160,1)
+(159,64,1)
+(123,283,1)
+(270,379,1)
+(270,355,1)
+(347,121,1)
+(34,471,1)
+(175,437,1)
+(500,508,1)
+(138,369,1)
+(237,463,1)
+(292,348,1)
+(389,47,1)
+(479,495,1)
+(306,95,1)
+(489,294,1)
+(478,298,1)
+(484,214,1)
+(261,271,1)
+(467,414,1)
+(311,55,1)
+(443,314,1)
+(160,473,1)
+(437,326,1)
+(9,50,1)
+(152,180,1)
+(360,219,1)
+(485,170,1)
+(439,19,1)
+(166,293,1)
+(464,491,1)
+(490,333,1)
+(34,185,1)
+(358,135,1)
+(348,49,1)
+(54,410,1)
+(343,422,1)
+(232,341,1)
+(137,471,1)
+(34,175,1)
+(354,471,1)
+(301,22,1)
+(234,166,1)
+(409,338,1)
+(117,502,1)
+(287,219,1)
+(145,398,1)
+(85,306,1)
+(111,459,1)
+(334,184,1)
+(403,234,1)
+(146,411,1)
+(174,368,1)
+(170,358,1)
+(153,457,1)
+(494,11,1)
+(104,374,1)
+(393,478,1)
+(203,64,1)
+(47,230,1)
+(174,388,1)
+(101,293,1)
+(345,420,1)
+(298,509,1)
+(407,218,1)
+(148,280,1)
+(282,241,1)
+(258,410,1)
+(421,67,1)
+(349,325,1)
+(131,256,1)
+(270,24,1)
+(124,297,1)
+(262,351,1)
+(378,242,1)
+(386,306,1)
+(351,458,1)
+(448,125,1)
+(41,168,1)
+(417,260,1)
+(192,248,1)
+(405,127,1)
+(387,63,1)
+(61,94,1)
+(456,77,1)
+(168,200,1)
+(275,86,1)
+(486,196,1)
+(127,197,1)
+(104,463,1)
+(82,453,1)
+(312,104,1)
+(68,350,1)
+(383,298,1)
+(412,123,1)
+(67,275,1)
+(485,482,1)
+(288,371,1)
+(400,440,1)
+(78,273,1)
+(420,75,1)
+(30,57,1)
+(12,59,1)
+(251,477,1)
+(469,210,1)
+(308,408,1)
+(238,506,1)
+(383,424,1)
+(229,433,1)
+(339,71,1)
+(223,126,1)
+(159,260,1)
+(170,355,1)
+(285,377,1)
+(478,7,1)
+(222,65,1)
+(280,128,1)
+(243,471,1)
+(164,337,1)
+(172,471,1)
+(493,424,1)
+(163,223,1)
+(81,433,1)
+(187,254,1)
+(326,450,1)
+(342,82,1)
+(447,496,1)
+(408,373,1)
+(244,292,1)
+(499,483,1)
+(118,472,1)
+(383,138,1)
+(504,12,1)
+(54,8,1)
+(140,387,1)
+(49,68,1)
+(315,246,1)
+(86,131,1)
+(151,98,1)
+(273,336,1)
+(270,358,1)
+(348,113,1)
+(113,49,1)
+(6,446,1)
+(212,312,1)
+(377,96,1)
+(262,439,1)
+(72,107,1)
+(384,88,1)
+(339,480,1)
+(293,252,1)
+(370,64,1)
+(387,306,1)
+(64,440,1)
+(379,330,1)
+(203,476,1)
+(455,477,1)
+(373,233,1)
+(6,410,1)
+(24,272,1)
+(224,261,1)
+(437,477,1)
+(450,237,1)
+(255,442,1)
+(81,164,1)
+(461,361,1)
+(318,404,1)
+(496,201,1)
+(419,303,1)
+(259,220,1)
+(219,109,1)
+(119,6,1)
+(246,341,1)
+(64,4,1)
+(364,168,1)
+(459,66,1)
+(333,344,1)
+(507,30,1)
+(58,97,1)
+(452,339,1)
+(440,470,1)
+(307,168,1)
+(413,51,1)
+(298,477,1)
+(393,383,1)
+(97,330,1)
+(392,496,1)
+(367,227,1)
+(175,479,1)
+(340,242,1)
+(156,108,1)
+(322,33,1)
+(351,439,1)
+(215,330,1)
+(357,38,1)
+(177,155,1)
+(437,506,1)
+(361,464,1)
+(506,204,1)
+(345,471,1)
+(197,462,1)
+(230,471,1)
+(368,79,1)
+(220,161,1)
+(411,48,1)
+(81,477,1)
+(489,147,1)
+(496,170,1)
+(393,26,1)
+(77,306,1)
+(26,375,1)
+(116,119,1)
+(2,330,1)
+(35,268,1)
+(208,304,1)
+(478,355,1)
+(467,260,1)
+(102,199,1)
+(60,13,1)
+(264,471,1)
+(323,300,1)
+(61,330,1)
+(49,350,1)
+(484,137,1)
+(243,60,1)
+(306,269,1)
+(485,499,1)
+(300,278,1)
+(472,101,1)
+(83,258,1)
+(488,391,1)
+(272,306,1)
+(336,205,1)
+(504,238,1)
+(173,318,1)
+(436,29,1)
+(103,153,1)
+(417,231,1)
+(383,479,1)
+(495,209,1)
+(491,435,1)
+(378,340,1)
+(1,151,1)
+(449,299,1)
+(509,313,1)
+(31,306,1)
+(444,306,1)
+(366,168,1)
+(80,279,1)
+(207,471,1)
+(258,445,1)
+(39,358,1)
+(320,43,1)
+(454,324,1)
+(307,364,1)
+(294,485,1)
+(496,497,1)
+(282,172,1)
+(491,471,1)
+(135,456,1)
+(231,9,1)
+(388,211,1)
+(457,357,1)
+(255,321,1)
+(11,325,1)
+(399,394,1)
+(476,479,1)
+(277,36,1)
+(480,440,1)
+(438,139,1)
+(136,250,1)
+(497,410,1)
+(207,187,1)
+(369,48,1)
+(8,426,1)
+(184,401,1)
+(473,248,1)
+(511,305,1)
+(63,183,1)
+(462,243,1)
+(483,390,1)
+(505,451,1)
+(414,334,1)
+(210,454,1)
+(200,330,1)
+(460,315,1)
+(455,438,1)
+(346,407,1)
+(274,87,1)
+(478,272,1)
+(280,506,1)
+(109,331,1)
+(75,395,1)
+(33,93,1)
+(271,444,1)
+(279,162,1)
+(185,186,1)
+(458,320,1)
+(407,463,1)
+(200,233,1)
+(175,379,1)
+(356,134,1)
+(43,225,1)
+(140,358,1)
+(424,221,1)
+(269,76,1)
+(101,403,1)
+(451,215,1)
+(502,494,1)
+(195,290,1)
+(490,302,1)
+(25,362,1)
+(355,260,1)
+(370,260,1)
+(59,195,1)
+(186,485,1)
+(96,343,1)
+(501,255,1)
+(445,443,1)
+(442,329,1)
+(428,259,1)
+(97,367,1)
+(337,106,1)
+(305,132,1)
+(52,400,1)
+(248,285,1)
+(254,229,1)
+(85,399,1)
+(480,188,1)
+(425,57,1)
+(442,471,1)
+(285,96,1)
+(154,56,1)
+(92,421,1)
+(98,105,1)
+(341,158,1)
+(492,366,1)
+(233,282,1)
+(158,382,1)
+(327,92,1)
+(481,15,1)
+(349,117,1)
+(470,232,1)
+(189,62,1)
+(229,510,1)
+(424,149,1)
+(364,20,1)
+(407,440,1)
+(383,355,1)
+(107,330,1)
+(293,330,1)
+(264,189,1)
+(372,248,1)
+(321,442,1)
+(457,388,1)
+(453,275,1)
+(112,130,1)
+(400,365,1)
+(394,386,1)
+(375,378,1)
+(81,506,1)
+(26,423,1)
+(425,507,1)
+(6,388,1)
+(33,471,1)
+(29,32,1)
+(291,471,1)
+(217,309,1)
+(114,427,1)
+(205,471,1)
+(149,221,1)
+(344,455,1)
+(359,251,1)
+(478,437,1)
+(435,142,1)
+(508,95,1)
+(460,330,1)
+(447,434,1)
+(153,54,1)
+(241,172,1)
+(17,224,1)
+(137,69,1)
+(38,150,1)
+(215,173,1)
+(505,81,1)
+(475,152,1)
+(162,124,1)
+(431,410,1)
+(107,257,1)
+(191,461,1)
+(238,477,1)
+(382,136,1)
+(66,439,1)
+(489,388,1)
+(203,260,1)
+(134,405,1)
+(22,228,1)
+(404,345,1)
+(31,17,1)
+(36,235,1)
+(350,248,1)
+(4,355,1)
+(457,410,1)
+(132,370,1)
+(434,190,1)
+(19,501,1)
+(319,323,1)
+(403,471,1)
+(202,39,1)
+(480,355,1)
+(15,202,1)
+(278,52,1)
+(45,78,1)
+(339,400,1)
+(398,433,1)
+(70,45,1)
+(56,471,1)
+(410,129,1)
+(341,433,1)
+(53,484,1)
+(283,41,1)
+(425,506,1)
+(313,305,1)
+(468,471,1)
+(287,360,1)
+(242,83,1)
+(253,1,1)
+(303,327,1)
+(249,431,1)
+(170,379,1)
+(376,471,1)
+(102,240,1)
+(425,477,1)
+(275,471,1)
+(167,471,1)
+(175,272,1)
+(473,498,1)
+(87,389,1)
+(342,248,1)
+(270,424,1)
+(416,440,1)
+(90,140,1)
+(478,479,1)
+(296,53,1)
+(332,369,1)
+(371,417,1)
+(125,348,1)
+(290,239,1)
+(369,447,1)
+(482,499,1)
+(5,354,1)
+(20,492,1)
+(209,486,1)
+(110,215,1)
+(37,265,1)
+(354,103,1)
+(180,381,1)
+(249,454,1)
+(350,116,1)
+(147,388,1)
+(91,229,1)
+(423,372,1)
+(170,493,1)
+(434,471,1)
+(510,114,1)
+(266,5,1)
+(406,15,1)
+(383,437,1)
+(256,347,1)
+(106,490,1)
+(133,97,1)
+(271,358,1)
+(258,388,1)
+(226,410,1)
+(220,410,1)
+(391,388,1)
+(395,317,1)
+(32,418,1)
+(74,214,1)
+(200,308,1)
+(505,112,1)
+(498,332,1)
+(65,208,1)
+(216,262,1)
+(190,392,1)
+(477,475,1)
+(338,133,1)
+(422,436,1)
+(129,396,1)
+(468,316,1)
+(461,72,1)
+(48,226,1)
+(19,141,1)
+(175,355,1)
+(379,177,1)
+(456,503,1)
+(300,260,1)
+(51,375,1)
+(3,307,1)
+(390,147,1)
+(385,387,1)
+(313,90,1)
+(105,349,1)
+(503,77,1)
+(487,311,1)
+(96,471,1)
+(126,421,1)
+(305,306,1)
+(159,58,1)
+(455,506,1)
+(72,468,1)
+(497,146,1)
+(155,64,1)
+(44,342,1)
+(175,424,1)
+(197,243,1)
+(232,460,1)
+(431,388,1)
+(108,281,1)
+(272,35,1)
+(381,199,1)
+(12,477,1)
+(115,359,1)
+(136,487,1)
+(199,245,1)
+(22,471,1)
+(62,489,1)
+(69,74,1)
+(151,325,1)
+(444,217,1)
+(479,506,1)
+(314,175,1)
+(13,178,1)
+(212,260,1)
+(172,115,1)
+(294,34,1)
+(362,271,1)
+(372,301,1)
+(252,110,1)
+(50,323,2)
+(440,470,2)
+(379,323,2)
+(280,421,2)
+(172,471,2)
+(461,280,2)
+(447,48,2)
+(94,461,2)
+(361,464,2)
+(137,256,2)
+(175,489,2)
+(425,477,2)
+(403,215,2)
+(478,272,2)
+(322,33,2)
+(155,323,2)
+(470,71,2)
+(496,48,2)
+(126,421,2)
+(174,270,2)
+(393,253,2)
+(389,280,2)
+(486,323,2)
+(66,439,2)
+(400,440,2)
+(237,400,2)
+(39,305,2)
+(373,461,2)
+(71,461,2)
+(479,71,2)
+(19,330,2)
+(170,358,2)
+(241,461,2)
+(145,461,2)
+(214,256,2)
+(431,388,2)
+(271,358,2)
+(121,376,2)
+(2,330,2)
+(238,12,2)
+(458,439,2)
+(375,489,2)
+(114,323,2)
+(70,400,2)
+(282,172,2)
+(301,369,2)
+(393,216,2)
+(100,369,2)
+(271,444,2)
+(360,461,2)
+(142,72,2)
+(256,101,2)
+(12,477,2)
+(478,298,2)
+(309,15,2)
+(83,489,2)
+(407,440,2)
+(294,147,2)
+(229,323,2)
+(293,215,2)
+(348,489,2)
+(452,323,2)
+(329,421,2)
+(45,323,2)
+(451,215,2)
+(151,325,2)
+(292,348,2)
+(140,387,2)
+(209,323,2)
+(507,229,2)
+(446,489,2)
+(427,323,2)
+(203,260,2)
+(51,489,2)
+(360,280,2)
+(438,229,2)
+(437,477,2)
+(489,489,2)
+(100,160,2)
+(64,323,2)
+(442,471,2)
+(61,461,2)
+(505,461,2)
+(388,259,2)
+(68,369,2)
+(168,200,2)
+(408,461,2)
+(505,215,2)
+(403,471,2)
+(211,369,2)
+(18,323,2)
+(490,455,2)
+(341,433,2)
+(127,197,2)
+(214,342,2)
+(499,147,2)
+(365,71,2)
+(81,506,2)
+(215,330,2)
+(264,369,2)
+(391,388,2)
+(342,248,2)
+(396,167,2)
+(248,285,2)
+(470,232,2)
+(205,471,2)
+(153,369,2)
+(217,15,2)
+(178,461,2)
+(175,264,2)
+(298,400,2)
+(389,461,2)
+(386,271,2)
+(9,323,2)
+(203,400,2)
+(199,461,2)
+(364,168,2)
+(122,323,2)
+(489,294,2)
+(456,77,2)
+(121,101,2)
+(383,272,2)
+(83,369,2)
+(147,489,2)
+(357,489,2)
+(370,260,2)
+(167,389,2)
+(77,305,2)
+(72,107,2)
+(253,467,2)
+(369,389,2)
+(326,323,2)
+(487,71,2)
+(222,280,2)
+(246,71,2)
+(338,305,2)
+(381,102,2)
+(419,421,2)
+(52,400,2)
+(256,347,2)
+(510,323,2)
+(56,461,2)
+(103,489,2)
+(57,207,2)
+(78,323,2)
+(33,471,2)
+(421,215,2)
+(81,229,2)
+(101,215,2)
+(255,421,2)
+(242,369,2)
+(229,71,2)
+(457,489,2)
+(469,348,2)
+(174,388,2)
+(369,447,2)
+(138,369,2)
+(349,325,2)
+(393,383,2)
+(509,323,2)
+(175,174,2)
+(387,306,2)
+(184,461,2)
+(242,489,2)
+(219,280,2)
+(484,137,2)
+(323,400,2)
+(97,330,2)
+(274,389,2)
+(383,355,2)
+(239,463,2)
+(298,477,2)
+(195,323,2)
+(389,215,2)
+(170,271,2)
+(107,280,2)
+(297,85,2)
+(485,170,2)
+(94,280,2)
+(340,369,2)
+(440,71,2)
+(384,421,2)
+(128,421,2)
+(336,71,2)
+(305,271,2)
+(203,64,2)
+(229,400,2)
+(254,229,2)
+(421,67,2)
+(230,280,2)
+(245,461,2)
+(391,348,2)
+(443,369,2)
+(176,421,2)
+(154,280,2)
+(90,271,2)
+(196,71,2)
+(162,271,2)
+(316,280,2)
+(460,330,2)
+(31,271,2)
+(475,461,2)
+(154,461,2)
+(150,489,2)
+(407,463,2)
+(423,369,2)
+(218,323,2)
+(505,280,2)
+(11,325,2)
+(64,440,2)
+(272,306,2)
+(212,421,2)
+(367,305,2)
+(308,461,2)
+(448,348,2)
+(87,389,2)
+(296,256,2)
+(336,400,2)
+(183,271,2)
+(416,71,2)
+(175,424,2)
+(132,400,2)
+(487,433,2)
+(125,348,2)
+(36,421,2)
+(413,489,2)
+(130,323,2)
+(175,379,2)
+(56,280,2)
+(265,12,2)
+(437,323,2)
+(482,147,2)
+(346,323,2)
+(250,71,2)
+(175,479,2)
+(154,56,2)
+(326,400,2)
+(109,461,2)
+(315,71,2)
+(508,271,2)
+(357,369,2)
+(478,424,2)
+(407,323,2)
+(252,215,2)
+(237,323,2)
+(141,421,2)
+(433,461,2)
+(261,271,2)
+(8,457,2)
+(428,489,2)
+(207,229,2)
+(22,369,2)
+(187,229,2)
+(222,461,2)
+(470,136,2)
+(434,48,2)
+(229,433,2)
+(486,71,2)
+(324,348,2)
+(478,437,2)
+(383,379,2)
+(257,280,2)
+(43,439,2)
+(31,306,2)
+(38,369,2)
+(85,271,2)
+(123,168,2)
+(2,461,2)
+(485,499,2)
+(118,101,2)
+(6,388,2)
+(322,271,2)
+(158,71,2)
+(398,461,2)
+(196,323,2)
+(54,388,2)
+(488,348,2)
+(134,461,2)
+(56,471,2)
+(298,71,2)
+(486,330,2)
+(233,282,2)
+(494,325,2)
+(476,323,2)
+(490,229,2)
+(3,461,2)
+(305,323,2)
+(210,348,2)
+(398,280,2)
+(237,463,2)
+(334,463,2)
+(331,280,2)
+(339,400,2)
+(495,323,2)
+(231,323,2)
+(132,323,2)
+(386,306,2)
+(97,305,2)
+(124,271,2)
+(101,403,2)
+(170,379,2)
+(411,48,2)
+(321,421,2)
+(135,456,2)
+(135,305,2)
+(37,12,2)
+(437,400,2)
+(268,271,2)
+(200,233,2)
+(306,271,2)
+(437,71,2)
+(358,305,2)
+(484,256,2)
+(468,280,2)
+(307,280,2)
+(427,71,2)
+(168,461,2)
+(478,355,2)
+(175,369,2)
+(461,361,2)
+(354,489,2)
+(478,389,2)
+(497,410,2)
+(473,248,2)
+(483,147,2)
+(114,71,2)
+(135,133,2)
+(34,147,2)
+(224,271,2)
+(502,325,2)
+(490,302,2)
+(280,506,2)
+(264,471,2)
+(348,369,2)
+(212,260,2)
+(216,212,2)
+(266,369,2)
+(406,15,2)
+(479,477,2)
+(95,271,2)
+(453,256,2)
+(232,71,2)
+(95,31,2)
+(249,454,2)
+(313,400,2)
+(72,468,2)
+(294,34,2)
+(496,497,2)
+(447,496,2)
+(339,323,2)
+(404,345,2)
+(434,471,2)
+(295,215,2)
+(23,71,2)
+(221,271,2)
+(205,323,2)
+(336,205,2)
+(455,506,2)
+(298,506,2)
+(333,229,2)
+(294,485,2)
+(251,461,2)
+(506,421,2)
+(68,489,2)
+(242,258,2)
+(74,256,2)
+(431,348,2)
+(342,256,2)
+(444,15,2)
+(501,255,2)
+(305,71,2)
+(391,410,2)
+(267,280,2)
+(424,271,2)
+(61,330,2)
+(417,260,2)
+(272,271,2)
+(379,330,2)
+(153,489,2)
+(147,369,2)
+(258,388,2)
+(383,437,2)
+(220,410,2)
+(179,280,2)
+(82,256,2)
+(323,440,2)
+(504,323,2)
+(273,323,2)
+(312,421,2)
+(208,304,2)
+(372,248,2)
+(25,271,2)
+(489,369,2)
+(159,64,2)
+(166,215,2)
+(390,147,2)
+(160,369,2)
+(289,323,2)
+(104,421,2)
+(203,71,2)
+(278,400,2)
+(489,388,2)
+(314,489,2)
+(116,489,2)
+(388,369,2)
+(393,26,2)
+(291,471,2)
+(4,323,2)
+(101,293,2)
+(491,471,2)
+(49,350,2)
+(136,487,2)
+(264,489,2)
+(258,369,2)
+(51,369,2)
+(177,323,2)
+(232,460,2)
+(477,461,2)
+(113,369,2)
+(67,256,2)
+(18,71,2)
+(445,369,2)
+(455,477,2)
+(361,72,2)
+(295,280,2)
+(17,271,2)
+(170,355,2)
+(81,477,2)
+(81,433,2)
+(63,271,2)
+(460,71,2)
+(362,271,2)
+(34,175,2)
+(239,323,2)
+(131,256,2)
+(115,461,2)
+(304,61,2)
+(47,461,2)
+(86,256,2)
+(22,471,2)
+(60,461,2)
+(476,71,2)
+(160,473,2)
+(437,506,2)
+(443,489,2)
+(203,323,2)
+(59,323,2)
+(209,71,2)
+(370,71,2)
+(479,400,2)
+(67,296,2)
+(72,280,2)
+(295,461,2)
+(304,461,2)
+(336,323,2)
+(149,271,2)
+(368,489,2)
+(92,421,2)
+(351,439,2)
+(378,489,2)
+(270,271,2)
+(412,168,2)
+(244,348,2)
+(93,271,2)
+(47,280,2)
+(275,256,2)
+(394,271,2)
+(450,323,2)
+(372,369,2)
+(478,379,2)
+(211,489,2)
+(45,71,2)
+(370,64,2)
+(387,271,2)
+(446,369,2)
+(140,271,2)
+(228,369,2)
+(402,421,2)
+(296,484,2)
+(327,421,2)
+(164,229,2)
+(175,298,2)
+(304,280,2)
+(326,71,2)
+(370,400,2)
+(485,147,2)
+(277,421,2)
+(161,369,2)
+(410,389,2)
+(12,59,2)
+(223,421,2)
+(189,489,2)
+(355,323,2)
+(497,48,2)
+(71,280,2)
+(34,471,2)
+(493,271,2)
+(457,388,2)
+(457,369,2)
+(381,461,2)
+(5,354,2)
+(175,437,2)
+(266,489,2)
+(102,240,2)
+(19,501,2)
+(12,506,2)
+(129,389,2)
+(225,439,2)
+(77,306,2)
+(197,461,2)
+(467,260,2)
+(273,400,2)
+(477,475,2)
+(220,388,2)
+(67,275,2)
+(359,461,2)
+(287,280,2)
+(117,325,2)
+(425,229,2)
+(62,369,2)
+(114,400,2)
+(209,400,2)
+(457,410,2)
+(85,306,2)
+(7,389,2)
+(510,71,2)
+(71,433,2)
+(2,127,2)
+(220,489,2)
+(414,461,2)
+(509,71,2)
+(325,461,2)
+(193,389,2)
+(49,369,2)
+(297,271,2)
+(435,72,2)
+(243,461,2)
+(378,242,2)
+(61,280,2)
+(159,260,2)
+(291,323,2)
+(271,15,2)
+(148,280,2)
+(111,439,2)
+(219,461,2)
+(102,461,2)
+(305,400,2)
+(279,306,2)
+(105,325,2)
+(119,489,2)
+(232,341,2)
+(383,424,2)
+(424,221,2)
+(174,369,2)
+(33,271,2)
+(456,305,2)
+(376,471,2)
+(259,220,2)
+(230,471,2)
+(498,369,2)
+(190,48,2)
+(163,421,2)
+(350,248,2)
+(410,129,2)
+(347,121,2)
+(159,305,2)
+(426,457,2)
+(200,330,2)
+(230,461,2)
+(220,369,2)
+(348,49,2)
+(238,506,2)
+(345,471,2)
+(319,323,2)
+(255,442,2)
+(175,272,2)
+(462,461,2)
+(180,461,2)
+(347,101,2)
+(385,271,2)
+(45,400,2)
+(273,71,2)
+(129,396,2)
+(491,72,2)
+(293,330,2)
+(496,170,2)
+(392,48,2)
+(15,305,2)
+(6,410,2)
+(62,489,2)
+(172,461,2)
+(140,358,2)
+(510,400,2)
+(26,369,2)
+(146,48,2)
+(511,305,2)
+(340,489,2)
+(205,400,2)
+(235,421,2)
+(58,305,2)
+(188,323,2)
+(331,461,2)
+(433,280,2)
+(152,461,2)
+(234,215,2)
+(350,369,2)
+(207,471,2)
+(96,471,2)
+(133,97,2)
+(262,421,2)
+(287,461,2)
+(356,461,2)
+(341,71,2)
+(311,71,2)
+(1,461,2)
+(258,489,2)
+(503,305,2)
+(237,71,2)
+(283,168,2)
+(500,271,2)
+(49,489,2)
+(354,471,2)
+(368,369,2)
+(366,168,2)
+(288,323,2)
+(450,71,2)
+(285,96,2)
+(457,357,2)
+(275,471,2)
+(18,400,2)
+(425,506,2)
+(376,101,2)
+(179,461,2)
+(88,421,2)
+(428,369,2)
+(378,369,2)
+(137,471,2)
+(221,306,2)
+(201,48,2)
+(3,280,2)
+(476,400,2)
+(427,400,2)
+(79,489,2)
+(54,457,2)
+(350,489,2)
+(109,280,2)
+(450,400,2)
+(107,330,2)
+(479,323,2)
+(282,461,2)
+(227,305,2)
+(464,491,2)
+(249,431,2)
+(383,369,2)
+(300,260,2)
+(506,204,2)
+(468,471,2)
+(150,369,2)
+(216,421,2)
+(191,461,2)
+(421,256,2)
+(80,271,2)
+(106,229,2)
+(55,71,2)
+(12,323,2)
+(69,256,2)
+(332,369,2)
+(300,400,2)
+(413,369,2)
+(473,369,2)
+(358,135,2)
+(393,478,2)
+(186,147,2)
+(304,287,2)
+(495,400,2)
+(65,280,2)
+(454,324,2)
+(320,439,2)
+(78,71,2)
+(313,71,2)
+(259,489,2)
+(396,389,2)
+(76,271,2)
+(161,489,2)
+(381,199,2)
+(133,159,2)
+(472,101,2)
+(400,71,2)
+(233,461,2)
+(501,421,2)
+(48,410,2)
+(47,230,2)
+(113,489,2)
+(449,461,2)
+(445,489,2)
+(175,355,2)
+(253,461,2)
+(425,57,2)
+(324,248,2)
+(139,229,2)
+(479,506,2)
+(98,325,2)
+(174,410,2)
+(370,323,2)
+(369,48,2)
+(313,323,2)
+(269,271,2)
+(70,71,2)
+(38,489,2)
+(104,463,2)
+(303,421,2)
+(499,388,2)
+(202,305,2)
+(486,400,2)
+(287,219,2)
+(26,375,2)
+(484,214,2)
+(375,378,2)
+(270,379,2)
+(35,271,2)
+(44,256,2)
+(431,410,2)
+(409,305,2)
+(334,461,2)
+(383,479,2)
+(452,400,2)
+(79,369,2)
+(20,168,2)
+(133,305,2)
+(41,168,2)
+(337,229,2)
+(325,2,2)
+(459,439,2)
+(374,421,2)
+(481,15,2)
+(48,389,2)
+(388,489,2)
+(454,348,2)
+(136,71,2)
+(97,480,2)
+(112,323,2)
+(167,471,2)
+(417,323,2)
+(375,369,2)
+(200,461,2)
+(230,215,2)
+(270,358,2)
+(30,229,2)
+(298,323,2)
+(467,461,2)
+(119,369,2)
+(91,229,2)
+(439,19,2)
+(65,461,2)
+(339,71,2)
+(314,369,2)
+(243,471,2)
+(132,370,2)
+(57,229,2)
+(509,400,2)
+(401,461,2)
+(132,71,2)
+(78,400,2)
+(127,461,2)
+(54,410,2)
+(15,358,2)
+(53,256,2)
+(299,461,2)
+(204,421,2)
+(258,410,2)
+(455,438,2)
+(103,369,2)
+(13,461,2)
+(461,72,2)
+(70,323,2)
+(442,421,2)
+(279,271,2)
+(307,461,2)
+(185,147,2)
+(371,417,2)
+(399,271,2)
+(249,348,2)
+(389,47,2)
+(196,400,2)
+(5,489,2)
+(19,421,2)
+(24,271,2)
+(427,203,2)
+(259,369,2)
+(452,71,2)
+(492,168,2)
+(130,291,2)
+(455,229,2)
+(488,391,2)
+(6,489,2)
+(238,477,2)
+(323,300,2)
+(110,215,2)
+(306,95,2)
+(116,369,2)
+(197,243,2)
+(354,369,2)
+(447,434,2)
+(355,260,2)
+(270,355,2)
+(382,71,2)
+(5,369,2)
+(444,306,2)
+(290,323,2)
+(256,215,2)
+(480,440,2)
+(189,369,2)
+(478,479,2)
+(174,489,2)
+(47,215,2)
+(439,421,2)
+(371,323,2)
+(205,71,2)
+(226,389,2)
+(6,369,2)
+(270,424,2)
+(464,72,2)
+(145,280,2)
+(344,229,2)
+(480,355,2)
+(405,461,2)
+(480,323,2)
+(383,298,2)
+(495,71,2)
+-----------------------------------
+(0,nq)
+(1,0)
+(2,tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,\n\\n\\t\\t\\t    NULL)
+(3,t_segqlen)
+(4,i)
+(5,tp->t_segqlen--)
+(6,LIST_REMOVE(q, tqe_q)
+(7,0)
+(8,q)
+(9,tcps_rcvdupbyte)
+(10,if (i < q->tqe_len)
+(11,LOG_DEBUG)
+(12,te != &tqs)
+(13,tp)
+(14,)
+(15,i <= 0)
+(16,)
+(17,tqe_q)
+(18,m)
+(19,tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL, NULL)
+(20,M_TCPLOG)
+(21,)
+(22,ND6_HINT(tp)
+(23,i)
+(24,i)
+(25,tqe_th)
+(26,return (flags)
+(27,)
+(28,if (i >= *tlenp)
+(29,*te = NULL)
+(30,te)
+(31,LIST_NEXT(q, tqe_q)
+(32,NULL)
+(33,tp->t_segqlen)
+(34,tp->rcv_nxt)
+(35,tqe_len)
+(36,s)
+(37,te)
+(38,tqs)
+(39,i)
+(40,present:)
+(41,LOG_DEBUG)
+(42,)
+(43,log(LOG_DEBUG, "%s; %s: queue limit reached, "\n\\n\\t\\t\\t    "segment dropped\\n", s, __func__)
+(44,sb_hiwat)
+(45,tcps_rcvoobyte)
+(46,if (th->th_seq != tp->rcv_nxt || !TCPS_HAVEESTABLISHED(tp->t_state)
+(47,TCPS_HAVEESTABLISHED(tp->t_state)
+(48,!q)
+(49,so->so_rcv.sb_state)
+(50,TCPSTAT_INC(tcps_rcvduppack)
+(51,nq)
+(52,i)
+(53,1)
+(54,uma_zfree(tcp_reass_zone, q)
+(55,p)
+(56,tp->t_segqlen)
+(57,&tp->t_segq)
+(58,tlenp)
+(59,&tqs)
+(60,t_inpcb)
+(61,th->th_seq)
+(62,tp)
+(63,tqe_m)
+(64,*tlenp -= i)
+(65,p)
+(66,LOG_DEBUG)
+(67,tp->t_segqlen >= (so->so_rcv.sb_hiwat / tp->t_maxseg)
+(68,sb_state)
+(69,t_maxseg)
+(70,tlenp)
+(71,p != NULL)
+(72,th->th_seq != tp->rcv_nxt)
+(73,if (p != NULL)
+(74,tp)
+(75,tp)
+(76,q)
+(77,q->tqe_th)
+(78,TCPSTAT_INC(tcps_rcvoopack)
+(79,q)
+(80,tp)
+(81,LIST_INSERT_AFTER(p, te, tqe_q)
+(82,so_rcv)
+(83,th_flags)
+(84,)
+(85,q->tqe_m)
+(86,t_segqlen)
+(87,q)
+(88,th)
+(89,if ((th->th_seq != tp->rcv_nxt || !TCPS_HAVEESTABLISHED(tp->t_state)
+(90,break;)
+(91,te)
+(92,tcp_reass_overflows)
+(93,t_segqlen)
+(94,th_seq)
+(95,nq = LIST_NEXT(q, tqe_q)
+(96,tp->t_inpcb)
+(97,th->th_seq)
+(98,M_TCPLOG)
+(99,if (p == NULL)
+(100,SOCKBUF_LOCK(&so->so_rcv)
+(101,th->th_seq != tp->rcv_nxt)
+(102,sizeof(struct tseg_qent)
+(103,t_segqlen)
+(104,m_freem(m)
+(105,s)
+(106,p)
+(107,th->th_seq)
+(108,NULL)
+(109,tqe_th)
+(110,th)
+(111,s)
+(112,goto present;)
+(113,SBS_CANTRCVMORE)
+(114,p)
+(115,t_inpcb)
+(116,so_rcv)
+(117,__func__)
+(118,t_state)
+(119,so)
+(120,)
+(121,TCPS_HAVEESTABLISHED(tp->t_state)
+(122,m)
+(123,s)
+(124,tcp_reass_zone)
+(125,q)
+(126,te)
+(127,&tp->t_inpcb->inp_inc)
+(128,NULL)
+(129,LIST_FIRST(&tp->t_segq)
+(130,tp->t_segqlen--)
+(131,tp)
+(132,TCPSTAT_ADD(tcps_rcvoobyte, *tlenp)
+(133,th->th_seq + *tlenp)
+(134,NULL)
+(135,(th->th_seq + *tlenp)
+(136,p->tqe_th->th_seq)
+(137,tp->t_maxseg)
+(138,0)
+(139,tqs)
+(140,m_adj(q->tqe_m, i)
+(141,NULL)
+(142,tp)
+(143,if ((s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL, NULL)
+(144,)
+(145,NULL)
+(146,tqe_th)
+(147,q)
+(148,th)
+(149,th_seq)
+(150,q)
+(151,free(s, M_TCPLOG)
+(152,tqs)
+(153,tp)
+(154,tp->t_segqlen++)
+(155,th)
+(156,*p = NULL)
+(157,if ((s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,\n\\n\\t\\t\\t    NULL)
+(158,tqe_len)
+(159,*tlenp)
+(160,&so->so_rcv)
+(161,tqe_q)
+(162,q)
+(163,M_NOWAIT)
+(164,tqe_q)
+(165,while (q)
+(166,tp)
+(167,tp->t_segq)
+(168,s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,\n\\n\\t\\t\\t    NULL)
+(169,flags)
+(170,q->tqe_th->th_seq += i)
+(171,if (th == NULL)
+(172,tp->t_inpcb)
+(173,NULL)
+(174,q->tqe_len)
+(175,tp->rcv_nxt += q->tqe_len)
+(176,0)
+(177,th_seq)
+(178,s)
+(179,th)
+(180,te)
+(181,)
+(182,p)
+(183,q)
+(184,m)
+(185,rcv_nxt)
+(186,tp)
+(187,t_segq)
+(188,i)
+(189,rcv_nxt)
+(190,rcv_nxt)
+(191,tcps_rcvmemdrop)
+(192,s)
+(193,t_segq)
+(194,if (te == NULL)
+(195,tqs)
+(196,th)
+(197,tp->t_inpcb->inp_inc)
+(198,if (te != &tqs)
+(199,&tqs)
+(200,tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,\n\\n\\t\\t\\t    NULL)
+(201,th_seq)
+(202,0)
+(203,*tlenp)
+(204,uma_zalloc(tcp_reass_zone, M_NOWAIT)
+(205,tp->t_rcvoopack)
+(206,)
+(207,tp->t_segq)
+(208,break;)
+(209,te)
+(210,q)
+(211,nq)
+(212,*tlenp)
+(213,so)
+(214,so->so_rcv.sb_hiwat)
+(215,th == NULL)
+(216,return (0)
+(217,tqe_len)
+(218,i)
+(219,q->tqe_th)
+(220,LIST_NEXT(q, tqe_q)
+(221,q->tqe_th)
+(222,q)
+(223,tcp_reass_zone)
+(224,q)
+(225,__func__)
+(226,q)
+(227,th)
+(228,tp)
+(229,p == NULL)
+(230,tp->t_state)
+(231,tlenp)
+(232,p->tqe_len - th->th_seq)
+(233,&tp->t_inpcb->inp_inc)
+(234,rcv_nxt)
+(235,*tlenp = 0)
+(236,if (i <= 0)
+(237,te->tqe_m = m)
+(238,uma_zfree(tcp_reass_zone, te)
+(239,m_freem(m)
+(240,struct tseg_qent)
+(241,inp_inc)
+(242,q->tqe_th->th_flags)
+(243,tp->t_inpcb)
+(244,so_rcv)
+(245,tqs)
+(246,th)
+(247,if (i > 0)
+(248,*so = tp->t_inpcb->inp_socket)
+(249,sbappendstream_locked(&so->so_rcv, q->tqe_m)
+(250,th_seq)
+(251,s)
+(252,th_seq)
+(253,return (0)
+(254,tp)
+(255,tp->t_inpcb->inp_inc)
+(256,th->th_seq != tp->rcv_nxt || !TCPS_HAVEESTABLISHED(tp->t_state)
+(257,th_seq)
+(258,q->tqe_th)
+(259,nq = LIST_NEXT(q, tqe_q)
+(260,int *tlenp)
+(261,nq)
+(262,0)
+(263,if (SEQ_GT(q->tqe_th->th_seq, th->th_seq)
+(264,tp->rcv_nxt)
+(265,tcp_reass_zone)
+(266,q)
+(267,tp)
+(268,q)
+(269,nq)
+(270,q->tqe_len -= i)
+(271,i < q->tqe_len)
+(272,q->tqe_len)
+(273,tcps_rcvoopack)
+(274,tp)
+(275,tp->t_segqlen)
+(276,if (q != &tqs)
+(277,tp)
+(278,tlenp)
+(279,uma_zfree(tcp_reass_zone, q)
+(280,te == NULL)
+(281,p)
+(282,tp->t_inpcb->inp_inc)
+(283,"%s; %s: global zone limit reached, using "\n\\n\\t\\t\\t\\t    "stack for missing segment\\n")
+(284,if (!q || q->tqe_th->th_seq != tp->rcv_nxt)
+(285,tp->t_inpcb->inp_socket)
+(286,if ((s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,\n\\n\\t\\t\\t    NULL)
+(287,q->tqe_th->th_seq)
+(288,m)
+(289,t_segqlen)
+(290,te)
+(291,tp->t_segqlen)
+(292,so)
+(293,th->th_seq)
+(294,q->tqe_th->th_seq == tp->rcv_nxt)
+(295,t_state)
+(296,(so->so_rcv.sb_hiwat / tp->t_maxseg)
+(297,m_freem(q->tqe_m)
+(298,te->tqe_m)
+(299,0)
+(300,*tlenp)
+(301,so)
+(302,)
+(303,tcps_rcvmemdrop)
+(304,SEQ_GT(q->tqe_th->th_seq, th->th_seq)
+(305,q)
+(306,q = nq)
+(307,tp)
+(308,NULL)
+(309,q)
+(310,te)
+(311,tqe_th)
+(312,tlenp)
+(313,te)
+(314,flags)
+(315,th_seq)
+(316,rcv_nxt)
+(317,NULL)
+(318,th)
+(319,tcps_rcvduppack)
+(320,s)
+(321,inp_inc)
+(322,tp->t_segqlen--)
+(323,i >= *tlenp)
+(324,so->so_rcv)
+(325,s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL,\n\\n\\t\\t\\t    NULL)
+(326,tqe_th)
+(327,tcp_reass_overflows++)
+(328,tqs)
+(329,t_inpcb)
+(330,struct tcphdr *th)
+(331,q)
+(332,so)
+(333,__func__)
+(334,m_freem(m)
+(335,i)
+(336,tp->t_rcvoopack++)
+(337,te)
+(338,q)
+(339,tp)
+(340,TH_FIN)
+(341,p->tqe_len)
+(342,so->so_rcv)
+(343,t_inpcb)
+(344,"%s: temporary stack based entry not "\n\\n\\t\\t    "first element in queue")
+(345,tp->t_inpcb)
+(346,tlenp)
+(347,!TCPS_HAVEESTABLISHED(tp->t_state)
+(348,so->so_rcv.sb_state & SBS_CANTRCVMORE)
+(349,log(LOG_DEBUG, "%s; %s: global zone limit "\n\\n\\t\\t\\t\\t    "reached, segment dropped\\n", s, __func__)
+(350,so->so_rcv)
+(351,free(s, M_TCPLOG)
+(352,if (!TCPS_HAVEESTABLISHED(tp->t_state)
+(353,)
+(354,tp->t_segqlen)
+(355,*tlenp)
+(356,NULL)
+(357,&tqs)
+(358,i = (th->th_seq + *tlenp)
+(359,tp)
+(360,th_seq)
+(361,!TCPS_HAVEESTABLISHED(tp->t_state)
+(362,q)
+(363,)
+(364,free(s, M_TCPLOG)
+(365,0)
+(366,log(LOG_DEBUG,\n\\n\\t\\t\\t\\t    "%s; %s: global zone limit reached, using "\n\\n\\t\\t\\t\\t    "stack for missing segment\\n", s, __func__)
+(367,th_seq)
+(368,tqe_len)
+(369,!q || q->tqe_th->th_seq != tp->rcv_nxt)
+(370,*tlenp)
+(371,TCPSTAT_ADD(tcps_rcvdupbyte, *tlenp)
+(372,sorwakeup_locked(so)
+(373,th)
+(374,m)
+(375,flags = q->tqe_th->th_flags & TH_FIN)
+(376,tp->t_state)
+(377,inp_socket)
+(378,q->tqe_th->th_flags & TH_FIN)
+(379,th->th_seq)
+(380,do)
+(381,bzero(&tqs, sizeof(struct tseg_qent)
+(382,p)
+(383,return (0)
+(384,NULL)
+(385,i)
+(386,LIST_REMOVE(q, tqe_q)
+(387,q->tqe_m)
+(388,q = nq)
+(389,!TCPS_HAVEESTABLISHED(tp->t_state)
+(390,q)
+(391,q->tqe_m)
+(392,tp)
+(393,RET)
+(394,q)
+(395,*s = NULL)
+(396,&tp->t_segq)
+(397,)
+(398,p)
+(399,tqe_m)
+(400,i > 0)
+(401,TCPSTAT_INC(tcps_rcvmemdrop)
+(402,te)
+(403,tp->rcv_nxt)
+(404,INP_WLOCK_ASSERT(tp->t_inpcb)
+(405,th)
+(406,i)
+(407,m_adj(m, i)
+(408,NULL)
+(409,tqe_th)
+(410,q = LIST_FIRST(&tp->t_segq)
+(411,q)
+(412,__func__)
+(413,q)
+(414,tlenp)
+(415,if (so->so_rcv.sb_state & SBS_CANTRCVMORE)
+(416,i)
+(417,*tlenp)
+(418,te)
+(419,TCPSTAT_INC(tcps_rcvmemdrop)
+(420,t_inpcb)
+(421,(th->th_seq != tp->rcv_nxt || !TCPS_HAVEESTABLISHED(tp->t_state)
+(422,tp)
+(423,flags)
+(424,q->tqe_th->th_seq)
+(425,LIST_INSERT_HEAD(&tp->t_segq, te, tqe_q)
+(426,tcp_reass_zone)
+(427,te->tqe_len = *tlenp)
+(428,q)
+(429,)
+(430,)
+(431,q->tqe_m)
+(432,)
+(433,p = q)
+(434,tp->rcv_nxt)
+(435,t_state)
+(436,so)
+(437,te->tqe_th)
+(438,&tqs)
+(439,s = tcp_log_addrs(&tp->t_inpcb->inp_inc, th, NULL, NULL)
+(440,i = p->tqe_th->th_seq + p->tqe_len - th->th_seq)
+(441,)
+(442,tp->t_inpcb)
+(443,q)
+(444,q->tqe_len)
+(445,tqe_th)
+(446,tqe_q)
+(447,q->tqe_th->th_seq != tp->rcv_nxt)
+(448,tqe_m)
+(449,*tlenp = 0)
+(450,te)
+(451,goto present;)
+(452,t_rcvoopack)
+(453,so)
+(454,&so->so_rcv)
+(455,te != &tqs)
+(456,q->tqe_th->th_seq)
+(457,q != &tqs)
+(458,M_TCPLOG)
+(459,"%s; %s: queue limit reached, "\n\\n\\t\\t\\t    "segment dropped\\n")
+(460,th->th_seq)
+(461,th->th_seq != tp->rcv_nxt || !TCPS_HAVEESTABLISHED(tp->t_state)
+(462,inp_inc)
+(463,struct mbuf *m)
+(464,TCPS_HAVEESTABLISHED(tp->t_state)
+(465,i)
+(466,s)
+(467,*tlenp)
+(468,tp->rcv_nxt)
+(469,tqe_m)
+(470,p->tqe_th->th_seq + p->tqe_len - th->th_seq)
+(471,struct tcpcb *tp)
+(472,tp)
+(473,so->so_rcv)
+(474,q)
+(475,&tqs)
+(476,tlenp)
+(477,te = &tqs)
+(478,return (0)
+(479,te->tqe_len)
+(480,th->th_seq += i)
+(481,break;)
+(482,th_seq)
+(483,tqe_th)
+(484,so->so_rcv.sb_hiwat / tp->t_maxseg)
+(485,q->tqe_th->th_seq)
+(486,te->tqe_th = th)
+(487,p->tqe_th)
+(488,m_freem(q->tqe_m)
+(489,q && q->tqe_th->th_seq == tp->rcv_nxt)
+(490,KASSERT(te != &tqs, ("%s: temporary stack based entry not "\n\\n\\t\\t    "first element in queue", __func__)
+(491,tp->t_state)
+(492,s)
+(493,i)
+(494,"%s; %s: global zone limit "\n\\n\\t\\t\\t\\t    "reached, segment dropped\\n")
+(495,tqe_len)
+(496,q->tqe_th->th_seq)
+(497,q->tqe_th)
+(498,so_rcv)
+(499,q->tqe_th)
+(500,tqe_q)
+(501,&tp->t_inpcb->inp_inc)
+(502,s)
+(503,th_seq)
+(504,tp)
+(505,tp)
+(506,te = uma_zalloc(tcp_reass_zone, M_NOWAIT)
+(507,tqe_q)
+(508,q)
+(509,tqe_m)
+(510,NULL)
+(511,i)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,1894 @@
+-----label-----
+0
+-----code-----
+static void gasnete_convert_strided(const int tomemvec, void *_srclist, void *_dstlist, 
+                                    gasnete_strided_stats_t const *stats,
+                                    void *dstaddr, const size_t dststrides[],
+                                    void *srcaddr, const size_t srcstrides[],
+                                    const size_t count[], size_t stridelevels) {
+  size_t const contiglevel = stats->dualcontiguity;
+  size_t const limit = stridelevels - stats->nulldims;
+  size_t const srccontigsz = stats->srccontigsz;
+  size_t const dstcontigsz = stats->dstcontigsz;
+
+  gasneti_assert(_srclist != NULL && _dstlist != NULL && stats != NULL);
+  gasneti_assert(!gasnete_strided_empty(count, stridelevels));
+  gasneti_assert(limit > contiglevel);
+
+  if (!tomemvec) { /* indexed case */
+    void * * const srclist = (void * *)_srclist;
+    void * * const dstlist = (void * *)_dstlist;
+    void * * srcpos = srclist;
+    void * * dstpos = dstlist;
+
+    if (srccontigsz == dstcontigsz) {
+      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \
+        *(srcpos) = psrc;                                      \
+        srcpos++;                                              \
+        *(dstpos) = pdst;                                      \
+        dstpos++;                                              \
+      } while(0)
+      GASNETE_STRIDED_HELPER(limit,contiglevel);
+      #undef GASNETE_STRIDED_HELPER_LOOPBODY
+    } else if (srccontigsz < dstcontigsz) {
+      size_t const looplim = dstcontigsz / srccontigsz;
+      size_t loopcnt = 0;
+      gasneti_assert(looplim*srccontigsz == dstcontigsz);
+      /* TODO: this loop could be made more efficient */
+      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \
+        *(srcpos) = psrc;                                      \
+        srcpos++;                                              \
+        if (loopcnt == 0) {                                    \
+          *(dstpos) = pdst;                                    \
+          dstpos++;                                            \
+          loopcnt = looplim;                                   \
+        }                                                      \
+        loopcnt--;                                             \
+      } while(0)
+      GASNETE_STRIDED_HELPER(limit,contiglevel);
+      #undef GASNETE_STRIDED_HELPER_LOOPBODY
+    } else { /* srccontigsz > dstcontigsz */
+      size_t const looplim = srccontigsz / dstcontigsz;
+      size_t loopcnt = 0;
+      gasneti_assert(looplim*dstcontigsz == srccontigsz);
+      /* TODO: this loop could be made more efficient */
+      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \
+        if (loopcnt == 0) {                                    \
+          *(srcpos) = psrc;                                    \
+          srcpos++;                                            \
+          loopcnt = looplim;                                   \
+        }                                                      \
+        loopcnt--;                                             \
+        *(dstpos) = pdst;                                      \
+        dstpos++;                                              \
+      } while(0)
+      GASNETE_STRIDED_HELPER(limit,contiglevel);
+      #undef GASNETE_STRIDED_HELPER_LOOPBODY
+    }
+    gasneti_assert(srcpos == srclist+stats->srcsegments);
+    gasneti_assert(dstpos == dstlist+stats->dstsegments);
+  } else { /* memvec case */
+    gasnet_memvec_t * const srclist = (gasnet_memvec_t *)_srclist;
+    gasnet_memvec_t * const dstlist = (gasnet_memvec_t *)_dstlist;
+    gasnet_memvec_t * srcpos = srclist;
+    gasnet_memvec_t * dstpos = dstlist;
+
+    if (srccontigsz == dstcontigsz) {
+      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \
+        srcpos->addr = psrc;                                   \
+        srcpos->len = srccontigsz;                             \
+        srcpos++;                                              \
+        dstpos->addr = pdst;                                   \
+        dstpos->len = dstcontigsz;                             \
+        dstpos++;                                              \
+      } while(0)
+      GASNETE_STRIDED_HELPER(limit,contiglevel);
+      #undef GASNETE_STRIDED_HELPER_LOOPBODY
+    } else if (srccontigsz < dstcontigsz) {
+      size_t const looplim = dstcontigsz / srccontigsz;
+      size_t loopcnt = 0;
+      gasneti_assert(looplim*srccontigsz == dstcontigsz);
+      /* TODO: this loop could be made more efficient */
+      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \
+        srcpos->addr = psrc;                                   \
+        srcpos->len = srccontigsz;                             \
+        srcpos++;                                              \
+        if (loopcnt == 0) {                                    \
+          dstpos->addr = pdst;                                 \
+          dstpos->len = dstcontigsz;                           \
+          dstpos++;                                            \
+          loopcnt = looplim;                                   \
+        }                                                      \
+        loopcnt--;                                             \
+      } while(0)
+      GASNETE_STRIDED_HELPER(limit,contiglevel);
+      #undef GASNETE_STRIDED_HELPER_LOOPBODY
+    } else { /* srccontigsz > dstcontigsz */
+      size_t const looplim = srccontigsz / dstcontigsz;
+      size_t loopcnt = 0;
+      gasneti_assert(looplim*dstcontigsz == srccontigsz);
+      /* TODO: this loop could be made more efficient */
+      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \
+        if (loopcnt == 0) {                                    \
+          srcpos->addr = psrc;                                 \
+          srcpos->len = srccontigsz;                           \
+          srcpos++;                                            \
+          loopcnt = looplim;                                   \
+        }                                                      \
+        loopcnt--;                                             \
+        dstpos->addr = pdst;                                   \
+        dstpos->len = dstcontigsz;                             \
+        dstpos++;                                              \
+      } while(0)
+      GASNETE_STRIDED_HELPER(limit,contiglevel);
+      #undef GASNETE_STRIDED_HELPER_LOOPBODY
+    }
+    gasneti_assert(srcpos == srclist+stats->srcsegments);
+    gasneti_assert(dstpos == dstlist+stats->dstsegments);
+  }
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+3,8
+3,9
+3,10
+3,11
+3,12
+3,13
+3,14
+5,6
+5,7
+7,8
+9,10
+9,11
+11,12
+11,13
+14,15
+14,16
+16,17
+16,18
+19,20
+19,21
+20,21
+22,23
+22,24
+25,26
+25,27
+27,28
+27,29
+30,31
+30,32
+31,32
+33,34
+33,35
+36,37
+36,38
+38,39
+38,40
+41,42
+41,43
+42,43
+44,45
+44,46
+47,48
+47,49
+48,49
+50,51
+50,52
+53,54
+53,55
+54,55
+56,57
+58,59
+58,60
+58,61
+58,62
+58,63
+58,64
+58,65
+58,66
+59,60
+60,61
+60,62
+61,62
+63,64
+63,65
+65,66
+66,67
+66,68
+67,68
+70,71
+71,72
+71,73
+72,73
+74,75
+74,76
+76,77
+77,78
+77,79
+78,79
+80,81
+80,82
+81,82
+84,85
+85,86
+85,87
+86,87
+88,89
+88,90
+90,91
+91,92
+91,93
+92,93
+95,96
+96,97
+96,98
+97,98
+99,100
+99,101
+101,102
+102,103
+102,104
+103,104
+106,107
+107,108
+107,109
+108,109
+110,111
+110,112
+111,112
+111,113
+112,113
+112,114
+113,114
+115,116
+117,118
+117,119
+118,119
+120,121
+122,123
+122,124
+123,124
+125,126
+127,128
+128,129
+128,130
+129,130
+131,132
+132,133
+132,134
+132,135
+133,134
+135,136
+137,138
+139,140
+140,141
+140,142
+141,142
+143,144
+143,145
+144,145
+146,147
+148,149
+148,150
+148,151
+149,150
+150,151
+152,153
+152,154
+152,155
+152,156
+152,157
+152,158
+152,159
+153,154
+154,155
+154,156
+156,157
+156,158
+156,159
+156,160
+160,161
+161,162
+161,163
+162,163
+162,164
+164,165
+164,166
+167,168
+169,170
+170,171
+170,172
+172,173
+172,174
+172,175
+172,176
+176,177
+177,178
+177,179
+178,179
+178,180
+180,181
+180,182
+183,184
+185,186
+186,187
+186,188
+188,189
+188,190
+188,191
+188,192
+192,193
+193,194
+195,196
+196,197
+196,198
+198,199
+198,200
+198,201
+198,202
+202,203
+203,204
+205,206
+205,207
+205,208
+206,207
+206,208
+207,208
+209,210
+211,212
+212,213
+213,214
+213,215
+213,216
+214,215
+216,217
+218,219
+220,221
+220,222
+220,223
+221,222
+221,223
+222,223
+224,225
+226,227
+226,228
+226,229
+226,230
+227,228
+228,229
+228,230
+229,230
+231,232
+231,233
+233,234
+234,235
+234,236
+235,236
+237,238
+239,240
+240,241
+240,242
+241,242
+243,244
+243,245
+245,246
+247,248
+248,249
+248,250
+249,250
+251,252
+251,253
+252,253
+252,254
+253,254
+255,256
+257,258
+259,260
+260,261
+260,262
+260,263
+261,262
+263,264
+265,266
+267,268
+267,269
+267,270
+267,271
+268,269
+269,270
+269,271
+270,271
+272,273
+272,274
+274,275
+275,276
+275,277
+276,277
+278,279
+280,281
+281,282
+281,283
+282,283
+284,285
+284,286
+286,287
+288,289
+289,290
+289,291
+290,291
+292,293
+292,294
+293,294
+293,295
+294,295
+296,297
+298,299
+300,301
+301,302
+301,303
+301,304
+302,303
+304,305
+306,307
+308,309
+309,310
+309,311
+310,311
+312,313
+312,314
+313,314
+315,316
+315,317
+316,317
+318,319
+318,320
+319,320
+322,323
+323,324
+323,325
+324,325
+326,327
+326,328
+327,328
+329,330
+329,331
+330,331
+332,333
+332,334
+333,334
+336,337
+336,338
+336,339
+336,340
+336,341
+336,342
+336,343
+337,338
+338,339
+338,340
+339,340
+341,342
+341,343
+341,344
+344,345
+345,346
+345,347
+346,347
+346,348
+347,348
+349,350
+351,352
+353,354
+354,355
+354,356
+355,356
+357,358
+357,359
+357,360
+360,361
+361,362
+361,363
+362,363
+362,364
+363,364
+365,366
+367,368
+369,370
+370,371
+370,372
+371,372
+373,374
+373,375
+373,376
+376,377
+377,378
+379,380
+380,381
+380,382
+381,382
+383,384
+383,385
+383,386
+386,387
+387,388
+389,390
+389,391
+389,392
+390,391
+390,392
+391,392
+393,394
+395,396
+396,397
+397,398
+397,399
+397,400
+398,399
+400,401
+402,403
+404,405
+404,406
+404,407
+405,406
+405,407
+406,407
+408,409
+410,411
+410,412
+410,413
+410,414
+411,412
+412,413
+412,414
+413,414
+415,416
+415,417
+417,418
+418,419
+418,420
+419,420
+421,422
+423,424
+424,425
+424,426
+425,426
+427,428
+427,429
+429,430
+431,432
+432,433
+432,434
+433,434
+435,436
+435,437
+436,437
+436,438
+437,438
+439,440
+441,442
+443,444
+444,445
+444,446
+444,447
+445,446
+447,448
+449,450
+451,452
+451,453
+451,454
+451,455
+452,453
+453,454
+453,455
+454,455
+456,457
+456,458
+458,459
+459,460
+459,461
+460,461
+462,463
+464,465
+465,466
+465,467
+466,467
+468,469
+468,470
+470,471
+472,473
+473,474
+473,475
+474,475
+476,477
+476,478
+477,478
+477,479
+478,479
+480,481
+482,483
+484,485
+485,486
+485,487
+485,488
+486,487
+488,489
+490,491
+492,493
+493,494
+493,495
+494,495
+496,497
+496,498
+497,498
+499,500
+499,501
+500,501
+502,503
+502,504
+503,504
+506,507
+507,508
+507,509
+508,509
+510,511
+510,512
+511,512
+513,514
+513,515
+514,515
+516,517
+516,518
+517,518
+-----nextToken-----
+2,4,6,8,10,12,13,15,17,18,21,23,24,26,28,29,32,34,35,37,39,40,43,45,46,49,51,52,55,57,62,64,68,69,73,75,79,82,83,87,89,93,94,98,100,104,105,109,114,116,119,121,124,126,130,134,136,138,142,145,147,151,155,157,158,159,163,165,166,168,171,173,174,175,179,181,182,184,187,189,190,191,194,197,199,200,201,204,208,210,215,217,219,223,225,230,232,236,238,242,244,246,250,254,256,258,262,264,266,271,273,277,279,283,285,287,291,295,297,299,303,305,307,311,314,317,320,321,325,328,331,334,335,340,342,343,348,350,352,356,358,359,364,366,368,372,374,375,378,382,384,385,388,392,394,399,401,403,407,409,414,416,420,422,426,428,430,434,438,440,442,446,448,450,455,457,461,463,467,469,471,475,479,481,483,487,489,491,495,498,501,504,505,509,512,515,518,519
+-----computeFrom-----
+77,78
+77,79
+110,111
+110,112
+111,112
+111,113
+112,113
+112,114
+117,118
+117,119
+122,123
+122,124
+143,144
+143,145
+206,207
+206,208
+221,222
+221,223
+234,235
+234,236
+251,252
+251,253
+252,253
+252,254
+275,276
+275,277
+292,293
+292,294
+293,294
+293,295
+312,313
+312,314
+315,316
+315,317
+326,327
+326,328
+329,330
+329,331
+390,391
+390,392
+405,406
+405,407
+418,419
+418,420
+435,436
+435,437
+436,437
+436,438
+459,460
+459,461
+476,477
+476,478
+477,478
+477,479
+496,497
+496,498
+499,500
+499,501
+510,511
+510,512
+513,514
+513,515
+-----guardedBy-----
+223,256
+225,258
+407,440
+409,442
+-----guardedByNegation-----
+208,299
+210,297
+223,299
+225,297
+392,483
+394,481
+407,483
+409,481
+-----lastLexicalUse-----
+223,299
+225,297
+407,483
+409,481
+-----jump-----
+223,299
+225,297
+407,483
+409,481
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;ArrayDeclarator;Name;ArrayModifier;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;ArrayDeclarator;Name;ArrayModifier;ParameterDeclaration;NamedTypeSpecifier;Name;ArrayDeclarator;Name;ArrayModifier;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Pointer;Name;EqualsInitializer;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;Pointer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Pointer;Name;EqualsInitializer;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;Pointer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Pointer;Name;EqualsInitializer;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;BinaryExpression;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;BinaryExpression;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;Pointer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;Pointer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;BinaryExpression;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;BinaryExpression;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;
+-----ast_node-----
+static void gasnete_convert_strided(const int tomemvec, void *_srclist, void *_dstlist,                                     gasnete_strided_stats_t const *stats,                                    void *dstaddr, const size_t dststrides[],                                    void *srcaddr, const size_t srcstrides[],                                    const size_t count[], size_t stridelevels) {  size_t const contiglevel = stats->dualcontiguity;  size_t const limit = stridelevels - stats->nulldims;  size_t const srccontigsz = stats->srccontigsz;  size_t const dstcontigsz = stats->dstcontigsz;  gasneti_assert(_srclist != NULL && _dstlist != NULL && stats != NULL);  gasneti_assert(!gasnete_strided_empty(count, stridelevels));  gasneti_assert(limit > contiglevel);  if (!tomemvec) { /* indexed case */    void * * const srclist = (void * *)_srclist;    void * * const dstlist = (void * *)_dstlist;    void * * srcpos = srclist;    void * * dstpos = dstlist;    if (srccontigsz == dstcontigsz) {      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        *(srcpos) = psrc;                                      \        srcpos++;                                              \        *(dstpos) = pdst;                                      \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    } else if (srccontigsz < dstcontigsz) {      size_t const looplim = dstcontigsz / srccontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*srccontigsz == dstcontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        *(srcpos) = psrc;                                      \        srcpos++;                                              \        if (loopcnt == 0) {                                    \          *(dstpos) = pdst;                                    \          dstpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    } else { /* srccontigsz > dstcontigsz */      size_t const looplim = srccontigsz / dstcontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*dstcontigsz == srccontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        if (loopcnt == 0) {                                    \          *(srcpos) = psrc;                                    \          srcpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \        *(dstpos) = pdst;                                      \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    }    gasneti_assert(srcpos == srclist+stats->srcsegments);    gasneti_assert(dstpos == dstlist+stats->dstsegments);  } else { /* memvec case */    gasnet_memvec_t * const srclist = (gasnet_memvec_t *)_srclist;    gasnet_memvec_t * const dstlist = (gasnet_memvec_t *)_dstlist;    gasnet_memvec_t * srcpos = srclist;    gasnet_memvec_t * dstpos = dstlist;    if (srccontigsz == dstcontigsz) {      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        srcpos->addr = psrc;                                   \        srcpos->len = srccontigsz;                             \        srcpos++;                                              \        dstpos->addr = pdst;                                   \        dstpos->len = dstcontigsz;                             \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    } else if (srccontigsz < dstcontigsz) {      size_t const looplim = dstcontigsz / srccontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*srccontigsz == dstcontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        srcpos->addr = psrc;                                   \        srcpos->len = srccontigsz;                             \        srcpos++;                                              \        if (loopcnt == 0) {                                    \          dstpos->addr = pdst;                                 \          dstpos->len = dstcontigsz;                           \          dstpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    } else { /* srccontigsz > dstcontigsz */      size_t const looplim = srccontigsz / dstcontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*dstcontigsz == srccontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        if (loopcnt == 0) {                                    \          srcpos->addr = psrc;                                 \          srcpos->len = srccontigsz;                           \          srcpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \        dstpos->addr = pdst;                                   \        dstpos->len = dstcontigsz;                             \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    }    gasneti_assert(srcpos == srclist+stats->srcsegments);    gasneti_assert(dstpos == dstlist+stats->dstsegments);  }}
+static void
+gasnete_convert_strided(const int tomemvec, void *_srclist, void *_dstlist,                                     gasnete_strided_stats_t const *stats,                                    void *dstaddr, const size_t dststrides[],                                    void *srcaddr, const size_t srcstrides[],                                    const size_t count[], size_t stridelevels)
+gasnete_convert_strided
+const int tomemvec
+const int
+tomemvec
+tomemvec
+void *_srclist
+void
+*_srclist
+*
+_srclist
+void *_dstlist
+void
+*_dstlist
+*
+_dstlist
+gasnete_strided_stats_t const *stats
+gasnete_strided_stats_t const
+gasnete_strided_stats_t
+*stats
+*
+stats
+void *dstaddr
+void
+*dstaddr
+*
+dstaddr
+const size_t dststrides[]
+const size_t
+size_t
+dststrides[]
+dststrides
+[]
+void *srcaddr
+void
+*srcaddr
+*
+srcaddr
+const size_t srcstrides[]
+const size_t
+size_t
+srcstrides[]
+srcstrides
+[]
+const size_t count[]
+const size_t
+size_t
+count[]
+count
+[]
+size_t stridelevels
+size_t
+size_t
+stridelevels
+stridelevels
+{  size_t const contiglevel = stats->dualcontiguity;  size_t const limit = stridelevels - stats->nulldims;  size_t const srccontigsz = stats->srccontigsz;  size_t const dstcontigsz = stats->dstcontigsz;  gasneti_assert(_srclist != NULL && _dstlist != NULL && stats != NULL);  gasneti_assert(!gasnete_strided_empty(count, stridelevels));  gasneti_assert(limit > contiglevel);  if (!tomemvec) { /* indexed case */    void * * const srclist = (void * *)_srclist;    void * * const dstlist = (void * *)_dstlist;    void * * srcpos = srclist;    void * * dstpos = dstlist;    if (srccontigsz == dstcontigsz) {      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        *(srcpos) = psrc;                                      \        srcpos++;                                              \        *(dstpos) = pdst;                                      \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    } else if (srccontigsz < dstcontigsz) {      size_t const looplim = dstcontigsz / srccontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*srccontigsz == dstcontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        *(srcpos) = psrc;                                      \        srcpos++;                                              \        if (loopcnt == 0) {                                    \          *(dstpos) = pdst;                                    \          dstpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    } else { /* srccontigsz > dstcontigsz */      size_t const looplim = srccontigsz / dstcontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*dstcontigsz == srccontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        if (loopcnt == 0) {                                    \          *(srcpos) = psrc;                                    \          srcpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \        *(dstpos) = pdst;                                      \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    }    gasneti_assert(srcpos == srclist+stats->srcsegments);    gasneti_assert(dstpos == dstlist+stats->dstsegments);  } else { /* memvec case */    gasnet_memvec_t * const srclist = (gasnet_memvec_t *)_srclist;    gasnet_memvec_t * const dstlist = (gasnet_memvec_t *)_dstlist;    gasnet_memvec_t * srcpos = srclist;    gasnet_memvec_t * dstpos = dstlist;    if (srccontigsz == dstcontigsz) {      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        srcpos->addr = psrc;                                   \        srcpos->len = srccontigsz;                             \        srcpos++;                                              \        dstpos->addr = pdst;                                   \        dstpos->len = dstcontigsz;                             \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    } else if (srccontigsz < dstcontigsz) {      size_t const looplim = dstcontigsz / srccontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*srccontigsz == dstcontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        srcpos->addr = psrc;                                   \        srcpos->len = srccontigsz;                             \        srcpos++;                                              \        if (loopcnt == 0) {                                    \          dstpos->addr = pdst;                                 \          dstpos->len = dstcontigsz;                           \          dstpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    } else { /* srccontigsz > dstcontigsz */      size_t const looplim = srccontigsz / dstcontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*dstcontigsz == srccontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        if (loopcnt == 0) {                                    \          srcpos->addr = psrc;                                 \          srcpos->len = srccontigsz;                           \          srcpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \        dstpos->addr = pdst;                                   \        dstpos->len = dstcontigsz;                             \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    }    gasneti_assert(srcpos == srclist+stats->srcsegments);    gasneti_assert(dstpos == dstlist+stats->dstsegments);  }}
+size_t const contiglevel = stats->dualcontiguity;
+size_t const contiglevel = stats->dualcontiguity;
+size_t const
+size_t
+contiglevel = stats->dualcontiguity
+contiglevel
+= stats->dualcontiguity
+stats->dualcontiguity
+stats
+stats
+dualcontiguity
+size_t const limit = stridelevels - stats->nulldims;
+size_t const limit = stridelevels - stats->nulldims;
+size_t const
+size_t
+limit = stridelevels - stats->nulldims
+limit
+= stridelevels - stats->nulldims
+stridelevels - stats->nulldims
+stridelevels
+stridelevels
+stats->nulldims
+stats
+stats
+nulldims
+size_t const srccontigsz = stats->srccontigsz;
+size_t const srccontigsz = stats->srccontigsz;
+size_t const
+size_t
+srccontigsz = stats->srccontigsz
+srccontigsz
+= stats->srccontigsz
+stats->srccontigsz
+stats
+stats
+srccontigsz
+size_t const dstcontigsz = stats->dstcontigsz;
+size_t const dstcontigsz = stats->dstcontigsz;
+size_t const
+size_t
+dstcontigsz = stats->dstcontigsz
+dstcontigsz
+= stats->dstcontigsz
+stats->dstcontigsz
+stats
+stats
+dstcontigsz
+gasneti_assert(_srclist != NULL && _dstlist != NULL && stats != NULL);
+gasneti_assert(_srclist != NULL && _dstlist != NULL && stats != NULL)
+gasneti_assert
+gasneti_assert
+_srclist != NULL && _dstlist != NULL && stats != NULL
+_srclist != NULL && _dstlist != NULL
+_srclist != NULL
+_srclist
+_srclist
+NULL
+NULL
+_dstlist != NULL
+_dstlist
+_dstlist
+NULL
+NULL
+stats != NULL
+stats
+stats
+NULL
+NULL
+gasneti_assert(!gasnete_strided_empty(count, stridelevels));
+gasneti_assert(!gasnete_strided_empty(count, stridelevels))
+gasneti_assert
+gasneti_assert
+!gasnete_strided_empty(count, stridelevels)
+gasnete_strided_empty(count, stridelevels)
+gasnete_strided_empty
+gasnete_strided_empty
+count
+count
+stridelevels
+stridelevels
+gasneti_assert(limit > contiglevel);
+gasneti_assert(limit > contiglevel)
+gasneti_assert
+gasneti_assert
+limit > contiglevel
+limit
+limit
+contiglevel
+contiglevel
+if (!tomemvec) { /* indexed case */    void * * const srclist = (void * *)_srclist;    void * * const dstlist = (void * *)_dstlist;    void * * srcpos = srclist;    void * * dstpos = dstlist;    if (srccontigsz == dstcontigsz) {      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        *(srcpos) = psrc;                                      \        srcpos++;                                              \        *(dstpos) = pdst;                                      \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    } else if (srccontigsz < dstcontigsz) {      size_t const looplim = dstcontigsz / srccontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*srccontigsz == dstcontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        *(srcpos) = psrc;                                      \        srcpos++;                                              \        if (loopcnt == 0) {                                    \          *(dstpos) = pdst;                                    \          dstpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    } else { /* srccontigsz > dstcontigsz */      size_t const looplim = srccontigsz / dstcontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*dstcontigsz == srccontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        if (loopcnt == 0) {                                    \          *(srcpos) = psrc;                                    \          srcpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \        *(dstpos) = pdst;                                      \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    }    gasneti_assert(srcpos == srclist+stats->srcsegments);    gasneti_assert(dstpos == dstlist+stats->dstsegments);  } else { /* memvec case */    gasnet_memvec_t * const srclist = (gasnet_memvec_t *)_srclist;    gasnet_memvec_t * const dstlist = (gasnet_memvec_t *)_dstlist;    gasnet_memvec_t * srcpos = srclist;    gasnet_memvec_t * dstpos = dstlist;    if (srccontigsz == dstcontigsz) {      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        srcpos->addr = psrc;                                   \        srcpos->len = srccontigsz;                             \        srcpos++;                                              \        dstpos->addr = pdst;                                   \        dstpos->len = dstcontigsz;                             \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    } else if (srccontigsz < dstcontigsz) {      size_t const looplim = dstcontigsz / srccontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*srccontigsz == dstcontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        srcpos->addr = psrc;                                   \        srcpos->len = srccontigsz;                             \        srcpos++;                                              \        if (loopcnt == 0) {                                    \          dstpos->addr = pdst;                                 \          dstpos->len = dstcontigsz;                           \          dstpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    } else { /* srccontigsz > dstcontigsz */      size_t const looplim = srccontigsz / dstcontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*dstcontigsz == srccontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        if (loopcnt == 0) {                                    \          srcpos->addr = psrc;                                 \          srcpos->len = srccontigsz;                           \          srcpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \        dstpos->addr = pdst;                                   \        dstpos->len = dstcontigsz;                             \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    }    gasneti_assert(srcpos == srclist+stats->srcsegments);    gasneti_assert(dstpos == dstlist+stats->dstsegments);  }
+!tomemvec
+tomemvec
+tomemvec
+{ /* indexed case */    void * * const srclist = (void * *)_srclist;    void * * const dstlist = (void * *)_dstlist;    void * * srcpos = srclist;    void * * dstpos = dstlist;    if (srccontigsz == dstcontigsz) {      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        *(srcpos) = psrc;                                      \        srcpos++;                                              \        *(dstpos) = pdst;                                      \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    } else if (srccontigsz < dstcontigsz) {      size_t const looplim = dstcontigsz / srccontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*srccontigsz == dstcontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        *(srcpos) = psrc;                                      \        srcpos++;                                              \        if (loopcnt == 0) {                                    \          *(dstpos) = pdst;                                    \          dstpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    } else { /* srccontigsz > dstcontigsz */      size_t const looplim = srccontigsz / dstcontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*dstcontigsz == srccontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        if (loopcnt == 0) {                                    \          *(srcpos) = psrc;                                    \          srcpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \        *(dstpos) = pdst;                                      \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    }    gasneti_assert(srcpos == srclist+stats->srcsegments);    gasneti_assert(dstpos == dstlist+stats->dstsegments);  }
+void * * const srclist = (void * *)_srclist;
+void * * const srclist = (void * *)_srclist;
+void
+* * const srclist = (void * *)_srclist
+*
+* const
+srclist
+= (void * *)_srclist
+(void * *)_srclist
+void * *
+void
+* *
+*
+*
+_srclist
+_srclist
+void * * const dstlist = (void * *)_dstlist;
+void * * const dstlist = (void * *)_dstlist;
+void
+* * const dstlist = (void * *)_dstlist
+*
+* const
+dstlist
+= (void * *)_dstlist
+(void * *)_dstlist
+void * *
+void
+* *
+*
+*
+_dstlist
+_dstlist
+void * * srcpos = srclist;
+void * * srcpos = srclist;
+void
+* * srcpos = srclist
+*
+*
+srcpos
+= srclist
+srclist
+srclist
+void * * dstpos = dstlist;
+void * * dstpos = dstlist;
+void
+* * dstpos = dstlist
+*
+*
+dstpos
+= dstlist
+dstlist
+dstlist
+if (srccontigsz == dstcontigsz) {      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        *(srcpos) = psrc;                                      \        srcpos++;                                              \        *(dstpos) = pdst;                                      \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    } else if (srccontigsz < dstcontigsz) {      size_t const looplim = dstcontigsz / srccontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*srccontigsz == dstcontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        *(srcpos) = psrc;                                      \        srcpos++;                                              \        if (loopcnt == 0) {                                    \          *(dstpos) = pdst;                                    \          dstpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    } else { /* srccontigsz > dstcontigsz */      size_t const looplim = srccontigsz / dstcontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*dstcontigsz == srccontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        if (loopcnt == 0) {                                    \          *(srcpos) = psrc;                                    \          srcpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \        *(dstpos) = pdst;                                      \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    }
+srccontigsz == dstcontigsz
+srccontigsz
+srccontigsz
+dstcontigsz
+dstcontigsz
+{      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        *(srcpos) = psrc;                                      \        srcpos++;                                              \        *(dstpos) = pdst;                                      \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    }
+GASNETE_STRIDED_HELPER(limit,contiglevel);
+GASNETE_STRIDED_HELPER(limit,contiglevel)
+GASNETE_STRIDED_HELPER
+GASNETE_STRIDED_HELPER
+limit
+limit
+contiglevel
+contiglevel
+if (srccontigsz < dstcontigsz) {      size_t const looplim = dstcontigsz / srccontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*srccontigsz == dstcontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        *(srcpos) = psrc;                                      \        srcpos++;                                              \        if (loopcnt == 0) {                                    \          *(dstpos) = pdst;                                    \          dstpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    } else { /* srccontigsz > dstcontigsz */      size_t const looplim = srccontigsz / dstcontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*dstcontigsz == srccontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        if (loopcnt == 0) {                                    \          *(srcpos) = psrc;                                    \          srcpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \        *(dstpos) = pdst;                                      \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    }
+srccontigsz < dstcontigsz
+srccontigsz
+srccontigsz
+dstcontigsz
+dstcontigsz
+{      size_t const looplim = dstcontigsz / srccontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*srccontigsz == dstcontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        *(srcpos) = psrc;                                      \        srcpos++;                                              \        if (loopcnt == 0) {                                    \          *(dstpos) = pdst;                                    \          dstpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    }
+size_t const looplim = dstcontigsz / srccontigsz;
+size_t const looplim = dstcontigsz / srccontigsz;
+size_t const
+size_t
+looplim = dstcontigsz / srccontigsz
+looplim
+= dstcontigsz / srccontigsz
+dstcontigsz / srccontigsz
+dstcontigsz
+dstcontigsz
+srccontigsz
+srccontigsz
+size_t loopcnt = 0;
+size_t loopcnt = 0;
+size_t
+size_t
+loopcnt = 0
+loopcnt
+= 0
+0
+gasneti_assert(looplim*srccontigsz == dstcontigsz);
+gasneti_assert(looplim*srccontigsz == dstcontigsz)
+gasneti_assert
+gasneti_assert
+looplim*srccontigsz == dstcontigsz
+looplim*srccontigsz
+looplim
+looplim
+srccontigsz
+srccontigsz
+dstcontigsz
+dstcontigsz
+GASNETE_STRIDED_HELPER(limit,contiglevel);
+GASNETE_STRIDED_HELPER(limit,contiglevel)
+GASNETE_STRIDED_HELPER
+GASNETE_STRIDED_HELPER
+limit
+limit
+contiglevel
+contiglevel
+{ /* srccontigsz > dstcontigsz */      size_t const looplim = srccontigsz / dstcontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*dstcontigsz == srccontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        if (loopcnt == 0) {                                    \          *(srcpos) = psrc;                                    \          srcpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \        *(dstpos) = pdst;                                      \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    }
+size_t const looplim = srccontigsz / dstcontigsz;
+size_t const looplim = srccontigsz / dstcontigsz;
+size_t const
+size_t
+looplim = srccontigsz / dstcontigsz
+looplim
+= srccontigsz / dstcontigsz
+srccontigsz / dstcontigsz
+srccontigsz
+srccontigsz
+dstcontigsz
+dstcontigsz
+size_t loopcnt = 0;
+size_t loopcnt = 0;
+size_t
+size_t
+loopcnt = 0
+loopcnt
+= 0
+0
+gasneti_assert(looplim*dstcontigsz == srccontigsz);
+gasneti_assert(looplim*dstcontigsz == srccontigsz)
+gasneti_assert
+gasneti_assert
+looplim*dstcontigsz == srccontigsz
+looplim*dstcontigsz
+looplim
+looplim
+dstcontigsz
+dstcontigsz
+srccontigsz
+srccontigsz
+GASNETE_STRIDED_HELPER(limit,contiglevel);
+GASNETE_STRIDED_HELPER(limit,contiglevel)
+GASNETE_STRIDED_HELPER
+GASNETE_STRIDED_HELPER
+limit
+limit
+contiglevel
+contiglevel
+gasneti_assert(srcpos == srclist+stats->srcsegments);
+gasneti_assert(srcpos == srclist+stats->srcsegments)
+gasneti_assert
+gasneti_assert
+srcpos == srclist+stats->srcsegments
+srcpos
+srcpos
+srclist+stats->srcsegments
+srclist
+srclist
+stats->srcsegments
+stats
+stats
+srcsegments
+gasneti_assert(dstpos == dstlist+stats->dstsegments);
+gasneti_assert(dstpos == dstlist+stats->dstsegments)
+gasneti_assert
+gasneti_assert
+dstpos == dstlist+stats->dstsegments
+dstpos
+dstpos
+dstlist+stats->dstsegments
+dstlist
+dstlist
+stats->dstsegments
+stats
+stats
+dstsegments
+{ /* memvec case */    gasnet_memvec_t * const srclist = (gasnet_memvec_t *)_srclist;    gasnet_memvec_t * const dstlist = (gasnet_memvec_t *)_dstlist;    gasnet_memvec_t * srcpos = srclist;    gasnet_memvec_t * dstpos = dstlist;    if (srccontigsz == dstcontigsz) {      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        srcpos->addr = psrc;                                   \        srcpos->len = srccontigsz;                             \        srcpos++;                                              \        dstpos->addr = pdst;                                   \        dstpos->len = dstcontigsz;                             \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    } else if (srccontigsz < dstcontigsz) {      size_t const looplim = dstcontigsz / srccontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*srccontigsz == dstcontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        srcpos->addr = psrc;                                   \        srcpos->len = srccontigsz;                             \        srcpos++;                                              \        if (loopcnt == 0) {                                    \          dstpos->addr = pdst;                                 \          dstpos->len = dstcontigsz;                           \          dstpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    } else { /* srccontigsz > dstcontigsz */      size_t const looplim = srccontigsz / dstcontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*dstcontigsz == srccontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        if (loopcnt == 0) {                                    \          srcpos->addr = psrc;                                 \          srcpos->len = srccontigsz;                           \          srcpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \        dstpos->addr = pdst;                                   \        dstpos->len = dstcontigsz;                             \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    }    gasneti_assert(srcpos == srclist+stats->srcsegments);    gasneti_assert(dstpos == dstlist+stats->dstsegments);  }
+gasnet_memvec_t * const srclist = (gasnet_memvec_t *)_srclist;
+gasnet_memvec_t * const srclist = (gasnet_memvec_t *)_srclist;
+gasnet_memvec_t
+gasnet_memvec_t
+* const srclist = (gasnet_memvec_t *)_srclist
+* const
+srclist
+= (gasnet_memvec_t *)_srclist
+(gasnet_memvec_t *)_srclist
+gasnet_memvec_t *
+gasnet_memvec_t
+gasnet_memvec_t
+*
+*
+_srclist
+_srclist
+gasnet_memvec_t * const dstlist = (gasnet_memvec_t *)_dstlist;
+gasnet_memvec_t * const dstlist = (gasnet_memvec_t *)_dstlist;
+gasnet_memvec_t
+gasnet_memvec_t
+* const dstlist = (gasnet_memvec_t *)_dstlist
+* const
+dstlist
+= (gasnet_memvec_t *)_dstlist
+(gasnet_memvec_t *)_dstlist
+gasnet_memvec_t *
+gasnet_memvec_t
+gasnet_memvec_t
+*
+*
+_dstlist
+_dstlist
+gasnet_memvec_t * srcpos = srclist;
+gasnet_memvec_t * srcpos = srclist;
+gasnet_memvec_t
+gasnet_memvec_t
+* srcpos = srclist
+*
+srcpos
+= srclist
+srclist
+srclist
+gasnet_memvec_t * dstpos = dstlist;
+gasnet_memvec_t * dstpos = dstlist;
+gasnet_memvec_t
+gasnet_memvec_t
+* dstpos = dstlist
+*
+dstpos
+= dstlist
+dstlist
+dstlist
+if (srccontigsz == dstcontigsz) {      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        srcpos->addr = psrc;                                   \        srcpos->len = srccontigsz;                             \        srcpos++;                                              \        dstpos->addr = pdst;                                   \        dstpos->len = dstcontigsz;                             \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    } else if (srccontigsz < dstcontigsz) {      size_t const looplim = dstcontigsz / srccontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*srccontigsz == dstcontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        srcpos->addr = psrc;                                   \        srcpos->len = srccontigsz;                             \        srcpos++;                                              \        if (loopcnt == 0) {                                    \          dstpos->addr = pdst;                                 \          dstpos->len = dstcontigsz;                           \          dstpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    } else { /* srccontigsz > dstcontigsz */      size_t const looplim = srccontigsz / dstcontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*dstcontigsz == srccontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        if (loopcnt == 0) {                                    \          srcpos->addr = psrc;                                 \          srcpos->len = srccontigsz;                           \          srcpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \        dstpos->addr = pdst;                                   \        dstpos->len = dstcontigsz;                             \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    }
+srccontigsz == dstcontigsz
+srccontigsz
+srccontigsz
+dstcontigsz
+dstcontigsz
+{      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        srcpos->addr = psrc;                                   \        srcpos->len = srccontigsz;                             \        srcpos++;                                              \        dstpos->addr = pdst;                                   \        dstpos->len = dstcontigsz;                             \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    }
+GASNETE_STRIDED_HELPER(limit,contiglevel);
+GASNETE_STRIDED_HELPER(limit,contiglevel)
+GASNETE_STRIDED_HELPER
+GASNETE_STRIDED_HELPER
+limit
+limit
+contiglevel
+contiglevel
+if (srccontigsz < dstcontigsz) {      size_t const looplim = dstcontigsz / srccontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*srccontigsz == dstcontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        srcpos->addr = psrc;                                   \        srcpos->len = srccontigsz;                             \        srcpos++;                                              \        if (loopcnt == 0) {                                    \          dstpos->addr = pdst;                                 \          dstpos->len = dstcontigsz;                           \          dstpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    } else { /* srccontigsz > dstcontigsz */      size_t const looplim = srccontigsz / dstcontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*dstcontigsz == srccontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        if (loopcnt == 0) {                                    \          srcpos->addr = psrc;                                 \          srcpos->len = srccontigsz;                           \          srcpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \        dstpos->addr = pdst;                                   \        dstpos->len = dstcontigsz;                             \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    }
+srccontigsz < dstcontigsz
+srccontigsz
+srccontigsz
+dstcontigsz
+dstcontigsz
+{      size_t const looplim = dstcontigsz / srccontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*srccontigsz == dstcontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        srcpos->addr = psrc;                                   \        srcpos->len = srccontigsz;                             \        srcpos++;                                              \        if (loopcnt == 0) {                                    \          dstpos->addr = pdst;                                 \          dstpos->len = dstcontigsz;                           \          dstpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    }
+size_t const looplim = dstcontigsz / srccontigsz;
+size_t const looplim = dstcontigsz / srccontigsz;
+size_t const
+size_t
+looplim = dstcontigsz / srccontigsz
+looplim
+= dstcontigsz / srccontigsz
+dstcontigsz / srccontigsz
+dstcontigsz
+dstcontigsz
+srccontigsz
+srccontigsz
+size_t loopcnt = 0;
+size_t loopcnt = 0;
+size_t
+size_t
+loopcnt = 0
+loopcnt
+= 0
+0
+gasneti_assert(looplim*srccontigsz == dstcontigsz);
+gasneti_assert(looplim*srccontigsz == dstcontigsz)
+gasneti_assert
+gasneti_assert
+looplim*srccontigsz == dstcontigsz
+looplim*srccontigsz
+looplim
+looplim
+srccontigsz
+srccontigsz
+dstcontigsz
+dstcontigsz
+GASNETE_STRIDED_HELPER(limit,contiglevel);
+GASNETE_STRIDED_HELPER(limit,contiglevel)
+GASNETE_STRIDED_HELPER
+GASNETE_STRIDED_HELPER
+limit
+limit
+contiglevel
+contiglevel
+{ /* srccontigsz > dstcontigsz */      size_t const looplim = srccontigsz / dstcontigsz;      size_t loopcnt = 0;      gasneti_assert(looplim*dstcontigsz == srccontigsz);      /* TODO: this loop could be made more efficient */      #define GASNETE_STRIDED_HELPER_LOOPBODY(psrc,pdst)  do { \        if (loopcnt == 0) {                                    \          srcpos->addr = psrc;                                 \          srcpos->len = srccontigsz;                           \          srcpos++;                                            \          loopcnt = looplim;                                   \        }                                                      \        loopcnt--;                                             \        dstpos->addr = pdst;                                   \        dstpos->len = dstcontigsz;                             \        dstpos++;                                              \      } while(0)      GASNETE_STRIDED_HELPER(limit,contiglevel);      #undef GASNETE_STRIDED_HELPER_LOOPBODY    }
+size_t const looplim = srccontigsz / dstcontigsz;
+size_t const looplim = srccontigsz / dstcontigsz;
+size_t const
+size_t
+looplim = srccontigsz / dstcontigsz
+looplim
+= srccontigsz / dstcontigsz
+srccontigsz / dstcontigsz
+srccontigsz
+srccontigsz
+dstcontigsz
+dstcontigsz
+size_t loopcnt = 0;
+size_t loopcnt = 0;
+size_t
+size_t
+loopcnt = 0
+loopcnt
+= 0
+0
+gasneti_assert(looplim*dstcontigsz == srccontigsz);
+gasneti_assert(looplim*dstcontigsz == srccontigsz)
+gasneti_assert
+gasneti_assert
+looplim*dstcontigsz == srccontigsz
+looplim*dstcontigsz
+looplim
+looplim
+dstcontigsz
+dstcontigsz
+srccontigsz
+srccontigsz
+GASNETE_STRIDED_HELPER(limit,contiglevel);
+GASNETE_STRIDED_HELPER(limit,contiglevel)
+GASNETE_STRIDED_HELPER
+GASNETE_STRIDED_HELPER
+limit
+limit
+contiglevel
+contiglevel
+gasneti_assert(srcpos == srclist+stats->srcsegments);
+gasneti_assert(srcpos == srclist+stats->srcsegments)
+gasneti_assert
+gasneti_assert
+srcpos == srclist+stats->srcsegments
+srcpos
+srcpos
+srclist+stats->srcsegments
+srclist
+srclist
+stats->srcsegments
+stats
+stats
+srcsegments
+gasneti_assert(dstpos == dstlist+stats->dstsegments);
+gasneti_assert(dstpos == dstlist+stats->dstsegments)
+gasneti_assert
+gasneti_assert
+dstpos == dstlist+stats->dstsegments
+dstpos
+dstpos
+dstlist+stats->dstsegments
+dstlist
+dstlist
+stats->dstsegments
+stats
+stats
+dstsegments
+-----joern-----
+(90,54,0)
+(5,41,0)
+(18,92,0)
+(144,54,0)
+(92,10,0)
+(91,124,0)
+(52,36,0)
+(56,62,0)
+(0,62,0)
+(45,54,0)
+(124,49,0)
+(108,88,0)
+(88,12,0)
+(126,124,0)
+(127,95,0)
+(8,64,0)
+(64,10,0)
+(72,36,0)
+(87,42,0)
+(92,2,0)
+(93,68,0)
+(31,16,0)
+(11,20,0)
+(139,57,0)
+(116,44,0)
+(120,15,0)
+(126,121,0)
+(53,132,0)
+(113,15,0)
+(89,118,0)
+(25,83,0)
+(114,124,0)
+(1,90,0)
+(132,36,0)
+(10,21,0)
+(56,57,0)
+(4,13,0)
+(41,141,0)
+(53,41,0)
+(58,130,0)
+(66,22,0)
+(97,16,0)
+(8,68,0)
+(85,70,0)
+(127,90,0)
+(42,144,0)
+(41,53,0)
+(86,56,0)
+(35,121,0)
+(33,121,0)
+(110,132,0)
+(123,107,0)
+(70,68,0)
+(83,70,0)
+(15,109,0)
+(15,115,0)
+(6,129,0)
+(93,50,0)
+(42,84,0)
+(107,129,0)
+(30,96,0)
+(14,90,0)
+(105,133,0)
+(44,12,0)
+(124,130,0)
+(50,130,0)
+(130,50,0)
+(81,1,0)
+(34,121,0)
+(106,8,0)
+(9,93,0)
+(80,89,0)
+(22,133,0)
+(132,57,0)
+(145,25,0)
+(112,77,0)
+(10,64,0)
+(16,54,0)
+(61,57,0)
+(3,28,0)
+(24,53,0)
+(19,54,0)
+(124,126,0)
+(69,122,0)
+(37,93,0)
+(31,95,0)
+(39,83,0)
+(49,96,0)
+(142,118,0)
+(107,16,0)
+(38,88,0)
+(33,113,0)
+(143,31,0)
+(73,121,0)
+(36,132,0)
+(67,38,0)
+(63,92,0)
+(77,136,0)
+(78,13,0)
+(130,121,0)
+(51,8,0)
+(42,87,0)
+(135,25,0)
+(129,95,0)
+(28,2,0)
+(144,42,0)
+(56,118,0)
+(119,70,0)
+(79,95,0)
+(94,89,0)
+(50,93,0)
+(49,121,0)
+(59,62,0)
+(133,57,0)
+(40,102,0)
+(43,28,0)
+(117,13,0)
+(125,78,0)
+(20,130,0)
+(50,115,0)
+(7,53,0)
+(65,102,0)
+(104,16,0)
+(27,49,0)
+(96,68,0)
+(46,121,0)
+(70,83,0)
+(138,54,0)
+(102,130,0)
+(36,83,0)
+(134,121,0)
+(96,49,0)
+(20,49,0)
+(101,54,0)
+(10,92,0)
+(99,138,0)
+(28,43,0)
+(29,127,0)
+(137,60,0)
+(25,13,0)
+(83,121,0)
+(23,50,0)
+(141,57,0)
+(55,144,0)
+(128,79,0)
+(64,122,0)
+(100,121,0)
+(13,121,0)
+(98,57,0)
+(122,64,0)
+(62,132,0)
+(122,84,0)
+(60,57,0)
+(75,54,0)
+(118,57,0)
+(21,10,0)
+(41,13,0)
+(131,118,0)
+(62,12,0)
+(102,49,0)
+(117,83,0)
+(141,41,0)
+(1,79,0)
+(28,138,0)
+(74,117,0)
+(48,90,0)
+(21,121,0)
+(113,33,0)
+(26,20,0)
+(17,42,0)
+(15,113,0)
+(13,78,0)
+(76,117,0)
+(71,96,0)
+(53,83,0)
+(32,78,0)
+(47,122,0)
+(138,28,0)
+(36,13,0)
+(111,15,0)
+(78,68,0)
+(64,8,0)
+(96,68,1)
+(25,135,1)
+(28,2,1)
+(25,13,1)
+(145,77,1)
+(26,140,1)
+(28,3,1)
+(78,68,1)
+(36,13,1)
+(144,42,1)
+(53,132,1)
+(69,92,1)
+(20,11,1)
+(122,84,1)
+(36,72,1)
+(42,17,1)
+(38,67,1)
+(86,62,1)
+(25,83,1)
+(32,125,1)
+(138,28,1)
+(130,50,1)
+(103,140,1)
+(42,84,1)
+(28,43,1)
+(56,118,1)
+(59,0,1)
+(6,107,1)
+(106,51,1)
+(137,133,1)
+(4,83,1)
+(103,102,1)
+(107,123,1)
+(94,60,1)
+(36,83,1)
+(110,25,1)
+(124,130,1)
+(88,108,1)
+(78,32,1)
+(23,58,1)
+(92,18,1)
+(142,131,1)
+(135,145,1)
+(40,65,1)
+(93,68,1)
+(11,26,1)
+(126,124,1)
+(67,89,1)
+(50,93,1)
+(127,29,1)
+(127,90,1)
+(117,83,1)
+(89,80,1)
+(50,115,1)
+(63,13,1)
+(14,48,1)
+(133,105,1)
+(31,16,1)
+(80,94,1)
+(118,142,1)
+(103,25,1)
+(47,69,1)
+(113,15,1)
+(20,49,1)
+(102,130,1)
+(5,53,1)
+(86,89,1)
+(125,4,1)
+(132,36,1)
+(105,22,1)
+(62,132,1)
+(71,27,1)
+(74,90,1)
+(51,122,1)
+(41,13,1)
+(58,49,1)
+(13,78,1)
+(124,91,1)
+(62,59,1)
+(20,130,1)
+(7,118,1)
+(111,120,1)
+(1,90,1)
+(39,130,1)
+(56,62,1)
+(117,76,1)
+(89,118,1)
+(10,92,1)
+(90,14,1)
+(22,66,1)
+(17,55,1)
+(104,97,1)
+(124,49,1)
+(93,37,1)
+(91,114,1)
+(99,77,1)
+(31,143,1)
+(72,52,1)
+(60,137,1)
+(120,21,1)
+(85,39,1)
+(97,144,1)
+(143,129,1)
+(70,68,1)
+(0,44,1)
+(37,9,1)
+(41,53,1)
+(3,99,1)
+(70,119,1)
+(119,85,1)
+(92,2,1)
+(64,122,1)
+(77,112,1)
+(79,128,1)
+(128,1,1)
+(48,16,1)
+(55,138,1)
+(8,68,1)
+(102,40,1)
+(33,113,1)
+(117,13,1)
+(66,141,1)
+(122,47,1)
+(49,96,1)
+(30,71,1)
+(53,83,1)
+(81,31,1)
+(116,88,1)
+(114,33,1)
+(82,103,1)
+(41,5,1)
+(123,117,1)
+(76,74,1)
+(77,136,1)
+(102,49,1)
+(112,126,1)
+(52,110,1)
+(29,79,1)
+(140,20,1)
+(24,7,1)
+(18,63,1)
+(21,10,1)
+(107,16,1)
+(65,103,1)
+(16,104,1)
+(9,23,1)
+(108,38,1)
+(56,86,1)
+(131,132,1)
+(129,6,1)
+(15,115,1)
+(1,81,1)
+(83,70,1)
+(140,117,1)
+(53,24,1)
+(140,127,1)
+(141,41,1)
+(44,116,1)
+(64,8,1)
+(96,30,1)
+(103,56,1)
+(10,64,1)
+(8,106,1)
+(15,109,1)
+(15,111,1)
+(42,87,1)
+(124,49,2)
+(144,42,2)
+(123,117,2)
+(56,118,2)
+(127,90,2)
+(40,103,2)
+(1,90,2)
+(116,89,2)
+(89,118,2)
+(60,25,2)
+(21,10,2)
+(7,25,2)
+(80,25,2)
+(72,25,2)
+(105,25,2)
+(38,89,2)
+(50,115,2)
+(53,83,2)
+(141,25,2)
+(94,25,2)
+(138,28,2)
+(99,77,2)
+(11,140,2)
+(117,83,2)
+(70,68,2)
+(36,13,2)
+(56,25,2)
+(28,77,2)
+(117,13,2)
+(89,25,2)
+(42,84,2)
+(29,117,2)
+(78,68,2)
+(137,25,2)
+(107,117,2)
+(8,68,2)
+(140,77,2)
+(42,87,2)
+(102,103,2)
+(49,96,2)
+(66,25,2)
+(64,8,2)
+(41,53,2)
+(53,25,2)
+(102,49,2)
+(55,77,2)
+(108,89,2)
+(52,25,2)
+(47,92,2)
+(67,89,2)
+(15,109,2)
+(76,77,2)
+(128,117,2)
+(20,49,2)
+(51,122,2)
+(93,68,2)
+(28,2,2)
+(77,136,2)
+(48,77,2)
+(56,62,2)
+(113,15,2)
+(5,25,2)
+(79,117,2)
+(132,25,2)
+(133,25,2)
+(86,25,2)
+(131,25,2)
+(31,16,2)
+(10,92,2)
+(25,13,2)
+(142,25,2)
+(26,140,2)
+(6,117,2)
+(17,77,2)
+(8,122,2)
+(22,25,2)
+(13,78,2)
+(14,77,2)
+(69,92,2)
+(110,25,2)
+(20,140,2)
+(135,77,2)
+(62,132,2)
+(33,113,2)
+(64,122,2)
+(64,92,2)
+(97,77,2)
+(141,41,2)
+(144,77,2)
+(31,117,2)
+(10,64,2)
+(53,132,2)
+(36,25,2)
+(117,77,2)
+(143,117,2)
+(62,89,2)
+(102,130,2)
+(124,130,2)
+(127,117,2)
+(20,130,2)
+(24,25,2)
+(50,93,2)
+(3,77,2)
+(122,84,2)
+(90,77,2)
+(106,122,2)
+(126,124,2)
+(65,103,2)
+(28,43,2)
+(83,70,2)
+(74,77,2)
+(1,117,2)
+(42,77,2)
+(107,16,2)
+(122,92,2)
+(132,36,2)
+(15,115,2)
+(16,77,2)
+(103,103,2)
+(88,89,2)
+(0,89,2)
+(145,77,2)
+(138,77,2)
+(130,50,2)
+(41,25,2)
+(36,83,2)
+(59,89,2)
+(44,89,2)
+(41,13,2)
+(118,25,2)
+(96,68,2)
+(81,117,2)
+(129,117,2)
+(140,140,2)
+(104,77,2)
+(92,2,2)
+(25,77,2)
+(25,83,2)
+-----------------------------------
+(0,loopcnt)
+(1,*(dstpos)
+(2,void *_srclist)
+(3,_srclist)
+(4,dstcontigsz)
+(5,dstcontigsz)
+(6,psrc)
+(7,looplim)
+(8,stats != NULL)
+(9,stats)
+(10,_srclist != NULL && _dstlist != NULL && stats != NULL)
+(11,contiglevel)
+(12,)
+(13,dstcontigsz = stats->dstcontigsz)
+(14,dstlist)
+(15,gasnete_strided_empty(count, stridelevels)
+(16,* * srcpos = srclist)
+(17,_dstlist)
+(18,NULL)
+(19,if (srccontigsz == dstcontigsz)
+(20,GASNETE_STRIDED_HELPER(limit,contiglevel)
+(21,gasneti_assert(_srclist != NULL && _dstlist != NULL && stats != NULL)
+(22,*(srcpos)
+(23,stridelevels)
+(24,srccontigsz)
+(25,srccontigsz < dstcontigsz)
+(26,limit)
+(27,contiglevel)
+(28,(void * *)
+(29,dstpos)
+(30,dualcontiguity)
+(31,srcpos++)
+(32,dstcontigsz)
+(33,gasneti_assert(!gasnete_strided_empty(count, stridelevels)
+(34,while(0)
+(35,contiglevel)
+(36,dstcontigsz / srccontigsz)
+(37,nulldims)
+(38,*(dstpos)
+(39,srccontigsz)
+(40,contiglevel)
+(41,looplim*srccontigsz == dstcontigsz)
+(42,(void * *)
+(43,void * *)
+(44,dstpos++)
+(45,while(0)
+(46,if (!tomemvec)
+(47,NULL)
+(48,dstpos)
+(49,contiglevel = stats->dualcontiguity)
+(50,stridelevels - stats->nulldims)
+(51,stats)
+(52,dstcontigsz)
+(53,looplim*srccontigsz)
+(54,)
+(55,dstlist)
+(56,loopcnt--)
+(57,)
+(58,limit)
+(59,looplim)
+(60,srcpos++)
+(61,if (loopcnt == 0)
+(62,loopcnt = looplim)
+(63,_srclist)
+(64,_dstlist != NULL && stats != NULL)
+(65,limit)
+(66,srcpos)
+(67,dstpos)
+(68,gasnete_strided_stats_t const *stats)
+(69,_dstlist)
+(70,stats->srccontigsz)
+(71,stats)
+(72,srccontigsz)
+(73,srccontigsz)
+(74,srccontigsz)
+(75,srcpos)
+(76,dstcontigsz)
+(77,!tomemvec)
+(78,stats->dstcontigsz)
+(79,*(dstpos)
+(80,0)
+(81,dstpos)
+(82,RET)
+(83,srccontigsz = stats->srccontigsz)
+(84,void *_dstlist)
+(85,stats)
+(86,loopcnt)
+(87,void * *)
+(88,*(dstpos)
+(89,loopcnt == 0)
+(90,* * dstpos = dstlist)
+(91,contiglevel)
+(92,_srclist != NULL)
+(93,stats->nulldims)
+(94,loopcnt)
+(95,)
+(96,stats->dualcontiguity)
+(97,srcpos)
+(98,loopcnt)
+(99,srclist)
+(100,limit)
+(101,dstpos)
+(102,GASNETE_STRIDED_HELPER(limit,contiglevel)
+(103,0)
+(104,srclist)
+(105,psrc)
+(106,NULL)
+(107,*(srcpos)
+(108,pdst)
+(109,const size_t count[])
+(110,looplim)
+(111,stridelevels)
+(112,tomemvec)
+(113,!gasnete_strided_empty(count, stridelevels)
+(114,limit)
+(115,size_t stridelevels)
+(116,dstpos)
+(117,srccontigsz == dstcontigsz)
+(118,loopcnt = 0)
+(119,srccontigsz)
+(120,count)
+(121,)
+(122,_dstlist != NULL)
+(123,srcpos)
+(124,limit > contiglevel)
+(125,stats)
+(126,gasneti_assert(limit > contiglevel)
+(127,dstpos++)
+(128,pdst)
+(129,*(srcpos)
+(130,limit = stridelevels - stats->nulldims)
+(131,loopcnt)
+(132,looplim = dstcontigsz / srccontigsz)
+(133,*(srcpos)
+(134,dstcontigsz)
+(135,dstcontigsz)
+(136,const int tomemvec)
+(137,srcpos)
+(138,srclist = (void * *)
+(139,looplim)
+(140,0)
+(141,gasneti_assert(looplim*srccontigsz == dstcontigsz)
+(142,0)
+(143,srcpos)
+(144,dstlist = (void * *)
+(145,srccontigsz)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

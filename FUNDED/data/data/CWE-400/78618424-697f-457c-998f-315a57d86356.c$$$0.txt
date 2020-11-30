@@ -1,0 +1,3011 @@
+-----label-----
+1
+-----code-----
+int
+sosetopt(struct socket *so, int level, int optname, struct mbuf *m0)
+{
+	int		error;
+	struct mbuf	*m;
+
+	error = 0;
+	m = m0;
+	if (level != SOL_SOCKET) {
+		if (so->so_proto && so->so_proto->pr_ctloutput)
+			return ((*so->so_proto->pr_ctloutput)
+				  (PRCO_SETOPT, so, level, optname, &m0));
+		error = ENOPROTOOPT;
+	} else {
+		switch (optname) {
+
+		case SO_LINGER:
+			if (m == NULL || m->m_len != sizeof(struct linger)) {
+				error = EINVAL;
+				goto bad;
+			}
+			so->so_linger = mtod(m, struct linger *)->l_linger;
+			/* fall thru... */
+
+		case SO_DEBUG:
+		case SO_KEEPALIVE:
+		case SO_DONTROUTE:
+		case SO_USELOOPBACK:
+		case SO_BROADCAST:
+		case SO_REUSEADDR:
+		case SO_REUSEPORT:
+		case SO_OOBINLINE:
+		case SO_TIMESTAMP:
+			if (m == NULL || m->m_len < sizeof(int)) {
+				error = EINVAL;
+				goto bad;
+			}
+			if (*mtod(m, int *))
+				so->so_options |= optname;
+			else
+				so->so_options &= ~optname;
+			break;
+
+		case SO_SNDBUF:
+		case SO_RCVBUF:
+		case SO_SNDLOWAT:
+		case SO_RCVLOWAT:
+		    {
+			int optval;
+
+			if (m == NULL || m->m_len < sizeof(int)) {
+				error = EINVAL;
+				goto bad;
+			}
+
+			/*
+			 * Values < 1 make no sense for any of these
+			 * options, so disallow them.
+			 */
+			optval = *mtod(m, int *);
+			if (optval < 1) {
+				error = EINVAL;
+				goto bad;
+			}
+
+			switch (optname) {
+
+			case SO_SNDBUF:
+			case SO_RCVBUF:
+				if (sbreserve(optname == SO_SNDBUF ?
+				    &so->so_snd : &so->so_rcv,
+				    (u_long) optval) == 0) {
+					error = ENOBUFS;
+					goto bad;
+				}
+				break;
+
+			/*
+			 * Make sure the low-water is never greater than
+			 * the high-water.
+			 */
+			case SO_SNDLOWAT:
+				so->so_snd.sb_lowat =
+				    (optval > so->so_snd.sb_hiwat) ?
+				    so->so_snd.sb_hiwat : optval;
+				break;
+			case SO_RCVLOWAT:
+				so->so_rcv.sb_lowat =
+				    (optval > so->so_rcv.sb_hiwat) ?
+				    so->so_rcv.sb_hiwat : optval;
+				break;
+			}
+			break;
+		    }
+
+		case SO_SNDTIMEO:
+		case SO_RCVTIMEO:
+		    {
+			struct timeval *tv;
+			short val;
+
+			if (m == NULL || m->m_len < sizeof(*tv)) {
+				error = EINVAL;
+				goto bad;
+			}
+			tv = mtod(m, struct timeval *);
+			if (tv->tv_sec > (SHRT_MAX - tv->tv_usec / tick) / hz) {
+				error = EDOM;
+				goto bad;
+			}
+			val = tv->tv_sec * hz + tv->tv_usec / tick;
+			if (val == 0 && tv->tv_usec != 0)
+				val = 1;
+
+			switch (optname) {
+
+			case SO_SNDTIMEO:
+				so->so_snd.sb_timeo = val;
+				break;
+			case SO_RCVTIMEO:
+				so->so_rcv.sb_timeo = val;
+				break;
+			}
+			break;
+		    }
+
+		default:
+			error = ENOPROTOOPT;
+			break;
+		}
+		if (error == 0 && so->so_proto && so->so_proto->pr_ctloutput) {
+			(void) ((*so->so_proto->pr_ctloutput)
+				  (PRCO_SETOPT, so, level, optname, &m0));
+			m = NULL;	/* freed by protocol */
+		}
+	}
+ bad:
+	if (m)
+		(void) m_free(m);
+	return (error);
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+3,8
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+13,14
+15,16
+15,17
+17,18
+19,20
+19,21
+20,21
+22,23
+22,24
+25,26
+25,27
+25,28
+25,29
+25,30
+25,31
+25,32
+26,27
+27,28
+27,29
+29,30
+31,32
+32,33
+32,34
+33,34
+35,36
+35,37
+38,39
+39,40
+39,41
+40,41
+43,44
+44,45
+44,46
+45,46
+47,48
+49,50
+49,51
+49,52
+50,51
+50,52
+51,52
+53,54
+55,56
+55,57
+56,57
+56,58
+57,58
+57,59
+58,59
+58,60
+59,60
+62,63
+62,64
+63,64
+63,65
+64,65
+68,69
+69,70
+70,71
+70,72
+70,73
+70,74
+70,75
+70,76
+71,72
+72,73
+73,74
+73,75
+74,75
+74,76
+75,76
+79,80
+81,82
+83,84
+85,86
+87,88
+88,89
+90,91
+91,92
+91,93
+92,93
+94,95
+96,97
+96,98
+97,98
+97,99
+98,99
+100,101
+100,102
+100,103
+100,104
+100,105
+100,106
+100,107
+100,108
+100,109
+100,110
+100,111
+100,112
+100,113
+100,114
+100,115
+100,116
+100,117
+100,118
+100,119
+100,120
+100,121
+100,122
+100,123
+100,124
+100,125
+100,126
+101,102
+102,103
+104,105
+104,106
+105,106
+105,107
+106,107
+106,108
+107,108
+109,110
+111,112
+111,113
+112,113
+112,114
+113,114
+116,117
+117,118
+117,119
+118,119
+121,122
+121,123
+122,123
+123,124
+123,125
+124,125
+126,127
+128,129
+130,131
+131,132
+132,133
+134,135
+135,136
+137,138
+138,139
+140,141
+141,142
+143,144
+144,145
+146,147
+147,148
+149,150
+150,151
+152,153
+153,154
+155,156
+156,157
+158,159
+158,160
+159,160
+159,161
+160,161
+160,162
+161,162
+163,164
+165,166
+165,167
+166,167
+166,168
+167,168
+170,171
+171,172
+171,173
+174,175
+174,176
+175,176
+176,177
+176,178
+177,178
+179,180
+181,182
+183,184
+183,185
+183,186
+184,185
+185,186
+186,187
+186,188
+187,188
+187,189
+188,189
+191,192
+193,194
+194,195
+194,196
+195,196
+195,197
+196,197
+199,200
+200,201
+203,204
+204,205
+206,207
+207,208
+209,210
+210,211
+212,213
+213,214
+215,216
+215,217
+215,218
+215,219
+215,220
+215,221
+216,217
+217,218
+217,219
+219,220
+221,222
+221,223
+222,223
+222,224
+223,224
+223,225
+224,225
+226,227
+228,229
+228,230
+229,230
+229,231
+230,231
+233,234
+234,235
+234,236
+237,238
+237,239
+238,239
+239,240
+239,241
+240,241
+242,243
+244,245
+246,247
+247,248
+247,249
+248,249
+248,250
+249,250
+252,253
+252,254
+253,254
+254,255
+254,256
+255,256
+257,258
+259,260
+261,262
+261,263
+262,263
+264,265
+264,266
+264,267
+264,268
+264,269
+264,270
+264,271
+264,272
+264,273
+264,274
+265,266
+266,267
+268,269
+269,270
+271,272
+271,273
+272,273
+272,274
+273,274
+273,275
+273,276
+274,275
+276,277
+276,278
+276,279
+277,278
+277,279
+278,279
+280,281
+282,283
+283,284
+283,285
+284,285
+287,288
+288,289
+288,290
+289,290
+292,293
+292,294
+293,294
+293,295
+294,295
+297,298
+300,301
+300,302
+301,302
+302,303
+302,304
+303,304
+305,306
+307,308
+310,311
+311,312
+313,314
+314,315
+314,316
+315,316
+315,317
+316,317
+316,318
+317,318
+321,322
+321,323
+321,324
+322,323
+323,324
+323,325
+324,325
+326,327
+326,328
+327,328
+327,329
+328,329
+332,333
+332,334
+333,334
+333,335
+334,335
+338,339
+341,342
+342,343
+344,345
+345,346
+345,347
+346,347
+346,348
+347,348
+347,349
+348,349
+352,353
+352,354
+352,355
+353,354
+354,355
+354,356
+355,356
+357,358
+357,359
+358,359
+358,360
+359,360
+363,364
+363,365
+364,365
+364,366
+365,366
+369,370
+373,374
+374,375
+376,377
+377,378
+379,380
+379,381
+379,382
+379,383
+379,384
+379,385
+379,386
+379,387
+379,388
+380,381
+381,382
+381,383
+382,383
+384,385
+384,386
+387,388
+388,389
+388,390
+390,391
+392,393
+392,394
+393,394
+393,395
+394,395
+394,396
+395,396
+397,398
+399,400
+399,401
+400,401
+400,402
+401,402
+404,405
+405,406
+406,407
+407,408
+409,410
+409,411
+410,411
+411,412
+411,413
+412,413
+414,415
+416,417
+418,419
+419,420
+419,421
+420,421
+420,422
+421,422
+421,423
+422,423
+425,426
+425,427
+426,427
+427,428
+427,429
+428,429
+430,431
+430,432
+431,432
+431,433
+432,433
+435,436
+437,438
+439,440
+439,441
+440,441
+441,442
+441,443
+442,443
+444,445
+446,447
+448,449
+449,450
+449,451
+450,451
+452,453
+452,454
+453,454
+453,455
+454,455
+454,456
+455,456
+458,459
+460,461
+460,462
+461,462
+461,463
+462,463
+465,466
+467,468
+467,469
+468,469
+468,470
+469,470
+469,471
+470,471
+473,474
+473,475
+474,475
+474,476
+475,476
+479,480
+480,481
+480,482
+481,482
+484,485
+484,486
+485,486
+487,488
+487,489
+487,490
+487,491
+487,492
+487,493
+488,489
+489,490
+491,492
+492,493
+492,494
+493,494
+493,495
+494,495
+494,496
+495,496
+499,500
+502,503
+503,504
+505,506
+506,507
+506,508
+507,508
+507,509
+508,509
+508,510
+509,510
+513,514
+518,519
+519,520
+519,521
+520,521
+522,523
+525,526
+525,527
+526,527
+526,528
+527,528
+527,529
+528,529
+528,530
+529,530
+532,533
+532,534
+533,534
+536,537
+536,538
+537,538
+537,539
+538,539
+542,543
+542,544
+543,544
+544,545
+544,546
+545,546
+545,547
+548,549
+549,550
+549,551
+549,552
+549,553
+549,554
+549,555
+550,551
+551,552
+552,553
+552,554
+553,554
+553,555
+554,555
+558,559
+560,561
+562,563
+564,565
+566,567
+567,568
+569,570
+570,571
+570,572
+571,572
+573,574
+575,576
+575,577
+577,578
+577,579
+578,579
+580,581
+581,582
+581,583
+582,583
+582,584
+585,586
+585,587
+586,587
+588,589
+590,591
+591,592
+592,593
+-----nextToken-----
+2,4,7,9,10,12,14,16,18,21,23,24,28,30,34,36,37,41,42,46,48,52,54,60,61,65,66,67,76,77,78,80,82,84,86,89,93,95,99,103,108,110,114,115,119,120,125,127,129,133,136,139,142,145,148,151,154,157,162,164,168,169,172,173,178,180,182,189,190,192,197,198,201,202,205,208,211,214,218,220,225,227,231,232,235,236,241,243,245,250,251,256,258,260,263,267,270,275,279,281,285,286,290,291,295,296,298,299,304,306,308,309,312,318,319,320,325,329,330,331,335,336,337,339,340,343,349,350,351,356,360,361,362,366,367,368,370,371,372,375,378,383,385,386,389,391,396,398,402,403,408,413,415,417,423,424,429,433,434,436,438,443,445,447,451,456,457,459,463,464,466,471,472,476,477,478,482,483,486,490,496,497,498,500,501,504,510,511,512,514,515,516,517,521,523,524,530,531,534,535,539,540,541,546,547,555,556,557,559,561,563,565,568,572,574,576,579,583,584,587,589,593
+-----computeFrom-----
+39,40
+39,41
+44,45
+44,46
+50,51
+50,52
+57,58
+57,59
+91,92
+91,93
+105,106
+105,107
+106,107
+106,108
+111,112
+111,113
+123,124
+123,125
+159,160
+159,161
+160,161
+160,162
+165,166
+165,167
+176,177
+176,178
+186,187
+186,188
+194,195
+194,196
+222,223
+222,224
+223,224
+223,225
+228,229
+228,230
+239,240
+239,241
+248,249
+248,250
+254,255
+254,256
+272,273
+272,274
+277,278
+277,279
+302,303
+302,304
+314,315
+314,316
+323,324
+323,325
+345,346
+345,347
+354,355
+354,356
+393,394
+393,395
+394,395
+394,396
+399,400
+399,401
+411,412
+411,413
+420,421
+420,422
+425,426
+425,427
+427,428
+427,429
+430,431
+430,432
+441,442
+441,443
+449,450
+449,451
+452,453
+452,454
+453,454
+453,455
+460,461
+460,462
+468,469
+468,470
+469,470
+469,471
+473,474
+473,475
+480,481
+480,482
+492,493
+492,494
+506,507
+506,508
+519,520
+519,521
+526,527
+526,528
+527,528
+527,529
+528,529
+528,530
+570,571
+570,572
+-----guardedBy-----
+52,84
+66,77
+65,82
+67,78
+471,482
+540,556
+539,561
+541,557
+-----guardedByNegation-----
+52,563
+-----lastLexicalUse-----
+52,563
+-----jump-----
+52,563
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;ReturnStatement;UnaryExpression;FunctionCallExpression;UnaryExpression;UnaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;SwitchStatement;IdExpression;Name;CompoundStatement;CaseStatement;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;TypeIdExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;GotoStatement;Name;ProblemStatement;CaseStatement;IdExpression;Name;CaseStatement;IdExpression;Name;CaseStatement;IdExpression;Name;CaseStatement;IdExpression;Name;CaseStatement;IdExpression;Name;CaseStatement;IdExpression;Name;CaseStatement;IdExpression;Name;CaseStatement;IdExpression;Name;CaseStatement;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;TypeIdExpression;TypeId;SimpleDeclSpecifier;Declarator;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;GotoStatement;Name;IfStatement;ProblemExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;CaseStatement;IdExpression;Name;CaseStatement;IdExpression;Name;CaseStatement;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;TypeIdExpression;TypeId;SimpleDeclSpecifier;Declarator;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;GotoStatement;Name;ProblemStatement;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;GotoStatement;Name;SwitchStatement;IdExpression;Name;CompoundStatement;CaseStatement;IdExpression;Name;CaseStatement;IdExpression;Name;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;ConditionalExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;GotoStatement;Name;BreakStatement;CaseStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;ConditionalExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;ConditionalExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;BreakStatement;BreakStatement;CaseStatement;IdExpression;Name;CaseStatement;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;UnaryExpression;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;GotoStatement;Name;ProblemStatement;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;GotoStatement;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;SwitchStatement;IdExpression;Name;CompoundStatement;CaseStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;BreakStatement;BreakStatement;DefaultStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;BreakStatement;IfStatement;BinaryExpression;BinaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;CompoundStatement;ExpressionStatement;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;UnaryExpression;FunctionCallExpression;UnaryExpression;UnaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;LabelStatement;Name;IfStatement;IdExpression;Name;ExpressionStatement;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;UnaryExpression;IdExpression;Name;
+-----ast_node-----
+intsosetopt(struct socket *so, int level, int optname, struct mbuf *m0){	int		error;	struct mbuf	*m;	error = 0;	m = m0;	if (level != SOL_SOCKET) {		if (so->so_proto && so->so_proto->pr_ctloutput)			return ((*so->so_proto->pr_ctloutput)				  (PRCO_SETOPT, so, level, optname, &m0));		error = ENOPROTOOPT;	} else {		switch (optname) {		case SO_LINGER:			if (m == NULL || m->m_len != sizeof(struct linger)) {				error = EINVAL;				goto bad;			}			so->so_linger = mtod(m, struct linger *)->l_linger;			/* fall thru... */		case SO_DEBUG:		case SO_KEEPALIVE:		case SO_DONTROUTE:		case SO_USELOOPBACK:		case SO_BROADCAST:		case SO_REUSEADDR:		case SO_REUSEPORT:		case SO_OOBINLINE:		case SO_TIMESTAMP:			if (m == NULL || m->m_len < sizeof(int)) {				error = EINVAL;				goto bad;			}			if (*mtod(m, int *))				so->so_options |= optname;			else				so->so_options &= ~optname;			break;		case SO_SNDBUF:		case SO_RCVBUF:		case SO_SNDLOWAT:		case SO_RCVLOWAT:		    {			int optval;			if (m == NULL || m->m_len < sizeof(int)) {				error = EINVAL;				goto bad;			}			/*			 * Values < 1 make no sense for any of these			 * options, so disallow them.			 */			optval = *mtod(m, int *);			if (optval < 1) {				error = EINVAL;				goto bad;			}			switch (optname) {			case SO_SNDBUF:			case SO_RCVBUF:				if (sbreserve(optname == SO_SNDBUF ?				    &so->so_snd : &so->so_rcv,				    (u_long) optval) == 0) {					error = ENOBUFS;					goto bad;				}				break;			/*			 * Make sure the low-water is never greater than			 * the high-water.			 */			case SO_SNDLOWAT:				so->so_snd.sb_lowat =				    (optval > so->so_snd.sb_hiwat) ?				    so->so_snd.sb_hiwat : optval;				break;			case SO_RCVLOWAT:				so->so_rcv.sb_lowat =				    (optval > so->so_rcv.sb_hiwat) ?				    so->so_rcv.sb_hiwat : optval;				break;			}			break;		    }		case SO_SNDTIMEO:		case SO_RCVTIMEO:		    {			struct timeval *tv;			short val;			if (m == NULL || m->m_len < sizeof(*tv)) {				error = EINVAL;				goto bad;			}			tv = mtod(m, struct timeval *);			if (tv->tv_sec > (SHRT_MAX - tv->tv_usec / tick) / hz) {				error = EDOM;				goto bad;			}			val = tv->tv_sec * hz + tv->tv_usec / tick;			if (val == 0 && tv->tv_usec != 0)				val = 1;			switch (optname) {			case SO_SNDTIMEO:				so->so_snd.sb_timeo = val;				break;			case SO_RCVTIMEO:				so->so_rcv.sb_timeo = val;				break;			}			break;		    }		default:			error = ENOPROTOOPT;			break;		}		if (error == 0 && so->so_proto && so->so_proto->pr_ctloutput) {			(void) ((*so->so_proto->pr_ctloutput)				  (PRCO_SETOPT, so, level, optname, &m0));			m = NULL;	/* freed by protocol */		}	} bad:	if (m)		(void) m_free(m);	return (error);}
+int
+sosetopt(struct socket *so, int level, int optname, struct mbuf *m0)
+sosetopt
+struct socket *so
+struct socket
+socket
+*so
+*
+so
+int level
+int
+level
+level
+int optname
+int
+optname
+optname
+struct mbuf *m0
+struct mbuf
+mbuf
+*m0
+*
+m0
+{	int		error;	struct mbuf	*m;	error = 0;	m = m0;	if (level != SOL_SOCKET) {		if (so->so_proto && so->so_proto->pr_ctloutput)			return ((*so->so_proto->pr_ctloutput)				  (PRCO_SETOPT, so, level, optname, &m0));		error = ENOPROTOOPT;	} else {		switch (optname) {		case SO_LINGER:			if (m == NULL || m->m_len != sizeof(struct linger)) {				error = EINVAL;				goto bad;			}			so->so_linger = mtod(m, struct linger *)->l_linger;			/* fall thru... */		case SO_DEBUG:		case SO_KEEPALIVE:		case SO_DONTROUTE:		case SO_USELOOPBACK:		case SO_BROADCAST:		case SO_REUSEADDR:		case SO_REUSEPORT:		case SO_OOBINLINE:		case SO_TIMESTAMP:			if (m == NULL || m->m_len < sizeof(int)) {				error = EINVAL;				goto bad;			}			if (*mtod(m, int *))				so->so_options |= optname;			else				so->so_options &= ~optname;			break;		case SO_SNDBUF:		case SO_RCVBUF:		case SO_SNDLOWAT:		case SO_RCVLOWAT:		    {			int optval;			if (m == NULL || m->m_len < sizeof(int)) {				error = EINVAL;				goto bad;			}			/*			 * Values < 1 make no sense for any of these			 * options, so disallow them.			 */			optval = *mtod(m, int *);			if (optval < 1) {				error = EINVAL;				goto bad;			}			switch (optname) {			case SO_SNDBUF:			case SO_RCVBUF:				if (sbreserve(optname == SO_SNDBUF ?				    &so->so_snd : &so->so_rcv,				    (u_long) optval) == 0) {					error = ENOBUFS;					goto bad;				}				break;			/*			 * Make sure the low-water is never greater than			 * the high-water.			 */			case SO_SNDLOWAT:				so->so_snd.sb_lowat =				    (optval > so->so_snd.sb_hiwat) ?				    so->so_snd.sb_hiwat : optval;				break;			case SO_RCVLOWAT:				so->so_rcv.sb_lowat =				    (optval > so->so_rcv.sb_hiwat) ?				    so->so_rcv.sb_hiwat : optval;				break;			}			break;		    }		case SO_SNDTIMEO:		case SO_RCVTIMEO:		    {			struct timeval *tv;			short val;			if (m == NULL || m->m_len < sizeof(*tv)) {				error = EINVAL;				goto bad;			}			tv = mtod(m, struct timeval *);			if (tv->tv_sec > (SHRT_MAX - tv->tv_usec / tick) / hz) {				error = EDOM;				goto bad;			}			val = tv->tv_sec * hz + tv->tv_usec / tick;			if (val == 0 && tv->tv_usec != 0)				val = 1;			switch (optname) {			case SO_SNDTIMEO:				so->so_snd.sb_timeo = val;				break;			case SO_RCVTIMEO:				so->so_rcv.sb_timeo = val;				break;			}			break;		    }		default:			error = ENOPROTOOPT;			break;		}		if (error == 0 && so->so_proto && so->so_proto->pr_ctloutput) {			(void) ((*so->so_proto->pr_ctloutput)				  (PRCO_SETOPT, so, level, optname, &m0));			m = NULL;	/* freed by protocol */		}	} bad:	if (m)		(void) m_free(m);	return (error);}
+int		error;
+int		error;
+int
+error
+error
+struct mbuf	*m;
+struct mbuf	*m;
+struct mbuf
+mbuf
+*m
+*
+m
+error = 0;
+error = 0
+error
+error
+0
+m = m0;
+m = m0
+m
+m
+m0
+m0
+if (level != SOL_SOCKET) {		if (so->so_proto && so->so_proto->pr_ctloutput)			return ((*so->so_proto->pr_ctloutput)				  (PRCO_SETOPT, so, level, optname, &m0));		error = ENOPROTOOPT;	} else {		switch (optname) {		case SO_LINGER:			if (m == NULL || m->m_len != sizeof(struct linger)) {				error = EINVAL;				goto bad;			}			so->so_linger = mtod(m, struct linger *)->l_linger;			/* fall thru... */		case SO_DEBUG:		case SO_KEEPALIVE:		case SO_DONTROUTE:		case SO_USELOOPBACK:		case SO_BROADCAST:		case SO_REUSEADDR:		case SO_REUSEPORT:		case SO_OOBINLINE:		case SO_TIMESTAMP:			if (m == NULL || m->m_len < sizeof(int)) {				error = EINVAL;				goto bad;			}			if (*mtod(m, int *))				so->so_options |= optname;			else				so->so_options &= ~optname;			break;		case SO_SNDBUF:		case SO_RCVBUF:		case SO_SNDLOWAT:		case SO_RCVLOWAT:		    {			int optval;			if (m == NULL || m->m_len < sizeof(int)) {				error = EINVAL;				goto bad;			}			/*			 * Values < 1 make no sense for any of these			 * options, so disallow them.			 */			optval = *mtod(m, int *);			if (optval < 1) {				error = EINVAL;				goto bad;			}			switch (optname) {			case SO_SNDBUF:			case SO_RCVBUF:				if (sbreserve(optname == SO_SNDBUF ?				    &so->so_snd : &so->so_rcv,				    (u_long) optval) == 0) {					error = ENOBUFS;					goto bad;				}				break;			/*			 * Make sure the low-water is never greater than			 * the high-water.			 */			case SO_SNDLOWAT:				so->so_snd.sb_lowat =				    (optval > so->so_snd.sb_hiwat) ?				    so->so_snd.sb_hiwat : optval;				break;			case SO_RCVLOWAT:				so->so_rcv.sb_lowat =				    (optval > so->so_rcv.sb_hiwat) ?				    so->so_rcv.sb_hiwat : optval;				break;			}			break;		    }		case SO_SNDTIMEO:		case SO_RCVTIMEO:		    {			struct timeval *tv;			short val;			if (m == NULL || m->m_len < sizeof(*tv)) {				error = EINVAL;				goto bad;			}			tv = mtod(m, struct timeval *);			if (tv->tv_sec > (SHRT_MAX - tv->tv_usec / tick) / hz) {				error = EDOM;				goto bad;			}			val = tv->tv_sec * hz + tv->tv_usec / tick;			if (val == 0 && tv->tv_usec != 0)				val = 1;			switch (optname) {			case SO_SNDTIMEO:				so->so_snd.sb_timeo = val;				break;			case SO_RCVTIMEO:				so->so_rcv.sb_timeo = val;				break;			}			break;		    }		default:			error = ENOPROTOOPT;			break;		}		if (error == 0 && so->so_proto && so->so_proto->pr_ctloutput) {			(void) ((*so->so_proto->pr_ctloutput)				  (PRCO_SETOPT, so, level, optname, &m0));			m = NULL;	/* freed by protocol */		}	}
+level != SOL_SOCKET
+level
+level
+SOL_SOCKET
+SOL_SOCKET
+{		if (so->so_proto && so->so_proto->pr_ctloutput)			return ((*so->so_proto->pr_ctloutput)				  (PRCO_SETOPT, so, level, optname, &m0));		error = ENOPROTOOPT;	}
+if (so->so_proto && so->so_proto->pr_ctloutput)			return ((*so->so_proto->pr_ctloutput)				  (PRCO_SETOPT, so, level, optname, &m0));
+so->so_proto && so->so_proto->pr_ctloutput
+so->so_proto
+so
+so
+so_proto
+so->so_proto->pr_ctloutput
+so->so_proto
+so
+so
+so_proto
+pr_ctloutput
+return ((*so->so_proto->pr_ctloutput)				  (PRCO_SETOPT, so, level, optname, &m0));
+((*so->so_proto->pr_ctloutput)				  (PRCO_SETOPT, so, level, optname, &m0))
+(*so->so_proto->pr_ctloutput)				  (PRCO_SETOPT, so, level, optname, &m0)
+(*so->so_proto->pr_ctloutput)
+*so->so_proto->pr_ctloutput
+so->so_proto->pr_ctloutput
+so->so_proto
+so
+so
+so_proto
+pr_ctloutput
+PRCO_SETOPT
+PRCO_SETOPT
+so
+so
+level
+level
+optname
+optname
+&m0
+m0
+m0
+error = ENOPROTOOPT;
+error = ENOPROTOOPT
+error
+error
+ENOPROTOOPT
+ENOPROTOOPT
+{		switch (optname) {		case SO_LINGER:			if (m == NULL || m->m_len != sizeof(struct linger)) {				error = EINVAL;				goto bad;			}			so->so_linger = mtod(m, struct linger *)->l_linger;			/* fall thru... */		case SO_DEBUG:		case SO_KEEPALIVE:		case SO_DONTROUTE:		case SO_USELOOPBACK:		case SO_BROADCAST:		case SO_REUSEADDR:		case SO_REUSEPORT:		case SO_OOBINLINE:		case SO_TIMESTAMP:			if (m == NULL || m->m_len < sizeof(int)) {				error = EINVAL;				goto bad;			}			if (*mtod(m, int *))				so->so_options |= optname;			else				so->so_options &= ~optname;			break;		case SO_SNDBUF:		case SO_RCVBUF:		case SO_SNDLOWAT:		case SO_RCVLOWAT:		    {			int optval;			if (m == NULL || m->m_len < sizeof(int)) {				error = EINVAL;				goto bad;			}			/*			 * Values < 1 make no sense for any of these			 * options, so disallow them.			 */			optval = *mtod(m, int *);			if (optval < 1) {				error = EINVAL;				goto bad;			}			switch (optname) {			case SO_SNDBUF:			case SO_RCVBUF:				if (sbreserve(optname == SO_SNDBUF ?				    &so->so_snd : &so->so_rcv,				    (u_long) optval) == 0) {					error = ENOBUFS;					goto bad;				}				break;			/*			 * Make sure the low-water is never greater than			 * the high-water.			 */			case SO_SNDLOWAT:				so->so_snd.sb_lowat =				    (optval > so->so_snd.sb_hiwat) ?				    so->so_snd.sb_hiwat : optval;				break;			case SO_RCVLOWAT:				so->so_rcv.sb_lowat =				    (optval > so->so_rcv.sb_hiwat) ?				    so->so_rcv.sb_hiwat : optval;				break;			}			break;		    }		case SO_SNDTIMEO:		case SO_RCVTIMEO:		    {			struct timeval *tv;			short val;			if (m == NULL || m->m_len < sizeof(*tv)) {				error = EINVAL;				goto bad;			}			tv = mtod(m, struct timeval *);			if (tv->tv_sec > (SHRT_MAX - tv->tv_usec / tick) / hz) {				error = EDOM;				goto bad;			}			val = tv->tv_sec * hz + tv->tv_usec / tick;			if (val == 0 && tv->tv_usec != 0)				val = 1;			switch (optname) {			case SO_SNDTIMEO:				so->so_snd.sb_timeo = val;				break;			case SO_RCVTIMEO:				so->so_rcv.sb_timeo = val;				break;			}			break;		    }		default:			error = ENOPROTOOPT;			break;		}		if (error == 0 && so->so_proto && so->so_proto->pr_ctloutput) {			(void) ((*so->so_proto->pr_ctloutput)				  (PRCO_SETOPT, so, level, optname, &m0));			m = NULL;	/* freed by protocol */		}	}
+switch (optname) {		case SO_LINGER:			if (m == NULL || m->m_len != sizeof(struct linger)) {				error = EINVAL;				goto bad;			}			so->so_linger = mtod(m, struct linger *)->l_linger;			/* fall thru... */		case SO_DEBUG:		case SO_KEEPALIVE:		case SO_DONTROUTE:		case SO_USELOOPBACK:		case SO_BROADCAST:		case SO_REUSEADDR:		case SO_REUSEPORT:		case SO_OOBINLINE:		case SO_TIMESTAMP:			if (m == NULL || m->m_len < sizeof(int)) {				error = EINVAL;				goto bad;			}			if (*mtod(m, int *))				so->so_options |= optname;			else				so->so_options &= ~optname;			break;		case SO_SNDBUF:		case SO_RCVBUF:		case SO_SNDLOWAT:		case SO_RCVLOWAT:		    {			int optval;			if (m == NULL || m->m_len < sizeof(int)) {				error = EINVAL;				goto bad;			}			/*			 * Values < 1 make no sense for any of these			 * options, so disallow them.			 */			optval = *mtod(m, int *);			if (optval < 1) {				error = EINVAL;				goto bad;			}			switch (optname) {			case SO_SNDBUF:			case SO_RCVBUF:				if (sbreserve(optname == SO_SNDBUF ?				    &so->so_snd : &so->so_rcv,				    (u_long) optval) == 0) {					error = ENOBUFS;					goto bad;				}				break;			/*			 * Make sure the low-water is never greater than			 * the high-water.			 */			case SO_SNDLOWAT:				so->so_snd.sb_lowat =				    (optval > so->so_snd.sb_hiwat) ?				    so->so_snd.sb_hiwat : optval;				break;			case SO_RCVLOWAT:				so->so_rcv.sb_lowat =				    (optval > so->so_rcv.sb_hiwat) ?				    so->so_rcv.sb_hiwat : optval;				break;			}			break;		    }		case SO_SNDTIMEO:		case SO_RCVTIMEO:		    {			struct timeval *tv;			short val;			if (m == NULL || m->m_len < sizeof(*tv)) {				error = EINVAL;				goto bad;			}			tv = mtod(m, struct timeval *);			if (tv->tv_sec > (SHRT_MAX - tv->tv_usec / tick) / hz) {				error = EDOM;				goto bad;			}			val = tv->tv_sec * hz + tv->tv_usec / tick;			if (val == 0 && tv->tv_usec != 0)				val = 1;			switch (optname) {			case SO_SNDTIMEO:				so->so_snd.sb_timeo = val;				break;			case SO_RCVTIMEO:				so->so_rcv.sb_timeo = val;				break;			}			break;		    }		default:			error = ENOPROTOOPT;			break;		}
+optname
+optname
+{		case SO_LINGER:			if (m == NULL || m->m_len != sizeof(struct linger)) {				error = EINVAL;				goto bad;			}			so->so_linger = mtod(m, struct linger *)->l_linger;			/* fall thru... */		case SO_DEBUG:		case SO_KEEPALIVE:		case SO_DONTROUTE:		case SO_USELOOPBACK:		case SO_BROADCAST:		case SO_REUSEADDR:		case SO_REUSEPORT:		case SO_OOBINLINE:		case SO_TIMESTAMP:			if (m == NULL || m->m_len < sizeof(int)) {				error = EINVAL;				goto bad;			}			if (*mtod(m, int *))				so->so_options |= optname;			else				so->so_options &= ~optname;			break;		case SO_SNDBUF:		case SO_RCVBUF:		case SO_SNDLOWAT:		case SO_RCVLOWAT:		    {			int optval;			if (m == NULL || m->m_len < sizeof(int)) {				error = EINVAL;				goto bad;			}			/*			 * Values < 1 make no sense for any of these			 * options, so disallow them.			 */			optval = *mtod(m, int *);			if (optval < 1) {				error = EINVAL;				goto bad;			}			switch (optname) {			case SO_SNDBUF:			case SO_RCVBUF:				if (sbreserve(optname == SO_SNDBUF ?				    &so->so_snd : &so->so_rcv,				    (u_long) optval) == 0) {					error = ENOBUFS;					goto bad;				}				break;			/*			 * Make sure the low-water is never greater than			 * the high-water.			 */			case SO_SNDLOWAT:				so->so_snd.sb_lowat =				    (optval > so->so_snd.sb_hiwat) ?				    so->so_snd.sb_hiwat : optval;				break;			case SO_RCVLOWAT:				so->so_rcv.sb_lowat =				    (optval > so->so_rcv.sb_hiwat) ?				    so->so_rcv.sb_hiwat : optval;				break;			}			break;		    }		case SO_SNDTIMEO:		case SO_RCVTIMEO:		    {			struct timeval *tv;			short val;			if (m == NULL || m->m_len < sizeof(*tv)) {				error = EINVAL;				goto bad;			}			tv = mtod(m, struct timeval *);			if (tv->tv_sec > (SHRT_MAX - tv->tv_usec / tick) / hz) {				error = EDOM;				goto bad;			}			val = tv->tv_sec * hz + tv->tv_usec / tick;			if (val == 0 && tv->tv_usec != 0)				val = 1;			switch (optname) {			case SO_SNDTIMEO:				so->so_snd.sb_timeo = val;				break;			case SO_RCVTIMEO:				so->so_rcv.sb_timeo = val;				break;			}			break;		    }		default:			error = ENOPROTOOPT;			break;		}
+case SO_LINGER:
+SO_LINGER
+SO_LINGER
+if (m == NULL || m->m_len != sizeof(struct linger)) {				error = EINVAL;				goto bad;			}
+m == NULL || m->m_len != sizeof(struct linger)
+m == NULL
+m
+m
+NULL
+NULL
+m->m_len != sizeof(struct linger)
+m->m_len
+m
+m
+m_len
+sizeof(struct linger)
+struct linger
+struct linger
+linger
+
+{				error = EINVAL;				goto bad;			}
+error = EINVAL;
+error = EINVAL
+error
+error
+EINVAL
+EINVAL
+goto bad;
+bad
+so->so_linger = mtod(m, struct linger *)->l_linger;
+case SO_DEBUG:
+SO_DEBUG
+SO_DEBUG
+case SO_KEEPALIVE:
+SO_KEEPALIVE
+SO_KEEPALIVE
+case SO_DONTROUTE:
+SO_DONTROUTE
+SO_DONTROUTE
+case SO_USELOOPBACK:
+SO_USELOOPBACK
+SO_USELOOPBACK
+case SO_BROADCAST:
+SO_BROADCAST
+SO_BROADCAST
+case SO_REUSEADDR:
+SO_REUSEADDR
+SO_REUSEADDR
+case SO_REUSEPORT:
+SO_REUSEPORT
+SO_REUSEPORT
+case SO_OOBINLINE:
+SO_OOBINLINE
+SO_OOBINLINE
+case SO_TIMESTAMP:
+SO_TIMESTAMP
+SO_TIMESTAMP
+if (m == NULL || m->m_len < sizeof(int)) {				error = EINVAL;				goto bad;			}
+m == NULL || m->m_len < sizeof(int)
+m == NULL
+m
+m
+NULL
+NULL
+m->m_len < sizeof(int)
+m->m_len
+m
+m
+m_len
+sizeof(int)
+int
+int
+
+{				error = EINVAL;				goto bad;			}
+error = EINVAL;
+error = EINVAL
+error
+error
+EINVAL
+EINVAL
+goto bad;
+bad
+if (*mtod(m, int *))				so->so_options |= optname;			else				so->so_options &= ~optname;
+*mtod(m, int *)
+so->so_options |= optname;
+so->so_options |= optname
+so->so_options
+so
+so
+so_options
+optname
+optname
+so->so_options &= ~optname;
+so->so_options &= ~optname
+so->so_options
+so
+so
+so_options
+~optname
+optname
+optname
+break;
+case SO_SNDBUF:
+SO_SNDBUF
+SO_SNDBUF
+case SO_RCVBUF:
+SO_RCVBUF
+SO_RCVBUF
+case SO_SNDLOWAT:
+SO_SNDLOWAT
+SO_SNDLOWAT
+case SO_RCVLOWAT:
+SO_RCVLOWAT
+SO_RCVLOWAT
+{			int optval;			if (m == NULL || m->m_len < sizeof(int)) {				error = EINVAL;				goto bad;			}			/*			 * Values < 1 make no sense for any of these			 * options, so disallow them.			 */			optval = *mtod(m, int *);			if (optval < 1) {				error = EINVAL;				goto bad;			}			switch (optname) {			case SO_SNDBUF:			case SO_RCVBUF:				if (sbreserve(optname == SO_SNDBUF ?				    &so->so_snd : &so->so_rcv,				    (u_long) optval) == 0) {					error = ENOBUFS;					goto bad;				}				break;			/*			 * Make sure the low-water is never greater than			 * the high-water.			 */			case SO_SNDLOWAT:				so->so_snd.sb_lowat =				    (optval > so->so_snd.sb_hiwat) ?				    so->so_snd.sb_hiwat : optval;				break;			case SO_RCVLOWAT:				so->so_rcv.sb_lowat =				    (optval > so->so_rcv.sb_hiwat) ?				    so->so_rcv.sb_hiwat : optval;				break;			}			break;		    }
+int optval;
+int optval;
+int
+optval
+optval
+if (m == NULL || m->m_len < sizeof(int)) {				error = EINVAL;				goto bad;			}
+m == NULL || m->m_len < sizeof(int)
+m == NULL
+m
+m
+NULL
+NULL
+m->m_len < sizeof(int)
+m->m_len
+m
+m
+m_len
+sizeof(int)
+int
+int
+
+{				error = EINVAL;				goto bad;			}
+error = EINVAL;
+error = EINVAL
+error
+error
+EINVAL
+EINVAL
+goto bad;
+bad
+optval = *mtod(m, int *);
+if (optval < 1) {				error = EINVAL;				goto bad;			}
+optval < 1
+optval
+optval
+1
+{				error = EINVAL;				goto bad;			}
+error = EINVAL;
+error = EINVAL
+error
+error
+EINVAL
+EINVAL
+goto bad;
+bad
+switch (optname) {			case SO_SNDBUF:			case SO_RCVBUF:				if (sbreserve(optname == SO_SNDBUF ?				    &so->so_snd : &so->so_rcv,				    (u_long) optval) == 0) {					error = ENOBUFS;					goto bad;				}				break;			/*			 * Make sure the low-water is never greater than			 * the high-water.			 */			case SO_SNDLOWAT:				so->so_snd.sb_lowat =				    (optval > so->so_snd.sb_hiwat) ?				    so->so_snd.sb_hiwat : optval;				break;			case SO_RCVLOWAT:				so->so_rcv.sb_lowat =				    (optval > so->so_rcv.sb_hiwat) ?				    so->so_rcv.sb_hiwat : optval;				break;			}
+optname
+optname
+{			case SO_SNDBUF:			case SO_RCVBUF:				if (sbreserve(optname == SO_SNDBUF ?				    &so->so_snd : &so->so_rcv,				    (u_long) optval) == 0) {					error = ENOBUFS;					goto bad;				}				break;			/*			 * Make sure the low-water is never greater than			 * the high-water.			 */			case SO_SNDLOWAT:				so->so_snd.sb_lowat =				    (optval > so->so_snd.sb_hiwat) ?				    so->so_snd.sb_hiwat : optval;				break;			case SO_RCVLOWAT:				so->so_rcv.sb_lowat =				    (optval > so->so_rcv.sb_hiwat) ?				    so->so_rcv.sb_hiwat : optval;				break;			}
+case SO_SNDBUF:
+SO_SNDBUF
+SO_SNDBUF
+case SO_RCVBUF:
+SO_RCVBUF
+SO_RCVBUF
+if (sbreserve(optname == SO_SNDBUF ?				    &so->so_snd : &so->so_rcv,				    (u_long) optval) == 0) {					error = ENOBUFS;					goto bad;				}
+sbreserve(optname == SO_SNDBUF ?				    &so->so_snd : &so->so_rcv,				    (u_long) optval) == 0
+sbreserve(optname == SO_SNDBUF ?				    &so->so_snd : &so->so_rcv,				    (u_long) optval)
+sbreserve
+sbreserve
+optname == SO_SNDBUF ?				    &so->so_snd : &so->so_rcv
+optname == SO_SNDBUF
+optname
+optname
+SO_SNDBUF
+SO_SNDBUF
+&so->so_snd
+so->so_snd
+so
+so
+so_snd
+&so->so_rcv
+so->so_rcv
+so
+so
+so_rcv
+(u_long) optval
+u_long
+u_long
+u_long
+
+optval
+optval
+0
+{					error = ENOBUFS;					goto bad;				}
+error = ENOBUFS;
+error = ENOBUFS
+error
+error
+ENOBUFS
+ENOBUFS
+goto bad;
+bad
+break;
+case SO_SNDLOWAT:
+SO_SNDLOWAT
+SO_SNDLOWAT
+so->so_snd.sb_lowat =				    (optval > so->so_snd.sb_hiwat) ?				    so->so_snd.sb_hiwat : optval;
+so->so_snd.sb_lowat =				    (optval > so->so_snd.sb_hiwat) ?				    so->so_snd.sb_hiwat : optval
+so->so_snd.sb_lowat
+so->so_snd
+so
+so
+so_snd
+sb_lowat
+(optval > so->so_snd.sb_hiwat) ?				    so->so_snd.sb_hiwat : optval
+(optval > so->so_snd.sb_hiwat)
+optval > so->so_snd.sb_hiwat
+optval
+optval
+so->so_snd.sb_hiwat
+so->so_snd
+so
+so
+so_snd
+sb_hiwat
+so->so_snd.sb_hiwat
+so->so_snd
+so
+so
+so_snd
+sb_hiwat
+optval
+optval
+break;
+case SO_RCVLOWAT:
+SO_RCVLOWAT
+SO_RCVLOWAT
+so->so_rcv.sb_lowat =				    (optval > so->so_rcv.sb_hiwat) ?				    so->so_rcv.sb_hiwat : optval;
+so->so_rcv.sb_lowat =				    (optval > so->so_rcv.sb_hiwat) ?				    so->so_rcv.sb_hiwat : optval
+so->so_rcv.sb_lowat
+so->so_rcv
+so
+so
+so_rcv
+sb_lowat
+(optval > so->so_rcv.sb_hiwat) ?				    so->so_rcv.sb_hiwat : optval
+(optval > so->so_rcv.sb_hiwat)
+optval > so->so_rcv.sb_hiwat
+optval
+optval
+so->so_rcv.sb_hiwat
+so->so_rcv
+so
+so
+so_rcv
+sb_hiwat
+so->so_rcv.sb_hiwat
+so->so_rcv
+so
+so
+so_rcv
+sb_hiwat
+optval
+optval
+break;
+break;
+case SO_SNDTIMEO:
+SO_SNDTIMEO
+SO_SNDTIMEO
+case SO_RCVTIMEO:
+SO_RCVTIMEO
+SO_RCVTIMEO
+{			struct timeval *tv;			short val;			if (m == NULL || m->m_len < sizeof(*tv)) {				error = EINVAL;				goto bad;			}			tv = mtod(m, struct timeval *);			if (tv->tv_sec > (SHRT_MAX - tv->tv_usec / tick) / hz) {				error = EDOM;				goto bad;			}			val = tv->tv_sec * hz + tv->tv_usec / tick;			if (val == 0 && tv->tv_usec != 0)				val = 1;			switch (optname) {			case SO_SNDTIMEO:				so->so_snd.sb_timeo = val;				break;			case SO_RCVTIMEO:				so->so_rcv.sb_timeo = val;				break;			}			break;		    }
+struct timeval *tv;
+struct timeval *tv;
+struct timeval
+timeval
+*tv
+*
+tv
+short val;
+short val;
+short
+val
+val
+if (m == NULL || m->m_len < sizeof(*tv)) {				error = EINVAL;				goto bad;			}
+m == NULL || m->m_len < sizeof(*tv)
+m == NULL
+m
+m
+NULL
+NULL
+m->m_len < sizeof(*tv)
+m->m_len
+m
+m
+m_len
+sizeof(*tv)
+(*tv)
+*tv
+tv
+tv
+{				error = EINVAL;				goto bad;			}
+error = EINVAL;
+error = EINVAL
+error
+error
+EINVAL
+EINVAL
+goto bad;
+bad
+tv = mtod(m, struct timeval *);
+if (tv->tv_sec > (SHRT_MAX - tv->tv_usec / tick) / hz) {				error = EDOM;				goto bad;			}
+tv->tv_sec > (SHRT_MAX - tv->tv_usec / tick) / hz
+tv->tv_sec
+tv
+tv
+tv_sec
+(SHRT_MAX - tv->tv_usec / tick) / hz
+(SHRT_MAX - tv->tv_usec / tick)
+SHRT_MAX - tv->tv_usec / tick
+SHRT_MAX
+SHRT_MAX
+tv->tv_usec / tick
+tv->tv_usec
+tv
+tv
+tv_usec
+tick
+tick
+hz
+hz
+{				error = EDOM;				goto bad;			}
+error = EDOM;
+error = EDOM
+error
+error
+EDOM
+EDOM
+goto bad;
+bad
+val = tv->tv_sec * hz + tv->tv_usec / tick;
+val = tv->tv_sec * hz + tv->tv_usec / tick
+val
+val
+tv->tv_sec * hz + tv->tv_usec / tick
+tv->tv_sec * hz
+tv->tv_sec
+tv
+tv
+tv_sec
+hz
+hz
+tv->tv_usec / tick
+tv->tv_usec
+tv
+tv
+tv_usec
+tick
+tick
+if (val == 0 && tv->tv_usec != 0)				val = 1;
+val == 0 && tv->tv_usec != 0
+val == 0
+val
+val
+0
+tv->tv_usec != 0
+tv->tv_usec
+tv
+tv
+tv_usec
+0
+val = 1;
+val = 1
+val
+val
+1
+switch (optname) {			case SO_SNDTIMEO:				so->so_snd.sb_timeo = val;				break;			case SO_RCVTIMEO:				so->so_rcv.sb_timeo = val;				break;			}
+optname
+optname
+{			case SO_SNDTIMEO:				so->so_snd.sb_timeo = val;				break;			case SO_RCVTIMEO:				so->so_rcv.sb_timeo = val;				break;			}
+case SO_SNDTIMEO:
+SO_SNDTIMEO
+SO_SNDTIMEO
+so->so_snd.sb_timeo = val;
+so->so_snd.sb_timeo = val
+so->so_snd.sb_timeo
+so->so_snd
+so
+so
+so_snd
+sb_timeo
+val
+val
+break;
+case SO_RCVTIMEO:
+SO_RCVTIMEO
+SO_RCVTIMEO
+so->so_rcv.sb_timeo = val;
+so->so_rcv.sb_timeo = val
+so->so_rcv.sb_timeo
+so->so_rcv
+so
+so
+so_rcv
+sb_timeo
+val
+val
+break;
+break;
+default:
+error = ENOPROTOOPT;
+error = ENOPROTOOPT
+error
+error
+ENOPROTOOPT
+ENOPROTOOPT
+break;
+if (error == 0 && so->so_proto && so->so_proto->pr_ctloutput) {			(void) ((*so->so_proto->pr_ctloutput)				  (PRCO_SETOPT, so, level, optname, &m0));			m = NULL;	/* freed by protocol */		}
+error == 0 && so->so_proto && so->so_proto->pr_ctloutput
+error == 0 && so->so_proto
+error == 0
+error
+error
+0
+so->so_proto
+so
+so
+so_proto
+so->so_proto->pr_ctloutput
+so->so_proto
+so
+so
+so_proto
+pr_ctloutput
+{			(void) ((*so->so_proto->pr_ctloutput)				  (PRCO_SETOPT, so, level, optname, &m0));			m = NULL;	/* freed by protocol */		}
+(void) ((*so->so_proto->pr_ctloutput)				  (PRCO_SETOPT, so, level, optname, &m0));
+(void) ((*so->so_proto->pr_ctloutput)				  (PRCO_SETOPT, so, level, optname, &m0))
+void
+void
+
+((*so->so_proto->pr_ctloutput)				  (PRCO_SETOPT, so, level, optname, &m0))
+(*so->so_proto->pr_ctloutput)				  (PRCO_SETOPT, so, level, optname, &m0)
+(*so->so_proto->pr_ctloutput)
+*so->so_proto->pr_ctloutput
+so->so_proto->pr_ctloutput
+so->so_proto
+so
+so
+so_proto
+pr_ctloutput
+PRCO_SETOPT
+PRCO_SETOPT
+so
+so
+level
+level
+optname
+optname
+&m0
+m0
+m0
+m = NULL;
+m = NULL
+m
+m
+NULL
+NULL
+bad:	if (m)		(void) m_free(m);
+bad
+if (m)		(void) m_free(m);
+m
+m
+(void) m_free(m);
+(void) m_free(m)
+void
+void
+
+m_free(m)
+m_free
+m_free
+m
+m
+return (error);
+(error)
+error
+error
+-----joern-----
+(263,307,0)
+(250,314,0)
+(109,127,0)
+(37,21,0)
+(46,178,0)
+(185,264,0)
+(0,154,0)
+(180,154,0)
+(91,191,0)
+(230,3,0)
+(317,94,0)
+(258,251,0)
+(121,83,0)
+(133,315,0)
+(131,280,0)
+(29,210,0)
+(215,157,0)
+(240,85,0)
+(321,49,0)
+(14,271,0)
+(86,237,0)
+(313,98,0)
+(88,227,0)
+(265,148,0)
+(59,181,0)
+(129,102,0)
+(226,119,0)
+(260,191,0)
+(174,18,0)
+(307,312,0)
+(60,214,0)
+(218,194,0)
+(276,277,0)
+(84,330,0)
+(284,113,0)
+(191,260,0)
+(217,206,0)
+(110,270,0)
+(56,154,0)
+(90,237,0)
+(170,323,0)
+(262,34,0)
+(261,292,0)
+(30,229,0)
+(287,149,0)
+(54,132,0)
+(235,60,0)
+(170,142,0)
+(233,237,0)
+(30,177,0)
+(115,30,0)
+(178,227,0)
+(148,212,0)
+(328,291,0)
+(9,181,0)
+(53,275,0)
+(227,178,0)
+(118,71,0)
+(116,265,0)
+(265,287,0)
+(177,8,0)
+(87,237,0)
+(182,310,0)
+(290,0,0)
+(304,28,0)
+(301,324,0)
+(323,114,0)
+(11,330,0)
+(232,108,0)
+(191,303,0)
+(282,94,0)
+(302,67,0)
+(306,237,0)
+(308,212,0)
+(305,237,0)
+(0,287,0)
+(124,18,0)
+(191,91,0)
+(208,269,0)
+(114,323,0)
+(294,14,0)
+(142,21,0)
+(30,98,0)
+(25,191,0)
+(5,317,0)
+(322,20,0)
+(280,292,0)
+(30,55,0)
+(63,172,0)
+(315,133,0)
+(315,151,0)
+(73,59,0)
+(251,206,0)
+(172,231,0)
+(264,106,0)
+(69,237,0)
+(152,237,0)
+(231,127,0)
+(183,237,0)
+(259,317,0)
+(324,310,0)
+(282,28,0)
+(47,262,0)
+(71,143,0)
+(119,237,0)
+(30,320,0)
+(143,71,0)
+(57,133,0)
+(30,119,0)
+(181,59,0)
+(130,312,0)
+(79,177,0)
+(229,253,0)
+(128,154,0)
+(243,151,0)
+(277,106,0)
+(162,310,0)
+(321,19,0)
+(255,148,0)
+(160,308,0)
+(22,237,0)
+(224,185,0)
+(173,318,0)
+(250,44,0)
+(143,250,0)
+(196,108,0)
+(80,177,0)
+(220,63,0)
+(7,237,0)
+(60,212,0)
+(55,67,0)
+(228,1,0)
+(203,49,0)
+(231,57,0)
+(249,55,0)
+(148,265,0)
+(15,140,0)
+(94,282,0)
+(289,307,0)
+(65,31,0)
+(45,18,0)
+(311,291,0)
+(83,209,0)
+(171,30,0)
+(123,19,0)
+(214,237,0)
+(260,246,0)
+(192,85,0)
+(33,320,0)
+(36,37,0)
+(62,113,0)
+(161,310,0)
+(75,324,0)
+(186,320,0)
+(52,247,0)
+(326,282,0)
+(3,322,0)
+(108,212,0)
+(93,142,0)
+(209,83,0)
+(122,260,0)
+(31,223,0)
+(332,299,0)
+(266,42,0)
+(38,221,0)
+(283,172,0)
+(150,101,0)
+(31,65,0)
+(270,59,0)
+(273,206,0)
+(297,237,0)
+(187,270,0)
+(51,288,0)
+(72,275,0)
+(261,50,0)
+(71,142,0)
+(281,307,0)
+(40,320,0)
+(281,298,0)
+(145,178,0)
+(65,142,0)
+(272,253,0)
+(92,149,0)
+(316,57,0)
+(307,212,0)
+(113,194,0)
+(252,170,0)
+(17,102,0)
+(329,284,0)
+(74,241,0)
+(282,326,0)
+(65,16,0)
+(96,277,0)
+(94,317,0)
+(250,143,0)
+(156,8,0)
+(27,93,0)
+(247,20,0)
+(206,251,0)
+(42,119,0)
+(242,280,0)
+(57,18,0)
+(30,215,0)
+(93,114,0)
+(30,299,0)
+(24,3,0)
+(287,0,0)
+(314,155,0)
+(19,321,0)
+(185,212,0)
+(129,133,0)
+(262,37,0)
+(206,212,0)
+(314,250,0)
+(100,307,0)
+(225,154,0)
+(323,311,0)
+(39,320,0)
+(159,44,0)
+(303,191,0)
+(269,212,0)
+(195,198,0)
+(277,212,0)
+(176,320,0)
+(296,154,0)
+(63,212,0)
+(61,315,0)
+(262,2,0)
+(322,3,0)
+(194,113,0)
+(48,307,0)
+(26,44,0)
+(331,237,0)
+(151,315,0)
+(10,215,0)
+(262,295,0)
+(189,185,0)
+(28,142,0)
+(321,188,0)
+(191,25,0)
+(43,84,0)
+(267,83,0)
+(231,310,0)
+(1,237,0)
+(28,282,0)
+(19,212,0)
+(194,212,0)
+(141,237,0)
+(126,237,0)
+(279,71,0)
+(114,93,0)
+(284,111,0)
+(146,65,0)
+(207,269,0)
+(35,18,0)
+(113,284,0)
+(76,290,0)
+(280,57,0)
+(107,84,0)
+(23,187,0)
+(163,18,0)
+(318,212,0)
+(234,102,0)
+(239,247,0)
+(188,321,0)
+(257,119,0)
+(25,132,0)
+(269,75,0)
+(227,268,0)
+(292,280,0)
+(202,237,0)
+(299,81,0)
+(214,295,0)
+(164,154,0)
+(138,288,0)
+(193,16,0)
+(78,299,0)
+(50,261,0)
+(312,307,0)
+(133,57,0)
+(144,19,0)
+(198,212,0)
+(149,287,0)
+(155,314,0)
+(158,142,0)
+(213,122,0)
+(179,154,0)
+(167,237,0)
+(106,277,0)
+(49,318,0)
+(327,318,0)
+(133,129,0)
+(311,323,0)
+(323,170,0)
+(32,262,0)
+(168,33,0)
+(147,111,0)
+(20,247,0)
+(135,33,0)
+(58,187,0)
+(97,194,0)
+(122,104,0)
+(223,31,0)
+(300,75,0)
+(293,129,0)
+(12,91,0)
+(210,111,0)
+(166,50,0)
+(165,287,0)
+(205,1,0)
+(42,33,0)
+(188,42,0)
+(153,93,0)
+(291,311,0)
+(132,25,0)
+(70,237,0)
+(30,84,0)
+(260,122,0)
+(30,33,0)
+(197,55,0)
+(308,303,0)
+(290,198,0)
+(271,212,0)
+(333,214,0)
+(117,229,0)
+(14,149,0)
+(184,237,0)
+(66,261,0)
+(271,14,0)
+(245,106,0)
+(199,63,0)
+(201,262,0)
+(139,198,0)
+(44,142,0)
+(68,151,0)
+(95,271,0)
+(111,284,0)
+(142,320,0)
+(309,229,0)
+(278,91,0)
+(59,270,0)
+(99,157,0)
+(190,271,0)
+(238,50,0)
+(37,262,0)
+(82,42,0)
+(198,290,0)
+(181,209,0)
+(49,321,0)
+(246,260,0)
+(132,212,0)
+(134,16,0)
+(219,237,0)
+(324,57,0)
+(111,268,0)
+(75,269,0)
+(140,20,0)
+(111,210,0)
+(178,212,0)
+(108,210,0)
+(307,295,0)
+(44,250,0)
+(325,18,0)
+(104,122,0)
+(106,264,0)
+(270,187,0)
+(13,170,0)
+(287,265,0)
+(298,281,0)
+(307,281,0)
+(120,154,0)
+(105,1,0)
+(169,98,0)
+(216,60,0)
+(200,1,0)
+(303,308,0)
+(41,215,0)
+(171,2,0)
+(275,241,0)
+(20,322,0)
+(222,81,0)
+(103,246,0)
+(175,221,0)
+(244,132,0)
+(209,181,0)
+(286,310,0)
+(285,237,0)
+(91,295,0)
+(18,237,0)
+(307,34,0)
+(318,49,0)
+(85,34,0)
+(312,21,0)
+(262,212,0)
+(281,236,0)
+(149,14,0)
+(98,101,0)
+(248,326,0)
+(319,231,0)
+(20,140,0)
+(125,28,0)
+(77,320,0)
+(137,262,0)
+(16,236,0)
+(4,18,0)
+(268,154,0)
+(264,185,0)
+(274,142,0)
+(112,237,0)
+(211,308,0)
+(268,111,0)
+(172,63,0)
+(256,127,0)
+(324,127,0)
+(292,261,0)
+(64,148,0)
+(3,142,0)
+(210,108,0)
+(30,275,0)
+(6,1,0)
+(317,142,0)
+(247,142,0)
+(102,129,0)
+(42,188,0)
+(265,148,1)
+(188,321,1)
+(95,190,1)
+(315,151,1)
+(42,266,1)
+(16,193,1)
+(170,142,1)
+(204,272,1)
+(115,204,1)
+(307,212,1)
+(327,19,1)
+(51,138,1)
+(137,264,1)
+(264,185,1)
+(322,3,1)
+(280,131,1)
+(53,72,1)
+(179,268,1)
+(279,118,1)
+(213,191,1)
+(44,142,1)
+(315,61,1)
+(103,260,1)
+(23,73,1)
+(266,82,1)
+(121,267,1)
+(158,274,1)
+(65,16,1)
+(333,60,1)
+(108,196,1)
+(267,114,1)
+(117,309,1)
+(206,217,1)
+(129,102,1)
+(94,317,1)
+(145,136,1)
+(143,71,1)
+(30,119,1)
+(181,59,1)
+(314,44,1)
+(204,99,1)
+(326,248,1)
+(282,28,1)
+(308,160,1)
+(190,92,1)
+(174,162,1)
+(275,53,1)
+(85,34,1)
+(170,13,1)
+(204,150,1)
+(252,93,1)
+(17,316,1)
+(232,284,1)
+(26,71,1)
+(166,238,1)
+(2,262,1)
+(235,251,1)
+(288,51,1)
+(58,23,1)
+(181,9,1)
+(102,234,1)
+(106,277,1)
+(129,293,1)
+(193,134,1)
+(94,282,1)
+(69,143,1)
+(130,263,1)
+(30,84,1)
+(198,212,1)
+(118,254,1)
+(323,170,1)
+(42,119,1)
+(123,144,1)
+(28,304,1)
+(20,247,1)
+(32,201,1)
+(62,194,1)
+(31,65,1)
+(30,299,1)
+(65,146,1)
+(264,106,1)
+(282,326,1)
+(46,145,1)
+(229,117,1)
+(36,32,1)
+(261,66,1)
+(196,232,1)
+(192,142,1)
+(204,188,1)
+(287,149,1)
+(231,57,1)
+(83,121,1)
+(63,220,1)
+(50,166,1)
+(260,191,1)
+(198,139,1)
+(9,59,1)
+(307,312,1)
+(204,156,1)
+(203,318,1)
+(269,208,1)
+(329,227,1)
+(0,287,1)
+(82,205,1)
+(76,198,1)
+(188,42,1)
+(270,187,1)
+(209,181,1)
+(226,254,1)
+(60,212,1)
+(309,209,1)
+(113,62,1)
+(150,98,1)
+(281,307,1)
+(290,198,1)
+(42,33,1)
+(251,206,1)
+(131,242,1)
+(174,182,1)
+(283,63,1)
+(258,206,1)
+(280,57,1)
+(37,36,1)
+(52,239,1)
+(322,20,1)
+(84,107,1)
+(14,271,1)
+(284,113,1)
+(19,212,1)
+(197,249,1)
+(231,127,1)
+(205,120,1)
+(319,172,1)
+(214,295,1)
+(12,278,1)
+(13,252,1)
+(127,256,1)
+(19,123,1)
+(201,47,1)
+(71,142,1)
+(167,214,1)
+(144,42,1)
+(30,215,1)
+(10,94,1)
+(149,14,1)
+(99,215,1)
+(173,327,1)
+(172,283,1)
+(148,212,1)
+(287,265,1)
+(120,246,1)
+(205,136,1)
+(204,74,1)
+(287,165,1)
+(238,280,1)
+(247,52,1)
+(301,75,1)
+(207,89,1)
+(139,195,1)
+(318,212,1)
+(114,323,1)
+(276,185,1)
+(135,168,1)
+(307,34,1)
+(304,125,1)
+(299,78,1)
+(306,119,1)
+(324,127,1)
+(28,142,1)
+(227,88,1)
+(91,12,1)
+(268,111,1)
+(92,290,1)
+(251,258,1)
+(307,295,1)
+(115,31,1)
+(311,291,1)
+(290,76,1)
+(108,212,1)
+(294,271,1)
+(54,91,1)
+(250,44,1)
+(332,114,1)
+(224,189,1)
+(30,275,1)
+(169,322,1)
+(214,333,1)
+(147,284,1)
+(272,229,1)
+(98,313,1)
+(246,103,1)
+(231,319,1)
+(30,177,1)
+(133,129,1)
+(47,137,1)
+(321,49,1)
+(97,329,1)
+(248,28,1)
+(91,295,1)
+(277,96,1)
+(71,279,1)
+(194,212,1)
+(114,93,1)
+(143,250,1)
+(140,15,1)
+(82,306,1)
+(89,127,1)
+(60,216,1)
+(182,231,1)
+(254,85,1)
+(89,292,1)
+(206,212,1)
+(142,158,1)
+(292,280,1)
+(323,311,1)
+(257,226,1)
+(239,3,1)
+(15,247,1)
+(303,308,1)
+(165,149,1)
+(209,83,1)
+(291,328,1)
+(277,212,1)
+(125,317,1)
+(262,34,1)
+(317,142,1)
+(148,255,1)
+(262,212,1)
+(30,55,1)
+(44,159,1)
+(30,115,1)
+(109,292,1)
+(220,199,1)
+(191,91,1)
+(119,257,1)
+(41,10,1)
+(205,179,1)
+(245,277,1)
+(263,48,1)
+(261,50,1)
+(174,89,1)
+(289,188,1)
+(85,240,1)
+(244,54,1)
+(324,57,1)
+(292,261,1)
+(151,243,1)
+(204,84,1)
+(243,68,1)
+(270,110,1)
+(25,132,1)
+(68,129,1)
+(66,50,1)
+(313,169,1)
+(156,177,1)
+(3,142,1)
+(31,223,1)
+(250,314,1)
+(111,284,1)
+(65,142,1)
+(255,64,1)
+(111,210,1)
+(216,235,1)
+(48,100,1)
+(153,27,1)
+(274,33,1)
+(49,203,1)
+(185,212,1)
+(271,212,1)
+(318,173,1)
+(230,254,1)
+(242,57,1)
+(133,315,1)
+(100,289,1)
+(281,298,1)
+(73,83,1)
+(160,211,1)
+(259,254,1)
+(204,222,1)
+(191,303,1)
+(204,302,1)
+(159,26,1)
+(293,102,1)
+(199,89,1)
+(321,19,1)
+(116,148,1)
+(110,187,1)
+(33,135,1)
+(75,300,1)
+(210,108,1)
+(106,245,1)
+(20,140,1)
+(29,108,1)
+(111,147,1)
+(191,25,1)
+(234,17,1)
+(265,116,1)
+(43,264,1)
+(30,33,1)
+(134,281,1)
+(82,174,1)
+(205,56,1)
+(271,95,1)
+(249,246,1)
+(210,29,1)
+(93,142,1)
+(312,130,1)
+(88,178,1)
+(93,153,1)
+(136,288,1)
+(5,259,1)
+(142,21,1)
+(324,301,1)
+(240,192,1)
+(208,207,1)
+(132,212,1)
+(256,109,1)
+(262,295,1)
+(260,122,1)
+(178,212,1)
+(316,209,1)
+(215,41,1)
+(230,69,1)
+(24,230,1)
+(80,143,1)
+(302,55,1)
+(171,30,1)
+(178,46,1)
+(269,212,1)
+(61,151,1)
+(308,212,1)
+(185,224,1)
+(14,294,1)
+(273,322,1)
+(64,149,1)
+(317,5,1)
+(222,299,1)
+(227,178,1)
+(49,318,1)
+(72,288,1)
+(211,91,1)
+(113,194,1)
+(56,0,1)
+(162,324,1)
+(204,16,1)
+(218,97,1)
+(96,276,1)
+(328,170,1)
+(75,269,1)
+(217,273,1)
+(312,21,1)
+(195,136,1)
+(189,85,1)
+(247,142,1)
+(82,167,1)
+(79,80,1)
+(37,21,1)
+(122,104,1)
+(194,218,1)
+(27,254,1)
+(262,37,1)
+(122,213,1)
+(171,2,1)
+(300,269,1)
+(59,270,1)
+(74,275,1)
+(177,79,1)
+(63,212,1)
+(187,58,1)
+(138,94,1)
+(246,260,1)
+(78,332,1)
+(30,229,1)
+(172,63,1)
+(146,204,1)
+(314,155,1)
+(30,98,1)
+(107,43,1)
+(132,244,1)
+(57,133,1)
+(3,24,1)
+(278,136,1)
+(55,197,1)
+(82,136,2)
+(23,114,2)
+(271,136,2)
+(94,254,2)
+(160,91,2)
+(149,136,2)
+(292,209,2)
+(30,229,2)
+(30,275,2)
+(177,143,2)
+(321,19,2)
+(194,136,2)
+(43,264,2)
+(130,188,2)
+(290,198,2)
+(191,136,2)
+(100,188,2)
+(170,93,2)
+(61,209,2)
+(173,19,2)
+(93,254,2)
+(151,209,2)
+(266,254,2)
+(288,94,2)
+(171,2,2)
+(95,136,2)
+(215,94,2)
+(319,89,2)
+(262,295,2)
+(317,254,2)
+(153,254,2)
+(49,19,2)
+(26,71,2)
+(107,264,2)
+(308,212,2)
+(196,284,2)
+(220,89,2)
+(118,254,2)
+(217,322,2)
+(111,284,2)
+(25,91,2)
+(316,209,2)
+(265,148,2)
+(148,149,2)
+(234,209,2)
+(312,188,2)
+(17,209,2)
+(204,85,2)
+(207,89,2)
+(315,209,2)
+(266,136,2)
+(282,317,2)
+(66,280,2)
+(299,114,2)
+(307,212,2)
+(251,322,2)
+(193,188,2)
+(262,264,2)
+(121,114,2)
+(108,212,2)
+(88,136,2)
+(263,188,2)
+(134,188,2)
+(264,85,2)
+(46,136,2)
+(329,136,2)
+(69,143,2)
+(262,37,2)
+(82,322,2)
+(59,114,2)
+(52,3,2)
+(306,254,2)
+(205,246,2)
+(231,89,2)
+(132,212,2)
+(93,142,2)
+(31,204,2)
+(37,264,2)
+(14,136,2)
+(259,254,2)
+(322,143,2)
+(318,212,2)
+(303,91,2)
+(138,94,2)
+(276,185,2)
+(333,322,2)
+(2,264,2)
+(145,136,2)
+(28,142,2)
+(27,254,2)
+(94,282,2)
+(131,209,2)
+(290,136,2)
+(79,143,2)
+(12,136,2)
+(188,42,2)
+(113,194,2)
+(44,142,2)
+(42,254,2)
+(42,119,2)
+(230,143,2)
+(31,223,2)
+(106,277,2)
+(188,254,2)
+(85,34,2)
+(51,94,2)
+(188,136,2)
+(311,93,2)
+(239,3,2)
+(53,288,2)
+(275,288,2)
+(78,114,2)
+(99,94,2)
+(30,119,2)
+(247,142,2)
+(246,136,2)
+(63,89,2)
+(277,185,2)
+(294,136,2)
+(97,136,2)
+(30,33,2)
+(140,3,2)
+(265,149,2)
+(30,85,2)
+(114,93,2)
+(287,265,2)
+(260,191,2)
+(119,254,2)
+(30,84,2)
+(57,209,2)
+(206,212,2)
+(227,136,2)
+(117,209,2)
+(262,212,2)
+(147,284,2)
+(82,209,2)
+(42,246,2)
+(170,142,2)
+(264,106,2)
+(322,254,2)
+(273,322,2)
+(278,136,2)
+(58,114,2)
+(60,212,2)
+(122,104,2)
+(146,204,2)
+(47,264,2)
+(214,322,2)
+(216,322,2)
+(260,136,2)
+(30,264,2)
+(115,264,2)
+(30,177,2)
+(292,261,2)
+(91,295,2)
+(292,280,2)
+(317,142,2)
+(270,114,2)
+(313,322,2)
+(122,136,2)
+(102,209,2)
+(71,142,2)
+(266,246,2)
+(19,212,2)
+(324,89,2)
+(149,14,2)
+(301,89,2)
+(30,55,2)
+(75,269,2)
+(188,321,2)
+(13,93,2)
+(54,91,2)
+(307,312,2)
+(5,254,2)
+(303,308,2)
+(42,33,2)
+(281,307,2)
+(29,284,2)
+(307,34,2)
+(309,209,2)
+(166,280,2)
+(257,254,2)
+(123,42,2)
+(65,204,2)
+(62,136,2)
+(116,149,2)
+(148,212,2)
+(133,129,2)
+(109,292,2)
+(110,114,2)
+(72,288,2)
+(284,113,2)
+(282,28,2)
+(218,136,2)
+(48,188,2)
+(191,303,2)
+(156,143,2)
+(96,185,2)
+(74,288,2)
+(304,317,2)
+(143,254,2)
+(113,136,2)
+(244,91,2)
+(197,246,2)
+(82,254,2)
+(198,212,2)
+(31,65,2)
+(230,254,2)
+(111,210,2)
+(120,246,2)
+(264,185,2)
+(143,250,2)
+(37,21,2)
+(42,209,2)
+(24,143,2)
+(16,188,2)
+(327,19,2)
+(127,292,2)
+(94,317,2)
+(30,299,2)
+(20,247,2)
+(326,317,2)
+(324,127,2)
+(178,212,2)
+(65,16,2)
+(20,3,2)
+(252,93,2)
+(42,322,2)
+(269,212,2)
+(73,114,2)
+(60,322,2)
+(229,209,2)
+(3,142,2)
+(125,317,2)
+(214,295,2)
+(56,136,2)
+(246,260,2)
+(258,322,2)
+(188,322,2)
+(143,71,2)
+(328,93,2)
+(261,50,2)
+(226,254,2)
+(98,322,2)
+(332,114,2)
+(323,170,2)
+(50,280,2)
+(129,102,2)
+(115,85,2)
+(203,19,2)
+(20,140,2)
+(307,188,2)
+(83,114,2)
+(129,209,2)
+(277,212,2)
+(204,264,2)
+(245,185,2)
+(311,291,2)
+(178,136,2)
+(189,85,2)
+(80,143,2)
+(321,49,2)
+(281,188,2)
+(242,209,2)
+(32,264,2)
+(287,136,2)
+(210,108,2)
+(55,246,2)
+(206,322,2)
+(249,246,2)
+(144,42,2)
+(318,19,2)
+(266,322,2)
+(174,209,2)
+(293,209,2)
+(323,93,2)
+(106,185,2)
+(250,44,2)
+(137,264,2)
+(284,136,2)
+(235,322,2)
+(211,91,2)
+(68,209,2)
+(169,322,2)
+(44,71,2)
+(322,20,2)
+(179,136,2)
+(65,142,2)
+(209,114,2)
+(111,136,2)
+(182,89,2)
+(272,209,2)
+(260,122,2)
+(232,284,2)
+(208,89,2)
+(76,136,2)
+(266,209,2)
+(198,136,2)
+(261,280,2)
+(191,25,2)
+(132,91,2)
+(308,91,2)
+(224,85,2)
+(19,42,2)
+(195,136,2)
+(63,212,2)
+(247,3,2)
+(15,3,2)
+(248,317,2)
+(41,94,2)
+(321,42,2)
+(139,136,2)
+(64,149,2)
+(136,288,2)
+(300,89,2)
+(205,136,2)
+(254,85,2)
+(315,151,2)
+(0,287,2)
+(3,254,2)
+(185,212,2)
+(142,21,2)
+(323,311,2)
+(238,280,2)
+(9,114,2)
+(250,314,2)
+(103,136,2)
+(167,322,2)
+(279,254,2)
+(84,264,2)
+(92,136,2)
+(114,254,2)
+(159,71,2)
+(91,136,2)
+(172,89,2)
+(209,83,2)
+(256,292,2)
+(262,34,2)
+(71,254,2)
+(250,71,2)
+(59,270,2)
+(108,284,2)
+(287,149,2)
+(227,178,2)
+(10,94,2)
+(30,215,2)
+(291,93,2)
+(171,30,2)
+(181,59,2)
+(24,254,2)
+(185,85,2)
+(133,315,2)
+(49,318,2)
+(324,57,2)
+(251,206,2)
+(312,21,2)
+(283,89,2)
+(314,71,2)
+(14,271,2)
+(269,89,2)
+(199,89,2)
+(213,136,2)
+(187,114,2)
+(3,143,2)
+(162,89,2)
+(268,111,2)
+(188,246,2)
+(75,89,2)
+(36,264,2)
+(281,298,2)
+(190,136,2)
+(57,133,2)
+(271,212,2)
+(188,209,2)
+(280,209,2)
+(28,317,2)
+(172,63,2)
+(0,136,2)
+(82,246,2)
+(307,295,2)
+(302,246,2)
+(42,136,2)
+(255,149,2)
+(314,155,2)
+(231,127,2)
+(282,326,2)
+(268,136,2)
+(231,57,2)
+(25,132,2)
+(133,209,2)
+(201,264,2)
+(89,209,2)
+(280,57,2)
+(30,98,2)
+(150,322,2)
+(322,3,2)
+(210,284,2)
+(209,181,2)
+(267,114,2)
+(181,114,2)
+(165,149,2)
+(243,209,2)
+(222,114,2)
+(194,212,2)
+(191,91,2)
+(114,323,2)
+(289,188,2)
+(270,187,2)
+-----------------------------------
+(0,so->so_rcv.sb_lowat =\n\\n\\t\\t\\t\\t    (optval > so->so_rcv.sb_hiwat)
+(1,)
+(2,return ((*so->so_proto->pr_ctloutput)
+(3,m == NULL)
+(4,if (m == NULL || m->m_len < sizeof(*tv)
+(5,NULL)
+(6,switch (optname)
+(7,if (m == NULL || m->m_len < sizeof(int)
+(8,)
+(9,hz)
+(10,error)
+(11,if (so->so_proto && so->so_proto->pr_ctloutput)
+(12,SO_SNDBUF)
+(13,m_len)
+(14,so->so_rcv.sb_hiwat)
+(15,int)
+(16,m = NULL)
+(17,tv)
+(18,)
+(19,so->so_proto)
+(20,m->m_len < sizeof(int)
+(21,struct mbuf *m0)
+(22,case SO_DONTROUTE:)
+(23,tv)
+(24,NULL)
+(25,&so->so_snd)
+(26,m)
+(27,m)
+(28,m->m_len)
+(29,sb_hiwat)
+(30,return (error)
+(31,(void)
+(32,optname)
+(33,error = 0)
+(34,int level)
+(35,if (val == 0 && tv->tv_usec != 0)
+(36,m0)
+(37,&m0)
+(38,switch (optname)
+(39,bad:)
+(40,m)
+(41,EINVAL)
+(42,error == 0)
+(43,error)
+(44,m->m_len)
+(45,tv)
+(46,so_snd)
+(47,so)
+(48,level)
+(49,so->so_proto->pr_ctloutput)
+(50,tv->tv_usec)
+(51,1)
+(52,m_len)
+(53,EINVAL)
+(54,so)
+(55,error = ENOBUFS)
+(56,break;)
+(57,val = tv->tv_sec * hz + tv->tv_usec / tick)
+(58,tv_usec)
+(59,SHRT_MAX - tv->tv_usec / tick)
+(60,so->so_options)
+(61,tick)
+(62,sb_hiwat)
+(63,so->so_snd)
+(64,so)
+(65,m_free(m)
+(66,0)
+(67,)
+(68,tv)
+(69,l_linger)
+(70,case SO_KEEPALIVE:)
+(71,m == NULL)
+(72,error)
+(73,SHRT_MAX)
+(74,goto bad;)
+(75,so->so_rcv.sb_timeo)
+(76,sb_lowat)
+(77,error)
+(78,EINVAL)
+(79,EINVAL)
+(80,error)
+(81,)
+(82,error)
+(83,tv->tv_sec)
+(84,error = ENOPROTOOPT)
+(85,level != SOL_SOCKET)
+(86,if (m == NULL || m->m_len != sizeof(struct linger)
+(87,case SO_RCVBUF:)
+(88,sb_lowat)
+(89,optname)
+(90,default:)
+(91,optname == SO_SNDBUF)
+(92,optval)
+(93,m == NULL)
+(94,m == NULL || m->m_len < sizeof(int)
+(95,so_rcv)
+(96,so_proto)
+(97,so)
+(98,error = EINVAL)
+(99,goto bad;)
+(100,so)
+(101,)
+(102,tv->tv_sec)
+(103,0)
+(104,u_long)
+(105,optval)
+(106,so->so_proto->pr_ctloutput)
+(107,ENOPROTOOPT)
+(108,so->so_snd)
+(109,val)
+(110,tick)
+(111,(optval > so->so_snd.sb_hiwat)
+(112,case SO_DEBUG:)
+(113,so->so_snd.sb_hiwat)
+(114,m == NULL || m->m_len < sizeof(*tv)
+(115,error)
+(116,sb_hiwat)
+(117,EDOM)
+(118,m)
+(119,error = ENOPROTOOPT)
+(120,break;)
+(121,tv_sec)
+(122,(u_long)
+(123,so_proto)
+(124,val)
+(125,m)
+(126,case SO_RCVTIMEO:)
+(127,val = 1)
+(128,if (sbreserve(optname == SO_SNDBUF ?\n\\n\\t\\t\\t\\t    &so->so_snd : &so->so_rcv,\n\\n\\t\\t\\t\\t    (u_long)
+(129,tv->tv_sec * hz)
+(130,m0)
+(131,0)
+(132,so->so_snd)
+(133,tv->tv_sec * hz + tv->tv_usec / tick)
+(134,m)
+(135,0)
+(136,optname)
+(137,PRCO_SETOPT)
+(138,optval)
+(139,so_rcv)
+(140,sizeof(int)
+(141,case SO_LINGER:)
+(142,m = m0)
+(143,m == NULL || m->m_len != sizeof(struct linger)
+(144,so)
+(145,so)
+(146,m)
+(147,optval)
+(148,so->so_rcv)
+(149,optval > so->so_rcv.sb_hiwat)
+(150,goto bad;)
+(151,tv->tv_usec)
+(152,case SO_BROADCAST:)
+(153,NULL)
+(154,)
+(155,struct linger)
+(156,goto bad;)
+(157,)
+(158,m0)
+(159,m_len)
+(160,so_rcv)
+(161,case SO_RCVTIMEO:)
+(162,break;)
+(163,switch (optname)
+(164,case SO_RCVLOWAT:)
+(165,optval)
+(166,tv_usec)
+(167,break;)
+(168,error)
+(169,error)
+(170,m->m_len)
+(171,RET)
+(172,so->so_snd.sb_timeo)
+(173,so_proto)
+(174,break;)
+(175,if (error == 0 && so->so_proto && so->so_proto->pr_ctloutput)
+(176,if (level != SOL_SOCKET)
+(177,error = EINVAL)
+(178,so->so_snd)
+(179,break;)
+(180,case SO_RCVBUF:)
+(181,(SHRT_MAX - tv->tv_usec / tick)
+(182,break;)
+(183,case SO_REUSEADDR:)
+(184,case SO_USELOOPBACK:)
+(185,so->so_proto)
+(186,if (m)
+(187,tv->tv_usec)
+(188,error == 0 && so->so_proto && so->so_proto->pr_ctloutput)
+(189,so)
+(190,so)
+(191,optname == SO_SNDBUF ?\n\\n\\t\\t\\t\\t    &so->so_snd : &so->so_rcv)
+(192,level)
+(193,NULL)
+(194,so->so_snd)
+(195,so)
+(196,so_snd)
+(197,ENOBUFS)
+(198,so->so_rcv)
+(199,so)
+(200,if (optval < 1)
+(201,level)
+(202,case SO_OOBINLINE:)
+(203,pr_ctloutput)
+(204,m)
+(205,break;)
+(206,so->so_options)
+(207,so)
+(208,so_rcv)
+(209,tv->tv_sec > (SHRT_MAX - tv->tv_usec / tick)
+(210,so->so_snd.sb_hiwat)
+(211,so)
+(212,struct socket *so)
+(213,optval)
+(214,so->so_options |= optname)
+(215,error = EINVAL)
+(216,so_options)
+(217,so_options)
+(218,so_snd)
+(219,case SO_SNDBUF:)
+(220,so_snd)
+(221,)
+(222,goto bad;)
+(223,void)
+(224,so_proto)
+(225,case SO_SNDBUF:)
+(226,error)
+(227,so->so_snd.sb_lowat)
+(228,if (m == NULL || m->m_len < sizeof(int)
+(229,error = EDOM)
+(230,m)
+(231,so->so_snd.sb_timeo = val)
+(232,so)
+(233,case SO_SNDTIMEO:)
+(234,tv_sec)
+(235,so)
+(236,)
+(237,)
+(238,tv)
+(239,m)
+(240,SOL_SOCKET)
+(241,)
+(242,val)
+(243,tv_usec)
+(244,so_snd)
+(245,pr_ctloutput)
+(246,sbreserve(optname == SO_SNDBUF ?\n\\n\\t\\t\\t\\t    &so->so_snd : &so->so_rcv,\n\\n\\t\\t\\t\\t    (u_long)
+(247,m->m_len)
+(248,int)
+(249,error)
+(250,m->m_len != sizeof(struct linger)
+(251,so->so_options &= ~optname)
+(252,m)
+(253,)
+(254,optname)
+(255,so_rcv)
+(256,1)
+(257,ENOPROTOOPT)
+(258,~optname)
+(259,m)
+(260,sbreserve(optname == SO_SNDBUF ?\n\\n\\t\\t\\t\\t    &so->so_snd : &so->so_rcv,\n\\n\\t\\t\\t\\t    (u_long)
+(261,tv->tv_usec != 0)
+(262,(*so->so_proto->pr_ctloutput)
+(263,optname)
+(264,so->so_proto && so->so_proto->pr_ctloutput)
+(265,so->so_rcv.sb_hiwat)
+(266,0)
+(267,tv)
+(268,so->so_snd.sb_lowat =\n\\n\\t\\t\\t\\t    (optval > so->so_snd.sb_hiwat)
+(269,so->so_rcv)
+(270,tv->tv_usec / tick)
+(271,so->so_rcv)
+(272,goto bad;)
+(273,so)
+(274,m)
+(275,error = EINVAL)
+(276,so)
+(277,so->so_proto)
+(278,optname)
+(279,NULL)
+(280,val == 0)
+(281,(void)
+(282,m->m_len < sizeof(int)
+(283,sb_timeo)
+(284,optval > so->so_snd.sb_hiwat)
+(285,case SO_SNDLOWAT:)
+(286,case SO_SNDTIMEO:)
+(287,(optval > so->so_rcv.sb_hiwat)
+(288,optval < 1)
+(289,PRCO_SETOPT)
+(290,so->so_rcv.sb_lowat)
+(291,*tv)
+(292,val == 0 && tv->tv_usec != 0)
+(293,hz)
+(294,sb_hiwat)
+(295,int optname)
+(296,case SO_SNDLOWAT:)
+(297,case SO_REUSEPORT:)
+(298,void)
+(299,error = EINVAL)
+(300,sb_timeo)
+(301,val)
+(302,goto bad;)
+(303,&so->so_rcv)
+(304,m_len)
+(305,case SO_TIMESTAMP:)
+(306,break;)
+(307,(*so->so_proto->pr_ctloutput)
+(308,so->so_rcv)
+(309,error)
+(310,)
+(311,sizeof(*tv)
+(312,&m0)
+(313,EINVAL)
+(314,sizeof(struct linger)
+(315,tv->tv_usec / tick)
+(316,val)
+(317,m == NULL)
+(318,so->so_proto)
+(319,val)
+(320,)
+(321,so->so_proto && so->so_proto->pr_ctloutput)
+(322,m == NULL || m->m_len < sizeof(int)
+(323,m->m_len < sizeof(*tv)
+(324,so->so_rcv.sb_timeo = val)
+(325,if (tv->tv_sec > (SHRT_MAX - tv->tv_usec / tick)
+(326,sizeof(int)
+(327,so)
+(328,tv)
+(329,optval)
+(330,)
+(331,case SO_RCVLOWAT:)
+(332,error)
+(333,optname)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

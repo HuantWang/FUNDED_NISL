@@ -1,0 +1,2813 @@
+-----label-----
+1
+-----code-----
+static int set_mac_key(struct sftp_mac *mac, const EVP_MD *hash,
+    const unsigned char *k, uint32_t klen, const char *h, uint32_t hlen,
+    char *letter, const unsigned char *id, uint32_t id_len) {
+  EVP_MD_CTX ctx;
+  unsigned char *key = NULL;
+  size_t key_sz;
+  uint32_t key_len = 0;
+
+  key_sz = sftp_crypto_get_size(EVP_MD_block_size(mac->digest),
+    EVP_MD_size(hash));
+  if (key_sz == 0) {
+    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,
+      "unable to determine key length for MAC '%s'", mac->algo);
+    errno = EINVAL;
+    return -1;
+  }
+
+  key = malloc(key_sz);
+  if (key == NULL) {
+    pr_log_pri(PR_LOG_ALERT, MOD_SFTP_VERSION ": Out of memory!");
+    _exit(1);
+  }
+
+  /* In OpenSSL 0.9.6, many of the EVP_Digest* functions returned void, not
+   * int.  Without these ugly OpenSSL version preprocessor checks, the
+   * compiler will error out with "void value not ignored as it ought to be".
+   */
+
+#if OPENSSL_VERSION_NUMBER >= 0x000907000L
+  if (EVP_DigestInit(&ctx, hash) != 1) {
+    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,
+      "error initializing message digest: %s", sftp_crypto_get_errors());
+    free(key);
+    return -1;
+  }
+#else
+  EVP_DigestInit(&ctx, hash);
+#endif
+
+#if OPENSSL_VERSION_NUMBER >= 0x000907000L
+  if (EVP_DigestUpdate(&ctx, k, klen) != 1) {
+    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,
+      "error updating message digest with K: %s", sftp_crypto_get_errors());
+    free(key);
+    return -1;
+  }
+#else
+  EVP_DigestUpdate(&ctx, k, klen);
+#endif
+
+#if OPENSSL_VERSION_NUMBER >= 0x000907000L
+  if (EVP_DigestUpdate(&ctx, h, hlen) != 1) {
+    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,
+      "error updating message digest with H: %s", sftp_crypto_get_errors());
+    free(key);
+    return -1;
+  }
+#else
+  EVP_DigestUpdate(&ctx, h, hlen);
+#endif
+
+#if OPENSSL_VERSION_NUMBER >= 0x000907000L
+  if (EVP_DigestUpdate(&ctx, letter, sizeof(char)) != 1) {
+    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,
+      "error updating message digest with '%c': %s", *letter,
+      sftp_crypto_get_errors());
+    free(key);
+    return -1;
+  }
+#else
+  EVP_DigestUpdate(&ctx, letter, sizeof(char));
+#endif
+
+#if OPENSSL_VERSION_NUMBER >= 0x000907000L
+  if (EVP_DigestUpdate(&ctx, (char *) id, id_len) != 1) {
+    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,
+      "error updating message digest with ID: %s", sftp_crypto_get_errors());
+    free(key);
+    return -1;
+  }
+#else
+  EVP_DigestUpdate(&ctx, (char *) id, id_len);
+#endif
+
+#if OPENSSL_VERSION_NUMBER >= 0x000907000L
+  if (EVP_DigestFinal(&ctx, key, &key_len) != 1) {
+    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,
+      "error finalizing message digest: %s", sftp_crypto_get_errors());
+    pr_memscrub(key, key_sz);
+    free(key);
+    return -1;
+  }
+#else
+  EVP_DigestFinal(&ctx, key, &key_len);
+#endif
+
+  /* If we need more, keep hashing, as per RFC, until we have enough
+   * material.
+   */
+
+  while (key_sz > key_len) {
+    uint32_t len = key_len;
+
+    pr_signals_handle();
+
+#if OPENSSL_VERSION_NUMBER >= 0x000907000L
+    if (EVP_DigestInit(&ctx, hash) != 1) {
+      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,
+        "error initializing message digest: %s", sftp_crypto_get_errors());
+      pr_memscrub(key, key_sz);
+      free(key);
+      return -1;
+    }
+#else
+    EVP_DigestInit(&ctx, hash);
+#endif
+
+#if OPENSSL_VERSION_NUMBER >= 0x000907000L
+    if (EVP_DigestUpdate(&ctx, k, klen) != 1) {
+      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,
+        "error updating message digest with K: %s", sftp_crypto_get_errors());
+      pr_memscrub(key, key_sz);
+      free(key);
+      return -1;
+    }
+#else
+    EVP_DigestUpdate(&ctx, k, klen);
+#endif
+
+#if OPENSSL_VERSION_NUMBER >= 0x000907000L
+    if (EVP_DigestUpdate(&ctx, h, hlen) != 1) {
+      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,
+        "error updating message digest with H: %s", sftp_crypto_get_errors());
+      pr_memscrub(key, key_sz);
+      free(key);
+      return -1;
+    }
+#else
+    EVP_DigestUpdate(&ctx, h, hlen);
+#endif
+
+#if OPENSSL_VERSION_NUMBER >= 0x000907000L
+    if (EVP_DigestUpdate(&ctx, key, len) != 1) {
+      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,
+        "error updating message digest with data: %s",
+        sftp_crypto_get_errors());
+      pr_memscrub(key, key_sz);
+      free(key);
+      return -1;
+    }
+#else
+    EVP_DigestUpdate(&ctx, key, len);
+#endif
+
+#if OPENSSL_VERSION_NUMBER >= 0x000907000L
+    if (EVP_DigestFinal(&ctx, key + len, &len) != 1) {
+      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,
+        "error finalizing message digest: %s", sftp_crypto_get_errors());
+      pr_memscrub(key, key_sz);
+      free(key);
+      return -1;
+    }
+#else
+    EVP_DigestFinal(&ctx, key + len, &len);
+#endif
+
+    key_len += len;
+  }
+
+  mac->key = key;
+  mac->keysz = key_sz;
+
+  if (mac->algo_type == SFTP_MAC_ALGO_TYPE_HMAC) {
+    mac->key_len = EVP_MD_size(mac->digest);
+
+  } else if (mac->algo_type == SFTP_MAC_ALGO_TYPE_UMAC64) {
+    mac->key_len = EVP_MD_block_size(mac->digest);
+  }
+
+  if (!sftp_interop_supports_feature(SFTP_SSH2_FEAT_MAC_LEN)) {
+    mac->key_len = 16;
+  }
+
+  return 0;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+3,8
+3,9
+3,10
+3,11
+3,12
+3,13
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+17,19
+19,20
+19,21
+22,23
+22,24
+23,24
+25,26
+27,28
+27,29
+29,30
+29,31
+32,33
+32,34
+33,34
+35,36
+37,38
+37,39
+39,40
+39,41
+42,43
+42,44
+44,45
+44,46
+47,48
+47,49
+48,49
+50,51
+52,53
+52,54
+52,55
+52,56
+52,57
+52,58
+52,59
+52,60
+52,61
+52,62
+52,63
+52,64
+52,65
+52,66
+52,67
+52,68
+52,69
+52,70
+52,71
+52,72
+53,54
+54,55
+54,56
+55,56
+57,58
+59,60
+60,61
+60,62
+62,63
+62,64
+62,65
+65,66
+66,67
+68,69
+69,70
+69,71
+70,71
+72,73
+74,75
+75,76
+75,77
+76,77
+78,79
+78,80
+80,81
+82,83
+83,84
+83,85
+84,85
+86,87
+86,88
+86,89
+87,88
+89,90
+89,91
+90,91
+92,93
+92,94
+93,94
+96,97
+96,98
+97,98
+99,100
+101,102
+101,103
+102,103
+102,104
+103,104
+106,107
+106,108
+106,109
+107,108
+108,109
+108,110
+109,110
+109,111
+112,113
+112,114
+112,115
+112,116
+112,117
+113,114
+115,116
+117,118
+120,121
+120,122
+121,122
+124,125
+125,126
+125,127
+126,127
+128,129
+130,131
+131,132
+133,134
+134,135
+134,136
+135,136
+137,138
+137,139
+138,139
+140,141
+142,143
+142,144
+143,144
+143,145
+144,145
+146,147
+148,149
+148,150
+149,150
+150,151
+151,152
+151,153
+152,153
+155,156
+156,157
+156,158
+156,159
+157,158
+159,160
+160,161
+162,163
+164,165
+165,166
+165,167
+165,168
+165,169
+166,167
+168,169
+169,170
+171,172
+173,174
+175,176
+176,177
+176,178
+176,179
+176,180
+177,178
+179,180
+180,181
+182,183
+184,185
+186,187
+187,188
+187,189
+187,190
+187,191
+188,189
+190,191
+191,192
+193,194
+195,196
+196,197
+196,198
+199,200
+200,201
+200,202
+200,203
+200,204
+201,202
+203,204
+204,205
+206,207
+206,208
+207,208
+207,209
+209,210
+211,212
+213,214
+215,216
+216,217
+216,218
+216,219
+216,220
+217,218
+219,220
+220,221
+222,223
+224,225
+225,226
+227,228
+227,229
+228,229
+228,230
+229,230
+231,232
+233,234
+233,235
+233,236
+233,237
+233,238
+233,239
+233,240
+233,241
+234,235
+235,236
+235,237
+236,237
+238,239
+238,240
+240,241
+241,242
+243,244
+244,245
+245,246
+247,248
+248,249
+248,250
+248,251
+249,250
+251,252
+252,253
+254,255
+256,257
+257,258
+257,259
+257,260
+257,261
+258,259
+260,261
+261,262
+263,264
+265,266
+267,268
+268,269
+268,270
+268,271
+268,272
+269,270
+271,272
+272,273
+274,275
+276,277
+278,279
+279,280
+279,281
+279,282
+279,283
+280,281
+282,283
+283,284
+285,286
+287,288
+289,290
+290,291
+290,292
+290,293
+290,294
+291,292
+293,294
+294,295
+296,297
+296,298
+297,298
+299,300
+301,302
+302,303
+304,305
+305,306
+305,307
+306,307
+308,309
+310,311
+311,312
+311,313
+312,313
+312,314
+313,314
+316,317
+318,319
+319,320
+319,321
+320,321
+320,322
+321,322
+324,325
+326,327
+326,328
+326,329
+327,328
+327,329
+328,329
+328,330
+329,330
+332,333
+334,335
+335,336
+336,337
+336,338
+337,338
+337,339
+338,339
+341,342
+341,343
+342,343
+344,345
+344,346
+345,346
+348,349
+348,350
+349,350
+349,351
+350,351
+350,352
+351,352
+354,355
+356,357
+357,358
+358,359
+358,360
+359,360
+359,361
+360,361
+363,364
+363,365
+364,365
+366,367
+366,368
+367,368
+370,371
+370,372
+371,372
+372,373
+372,374
+373,374
+375,376
+377,378
+378,379
+379,380
+379,381
+380,381
+380,382
+381,382
+385,386
+-----nextToken-----
+2,4,7,9,10,13,15,16,18,20,21,24,26,28,30,31,34,36,38,40,41,43,45,46,49,51,56,58,61,63,64,67,71,73,77,79,81,85,88,91,94,95,98,100,104,105,110,111,114,116,118,119,122,123,127,129,132,136,139,141,145,147,153,154,158,161,163,167,170,172,174,178,181,183,185,189,192,194,197,198,202,205,208,210,212,214,218,221,223,226,230,232,237,239,242,246,250,253,255,259,262,264,266,270,273,275,277,281,284,286,288,292,295,298,300,303,307,309,314,315,317,322,323,325,330,331,333,339,340,343,346,347,352,353,355,361,362,365,368,369,374,376,382,383,384,386
+-----computeFrom-----
+83,84
+83,85
+102,103
+102,104
+125,126
+125,127
+134,135
+134,136
+143,144
+143,145
+228,229
+228,230
+296,297
+296,298
+305,306
+305,307
+311,312
+311,313
+319,320
+319,321
+327,328
+327,329
+336,337
+336,338
+349,350
+349,351
+358,359
+358,360
+379,380
+379,381
+-----guardedBy-----
+330,346
+352,368
+-----guardedByNegation-----
+331,353
+330,368
+-----lastLexicalUse-----
+330,368
+-----jump-----
+330,368
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;UnaryExpression;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ProblemStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;TypeIdExpression;TypeId;SimpleDeclSpecifier;Declarator;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;WhileStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ReturnStatement;LiteralExpression;
+-----ast_node-----
+static int set_mac_key(struct sftp_mac *mac, const EVP_MD *hash,    const unsigned char *k, uint32_t klen, const char *h, uint32_t hlen,    char *letter, const unsigned char *id, uint32_t id_len) {  EVP_MD_CTX ctx;  unsigned char *key = NULL;  size_t key_sz;  uint32_t key_len = 0;  key_sz = sftp_crypto_get_size(EVP_MD_block_size(mac->digest),    EVP_MD_size(hash));  if (key_sz == 0) {    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "unable to determine key length for MAC '%s'", mac->algo);    errno = EINVAL;    return -1;  }  key = malloc(key_sz);  if (key == NULL) {    pr_log_pri(PR_LOG_ALERT, MOD_SFTP_VERSION ": Out of memory!");    _exit(1);  }  /* In OpenSSL 0.9.6, many of the EVP_Digest* functions returned void, not   * int.  Without these ugly OpenSSL version preprocessor checks, the   * compiler will error out with "void value not ignored as it ought to be".   */#if OPENSSL_VERSION_NUMBER >= 0x000907000L  if (EVP_DigestInit(&ctx, hash) != 1) {    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "error initializing message digest: %s", sftp_crypto_get_errors());    free(key);    return -1;  }#else  EVP_DigestInit(&ctx, hash);#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L  if (EVP_DigestUpdate(&ctx, k, klen) != 1) {    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "error updating message digest with K: %s", sftp_crypto_get_errors());    free(key);    return -1;  }#else  EVP_DigestUpdate(&ctx, k, klen);#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L  if (EVP_DigestUpdate(&ctx, h, hlen) != 1) {    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "error updating message digest with H: %s", sftp_crypto_get_errors());    free(key);    return -1;  }#else  EVP_DigestUpdate(&ctx, h, hlen);#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L  if (EVP_DigestUpdate(&ctx, letter, sizeof(char)) != 1) {    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "error updating message digest with '%c': %s", *letter,      sftp_crypto_get_errors());    free(key);    return -1;  }#else  EVP_DigestUpdate(&ctx, letter, sizeof(char));#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L  if (EVP_DigestUpdate(&ctx, (char *) id, id_len) != 1) {    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "error updating message digest with ID: %s", sftp_crypto_get_errors());    free(key);    return -1;  }#else  EVP_DigestUpdate(&ctx, (char *) id, id_len);#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L  if (EVP_DigestFinal(&ctx, key, &key_len) != 1) {    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "error finalizing message digest: %s", sftp_crypto_get_errors());    pr_memscrub(key, key_sz);    free(key);    return -1;  }#else  EVP_DigestFinal(&ctx, key, &key_len);#endif  /* If we need more, keep hashing, as per RFC, until we have enough   * material.   */  while (key_sz > key_len) {    uint32_t len = key_len;    pr_signals_handle();#if OPENSSL_VERSION_NUMBER >= 0x000907000L    if (EVP_DigestInit(&ctx, hash) != 1) {      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,        "error initializing message digest: %s", sftp_crypto_get_errors());      pr_memscrub(key, key_sz);      free(key);      return -1;    }#else    EVP_DigestInit(&ctx, hash);#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L    if (EVP_DigestUpdate(&ctx, k, klen) != 1) {      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,        "error updating message digest with K: %s", sftp_crypto_get_errors());      pr_memscrub(key, key_sz);      free(key);      return -1;    }#else    EVP_DigestUpdate(&ctx, k, klen);#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L    if (EVP_DigestUpdate(&ctx, h, hlen) != 1) {      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,        "error updating message digest with H: %s", sftp_crypto_get_errors());      pr_memscrub(key, key_sz);      free(key);      return -1;    }#else    EVP_DigestUpdate(&ctx, h, hlen);#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L    if (EVP_DigestUpdate(&ctx, key, len) != 1) {      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,        "error updating message digest with data: %s",        sftp_crypto_get_errors());      pr_memscrub(key, key_sz);      free(key);      return -1;    }#else    EVP_DigestUpdate(&ctx, key, len);#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L    if (EVP_DigestFinal(&ctx, key + len, &len) != 1) {      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,        "error finalizing message digest: %s", sftp_crypto_get_errors());      pr_memscrub(key, key_sz);      free(key);      return -1;    }#else    EVP_DigestFinal(&ctx, key + len, &len);#endif    key_len += len;  }  mac->key = key;  mac->keysz = key_sz;  if (mac->algo_type == SFTP_MAC_ALGO_TYPE_HMAC) {    mac->key_len = EVP_MD_size(mac->digest);  } else if (mac->algo_type == SFTP_MAC_ALGO_TYPE_UMAC64) {    mac->key_len = EVP_MD_block_size(mac->digest);  }  if (!sftp_interop_supports_feature(SFTP_SSH2_FEAT_MAC_LEN)) {    mac->key_len = 16;  }  return 0;}
+static int
+set_mac_key(struct sftp_mac *mac, const EVP_MD *hash,    const unsigned char *k, uint32_t klen, const char *h, uint32_t hlen,    char *letter, const unsigned char *id, uint32_t id_len)
+set_mac_key
+struct sftp_mac *mac
+struct sftp_mac
+sftp_mac
+*mac
+*
+mac
+const EVP_MD *hash
+const EVP_MD
+EVP_MD
+*hash
+*
+hash
+const unsigned char *k
+const unsigned char
+*k
+*
+k
+uint32_t klen
+uint32_t
+uint32_t
+klen
+klen
+const char *h
+const char
+*h
+*
+h
+uint32_t hlen
+uint32_t
+uint32_t
+hlen
+hlen
+char *letter
+char
+*letter
+*
+letter
+const unsigned char *id
+const unsigned char
+*id
+*
+id
+uint32_t id_len
+uint32_t
+uint32_t
+id_len
+id_len
+{  EVP_MD_CTX ctx;  unsigned char *key = NULL;  size_t key_sz;  uint32_t key_len = 0;  key_sz = sftp_crypto_get_size(EVP_MD_block_size(mac->digest),    EVP_MD_size(hash));  if (key_sz == 0) {    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "unable to determine key length for MAC '%s'", mac->algo);    errno = EINVAL;    return -1;  }  key = malloc(key_sz);  if (key == NULL) {    pr_log_pri(PR_LOG_ALERT, MOD_SFTP_VERSION ": Out of memory!");    _exit(1);  }  /* In OpenSSL 0.9.6, many of the EVP_Digest* functions returned void, not   * int.  Without these ugly OpenSSL version preprocessor checks, the   * compiler will error out with "void value not ignored as it ought to be".   */#if OPENSSL_VERSION_NUMBER >= 0x000907000L  if (EVP_DigestInit(&ctx, hash) != 1) {    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "error initializing message digest: %s", sftp_crypto_get_errors());    free(key);    return -1;  }#else  EVP_DigestInit(&ctx, hash);#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L  if (EVP_DigestUpdate(&ctx, k, klen) != 1) {    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "error updating message digest with K: %s", sftp_crypto_get_errors());    free(key);    return -1;  }#else  EVP_DigestUpdate(&ctx, k, klen);#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L  if (EVP_DigestUpdate(&ctx, h, hlen) != 1) {    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "error updating message digest with H: %s", sftp_crypto_get_errors());    free(key);    return -1;  }#else  EVP_DigestUpdate(&ctx, h, hlen);#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L  if (EVP_DigestUpdate(&ctx, letter, sizeof(char)) != 1) {    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "error updating message digest with '%c': %s", *letter,      sftp_crypto_get_errors());    free(key);    return -1;  }#else  EVP_DigestUpdate(&ctx, letter, sizeof(char));#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L  if (EVP_DigestUpdate(&ctx, (char *) id, id_len) != 1) {    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "error updating message digest with ID: %s", sftp_crypto_get_errors());    free(key);    return -1;  }#else  EVP_DigestUpdate(&ctx, (char *) id, id_len);#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L  if (EVP_DigestFinal(&ctx, key, &key_len) != 1) {    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "error finalizing message digest: %s", sftp_crypto_get_errors());    pr_memscrub(key, key_sz);    free(key);    return -1;  }#else  EVP_DigestFinal(&ctx, key, &key_len);#endif  /* If we need more, keep hashing, as per RFC, until we have enough   * material.   */  while (key_sz > key_len) {    uint32_t len = key_len;    pr_signals_handle();#if OPENSSL_VERSION_NUMBER >= 0x000907000L    if (EVP_DigestInit(&ctx, hash) != 1) {      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,        "error initializing message digest: %s", sftp_crypto_get_errors());      pr_memscrub(key, key_sz);      free(key);      return -1;    }#else    EVP_DigestInit(&ctx, hash);#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L    if (EVP_DigestUpdate(&ctx, k, klen) != 1) {      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,        "error updating message digest with K: %s", sftp_crypto_get_errors());      pr_memscrub(key, key_sz);      free(key);      return -1;    }#else    EVP_DigestUpdate(&ctx, k, klen);#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L    if (EVP_DigestUpdate(&ctx, h, hlen) != 1) {      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,        "error updating message digest with H: %s", sftp_crypto_get_errors());      pr_memscrub(key, key_sz);      free(key);      return -1;    }#else    EVP_DigestUpdate(&ctx, h, hlen);#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L    if (EVP_DigestUpdate(&ctx, key, len) != 1) {      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,        "error updating message digest with data: %s",        sftp_crypto_get_errors());      pr_memscrub(key, key_sz);      free(key);      return -1;    }#else    EVP_DigestUpdate(&ctx, key, len);#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L    if (EVP_DigestFinal(&ctx, key + len, &len) != 1) {      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,        "error finalizing message digest: %s", sftp_crypto_get_errors());      pr_memscrub(key, key_sz);      free(key);      return -1;    }#else    EVP_DigestFinal(&ctx, key + len, &len);#endif    key_len += len;  }  mac->key = key;  mac->keysz = key_sz;  if (mac->algo_type == SFTP_MAC_ALGO_TYPE_HMAC) {    mac->key_len = EVP_MD_size(mac->digest);  } else if (mac->algo_type == SFTP_MAC_ALGO_TYPE_UMAC64) {    mac->key_len = EVP_MD_block_size(mac->digest);  }  if (!sftp_interop_supports_feature(SFTP_SSH2_FEAT_MAC_LEN)) {    mac->key_len = 16;  }  return 0;}
+EVP_MD_CTX ctx;
+EVP_MD_CTX ctx;
+EVP_MD_CTX
+EVP_MD_CTX
+ctx
+ctx
+unsigned char *key = NULL;
+unsigned char *key = NULL;
+unsigned char
+*key = NULL
+*
+key
+= NULL
+NULL
+NULL
+size_t key_sz;
+size_t key_sz;
+size_t
+size_t
+key_sz
+key_sz
+uint32_t key_len = 0;
+uint32_t key_len = 0;
+uint32_t
+uint32_t
+key_len = 0
+key_len
+= 0
+0
+key_sz = sftp_crypto_get_size(EVP_MD_block_size(mac->digest),    EVP_MD_size(hash));
+key_sz = sftp_crypto_get_size(EVP_MD_block_size(mac->digest),    EVP_MD_size(hash))
+key_sz
+key_sz
+sftp_crypto_get_size(EVP_MD_block_size(mac->digest),    EVP_MD_size(hash))
+sftp_crypto_get_size
+sftp_crypto_get_size
+EVP_MD_block_size(mac->digest)
+EVP_MD_block_size
+EVP_MD_block_size
+mac->digest
+mac
+mac
+digest
+EVP_MD_size(hash)
+EVP_MD_size
+EVP_MD_size
+hash
+hash
+if (key_sz == 0) {    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "unable to determine key length for MAC '%s'", mac->algo);    errno = EINVAL;    return -1;  }
+key_sz == 0
+key_sz
+key_sz
+0
+{    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "unable to determine key length for MAC '%s'", mac->algo);    errno = EINVAL;    return -1;  }
+(void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "unable to determine key length for MAC '%s'", mac->algo);
+(void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "unable to determine key length for MAC '%s'", mac->algo)
+void
+void
+
+pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "unable to determine key length for MAC '%s'", mac->algo)
+pr_log_writefile
+pr_log_writefile
+sftp_logfd
+sftp_logfd
+MOD_SFTP_VERSION
+MOD_SFTP_VERSION
+"unable to determine key length for MAC '%s'"
+mac->algo
+mac
+mac
+algo
+errno = EINVAL;
+errno = EINVAL
+errno
+errno
+EINVAL
+EINVAL
+return -1;
+-1
+1
+key = malloc(key_sz);
+key = malloc(key_sz)
+key
+key
+malloc(key_sz)
+malloc
+malloc
+key_sz
+key_sz
+if (key == NULL) {    pr_log_pri(PR_LOG_ALERT, MOD_SFTP_VERSION ": Out of memory!");    _exit(1);  }
+key == NULL
+key
+key
+NULL
+NULL
+{    pr_log_pri(PR_LOG_ALERT, MOD_SFTP_VERSION ": Out of memory!");    _exit(1);  }
+pr_log_pri(PR_LOG_ALERT, MOD_SFTP_VERSION ": Out of memory!");
+_exit(1);
+_exit(1)
+_exit
+_exit
+1
+EVP_DigestInit(&ctx, hash);
+EVP_DigestInit(&ctx, hash)
+EVP_DigestInit
+EVP_DigestInit
+&ctx
+ctx
+ctx
+hash
+hash
+EVP_DigestUpdate(&ctx, k, klen);
+EVP_DigestUpdate(&ctx, k, klen)
+EVP_DigestUpdate
+EVP_DigestUpdate
+&ctx
+ctx
+ctx
+k
+k
+klen
+klen
+EVP_DigestUpdate(&ctx, h, hlen);
+EVP_DigestUpdate(&ctx, h, hlen)
+EVP_DigestUpdate
+EVP_DigestUpdate
+&ctx
+ctx
+ctx
+h
+h
+hlen
+hlen
+EVP_DigestUpdate(&ctx, letter, sizeof(char));
+EVP_DigestUpdate(&ctx, letter, sizeof(char))
+EVP_DigestUpdate
+EVP_DigestUpdate
+&ctx
+ctx
+ctx
+letter
+letter
+sizeof(char)
+char
+char
+
+EVP_DigestUpdate(&ctx, (char *) id, id_len);
+EVP_DigestUpdate(&ctx, (char *) id, id_len)
+EVP_DigestUpdate
+EVP_DigestUpdate
+&ctx
+ctx
+ctx
+(char *) id
+char *
+char
+*
+*
+id
+id
+id_len
+id_len
+EVP_DigestFinal(&ctx, key, &key_len);
+EVP_DigestFinal(&ctx, key, &key_len)
+EVP_DigestFinal
+EVP_DigestFinal
+&ctx
+ctx
+ctx
+key
+key
+&key_len
+key_len
+key_len
+while (key_sz > key_len) {    uint32_t len = key_len;    pr_signals_handle();#if OPENSSL_VERSION_NUMBER >= 0x000907000L    if (EVP_DigestInit(&ctx, hash) != 1) {      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,        "error initializing message digest: %s", sftp_crypto_get_errors());      pr_memscrub(key, key_sz);      free(key);      return -1;    }#else    EVP_DigestInit(&ctx, hash);#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L    if (EVP_DigestUpdate(&ctx, k, klen) != 1) {      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,        "error updating message digest with K: %s", sftp_crypto_get_errors());      pr_memscrub(key, key_sz);      free(key);      return -1;    }#else    EVP_DigestUpdate(&ctx, k, klen);#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L    if (EVP_DigestUpdate(&ctx, h, hlen) != 1) {      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,        "error updating message digest with H: %s", sftp_crypto_get_errors());      pr_memscrub(key, key_sz);      free(key);      return -1;    }#else    EVP_DigestUpdate(&ctx, h, hlen);#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L    if (EVP_DigestUpdate(&ctx, key, len) != 1) {      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,        "error updating message digest with data: %s",        sftp_crypto_get_errors());      pr_memscrub(key, key_sz);      free(key);      return -1;    }#else    EVP_DigestUpdate(&ctx, key, len);#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L    if (EVP_DigestFinal(&ctx, key + len, &len) != 1) {      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,        "error finalizing message digest: %s", sftp_crypto_get_errors());      pr_memscrub(key, key_sz);      free(key);      return -1;    }#else    EVP_DigestFinal(&ctx, key + len, &len);#endif    key_len += len;  }
+key_sz > key_len
+key_sz
+key_sz
+key_len
+key_len
+{    uint32_t len = key_len;    pr_signals_handle();#if OPENSSL_VERSION_NUMBER >= 0x000907000L    if (EVP_DigestInit(&ctx, hash) != 1) {      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,        "error initializing message digest: %s", sftp_crypto_get_errors());      pr_memscrub(key, key_sz);      free(key);      return -1;    }#else    EVP_DigestInit(&ctx, hash);#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L    if (EVP_DigestUpdate(&ctx, k, klen) != 1) {      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,        "error updating message digest with K: %s", sftp_crypto_get_errors());      pr_memscrub(key, key_sz);      free(key);      return -1;    }#else    EVP_DigestUpdate(&ctx, k, klen);#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L    if (EVP_DigestUpdate(&ctx, h, hlen) != 1) {      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,        "error updating message digest with H: %s", sftp_crypto_get_errors());      pr_memscrub(key, key_sz);      free(key);      return -1;    }#else    EVP_DigestUpdate(&ctx, h, hlen);#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L    if (EVP_DigestUpdate(&ctx, key, len) != 1) {      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,        "error updating message digest with data: %s",        sftp_crypto_get_errors());      pr_memscrub(key, key_sz);      free(key);      return -1;    }#else    EVP_DigestUpdate(&ctx, key, len);#endif#if OPENSSL_VERSION_NUMBER >= 0x000907000L    if (EVP_DigestFinal(&ctx, key + len, &len) != 1) {      (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,        "error finalizing message digest: %s", sftp_crypto_get_errors());      pr_memscrub(key, key_sz);      free(key);      return -1;    }#else    EVP_DigestFinal(&ctx, key + len, &len);#endif    key_len += len;  }
+uint32_t len = key_len;
+uint32_t len = key_len;
+uint32_t
+uint32_t
+len = key_len
+len
+= key_len
+key_len
+key_len
+pr_signals_handle();
+pr_signals_handle()
+pr_signals_handle
+pr_signals_handle
+EVP_DigestInit(&ctx, hash);
+EVP_DigestInit(&ctx, hash)
+EVP_DigestInit
+EVP_DigestInit
+&ctx
+ctx
+ctx
+hash
+hash
+EVP_DigestUpdate(&ctx, k, klen);
+EVP_DigestUpdate(&ctx, k, klen)
+EVP_DigestUpdate
+EVP_DigestUpdate
+&ctx
+ctx
+ctx
+k
+k
+klen
+klen
+EVP_DigestUpdate(&ctx, h, hlen);
+EVP_DigestUpdate(&ctx, h, hlen)
+EVP_DigestUpdate
+EVP_DigestUpdate
+&ctx
+ctx
+ctx
+h
+h
+hlen
+hlen
+EVP_DigestUpdate(&ctx, key, len);
+EVP_DigestUpdate(&ctx, key, len)
+EVP_DigestUpdate
+EVP_DigestUpdate
+&ctx
+ctx
+ctx
+key
+key
+len
+len
+EVP_DigestFinal(&ctx, key + len, &len);
+EVP_DigestFinal(&ctx, key + len, &len)
+EVP_DigestFinal
+EVP_DigestFinal
+&ctx
+ctx
+ctx
+key + len
+key
+key
+len
+len
+&len
+len
+len
+key_len += len;
+key_len += len
+key_len
+key_len
+len
+len
+mac->key = key;
+mac->key = key
+mac->key
+mac
+mac
+key
+key
+key
+mac->keysz = key_sz;
+mac->keysz = key_sz
+mac->keysz
+mac
+mac
+keysz
+key_sz
+key_sz
+if (mac->algo_type == SFTP_MAC_ALGO_TYPE_HMAC) {    mac->key_len = EVP_MD_size(mac->digest);  } else if (mac->algo_type == SFTP_MAC_ALGO_TYPE_UMAC64) {    mac->key_len = EVP_MD_block_size(mac->digest);  }
+mac->algo_type == SFTP_MAC_ALGO_TYPE_HMAC
+mac->algo_type
+mac
+mac
+algo_type
+SFTP_MAC_ALGO_TYPE_HMAC
+SFTP_MAC_ALGO_TYPE_HMAC
+{    mac->key_len = EVP_MD_size(mac->digest);  }
+mac->key_len = EVP_MD_size(mac->digest);
+mac->key_len = EVP_MD_size(mac->digest)
+mac->key_len
+mac
+mac
+key_len
+EVP_MD_size(mac->digest)
+EVP_MD_size
+EVP_MD_size
+mac->digest
+mac
+mac
+digest
+if (mac->algo_type == SFTP_MAC_ALGO_TYPE_UMAC64) {    mac->key_len = EVP_MD_block_size(mac->digest);  }
+mac->algo_type == SFTP_MAC_ALGO_TYPE_UMAC64
+mac->algo_type
+mac
+mac
+algo_type
+SFTP_MAC_ALGO_TYPE_UMAC64
+SFTP_MAC_ALGO_TYPE_UMAC64
+{    mac->key_len = EVP_MD_block_size(mac->digest);  }
+mac->key_len = EVP_MD_block_size(mac->digest);
+mac->key_len = EVP_MD_block_size(mac->digest)
+mac->key_len
+mac
+mac
+key_len
+EVP_MD_block_size(mac->digest)
+EVP_MD_block_size
+EVP_MD_block_size
+mac->digest
+mac
+mac
+digest
+if (!sftp_interop_supports_feature(SFTP_SSH2_FEAT_MAC_LEN)) {    mac->key_len = 16;  }
+!sftp_interop_supports_feature(SFTP_SSH2_FEAT_MAC_LEN)
+sftp_interop_supports_feature(SFTP_SSH2_FEAT_MAC_LEN)
+sftp_interop_supports_feature
+sftp_interop_supports_feature
+SFTP_SSH2_FEAT_MAC_LEN
+SFTP_SSH2_FEAT_MAC_LEN
+{    mac->key_len = 16;  }
+mac->key_len = 16;
+mac->key_len = 16
+mac->key_len
+mac
+mac
+key_len
+16
+return 0;
+0
+-----joern-----
+(321,206,0)
+(211,105,0)
+(328,185,0)
+(183,256,0)
+(334,299,0)
+(140,117,0)
+(32,319,0)
+(138,309,0)
+(345,52,0)
+(59,25,0)
+(31,149,0)
+(202,257,0)
+(140,296,0)
+(77,217,0)
+(264,252,0)
+(230,126,0)
+(358,112,0)
+(309,10,0)
+(351,25,0)
+(30,65,0)
+(289,19,0)
+(4,230,0)
+(323,317,0)
+(317,299,0)
+(72,180,0)
+(360,124,0)
+(48,252,0)
+(195,148,0)
+(358,293,0)
+(242,329,0)
+(166,189,0)
+(142,299,0)
+(233,124,0)
+(261,305,0)
+(318,228,0)
+(116,217,0)
+(350,206,0)
+(271,336,0)
+(184,252,0)
+(107,239,0)
+(55,53,0)
+(37,186,0)
+(208,161,0)
+(345,26,0)
+(62,59,0)
+(320,13,0)
+(61,284,0)
+(262,181,0)
+(376,234,0)
+(188,45,0)
+(366,63,0)
+(113,121,0)
+(139,189,0)
+(189,93,0)
+(238,65,0)
+(220,80,0)
+(55,67,0)
+(329,61,0)
+(355,208,0)
+(275,275,0)
+(20,189,0)
+(287,353,0)
+(85,151,0)
+(327,208,0)
+(230,347,0)
+(189,139,0)
+(121,310,0)
+(203,299,0)
+(369,45,0)
+(376,274,0)
+(250,65,0)
+(165,324,0)
+(348,221,0)
+(206,357,0)
+(105,52,0)
+(24,359,0)
+(207,151,0)
+(334,52,0)
+(283,173,0)
+(307,222,0)
+(240,345,0)
+(243,173,0)
+(119,14,0)
+(92,321,0)
+(277,266,0)
+(358,362,0)
+(345,299,0)
+(114,13,0)
+(215,307,0)
+(286,321,0)
+(44,378,0)
+(157,156,0)
+(319,52,0)
+(177,198,0)
+(212,149,0)
+(202,256,0)
+(0,13,0)
+(336,271,0)
+(73,305,0)
+(324,165,0)
+(0,65,0)
+(2,299,0)
+(97,144,0)
+(289,97,0)
+(326,282,0)
+(180,24,0)
+(154,88,0)
+(235,139,0)
+(259,116,0)
+(13,228,0)
+(67,185,0)
+(225,63,0)
+(134,222,0)
+(258,88,0)
+(346,299,0)
+(143,61,0)
+(63,52,0)
+(276,165,0)
+(140,190,0)
+(279,263,0)
+(106,206,0)
+(376,45,0)
+(150,28,0)
+(257,135,0)
+(2,70,0)
+(196,222,0)
+(202,307,0)
+(317,181,0)
+(301,146,0)
+(102,217,0)
+(312,26,0)
+(158,234,0)
+(337,317,0)
+(375,346,0)
+(270,299,0)
+(226,115,0)
+(353,21,0)
+(290,150,0)
+(370,294,0)
+(98,52,0)
+(328,217,0)
+(273,115,0)
+(164,188,0)
+(228,318,0)
+(3,116,0)
+(234,376,0)
+(22,55,0)
+(200,328,0)
+(218,175,0)
+(156,331,0)
+(232,115,0)
+(172,150,0)
+(308,266,0)
+(266,52,0)
+(210,165,0)
+(317,58,0)
+(268,141,0)
+(230,136,0)
+(162,230,0)
+(283,149,0)
+(379,169,0)
+(202,80,0)
+(174,95,0)
+(150,52,0)
+(359,102,0)
+(321,286,0)
+(54,105,0)
+(98,299,0)
+(134,109,0)
+(315,65,0)
+(14,136,0)
+(361,234,0)
+(96,98,0)
+(15,5,0)
+(275,124,0)
+(331,156,0)
+(178,65,0)
+(38,284,0)
+(110,140,0)
+(193,165,0)
+(296,140,0)
+(74,195,0)
+(208,217,0)
+(16,102,0)
+(149,212,0)
+(165,51,0)
+(186,37,0)
+(368,369,0)
+(334,298,0)
+(160,328,0)
+(56,362,0)
+(67,52,0)
+(121,124,0)
+(161,52,0)
+(57,58,0)
+(9,275,0)
+(322,127,0)
+(133,226,0)
+(203,204,0)
+(14,335,0)
+(44,279,0)
+(278,301,0)
+(300,14,0)
+(332,279,0)
+(201,303,0)
+(202,239,0)
+(199,221,0)
+(185,328,0)
+(321,23,0)
+(271,88,0)
+(156,302,0)
+(303,352,0)
+(316,115,0)
+(176,156,0)
+(202,188,0)
+(167,268,0)
+(335,14,0)
+(14,126,0)
+(227,88,0)
+(68,269,0)
+(326,279,0)
+(0,353,0)
+(80,173,0)
+(339,252,0)
+(214,309,0)
+(161,65,0)
+(284,61,0)
+(150,299,0)
+(124,151,0)
+(192,244,0)
+(1,151,0)
+(40,234,0)
+(312,299,0)
+(318,169,0)
+(243,299,0)
+(279,326,0)
+(131,357,0)
+(249,77,0)
+(344,107,0)
+(137,134,0)
+(223,176,0)
+(61,329,0)
+(330,111,0)
+(266,275,0)
+(108,236,0)
+(245,213,0)
+(36,353,0)
+(340,14,0)
+(68,252,0)
+(304,132,0)
+(13,217,0)
+(305,217,0)
+(82,156,0)
+(205,88,0)
+(311,102,0)
+(248,186,0)
+(263,279,0)
+(129,275,0)
+(216,186,0)
+(367,331,0)
+(51,70,0)
+(310,121,0)
+(374,233,0)
+(274,376,0)
+(104,346,0)
+(371,261,0)
+(180,217,0)
+(68,146,0)
+(309,53,0)
+(175,299,0)
+(170,197,0)
+(260,334,0)
+(42,236,0)
+(116,259,0)
+(44,204,0)
+(186,216,0)
+(0,221,0)
+(124,275,0)
+(41,304,0)
+(86,112,0)
+(202,195,0)
+(78,243,0)
+(179,233,0)
+(29,34,0)
+(322,111,0)
+(265,279,0)
+(356,347,0)
+(123,234,0)
+(306,259,0)
+(299,319,0)
+(226,25,0)
+(295,299,0)
+(89,95,0)
+(97,289,0)
+(69,28,0)
+(115,226,0)
+(202,352,0)
+(373,77,0)
+(100,65,0)
+(365,283,0)
+(181,317,0)
+(122,314,0)
+(293,358,0)
+(105,45,0)
+(229,65,0)
+(352,298,0)
+(34,299,0)
+(175,135,0)
+(377,215,0)
+(145,65,0)
+(310,213,0)
+(76,314,0)
+(226,133,0)
+(231,293,0)
+(233,310,0)
+(33,350,0)
+(252,184,0)
+(363,10,0)
+(213,310,0)
+(239,70,0)
+(202,351,0)
+(49,305,0)
+(149,283,0)
+(128,255,0)
+(46,189,0)
+(21,299,0)
+(144,97,0)
+(269,68,0)
+(206,350,0)
+(254,186,0)
+(364,5,0)
+(171,140,0)
+(11,326,0)
+(111,26,0)
+(255,257,0)
+(153,295,0)
+(198,236,0)
+(206,321,0)
+(354,289,0)
+(93,189,0)
+(310,294,0)
+(314,173,0)
+(10,309,0)
+(349,65,0)
+(314,52,0)
+(194,151,0)
+(234,40,0)
+(24,247,0)
+(19,289,0)
+(35,180,0)
+(236,108,0)
+(99,21,0)
+(317,124,0)
+(275,5,0)
+(236,84,0)
+(140,302,0)
+(253,335,0)
+(169,318,0)
+(283,365,0)
+(191,117,0)
+(147,220,0)
+(0,180,0)
+(17,183,0)
+(169,217,0)
+(109,134,0)
+(83,298,0)
+(362,358,0)
+(230,4,0)
+(266,5,0)
+(52,67,0)
+(27,296,0)
+(7,289,0)
+(124,5,0)
+(12,322,0)
+(34,146,0)
+(51,224,0)
+(202,0,0)
+(279,44,0)
+(101,289,0)
+(168,161,0)
+(236,282,0)
+(351,59,0)
+(359,24,0)
+(156,176,0)
+(134,137,0)
+(357,206,0)
+(75,196,0)
+(139,135,0)
+(313,151,0)
+(305,261,0)
+(6,65,0)
+(156,190,0)
+(271,28,0)
+(310,233,0)
+(139,235,0)
+(47,358,0)
+(152,279,0)
+(77,115,0)
+(159,65,0)
+(338,59,0)
+(241,138,0)
+(50,186,0)
+(295,148,0)
+(90,372,0)
+(341,351,0)
+(18,83,0)
+(95,65,0)
+(353,217,0)
+(202,132,0)
+(358,299,0)
+(58,317,0)
+(117,140,0)
+(98,146,0)
+(81,137,0)
+(103,2,0)
+(155,137,0)
+(187,334,0)
+(280,270,0)
+(291,137,0)
+(294,310,0)
+(5,65,0)
+(112,358,0)
+(111,322,0)
+(236,198,0)
+(314,299,0)
+(185,67,0)
+(84,236,0)
+(132,204,0)
+(105,299,0)
+(319,299,0)
+(228,71,0)
+(219,278,0)
+(270,28,0)
+(83,299,0)
+(333,244,0)
+(237,230,0)
+(66,164,0)
+(380,98,0)
+(342,149,0)
+(256,26,0)
+(309,138,0)
+(79,322,0)
+(102,359,0)
+(52,65,0)
+(8,169,0)
+(60,65,0)
+(343,149,0)
+(91,203,0)
+(196,299,0)
+(288,52,0)
+(252,68,0)
+(88,227,0)
+(378,44,0)
+(130,322,0)
+(267,151,0)
+(224,51,0)
+(97,298,0)
+(372,281,0)
+(14,340,0)
+(272,65,0)
+(137,118,0)
+(115,77,0)
+(118,137,0)
+(244,333,0)
+(206,292,0)
+(251,108,0)
+(64,312,0)
+(21,65,0)
+(297,4,0)
+(221,217,0)
+(246,116,0)
+(275,151,0)
+(369,299,0)
+(285,84,0)
+(362,5,0)
+(202,301,0)
+(347,230,0)
+(39,345,0)
+(197,69,0)
+(0,208,0)
+(125,151,0)
+(61,53,0)
+(202,69,0)
+(163,341,0)
+(111,330,0)
+(88,271,0)
+(299,65,0)
+(37,148,0)
+(325,65,0)
+(182,340,0)
+(120,37,0)
+(43,74,0)
+(221,372,0)
+(67,55,0)
+(209,124,0)
+(37,120,0)
+(87,65,0)
+(127,322,0)
+(51,165,0)
+(233,299,0)
+(94,0,0)
+(121,124,1)
+(165,324,1)
+(149,212,1)
+(276,210,1)
+(322,127,1)
+(314,52,1)
+(43,295,1)
+(192,261,1)
+(142,63,1)
+(164,66,1)
+(62,338,1)
+(154,258,1)
+(225,366,1)
+(308,275,1)
+(246,161,1)
+(237,4,1)
+(295,153,1)
+(99,353,1)
+(233,374,1)
+(40,123,1)
+(202,132,1)
+(304,41,1)
+(69,197,1)
+(380,96,1)
+(328,200,1)
+(283,365,1)
+(259,306,1)
+(19,7,1)
+(140,190,1)
+(266,52,1)
+(132,304,1)
+(98,52,1)
+(177,42,1)
+(121,113,1)
+(275,5,1)
+(112,86,1)
+(111,330,1)
+(335,253,1)
+(266,277,1)
+(280,150,1)
+(86,357,1)
+(68,252,1)
+(377,196,1)
+(0,13,1)
+(299,319,1)
+(203,299,1)
+(369,368,1)
+(134,109,1)
+(291,155,1)
+(105,52,1)
+(243,299,1)
+(279,263,1)
+(175,218,1)
+(197,170,1)
+(351,59,1)
+(33,84,1)
+(331,367,1)
+(206,106,1)
+(196,75,1)
+(331,156,1)
+(206,321,1)
+(156,190,1)
+(92,350,1)
+(254,50,1)
+(242,61,1)
+(319,52,1)
+(295,299,1)
+(20,357,1)
+(181,262,1)
+(371,305,1)
+(64,345,1)
+(294,370,1)
+(61,143,1)
+(220,147,1)
+(379,8,1)
+(334,260,1)
+(290,271,1)
+(167,346,1)
+(368,105,1)
+(268,167,1)
+(21,299,1)
+(44,279,1)
+(236,108,1)
+(63,225,1)
+(356,230,1)
+(138,241,1)
+(265,152,1)
+(264,339,1)
+(334,52,1)
+(55,22,1)
+(202,352,1)
+(123,361,1)
+(358,112,1)
+(279,326,1)
+(228,318,1)
+(352,303,1)
+(275,275,1)
+(0,94,1)
+(319,32,1)
+(257,255,1)
+(21,99,1)
+(2,103,1)
+(108,251,1)
+(81,335,1)
+(140,110,1)
+(17,312,1)
+(54,211,1)
+(345,52,1)
+(158,347,1)
+(317,299,1)
+(185,328,1)
+(374,179,1)
+(296,27,1)
+(202,188,1)
+(139,189,1)
+(61,284,1)
+(202,256,1)
+(147,243,1)
+(221,217,1)
+(127,79,1)
+(175,299,1)
+(244,192,1)
+(348,199,1)
+(3,246,1)
+(169,217,1)
+(66,369,1)
+(176,223,1)
+(316,63,1)
+(98,380,1)
+(300,340,1)
+(329,61,1)
+(83,18,1)
+(122,283,1)
+(10,309,1)
+(37,186,1)
+(160,288,1)
+(107,344,1)
+(102,217,1)
+(309,214,1)
+(202,257,1)
+(14,340,1)
+(84,236,1)
+(31,331,1)
+(169,379,1)
+(361,158,1)
+(347,356,1)
+(376,274,1)
+(105,54,1)
+(0,221,1)
+(94,372,1)
+(239,107,1)
+(104,299,1)
+(83,299,1)
+(308,293,1)
+(278,219,1)
+(252,184,1)
+(156,157,1)
+(310,233,1)
+(57,317,1)
+(49,259,1)
+(213,245,1)
+(152,332,1)
+(210,329,1)
+(285,236,1)
+(140,296,1)
+(262,347,1)
+(170,270,1)
+(8,13,1)
+(143,284,1)
+(310,121,1)
+(233,124,1)
+(202,0,1)
+(91,44,1)
+(188,164,1)
+(191,140,1)
+(192,24,1)
+(0,208,1)
+(35,72,1)
+(364,95,1)
+(58,57,1)
+(284,38,1)
+(128,175,1)
+(305,73,1)
+(342,343,1)
+(323,181,1)
+(161,52,1)
+(9,294,1)
+(131,206,1)
+(153,37,1)
+(259,116,1)
+(321,92,1)
+(227,154,1)
+(223,10,1)
+(202,239,1)
+(155,81,1)
+(202,351,1)
+(77,249,1)
+(307,215,1)
+(351,341,1)
+(106,321,1)
+(156,176,1)
+(75,134,1)
+(187,97,1)
+(236,282,1)
+(226,115,1)
+(340,182,1)
+(38,268,1)
+(4,297,1)
+(124,275,1)
+(12,294,1)
+(18,334,1)
+(367,156,1)
+(301,278,1)
+(258,205,1)
+(2,299,1)
+(230,4,1)
+(335,14,1)
+(201,83,1)
+(253,14,1)
+(14,126,1)
+(13,217,1)
+(67,185,1)
+(115,77,1)
+(312,64,1)
+(251,335,1)
+(32,142,1)
+(346,299,1)
+(34,299,1)
+(7,354,1)
+(196,299,1)
+(369,299,1)
+(241,267,1)
+(273,232,1)
+(314,76,1)
+(260,187,1)
+(102,16,1)
+(333,244,1)
+(124,5,1)
+(353,36,1)
+(88,227,1)
+(116,3,1)
+(297,331,1)
+(357,131,1)
+(41,203,1)
+(317,181,1)
+(184,48,1)
+(261,305,1)
+(5,15,1)
+(309,138,1)
+(230,126,1)
+(84,285,1)
+(203,91,1)
+(366,52,1)
+(317,124,1)
+(221,348,1)
+(219,34,1)
+(58,317,1)
+(76,122,1)
+(236,198,1)
+(150,172,1)
+(208,217,1)
+(329,242,1)
+(163,59,1)
+(56,47,1)
+(24,359,1)
+(289,19,1)
+(42,108,1)
+(202,307,1)
+(218,139,1)
+(134,137,1)
+(355,327,1)
+(27,329,1)
+(47,112,1)
+(180,217,1)
+(293,358,1)
+(310,213,1)
+(231,358,1)
+(321,286,1)
+(270,299,1)
+(129,9,1)
+(318,169,1)
+(55,53,1)
+(317,337,1)
+(345,299,1)
+(343,31,1)
+(36,287,1)
+(208,355,1)
+(305,217,1)
+(46,166,1)
+(358,299,1)
+(233,299,1)
+(114,259,1)
+(202,195,1)
+(359,102,1)
+(39,240,1)
+(360,266,1)
+(193,276,1)
+(199,333,1)
+(96,68,1)
+(243,78,1)
+(161,168,1)
+(332,84,1)
+(326,11,1)
+(271,336,1)
+(312,299,1)
+(350,33,1)
+(22,185,1)
+(116,217,1)
+(206,292,1)
+(157,82,1)
+(11,265,1)
+(93,46,1)
+(270,280,1)
+(80,220,1)
+(61,53,1)
+(124,209,1)
+(67,55,1)
+(263,326,1)
+(363,309,1)
+(206,350,1)
+(266,5,1)
+(174,89,1)
+(98,299,1)
+(137,118,1)
+(68,269,1)
+(320,114,1)
+(373,273,1)
+(139,235,1)
+(130,12,1)
+(13,320,1)
+(195,74,1)
+(38,346,1)
+(202,301,1)
+(44,378,1)
+(156,302,1)
+(74,43,1)
+(172,290,1)
+(338,226,1)
+(140,302,1)
+(79,130,1)
+(362,5,1)
+(261,371,1)
+(232,316,1)
+(288,5,1)
+(275,129,1)
+(101,293,1)
+(212,342,1)
+(103,51,1)
+(52,67,1)
+(372,90,1)
+(51,165,1)
+(226,133,1)
+(346,375,1)
+(0,180,1)
+(245,58,1)
+(341,163,1)
+(179,213,1)
+(326,282,1)
+(337,323,1)
+(63,52,1)
+(293,231,1)
+(105,299,1)
+(192,228,1)
+(166,20,1)
+(97,289,1)
+(73,49,1)
+(94,333,1)
+(168,208,1)
+(362,56,1)
+(117,191,1)
+(324,193,1)
+(150,299,1)
+(77,217,1)
+(202,69,1)
+(48,264,1)
+(51,224,1)
+(78,314,1)
+(162,237,1)
+(211,376,1)
+(267,124,1)
+(15,364,1)
+(309,53,1)
+(198,177,1)
+(82,176,1)
+(117,140,1)
+(37,120,1)
+(110,171,1)
+(240,111,1)
+(113,233,1)
+(14,119,1)
+(230,162,1)
+(248,117,1)
+(118,291,1)
+(14,136,1)
+(271,88,1)
+(230,136,1)
+(205,10,1)
+(344,2,1)
+(183,17,1)
+(357,206,1)
+(345,39,1)
+(358,362,1)
+(327,21,1)
+(353,217,1)
+(287,266,1)
+(150,52,1)
+(306,116,1)
+(321,23,1)
+(171,296,1)
+(215,377,1)
+(16,311,1)
+(354,101,1)
+(376,234,1)
+(347,230,1)
+(0,353,1)
+(370,310,1)
+(97,144,1)
+(328,217,1)
+(29,98,1)
+(50,248,1)
+(277,308,1)
+(314,299,1)
+(303,201,1)
+(275,124,1)
+(202,80,1)
+(339,58,1)
+(180,35,1)
+(59,62,1)
+(34,29,1)
+(334,299,1)
+(182,117,1)
+(200,160,1)
+(256,183,1)
+(255,128,1)
+(189,93,1)
+(119,300,1)
+(72,261,1)
+(90,221,1)
+(95,174,1)
+(249,373,1)
+(294,310,1)
+(311,180,1)
+(266,275,1)
+(234,40,1)
+(111,322,1)
+(214,138,1)
+(216,254,1)
+(283,149,1)
+(375,104,1)
+(10,363,1)
+(186,216,1)
+(209,360,1)
+(61,63,2)
+(56,357,2)
+(137,118,2)
+(252,58,2)
+(362,5,2)
+(237,331,2)
+(31,331,2)
+(358,362,2)
+(72,261,2)
+(202,301,2)
+(44,378,2)
+(175,299,2)
+(347,230,2)
+(351,59,2)
+(57,347,2)
+(68,252,2)
+(34,299,2)
+(271,10,2)
+(374,58,2)
+(16,261,2)
+(319,63,2)
+(345,294,2)
+(61,284,2)
+(193,329,2)
+(66,347,2)
+(2,329,2)
+(317,124,2)
+(312,294,2)
+(266,275,2)
+(223,10,2)
+(375,63,2)
+(113,58,2)
+(314,299,2)
+(128,357,2)
+(202,195,2)
+(287,266,2)
+(202,188,2)
+(376,347,2)
+(196,335,2)
+(13,259,2)
+(73,259,2)
+(230,136,2)
+(150,10,2)
+(211,347,2)
+(299,319,2)
+(8,259,2)
+(329,63,2)
+(117,140,2)
+(48,58,2)
+(309,138,2)
+(47,357,2)
+(268,346,2)
+(40,347,2)
+(376,234,2)
+(310,58,2)
+(347,331,2)
+(98,58,2)
+(183,294,2)
+(35,261,2)
+(41,84,2)
+(158,347,2)
+(271,336,2)
+(150,299,2)
+(230,126,2)
+(0,221,2)
+(283,149,2)
+(111,322,2)
+(14,340,2)
+(295,117,2)
+(169,217,2)
+(218,357,2)
+(169,259,2)
+(189,93,2)
+(276,329,2)
+(202,351,2)
+(215,335,2)
+(244,266,2)
+(259,266,2)
+(277,294,2)
+(203,299,2)
+(322,127,2)
+(13,217,2)
+(358,299,2)
+(252,184,2)
+(124,5,2)
+(180,261,2)
+(308,293,2)
+(270,299,2)
+(326,84,2)
+(344,329,2)
+(219,58,2)
+(202,307,2)
+(14,136,2)
+(228,318,2)
+(137,335,2)
+(114,259,2)
+(284,63,2)
+(317,299,2)
+(231,357,2)
+(106,84,2)
+(51,165,2)
+(12,294,2)
+(267,266,2)
+(82,10,2)
+(179,58,2)
+(10,266,2)
+(369,347,2)
+(102,261,2)
+(156,302,2)
+(307,335,2)
+(373,63,2)
+(202,256,2)
+(189,357,2)
+(161,52,2)
+(96,58,2)
+(88,227,2)
+(317,347,2)
+(116,266,2)
+(209,266,2)
+(134,109,2)
+(273,63,2)
+(115,77,2)
+(139,235,2)
+(83,299,2)
+(0,13,2)
+(290,10,2)
+(201,293,2)
+(112,357,2)
+(105,347,2)
+(257,357,2)
+(334,299,2)
+(202,239,2)
+(46,357,2)
+(180,217,2)
+(143,63,2)
+(0,353,2)
+(164,347,2)
+(147,331,2)
+(263,84,2)
+(119,117,2)
+(294,58,2)
+(50,117,2)
+(353,266,2)
+(175,357,2)
+(293,358,2)
+(275,5,2)
+(346,299,2)
+(202,0,2)
+(234,40,2)
+(121,58,2)
+(176,10,2)
+(18,293,2)
+(331,156,2)
+(132,84,2)
+(348,333,2)
+(243,331,2)
+(29,58,2)
+(142,63,2)
+(318,169,2)
+(213,58,2)
+(255,357,2)
+(157,10,2)
+(242,63,2)
+(335,14,2)
+(232,63,2)
+(101,293,2)
+(202,257,2)
+(198,335,2)
+(177,335,2)
+(14,126,2)
+(236,282,2)
+(154,10,2)
+(376,274,2)
+(293,357,2)
+(319,52,2)
+(226,115,2)
+(129,294,2)
+(195,117,2)
+(121,124,2)
+(36,266,2)
+(172,10,2)
+(55,53,2)
+(168,266,2)
+(111,294,2)
+(51,224,2)
+(38,63,2)
+(130,294,2)
+(0,180,2)
+(296,329,2)
+(91,84,2)
+(332,84,2)
+(58,317,2)
+(166,357,2)
+(52,67,2)
+(78,331,2)
+(108,335,2)
+(369,299,2)
+(230,331,2)
+(271,88,2)
+(63,52,2)
+(44,279,2)
+(203,84,2)
+(345,299,2)
+(67,55,2)
+(139,357,2)
+(372,333,2)
+(76,331,2)
+(98,299,2)
+(234,347,2)
+(77,63,2)
+(103,329,2)
+(124,266,2)
+(371,259,2)
+(304,84,2)
+(74,117,2)
+(233,124,2)
+(90,333,2)
+(97,289,2)
+(328,217,2)
+(335,117,2)
+(81,335,2)
+(206,292,2)
+(149,331,2)
+(357,84,2)
+(202,80,2)
+(197,10,2)
+(162,331,2)
+(368,347,2)
+(3,266,2)
+(19,293,2)
+(245,58,2)
+(259,116,2)
+(301,58,2)
+(333,266,2)
+(221,217,2)
+(314,331,2)
+(92,84,2)
+(216,117,2)
+(343,331,2)
+(196,299,2)
+(334,293,2)
+(277,293,2)
+(345,52,2)
+(69,10,2)
+(321,84,2)
+(171,329,2)
+(199,333,2)
+(309,266,2)
+(342,331,2)
+(227,10,2)
+(249,63,2)
+(316,63,2)
+(266,52,2)
+(67,185,2)
+(21,299,2)
+(239,329,2)
+(261,305,2)
+(220,331,2)
+(275,294,2)
+(62,63,2)
+(83,293,2)
+(248,117,2)
+(363,266,2)
+(37,186,2)
+(184,58,2)
+(291,335,2)
+(7,293,2)
+(280,10,2)
+(367,10,2)
+(94,266,2)
+(266,294,2)
+(185,328,2)
+(270,10,2)
+(27,329,2)
+(260,293,2)
+(10,309,2)
+(258,10,2)
+(208,266,2)
+(134,137,2)
+(14,117,2)
+(310,233,2)
+(236,335,2)
+(327,266,2)
+(323,347,2)
+(289,293,2)
+(310,121,2)
+(206,321,2)
+(285,335,2)
+(350,84,2)
+(331,10,2)
+(324,329,2)
+(186,216,2)
+(236,198,2)
+(107,329,2)
+(84,335,2)
+(264,58,2)
+(212,331,2)
+(329,61,2)
+(309,53,2)
+(279,84,2)
+(379,259,2)
+(308,294,2)
+(361,347,2)
+(34,58,2)
+(165,329,2)
+(208,217,2)
+(140,329,2)
+(253,117,2)
+(111,330,2)
+(49,259,2)
+(359,102,2)
+(39,294,2)
+(68,269,2)
+(43,117,2)
+(321,23,2)
+(279,263,2)
+(2,299,2)
+(32,63,2)
+(191,329,2)
+(187,293,2)
+(165,324,2)
+(266,293,2)
+(9,294,2)
+(118,335,2)
+(289,19,2)
+(305,217,2)
+(295,299,2)
+(116,217,2)
+(156,176,2)
+(170,10,2)
+(33,84,2)
+(124,275,2)
+(140,190,2)
+(167,346,2)
+(182,117,2)
+(97,144,2)
+(127,294,2)
+(297,331,2)
+(37,117,2)
+(20,357,2)
+(310,213,2)
+(37,120,2)
+(283,365,2)
+(61,53,2)
+(326,282,2)
+(233,299,2)
+(140,302,2)
+(262,347,2)
+(21,266,2)
+(275,124,2)
+(104,63,2)
+(243,299,2)
+(54,347,2)
+(152,84,2)
+(117,329,2)
+(228,259,2)
+(362,357,2)
+(138,266,2)
+(337,347,2)
+(105,52,2)
+(318,259,2)
+(80,331,2)
+(380,58,2)
+(314,52,2)
+(311,261,2)
+(134,335,2)
+(206,350,2)
+(156,10,2)
+(294,310,2)
+(64,294,2)
+(88,10,2)
+(320,259,2)
+(322,294,2)
+(226,63,2)
+(149,212,2)
+(188,347,2)
+(17,294,2)
+(140,296,2)
+(123,347,2)
+(340,117,2)
+(210,329,2)
+(305,259,2)
+(155,335,2)
+(283,331,2)
+(317,181,2)
+(275,275,2)
+(58,347,2)
+(51,329,2)
+(299,63,2)
+(240,294,2)
+(339,58,2)
+(202,352,2)
+(115,63,2)
+(44,84,2)
+(84,236,2)
+(338,63,2)
+(206,84,2)
+(359,261,2)
+(370,58,2)
+(11,84,2)
+(266,5,2)
+(202,132,2)
+(321,286,2)
+(334,52,2)
+(221,333,2)
+(79,294,2)
+(256,294,2)
+(351,63,2)
+(303,293,2)
+(186,117,2)
+(306,266,2)
+(110,329,2)
+(241,266,2)
+(226,133,2)
+(98,52,2)
+(105,299,2)
+(261,259,2)
+(333,244,2)
+(102,217,2)
+(202,69,2)
+(356,331,2)
+(377,335,2)
+(0,266,2)
+(153,117,2)
+(161,266,2)
+(352,293,2)
+(357,206,2)
+(300,117,2)
+(77,217,2)
+(254,117,2)
+(214,266,2)
+(265,84,2)
+(99,266,2)
+(358,112,2)
+(236,108,2)
+(139,189,2)
+(68,58,2)
+(163,63,2)
+(97,293,2)
+(360,266,2)
+(156,190,2)
+(75,335,2)
+(354,293,2)
+(312,299,2)
+(278,58,2)
+(4,331,2)
+(24,359,2)
+(122,331,2)
+(355,266,2)
+(341,63,2)
+(59,63,2)
+(86,357,2)
+(42,335,2)
+(230,4,2)
+(251,335,2)
+(346,63,2)
+(24,261,2)
+(181,347,2)
+(358,357,2)
+(93,357,2)
+(192,266,2)
+(353,217,2)
+(205,10,2)
+(150,52,2)
+(246,266,2)
+(131,84,2)
+(233,58,2)
+(0,208,2)
+(279,326,2)
+-----------------------------------
+(0,return 0;)
+(1,if (EVP_DigestUpdate(&ctx, k, klen)
+(2,free(key)
+(3,algo_type)
+(4,&ctx)
+(5,key_len = 0)
+(6,key_sz)
+(7,"error finalizing message digest: %s")
+(8,mac)
+(9,key_len)
+(10,EVP_DigestInit(&ctx, hash)
+(11,letter)
+(12,sftp_logfd)
+(13,mac->key_len)
+(14,EVP_DigestUpdate(&ctx, h, hlen)
+(15,0)
+(16,digest)
+(17,1)
+(18,key)
+(19,sftp_crypto_get_errors()
+(20,sftp_logfd)
+(21,mac->key = key)
+(22,hash)
+(23,const unsigned char *id)
+(24,mac->key_len = EVP_MD_block_size(mac->digest)
+(25,)
+(26,)
+(27,ctx)
+(28,)
+(29,key)
+(30,if (EVP_DigestInit(&ctx, hash)
+(31,sftp_logfd)
+(32,key_sz)
+(33,ctx)
+(34,free(key)
+(35,key_len)
+(36,key)
+(37,(void)
+(38,ctx)
+(39,key_sz)
+(40,sftp_crypto_get_errors()
+(41,1)
+(42,letter)
+(43,1)
+(44,(void)
+(45,)
+(46,"error updating message digest with ID: %s")
+(47,key)
+(48,"error updating message digest with data: %s")
+(49,mac)
+(50,MOD_SFTP_VERSION)
+(51,(void)
+(52,key_sz = sftp_crypto_get_size(EVP_MD_block_size(mac->digest)
+(53,const EVP_MD *hash)
+(54,key_sz)
+(55,EVP_MD_size(hash)
+(56,key_len)
+(57,1)
+(58,EVP_DigestUpdate(&ctx, key, len)
+(59,errno = EINVAL)
+(60,if (key_sz == 0)
+(61,EVP_DigestInit(&ctx, hash)
+(62,EINVAL)
+(63,key_sz == 0)
+(64,key)
+(65,)
+(66,1)
+(67,sftp_crypto_get_size(EVP_MD_block_size(mac->digest)
+(68,(void)
+(69,return -1;)
+(70,)
+(71,)
+(72,mac)
+(73,algo_type)
+(74,-1)
+(75,key)
+(76,key_sz)
+(77,mac->algo)
+(78,key)
+(79,"error finalizing message digest: %s")
+(80,return -1;)
+(81,sftp_logfd)
+(82,k)
+(83,free(key)
+(84,EVP_DigestUpdate(&ctx, letter, sizeof(char)
+(85,if (EVP_DigestFinal(&ctx, key + len, &len)
+(86,ctx)
+(87,if (mac->algo_type == SFTP_MAC_ALGO_TYPE_HMAC)
+(88,pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,\n\\n        "error initializing message digest: %s", sftp_crypto_get_errors()
+(89,key)
+(90,16)
+(91,key)
+(92,id)
+(93,sftp_crypto_get_errors()
+(94,0)
+(95,*key = NULL)
+(96,key)
+(97,(void)
+(98,pr_memscrub(key, key_sz)
+(99,key)
+(100,if (EVP_DigestFinal(&ctx, key, &key_len)
+(101,sftp_logfd)
+(102,mac->digest)
+(103,key)
+(104,key)
+(105,pr_memscrub(key, key_sz)
+(106,id_len)
+(107,-1)
+(108,&ctx)
+(109,void)
+(110,klen)
+(111,(void)
+(112,&ctx)
+(113,len)
+(114,mac)
+(115,pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,\n\\n      "unable to determine key length for MAC \'%s\'", mac->algo)
+(116,mac->algo_type)
+(117,EVP_DigestUpdate(&ctx, k, klen)
+(118,sftp_crypto_get_errors()
+(119,hlen)
+(120,void)
+(121,&len)
+(122,key)
+(123,"error updating message digest with H: %s")
+(124,len = key_len)
+(125,if (EVP_DigestUpdate(&ctx, key, len)
+(126,uint32_t hlen)
+(127,sftp_crypto_get_errors()
+(128,1)
+(129,len)
+(130,MOD_SFTP_VERSION)
+(131,1)
+(132,return -1;)
+(133,void)
+(134,(void)
+(135,)
+(136,const char *h)
+(137,pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,\n\\n      "error updating message digest with H: %s", sftp_crypto_get_errors()
+(138,&ctx)
+(139,(void)
+(140,EVP_DigestUpdate(&ctx, k, klen)
+(141,)
+(142,key)
+(143,hash)
+(144,void)
+(145,key_len)
+(146,)
+(147,1)
+(148,)
+(149,pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,\n\\n        "error updating message digest with K: %s", sftp_crypto_get_errors()
+(150,pr_memscrub(key, key_sz)
+(151,)
+(152,MOD_SFTP_VERSION)
+(153,key)
+(154,"error initializing message digest: %s")
+(155,MOD_SFTP_VERSION)
+(156,EVP_DigestUpdate(&ctx, k, klen)
+(157,klen)
+(158,sftp_logfd)
+(159,if (EVP_DigestUpdate(&ctx, h, hlen)
+(160,mac)
+(161,mac->keysz = key_sz)
+(162,hlen)
+(163,1)
+(164,-1)
+(165,pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,\n\\n      "error initializing message digest: %s", sftp_crypto_get_errors()
+(166,MOD_SFTP_VERSION)
+(167,1)
+(168,key_sz)
+(169,mac->digest)
+(170,1)
+(171,k)
+(172,key_sz)
+(173,)
+(174,NULL)
+(175,free(key)
+(176,&ctx)
+(177,char)
+(178,if (EVP_DigestUpdate(&ctx, k, klen)
+(179,key)
+(180,mac->key_len)
+(181,&ctx)
+(182,ctx)
+(183,-1)
+(184,sftp_crypto_get_errors()
+(185,EVP_MD_block_size(mac->digest)
+(186,pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,\n\\n      "error updating message digest with K: %s", sftp_crypto_get_errors()
+(187,key)
+(188,return -1;)
+(189,pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,\n\\n      "error updating message digest with ID: %s", sftp_crypto_get_errors()
+(190,uint32_t klen)
+(191,1)
+(192,SFTP_SSH2_FEAT_MAC_LEN)
+(193,"error initializing message digest: %s")
+(194,len)
+(195,return -1;)
+(196,free(key)
+(197,-1)
+(198,sizeof(char)
+(199,mac)
+(200,digest)
+(201,1)
+(202,RET)
+(203,free(key)
+(204,)
+(205,sftp_logfd)
+(206,EVP_DigestUpdate(&ctx, (char *)
+(207,if (EVP_DigestInit(&ctx, hash)
+(208,mac->keysz)
+(209,key_len)
+(210,sftp_logfd)
+(211,key)
+(212,sftp_crypto_get_errors()
+(213,&ctx)
+(214,hash)
+(215,-1)
+(216,sftp_crypto_get_errors()
+(217,struct sftp_mac *mac)
+(218,key)
+(219,1)
+(220,-1)
+(221,mac->key_len)
+(222,)
+(223,ctx)
+(224,void)
+(225,0)
+(226,(void)
+(227,sftp_crypto_get_errors()
+(228,mac->key_len = EVP_MD_size(mac->digest)
+(229,key)
+(230,EVP_DigestUpdate(&ctx, h, hlen)
+(231,1)
+(232,MOD_SFTP_VERSION)
+(233,key + len)
+(234,pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,\n\\n        "error updating message digest with H: %s", sftp_crypto_get_errors()
+(235,void)
+(236,EVP_DigestUpdate(&ctx, letter, sizeof(char)
+(237,h)
+(238,ctx)
+(239,return -1;)
+(240,key)
+(241,ctx)
+(242,1)
+(243,free(key)
+(244,sftp_interop_supports_feature(SFTP_SSH2_FEAT_MAC_LEN)
+(245,ctx)
+(246,mac)
+(247,)
+(248,sftp_logfd)
+(249,algo)
+(250,while (key_sz > key_len)
+(251,ctx)
+(252,pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,\n\\n        "error updating message digest with data: %s",\n\\n        sftp_crypto_get_errors()
+(253,1)
+(254,"error updating message digest with K: %s")
+(255,-1)
+(256,return -1;)
+(257,return -1;)
+(258,MOD_SFTP_VERSION)
+(259,mac->algo_type == SFTP_MAC_ALGO_TYPE_HMAC)
+(260,key_sz)
+(261,mac->algo_type == SFTP_MAC_ALGO_TYPE_UMAC64)
+(262,ctx)
+(263,sftp_crypto_get_errors()
+(264,MOD_SFTP_VERSION)
+(265,"error updating message digest with \'%c\': %s")
+(266,key_sz > key_len)
+(267,pr_signals_handle()
+(268,_exit(1)
+(269,void)
+(270,free(key)
+(271,(void)
+(272,if (EVP_DigestUpdate(&ctx, letter, sizeof(char)
+(273,"unable to determine key length for MAC \'%s\'")
+(274,void)
+(275,key_len += len)
+(276,MOD_SFTP_VERSION)
+(277,key_len)
+(278,-1)
+(279,pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,\n\\n      "error updating message digest with \'%c\': %s", *letter,\n\\n      sftp_crypto_get_errors()
+(280,key)
+(281,)
+(282,char *letter)
+(283,(void)
+(284,&ctx)
+(285,1)
+(286,char *)
+(287,mac)
+(288,key_sz)
+(289,pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,\n\\n      "error finalizing message digest: %s", sftp_crypto_get_errors()
+(290,key)
+(291,"error updating message digest with H: %s")
+(292,uint32_t id_len)
+(293,EVP_DigestFinal(&ctx, key, &key_len)
+(294,EVP_DigestFinal(&ctx, key + len, &len)
+(295,free(key)
+(296,&ctx)
+(297,ctx)
+(298,)
+(299,key = malloc(key_sz)
+(300,h)
+(301,return -1;)
+(302,const unsigned char *k)
+(303,-1)
+(304,-1)
+(305,mac->algo_type)
+(306,SFTP_MAC_ALGO_TYPE_HMAC)
+(307,return -1;)
+(308,key_sz)
+(309,EVP_DigestInit(&ctx, hash)
+(310,EVP_DigestFinal(&ctx, key + len, &len)
+(311,mac)
+(312,free(key)
+(313,if (EVP_DigestUpdate(&ctx, h, hlen)
+(314,pr_memscrub(key, key_sz)
+(315,if (!sftp_interop_supports_feature(SFTP_SSH2_FEAT_MAC_LEN)
+(316,sftp_logfd)
+(317,EVP_DigestUpdate(&ctx, key, len)
+(318,EVP_MD_size(mac->digest)
+(319,malloc(key_sz)
+(320,key_len)
+(321,(char *)
+(322,pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,\n\\n        "error finalizing message digest: %s", sftp_crypto_get_errors()
+(323,key)
+(324,sftp_crypto_get_errors()
+(325,if (key == NULL)
+(326,*letter)
+(327,mac)
+(328,mac->digest)
+(329,EVP_DigestInit(&ctx, hash)
+(330,void)
+(331,EVP_DigestUpdate(&ctx, k, klen)
+(332,sftp_logfd)
+(333,!sftp_interop_supports_feature(SFTP_SSH2_FEAT_MAC_LEN)
+(334,pr_memscrub(key, key_sz)
+(335,EVP_DigestUpdate(&ctx, h, hlen)
+(336,void)
+(337,len)
+(338,errno)
+(339,sftp_logfd)
+(340,&ctx)
+(341,-1)
+(342,"error updating message digest with K: %s")
+(343,MOD_SFTP_VERSION)
+(344,1)
+(345,pr_memscrub(key, key_sz)
+(346,key == NULL)
+(347,EVP_DigestUpdate(&ctx, h, hlen)
+(348,key_len)
+(349,if (EVP_DigestUpdate(&ctx, (char *)
+(350,&ctx)
+(351,return -1;)
+(352,return -1;)
+(353,mac->key)
+(354,MOD_SFTP_VERSION)
+(355,keysz)
+(356,1)
+(357,EVP_DigestUpdate(&ctx, (char *)
+(358,EVP_DigestFinal(&ctx, key, &key_len)
+(359,EVP_MD_block_size(mac->digest)
+(360,len)
+(361,MOD_SFTP_VERSION)
+(362,&key_len)
+(363,1)
+(364,key_len)
+(365,void)
+(366,key_sz)
+(367,1)
+(368,key)
+(369,free(key)
+(370,1)
+(371,SFTP_MAC_ALGO_TYPE_UMAC64)
+(372,mac->key_len = 16)
+(373,mac)
+(374,len)
+(375,NULL)
+(376,(void)
+(377,1)
+(378,void)
+(379,digest)
+(380,key_sz)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

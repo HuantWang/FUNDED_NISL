@@ -1,0 +1,4397 @@
+-----label-----
+0
+-----code-----
+static void post_process_linkages(Sentence sent, Parse_Options opts)
+{
+	int *indices;
+	int in, block_bottom, block_top;
+	int N_linkages_found, N_linkages_alloced;
+	int N_linkages_post_processed, N_valid_linkages;
+	int overflowed, only_canonical_allowed;
+	double denom;
+	Linkage_info *link_info;
+	int canonical;
+
+	free_post_processing(sent);
+
+	overflowed = build_parse_set(sent, sent->null_count, opts);
+	print_time(opts, "Built parse set");
+
+	if (overflowed) {
+		/* We know that sent->num_linkages_found is bogus, possibly negative */
+		sent->num_linkages_found = opts->linkage_limit;
+		if (opts->verbosity > 1)
+		  fprintf(stdout,
+				  "Warning: Count overflow.\n"
+				  "Considering a random subset of %d of an unknown and large number of linkages\n",
+				  opts->linkage_limit);
+	}
+	N_linkages_found = sent->num_linkages_found;
+
+	if (sent->num_linkages_found == 0) {
+		sent->num_linkages_alloced = 0;
+		sent->num_linkages_post_processed = 0;
+		sent->num_valid_linkages = 0;
+		sent->link_info = NULL;
+		return;
+	}
+
+	if (N_linkages_found > opts->linkage_limit)
+	{
+		N_linkages_alloced = opts->linkage_limit;
+		if (opts->verbosity > 1) {
+		  fprintf(stdout,
+				  "Warning: Considering a random subset of %d of %d linkages\n",
+				  N_linkages_alloced, N_linkages_found);
+		}
+	}
+	else N_linkages_alloced = N_linkages_found;
+
+	link_info=(Linkage_info *)xalloc(N_linkages_alloced * sizeof(Linkage_info));
+	N_linkages_post_processed = N_valid_linkages = 0;
+
+	/* generate an array of linkage indices to examine */
+	indices = (int *) xalloc(N_linkages_alloced * sizeof(int));
+	if (overflowed) {
+		for (in=0; in<N_linkages_alloced; in++) {
+			indices[in] = -(in+1);
+		}
+	}
+	else {
+		my_random_initialize(N_linkages_found + sent->length);
+		for (in=0; in<N_linkages_alloced; in++) {
+			denom = (double) N_linkages_alloced;
+			block_bottom = (int) (((double)in*(double) N_linkages_found)/denom);
+			block_top = (int) (((double)(in+1)*(double)N_linkages_found)/denom);
+			indices[in] = block_bottom + (my_random() % (block_top-block_bottom));
+		}
+		my_random_finalize();
+	}
+
+	only_canonical_allowed = (!(overflowed || (N_linkages_found > 2*opts->linkage_limit)));
+	/* When we're processing only a small subset of the linkages, don't worry
+	   about restricting the set we consider to be canonical ones.  In the extreme
+	   case where we are only generating 1 in a million linkages, it's very unlikely
+	   that we'll hit two symmetric variants of the same linkage anyway. */
+
+	/* (optional) first pass: just visit the linkages */
+	/* The purpose of these two passes is to make the post-processing more
+	   efficient.  Because (hopefully) by the time you do the real work
+	   in the 2nd pass you've pruned the relevant rule set in the first pass. */
+	if (sent->length >= opts->twopass_length) {
+		for (in=0; (in < N_linkages_alloced) &&
+				   (!resources_exhausted(opts->resources)); in++) {
+			extract_links(indices[in], sent->null_count, sent->parse_info);
+			if (set_has_fat_down(sent)) {
+				if (only_canonical_allowed && !is_canonical_linkage(sent)) continue;
+				analyze_fat_linkage(sent, opts, PP_FIRST_PASS);
+			}
+			else {
+				analyze_thin_linkage(sent, opts, PP_FIRST_PASS);
+			}
+		}
+	}
+
+	/* second pass: actually perform post-processing */
+	for (in=0; (in < N_linkages_alloced) &&
+			   (!resources_exhausted(opts->resources)); in++) {
+		extract_links(indices[in], sent->null_count, sent->parse_info);
+		if (set_has_fat_down(sent)) {
+			canonical = is_canonical_linkage(sent);
+			if (only_canonical_allowed && !canonical) continue;
+			link_info[N_linkages_post_processed] =
+				analyze_fat_linkage(sent, opts, PP_SECOND_PASS);
+			link_info[N_linkages_post_processed].fat = TRUE;
+			link_info[N_linkages_post_processed].canonical = canonical;
+		}
+		else {
+			link_info[N_linkages_post_processed] =
+				analyze_thin_linkage(sent, opts, PP_SECOND_PASS);
+			link_info[N_linkages_post_processed].fat = FALSE;
+			link_info[N_linkages_post_processed].canonical = TRUE;
+		}
+		if (link_info[N_linkages_post_processed].N_violations==0)
+			N_valid_linkages++;
+		link_info[N_linkages_post_processed].index = indices[in];
+		N_linkages_post_processed++;
+	}
+
+	print_time(opts, "Postprocessed all linkages");
+	qsort((void *)link_info, N_linkages_post_processed, sizeof(Linkage_info),
+		  (int (*)(const void *, const void *)) opts->cost_model.compare_fn);
+
+	if (!resources_exhausted(opts->resources)) {
+		assert(! ((N_linkages_post_processed == 0) &&
+				  (N_linkages_found > 0) &&
+				  (N_linkages_found < opts->linkage_limit)),
+			   "None of the linkages is canonical");
+	}
+
+	if (opts->verbosity > 1) {
+		fprintf(stdout, "%d of %d linkages with no P.P. violations\n",
+				N_valid_linkages, N_linkages_post_processed);
+	}
+
+	print_time(opts, "Sorted all linkages");
+
+	sent->num_linkages_alloced = N_linkages_alloced;
+	sent->num_linkages_post_processed = N_linkages_post_processed;
+	sent->num_valid_linkages = N_valid_linkages;
+	sent->link_info = link_info;
+
+	xfree(indices, N_linkages_alloced * sizeof(int));
+	/*if(N_valid_linkages == 0) free_andlists(sent); */
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+5,6
+5,7
+6,7
+8,9
+10,11
+10,12
+11,12
+13,14
+15,16
+15,17
+15,18
+15,19
+15,20
+15,21
+15,22
+15,23
+15,24
+15,25
+15,26
+15,27
+15,28
+15,29
+15,30
+15,31
+15,32
+15,33
+15,34
+15,35
+15,36
+15,37
+15,38
+15,39
+15,40
+15,41
+15,42
+15,43
+15,44
+15,45
+15,46
+15,47
+16,17
+17,18
+17,19
+19,20
+19,21
+22,23
+23,24
+23,25
+23,26
+23,27
+25,26
+27,28
+29,30
+31,32
+32,33
+32,34
+32,35
+34,35
+36,37
+38,39
+39,40
+39,41
+39,42
+41,42
+43,44
+45,46
+46,47
+46,48
+46,49
+48,49
+50,51
+52,53
+53,54
+53,55
+55,56
+57,58
+58,59
+58,60
+59,60
+61,62
+61,63
+64,65
+65,66
+65,67
+67,68
+69,70
+70,71
+70,72
+71,72
+73,74
+75,76
+76,77
+76,78
+77,78
+79,80
+79,81
+79,82
+79,83
+80,81
+82,83
+84,85
+84,86
+85,86
+88,89
+90,91
+91,92
+91,93
+91,94
+92,93
+94,95
+97,98
+97,99
+98,99
+100,101
+100,102
+101,102
+102,103
+102,104
+103,104
+103,105
+104,105
+107,108
+107,109
+108,109
+111,112
+111,113
+112,113
+112,114
+113,114
+113,115
+114,115
+118,119
+119,120
+119,121
+119,122
+119,123
+120,121
+122,123
+125,126
+125,127
+126,127
+129,130
+130,131
+130,132
+131,132
+133,134
+133,135
+134,135
+137,138
+137,139
+138,139
+138,140
+139,140
+139,141
+140,141
+144,145
+144,146
+144,147
+144,148
+144,149
+145,146
+146,147
+146,148
+147,148
+147,149
+148,149
+152,153
+153,154
+153,155
+154,155
+154,156
+155,156
+159,160
+160,161
+160,162
+161,162
+161,163
+162,163
+166,167
+167,168
+167,169
+168,169
+168,170
+169,170
+172,173
+175,176
+175,177
+175,178
+176,177
+176,178
+177,178
+179,180
+179,181
+180,181
+183,184
+183,185
+184,185
+185,186
+185,187
+186,187
+188,189
+188,190
+189,190
+192,193
+192,194
+193,194
+193,195
+194,195
+194,196
+195,196
+199,200
+200,201
+201,202
+201,203
+201,204
+201,205
+201,206
+202,203
+204,205
+207,208
+209,210
+211,212
+212,213
+212,214
+213,214
+215,216
+217,218
+218,219
+218,220
+219,220
+221,222
+221,223
+222,223
+222,224
+223,224
+225,226
+227,228
+227,229
+228,229
+230,231
+230,232
+231,232
+233,234
+234,235
+234,236
+235,236
+238,239
+239,240
+239,241
+240,241
+242,243
+242,244
+243,244
+246,247
+247,248
+247,249
+248,249
+250,251
+250,252
+251,252
+251,253
+253,254
+255,256
+255,257
+256,257
+258,259
+258,260
+259,260
+261,262
+262,263
+262,264
+265,266
+265,267
+265,268
+266,267
+268,269
+269,270
+269,271
+269,272
+269,273
+270,271
+271,272
+271,273
+272,273
+275,276
+275,277
+276,277
+278,279
+280,281
+281,282
+283,284
+284,285
+285,286
+285,287
+286,287
+286,288
+287,288
+289,290
+291,292
+292,293
+293,294
+293,295
+294,295
+297,298
+297,299
+297,300
+298,299
+299,300
+299,301
+300,301
+302,303
+302,304
+303,304
+305,306
+305,307
+306,307
+309,310
+309,311
+309,312
+309,313
+310,311
+311,312
+311,313
+312,313
+315,316
+315,317
+316,317
+318,319
+320,321
+321,322
+323,324
+323,325
+323,326
+323,327
+324,325
+325,326
+325,327
+326,327
+328,329
+328,330
+329,330
+329,331
+332,333
+334,335
+335,336
+335,337
+336,337
+338,339
+338,340
+339,340
+339,341
+342,343
+343,344
+343,345
+344,345
+345,346
+345,347
+346,347
+346,348
+347,348
+347,349
+350,351
+352,353
+352,354
+353,354
+353,355
+356,357
+358,359
+360,361
+361,362
+361,363
+362,363
+364,365
+364,366
+365,366
+365,367
+368,369
+369,370
+369,371
+370,371
+371,372
+371,373
+372,373
+372,374
+373,374
+373,375
+376,377
+377,378
+377,379
+378,379
+381,382
+381,383
+382,383
+382,384
+385,386
+387,388
+389,390
+390,391
+390,392
+391,392
+391,393
+392,393
+394,395
+396,397
+396,398
+397,398
+399,400
+400,401
+400,402
+401,402
+402,403
+404,405
+405,406
+405,407
+406,407
+408,409
+410,411
+411,412
+412,413
+414,415
+415,416
+415,417
+416,417
+418,419
+419,420
+420,421
+421,422
+421,423
+422,423
+424,425
+425,426
+425,427
+426,427
+428,429
+428,430
+430,431
+430,432
+431,432
+434,435
+434,436
+435,436
+435,437
+436,437
+436,438
+437,438
+440,441
+440,442
+441,442
+444,445
+445,446
+445,447
+445,448
+445,449
+446,447
+447,448
+447,449
+448,449
+451,452
+451,453
+452,453
+453,454
+453,455
+454,455
+456,457
+458,459
+459,460
+460,461
+460,462
+461,462
+463,464
+463,465
+464,465
+467,468
+468,469
+470,471
+470,472
+471,472
+472,473
+472,474
+472,475
+472,476
+473,474
+475,476
+475,477
+476,477
+478,479
+480,481
+480,482
+481,482
+484,485
+484,486
+485,486
+488,489
+488,490
+488,491
+489,490
+489,491
+490,491
+492,493
+494,495
+494,496
+495,496
+495,497
+496,497
+496,498
+497,498
+499,500
+500,501
+500,502
+501,502
+503,504
+506,507
+507,508
+507,509
+507,510
+507,511
+508,509
+510,511
+512,513
+514,515
+516,517
+517,518
+518,519
+518,520
+518,521
+518,522
+519,520
+521,522
+523,524
+525,526
+527,528
+527,529
+527,530
+527,531
+528,529
+529,530
+529,531
+530,531
+533,534
+533,535
+534,535
+535,536
+535,537
+536,537
+538,539
+540,541
+541,542
+542,543
+542,544
+543,544
+545,546
+545,547
+546,547
+549,550
+550,551
+552,553
+552,554
+552,555
+552,556
+552,557
+553,554
+554,555
+554,556
+554,557
+554,558
+555,556
+557,558
+557,559
+558,559
+560,561
+562,563
+562,564
+563,564
+566,567
+566,568
+567,568
+570,571
+570,572
+570,573
+571,572
+571,573
+572,573
+574,575
+576,577
+576,578
+576,579
+576,580
+576,581
+577,578
+578,579
+578,580
+579,580
+581,582
+581,583
+582,583
+584,585
+586,587
+586,588
+587,588
+587,589
+588,589
+590,591
+591,592
+594,595
+595,596
+595,597
+596,597
+596,598
+597,598
+599,600
+601,602
+601,603
+601,604
+601,605
+602,603
+604,605
+606,607
+608,609
+610,611
+611,612
+611,613
+612,613
+612,614
+613,614
+613,615
+614,615
+616,617
+619,620
+621,622
+622,623
+622,624
+623,624
+623,625
+624,625
+624,626
+625,626
+627,628
+630,631
+632,633
+632,634
+632,635
+633,634
+634,635
+634,636
+635,636
+635,637
+636,637
+638,639
+640,641
+640,642
+640,643
+640,644
+641,642
+643,644
+645,646
+647,648
+649,650
+650,651
+650,652
+651,652
+651,653
+652,653
+652,654
+653,654
+655,656
+658,659
+660,661
+661,662
+661,663
+662,663
+662,664
+663,664
+663,665
+664,665
+666,667
+669,670
+671,672
+671,673
+672,673
+672,674
+673,674
+673,675
+674,675
+674,676
+675,676
+677,678
+681,682
+682,683
+683,684
+685,686
+686,687
+686,688
+687,688
+687,689
+688,689
+688,690
+689,690
+691,692
+694,695
+694,696
+695,696
+697,698
+699,700
+700,701
+701,702
+703,704
+704,705
+704,706
+704,707
+705,706
+707,708
+710,711
+711,712
+711,713
+711,714
+711,715
+711,716
+712,713
+714,715
+714,716
+715,716
+715,717
+717,718
+719,720
+721,722
+723,724
+724,725
+724,726
+725,726
+728,729
+728,730
+729,730
+729,731
+731,732
+731,733
+731,734
+732,733
+734,735
+734,736
+736,737
+736,738
+739,740
+739,741
+741,742
+741,743
+744,745
+744,746
+745,746
+745,747
+746,747
+750,751
+750,752
+751,752
+752,753
+752,754
+753,754
+755,756
+755,757
+756,757
+759,760
+760,761
+761,762
+761,763
+761,764
+762,763
+764,765
+765,766
+766,767
+766,768
+767,768
+767,769
+768,769
+769,770
+769,771
+770,771
+773,774
+774,775
+774,776
+775,776
+778,779
+779,780
+779,781
+780,781
+782,783
+782,784
+783,784
+787,788
+787,789
+788,789
+788,790
+789,790
+789,791
+790,791
+794,795
+795,796
+796,797
+796,798
+796,799
+796,800
+796,801
+797,798
+799,800
+802,803
+804,805
+806,807
+807,808
+807,809
+807,810
+808,809
+810,811
+813,814
+814,815
+814,816
+815,816
+815,817
+816,817
+819,820
+821,822
+822,823
+822,824
+823,824
+823,825
+824,825
+827,828
+829,830
+830,831
+830,832
+831,832
+831,833
+832,833
+835,836
+837,838
+838,839
+838,840
+839,840
+839,841
+840,841
+843,844
+845,846
+846,847
+846,848
+846,849
+847,848
+849,850
+851,852
+851,853
+852,853
+854,855
+855,856
+855,857
+-----nextToken-----
+2,4,7,9,12,14,18,20,21,24,26,28,30,33,35,37,40,42,44,47,49,51,54,56,60,62,63,66,68,72,74,78,81,83,86,87,89,93,95,96,99,105,106,109,110,115,116,117,121,123,124,127,128,132,135,136,141,142,143,149,150,151,156,157,158,163,164,165,170,171,173,174,178,181,182,187,190,191,196,197,198,203,205,206,208,210,214,216,220,224,226,229,232,236,237,241,244,245,249,252,254,257,260,263,264,267,273,274,277,279,282,288,290,295,296,301,304,307,308,313,314,317,319,322,327,330,331,333,337,340,341,348,349,351,354,355,357,359,363,366,367,374,375,379,380,383,384,386,388,393,395,398,403,407,409,413,417,423,427,429,432,433,438,439,442,443,449,450,455,457,462,465,466,469,474,477,479,482,483,486,487,491,493,498,502,504,505,509,511,513,515,520,522,524,526,531,532,537,539,544,547,548,551,556,559,561,564,565,568,569,573,575,580,583,585,589,592,593,598,600,603,605,607,609,615,617,618,620,626,628,629,631,637,639,642,644,646,648,654,656,657,659,665,667,668,670,676,678,679,680,684,690,692,693,696,698,702,706,708,709,713,716,718,720,722,726,727,730,733,735,737,738,740,742,743,747,748,749,754,757,758,763,771,772,776,777,781,784,785,786,791,792,793,798,800,801,803,805,809,811,812,817,818,820,825,826,828,833,834,836,841,842,844,848,850,853,856,857
+-----computeFrom-----
+76,77
+76,78
+102,103
+102,104
+112,113
+112,114
+130,131
+130,132
+138,139
+138,140
+146,147
+146,148
+153,154
+153,155
+160,161
+160,162
+167,168
+167,169
+176,177
+176,178
+185,186
+185,187
+193,194
+193,195
+212,213
+212,214
+218,219
+218,220
+230,231
+230,232
+239,240
+239,241
+242,243
+242,244
+247,248
+247,249
+258,259
+258,260
+271,272
+271,273
+275,276
+275,277
+285,286
+285,287
+293,294
+293,295
+302,303
+302,304
+311,312
+311,313
+315,316
+315,317
+325,326
+325,327
+335,336
+335,337
+343,344
+343,345
+345,346
+345,347
+361,362
+361,363
+369,370
+369,371
+371,372
+371,373
+377,378
+377,379
+390,391
+390,392
+396,397
+396,398
+400,401
+400,402
+405,406
+405,407
+415,416
+415,417
+421,422
+421,423
+425,426
+425,427
+428,429
+428,430
+435,436
+435,437
+447,448
+447,449
+451,452
+451,453
+453,454
+453,455
+496,497
+496,498
+529,530
+529,531
+533,534
+533,535
+535,536
+535,537
+578,579
+578,580
+587,588
+587,589
+595,596
+595,597
+611,612
+611,613
+622,623
+622,624
+634,635
+634,636
+650,651
+650,652
+661,662
+661,663
+672,673
+672,674
+686,687
+686,688
+766,767
+766,768
+767,768
+767,769
+769,770
+769,771
+774,775
+774,776
+779,780
+779,781
+788,789
+788,790
+814,815
+814,816
+822,823
+822,824
+830,831
+830,832
+838,839
+838,840
+851,852
+851,853
+-----guardedBy-----
+115,127
+141,170
+178,210
+181,196
+182,191
+442,524
+438,522
+-----guardedByNegation-----
+178,216
+-----lastLexicalUse-----
+178,216
+-----jump-----
+178,216
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;Declarator;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ReturnStatement;IfStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;Pointer;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;TypeIdExpression;TypeId;NamedTypeSpecifier;Name;Declarator;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;TypeIdExpression;TypeId;SimpleDeclSpecifier;Declarator;IfStatement;IdExpression;Name;CompoundStatement;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;UnaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;IdExpression;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;UnaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;FunctionCallExpression;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;UnaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;BinaryExpression;LiteralExpression;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;UnaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ContinueStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;UnaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;ContinueStatement;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;IdExpression;Name;IfStatement;BinaryExpression;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;IdExpression;Name;IdExpression;Name;TypeIdExpression;TypeId;NamedTypeSpecifier;Name;Declarator;CastExpression;TypeId;SimpleDeclSpecifier;FunctionDeclarator;Declarator;Pointer;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;UnaryExpression;BinaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;TypeIdExpression;TypeId;SimpleDeclSpecifier;Declarator;
+-----ast_node-----
+static void post_process_linkages(Sentence sent, Parse_Options opts){	int *indices;	int in, block_bottom, block_top;	int N_linkages_found, N_linkages_alloced;	int N_linkages_post_processed, N_valid_linkages;	int overflowed, only_canonical_allowed;	double denom;	Linkage_info *link_info;	int canonical;	free_post_processing(sent);	overflowed = build_parse_set(sent, sent->null_count, opts);	print_time(opts, "Built parse set");	if (overflowed) {		/* We know that sent->num_linkages_found is bogus, possibly negative */		sent->num_linkages_found = opts->linkage_limit;		if (opts->verbosity > 1)		  fprintf(stdout,				  "Warning: Count overflow.\n"				  "Considering a random subset of %d of an unknown and large number of linkages\n",				  opts->linkage_limit);	}	N_linkages_found = sent->num_linkages_found;	if (sent->num_linkages_found == 0) {		sent->num_linkages_alloced = 0;		sent->num_linkages_post_processed = 0;		sent->num_valid_linkages = 0;		sent->link_info = NULL;		return;	}	if (N_linkages_found > opts->linkage_limit)	{		N_linkages_alloced = opts->linkage_limit;		if (opts->verbosity > 1) {		  fprintf(stdout,				  "Warning: Considering a random subset of %d of %d linkages\n",				  N_linkages_alloced, N_linkages_found);		}	}	else N_linkages_alloced = N_linkages_found;	link_info=(Linkage_info *)xalloc(N_linkages_alloced * sizeof(Linkage_info));	N_linkages_post_processed = N_valid_linkages = 0;	/* generate an array of linkage indices to examine */	indices = (int *) xalloc(N_linkages_alloced * sizeof(int));	if (overflowed) {		for (in=0; in<N_linkages_alloced; in++) {			indices[in] = -(in+1);		}	}	else {		my_random_initialize(N_linkages_found + sent->length);		for (in=0; in<N_linkages_alloced; in++) {			denom = (double) N_linkages_alloced;			block_bottom = (int) (((double)in*(double) N_linkages_found)/denom);			block_top = (int) (((double)(in+1)*(double)N_linkages_found)/denom);			indices[in] = block_bottom + (my_random() % (block_top-block_bottom));		}		my_random_finalize();	}	only_canonical_allowed = (!(overflowed || (N_linkages_found > 2*opts->linkage_limit)));	/* When we're processing only a small subset of the linkages, don't worry	   about restricting the set we consider to be canonical ones.  In the extreme	   case where we are only generating 1 in a million linkages, it's very unlikely	   that we'll hit two symmetric variants of the same linkage anyway. */	/* (optional) first pass: just visit the linkages */	/* The purpose of these two passes is to make the post-processing more	   efficient.  Because (hopefully) by the time you do the real work	   in the 2nd pass you've pruned the relevant rule set in the first pass. */	if (sent->length >= opts->twopass_length) {		for (in=0; (in < N_linkages_alloced) &&				   (!resources_exhausted(opts->resources)); in++) {			extract_links(indices[in], sent->null_count, sent->parse_info);			if (set_has_fat_down(sent)) {				if (only_canonical_allowed && !is_canonical_linkage(sent)) continue;				analyze_fat_linkage(sent, opts, PP_FIRST_PASS);			}			else {				analyze_thin_linkage(sent, opts, PP_FIRST_PASS);			}		}	}	/* second pass: actually perform post-processing */	for (in=0; (in < N_linkages_alloced) &&			   (!resources_exhausted(opts->resources)); in++) {		extract_links(indices[in], sent->null_count, sent->parse_info);		if (set_has_fat_down(sent)) {			canonical = is_canonical_linkage(sent);			if (only_canonical_allowed && !canonical) continue;			link_info[N_linkages_post_processed] =				analyze_fat_linkage(sent, opts, PP_SECOND_PASS);			link_info[N_linkages_post_processed].fat = TRUE;			link_info[N_linkages_post_processed].canonical = canonical;		}		else {			link_info[N_linkages_post_processed] =				analyze_thin_linkage(sent, opts, PP_SECOND_PASS);			link_info[N_linkages_post_processed].fat = FALSE;			link_info[N_linkages_post_processed].canonical = TRUE;		}		if (link_info[N_linkages_post_processed].N_violations==0)			N_valid_linkages++;		link_info[N_linkages_post_processed].index = indices[in];		N_linkages_post_processed++;	}	print_time(opts, "Postprocessed all linkages");	qsort((void *)link_info, N_linkages_post_processed, sizeof(Linkage_info),		  (int (*)(const void *, const void *)) opts->cost_model.compare_fn);	if (!resources_exhausted(opts->resources)) {		assert(! ((N_linkages_post_processed == 0) &&				  (N_linkages_found > 0) &&				  (N_linkages_found < opts->linkage_limit)),			   "None of the linkages is canonical");	}	if (opts->verbosity > 1) {		fprintf(stdout, "%d of %d linkages with no P.P. violations\n",				N_valid_linkages, N_linkages_post_processed);	}	print_time(opts, "Sorted all linkages");	sent->num_linkages_alloced = N_linkages_alloced;	sent->num_linkages_post_processed = N_linkages_post_processed;	sent->num_valid_linkages = N_valid_linkages;	sent->link_info = link_info;	xfree(indices, N_linkages_alloced * sizeof(int));	/*if(N_valid_linkages == 0) free_andlists(sent); */}
+static void
+post_process_linkages(Sentence sent, Parse_Options opts)
+post_process_linkages
+Sentence sent
+Sentence
+Sentence
+sent
+sent
+Parse_Options opts
+Parse_Options
+Parse_Options
+opts
+opts
+{	int *indices;	int in, block_bottom, block_top;	int N_linkages_found, N_linkages_alloced;	int N_linkages_post_processed, N_valid_linkages;	int overflowed, only_canonical_allowed;	double denom;	Linkage_info *link_info;	int canonical;	free_post_processing(sent);	overflowed = build_parse_set(sent, sent->null_count, opts);	print_time(opts, "Built parse set");	if (overflowed) {		/* We know that sent->num_linkages_found is bogus, possibly negative */		sent->num_linkages_found = opts->linkage_limit;		if (opts->verbosity > 1)		  fprintf(stdout,				  "Warning: Count overflow.\n"				  "Considering a random subset of %d of an unknown and large number of linkages\n",				  opts->linkage_limit);	}	N_linkages_found = sent->num_linkages_found;	if (sent->num_linkages_found == 0) {		sent->num_linkages_alloced = 0;		sent->num_linkages_post_processed = 0;		sent->num_valid_linkages = 0;		sent->link_info = NULL;		return;	}	if (N_linkages_found > opts->linkage_limit)	{		N_linkages_alloced = opts->linkage_limit;		if (opts->verbosity > 1) {		  fprintf(stdout,				  "Warning: Considering a random subset of %d of %d linkages\n",				  N_linkages_alloced, N_linkages_found);		}	}	else N_linkages_alloced = N_linkages_found;	link_info=(Linkage_info *)xalloc(N_linkages_alloced * sizeof(Linkage_info));	N_linkages_post_processed = N_valid_linkages = 0;	/* generate an array of linkage indices to examine */	indices = (int *) xalloc(N_linkages_alloced * sizeof(int));	if (overflowed) {		for (in=0; in<N_linkages_alloced; in++) {			indices[in] = -(in+1);		}	}	else {		my_random_initialize(N_linkages_found + sent->length);		for (in=0; in<N_linkages_alloced; in++) {			denom = (double) N_linkages_alloced;			block_bottom = (int) (((double)in*(double) N_linkages_found)/denom);			block_top = (int) (((double)(in+1)*(double)N_linkages_found)/denom);			indices[in] = block_bottom + (my_random() % (block_top-block_bottom));		}		my_random_finalize();	}	only_canonical_allowed = (!(overflowed || (N_linkages_found > 2*opts->linkage_limit)));	/* When we're processing only a small subset of the linkages, don't worry	   about restricting the set we consider to be canonical ones.  In the extreme	   case where we are only generating 1 in a million linkages, it's very unlikely	   that we'll hit two symmetric variants of the same linkage anyway. */	/* (optional) first pass: just visit the linkages */	/* The purpose of these two passes is to make the post-processing more	   efficient.  Because (hopefully) by the time you do the real work	   in the 2nd pass you've pruned the relevant rule set in the first pass. */	if (sent->length >= opts->twopass_length) {		for (in=0; (in < N_linkages_alloced) &&				   (!resources_exhausted(opts->resources)); in++) {			extract_links(indices[in], sent->null_count, sent->parse_info);			if (set_has_fat_down(sent)) {				if (only_canonical_allowed && !is_canonical_linkage(sent)) continue;				analyze_fat_linkage(sent, opts, PP_FIRST_PASS);			}			else {				analyze_thin_linkage(sent, opts, PP_FIRST_PASS);			}		}	}	/* second pass: actually perform post-processing */	for (in=0; (in < N_linkages_alloced) &&			   (!resources_exhausted(opts->resources)); in++) {		extract_links(indices[in], sent->null_count, sent->parse_info);		if (set_has_fat_down(sent)) {			canonical = is_canonical_linkage(sent);			if (only_canonical_allowed && !canonical) continue;			link_info[N_linkages_post_processed] =				analyze_fat_linkage(sent, opts, PP_SECOND_PASS);			link_info[N_linkages_post_processed].fat = TRUE;			link_info[N_linkages_post_processed].canonical = canonical;		}		else {			link_info[N_linkages_post_processed] =				analyze_thin_linkage(sent, opts, PP_SECOND_PASS);			link_info[N_linkages_post_processed].fat = FALSE;			link_info[N_linkages_post_processed].canonical = TRUE;		}		if (link_info[N_linkages_post_processed].N_violations==0)			N_valid_linkages++;		link_info[N_linkages_post_processed].index = indices[in];		N_linkages_post_processed++;	}	print_time(opts, "Postprocessed all linkages");	qsort((void *)link_info, N_linkages_post_processed, sizeof(Linkage_info),		  (int (*)(const void *, const void *)) opts->cost_model.compare_fn);	if (!resources_exhausted(opts->resources)) {		assert(! ((N_linkages_post_processed == 0) &&				  (N_linkages_found > 0) &&				  (N_linkages_found < opts->linkage_limit)),			   "None of the linkages is canonical");	}	if (opts->verbosity > 1) {		fprintf(stdout, "%d of %d linkages with no P.P. violations\n",				N_valid_linkages, N_linkages_post_processed);	}	print_time(opts, "Sorted all linkages");	sent->num_linkages_alloced = N_linkages_alloced;	sent->num_linkages_post_processed = N_linkages_post_processed;	sent->num_valid_linkages = N_valid_linkages;	sent->link_info = link_info;	xfree(indices, N_linkages_alloced * sizeof(int));	/*if(N_valid_linkages == 0) free_andlists(sent); */}
+int *indices;
+int *indices;
+int
+*indices
+*
+indices
+int in, block_bottom, block_top;
+int in, block_bottom, block_top;
+int
+in
+in
+block_bottom
+block_bottom
+block_top
+block_top
+int N_linkages_found, N_linkages_alloced;
+int N_linkages_found, N_linkages_alloced;
+int
+N_linkages_found
+N_linkages_found
+N_linkages_alloced
+N_linkages_alloced
+int N_linkages_post_processed, N_valid_linkages;
+int N_linkages_post_processed, N_valid_linkages;
+int
+N_linkages_post_processed
+N_linkages_post_processed
+N_valid_linkages
+N_valid_linkages
+int overflowed, only_canonical_allowed;
+int overflowed, only_canonical_allowed;
+int
+overflowed
+overflowed
+only_canonical_allowed
+only_canonical_allowed
+double denom;
+double denom;
+double
+denom
+denom
+Linkage_info *link_info;
+Linkage_info *link_info;
+Linkage_info
+Linkage_info
+*link_info
+*
+link_info
+int canonical;
+int canonical;
+int
+canonical
+canonical
+free_post_processing(sent);
+free_post_processing(sent)
+free_post_processing
+free_post_processing
+sent
+sent
+overflowed = build_parse_set(sent, sent->null_count, opts);
+overflowed = build_parse_set(sent, sent->null_count, opts)
+overflowed
+overflowed
+build_parse_set(sent, sent->null_count, opts)
+build_parse_set
+build_parse_set
+sent
+sent
+sent->null_count
+sent
+sent
+null_count
+opts
+opts
+print_time(opts, "Built parse set");
+print_time(opts, "Built parse set")
+print_time
+print_time
+opts
+opts
+"Built parse set"
+if (overflowed) {		/* We know that sent->num_linkages_found is bogus, possibly negative */		sent->num_linkages_found = opts->linkage_limit;		if (opts->verbosity > 1)		  fprintf(stdout,				  "Warning: Count overflow.\n"				  "Considering a random subset of %d of an unknown and large number of linkages\n",				  opts->linkage_limit);	}
+overflowed
+overflowed
+{		/* We know that sent->num_linkages_found is bogus, possibly negative */		sent->num_linkages_found = opts->linkage_limit;		if (opts->verbosity > 1)		  fprintf(stdout,				  "Warning: Count overflow.\n"				  "Considering a random subset of %d of an unknown and large number of linkages\n",				  opts->linkage_limit);	}
+sent->num_linkages_found = opts->linkage_limit;
+sent->num_linkages_found = opts->linkage_limit
+sent->num_linkages_found
+sent
+sent
+num_linkages_found
+opts->linkage_limit
+opts
+opts
+linkage_limit
+if (opts->verbosity > 1)		  fprintf(stdout,				  "Warning: Count overflow.\n"				  "Considering a random subset of %d of an unknown and large number of linkages\n",				  opts->linkage_limit);
+opts->verbosity > 1
+opts->verbosity
+opts
+opts
+verbosity
+1
+fprintf(stdout,				  "Warning: Count overflow.\n"				  "Considering a random subset of %d of an unknown and large number of linkages\n",				  opts->linkage_limit);
+fprintf(stdout,				  "Warning: Count overflow.\n"				  "Considering a random subset of %d of an unknown and large number of linkages\n",				  opts->linkage_limit)
+fprintf
+fprintf
+stdout
+stdout
+"Warning: Count overflow.\n"				  "Considering a random subset of %d of an unknown and large number of linkages\n"
+opts->linkage_limit
+opts
+opts
+linkage_limit
+N_linkages_found = sent->num_linkages_found;
+N_linkages_found = sent->num_linkages_found
+N_linkages_found
+N_linkages_found
+sent->num_linkages_found
+sent
+sent
+num_linkages_found
+if (sent->num_linkages_found == 0) {		sent->num_linkages_alloced = 0;		sent->num_linkages_post_processed = 0;		sent->num_valid_linkages = 0;		sent->link_info = NULL;		return;	}
+sent->num_linkages_found == 0
+sent->num_linkages_found
+sent
+sent
+num_linkages_found
+0
+{		sent->num_linkages_alloced = 0;		sent->num_linkages_post_processed = 0;		sent->num_valid_linkages = 0;		sent->link_info = NULL;		return;	}
+sent->num_linkages_alloced = 0;
+sent->num_linkages_alloced = 0
+sent->num_linkages_alloced
+sent
+sent
+num_linkages_alloced
+0
+sent->num_linkages_post_processed = 0;
+sent->num_linkages_post_processed = 0
+sent->num_linkages_post_processed
+sent
+sent
+num_linkages_post_processed
+0
+sent->num_valid_linkages = 0;
+sent->num_valid_linkages = 0
+sent->num_valid_linkages
+sent
+sent
+num_valid_linkages
+0
+sent->link_info = NULL;
+sent->link_info = NULL
+sent->link_info
+sent
+sent
+link_info
+NULL
+NULL
+return;
+if (N_linkages_found > opts->linkage_limit)	{		N_linkages_alloced = opts->linkage_limit;		if (opts->verbosity > 1) {		  fprintf(stdout,				  "Warning: Considering a random subset of %d of %d linkages\n",				  N_linkages_alloced, N_linkages_found);		}	}	else N_linkages_alloced = N_linkages_found;
+N_linkages_found > opts->linkage_limit
+N_linkages_found
+N_linkages_found
+opts->linkage_limit
+opts
+opts
+linkage_limit
+{		N_linkages_alloced = opts->linkage_limit;		if (opts->verbosity > 1) {		  fprintf(stdout,				  "Warning: Considering a random subset of %d of %d linkages\n",				  N_linkages_alloced, N_linkages_found);		}	}
+N_linkages_alloced = opts->linkage_limit;
+N_linkages_alloced = opts->linkage_limit
+N_linkages_alloced
+N_linkages_alloced
+opts->linkage_limit
+opts
+opts
+linkage_limit
+if (opts->verbosity > 1) {		  fprintf(stdout,				  "Warning: Considering a random subset of %d of %d linkages\n",				  N_linkages_alloced, N_linkages_found);		}
+opts->verbosity > 1
+opts->verbosity
+opts
+opts
+verbosity
+1
+{		  fprintf(stdout,				  "Warning: Considering a random subset of %d of %d linkages\n",				  N_linkages_alloced, N_linkages_found);		}
+fprintf(stdout,				  "Warning: Considering a random subset of %d of %d linkages\n",				  N_linkages_alloced, N_linkages_found);
+fprintf(stdout,				  "Warning: Considering a random subset of %d of %d linkages\n",				  N_linkages_alloced, N_linkages_found)
+fprintf
+fprintf
+stdout
+stdout
+"Warning: Considering a random subset of %d of %d linkages\n"
+N_linkages_alloced
+N_linkages_alloced
+N_linkages_found
+N_linkages_found
+N_linkages_alloced = N_linkages_found;
+N_linkages_alloced = N_linkages_found
+N_linkages_alloced
+N_linkages_alloced
+N_linkages_found
+N_linkages_found
+link_info=(Linkage_info *)xalloc(N_linkages_alloced * sizeof(Linkage_info));
+link_info=(Linkage_info *)xalloc(N_linkages_alloced * sizeof(Linkage_info))
+link_info
+link_info
+(Linkage_info *)xalloc(N_linkages_alloced * sizeof(Linkage_info))
+Linkage_info *
+Linkage_info
+Linkage_info
+*
+*
+xalloc(N_linkages_alloced * sizeof(Linkage_info))
+xalloc
+xalloc
+N_linkages_alloced * sizeof(Linkage_info)
+N_linkages_alloced
+N_linkages_alloced
+sizeof(Linkage_info)
+Linkage_info
+Linkage_info
+Linkage_info
+
+N_linkages_post_processed = N_valid_linkages = 0;
+N_linkages_post_processed = N_valid_linkages = 0
+N_linkages_post_processed
+N_linkages_post_processed
+N_valid_linkages = 0
+N_valid_linkages
+N_valid_linkages
+0
+indices = (int *) xalloc(N_linkages_alloced * sizeof(int));
+indices = (int *) xalloc(N_linkages_alloced * sizeof(int))
+indices
+indices
+(int *) xalloc(N_linkages_alloced * sizeof(int))
+int *
+int
+*
+*
+xalloc(N_linkages_alloced * sizeof(int))
+xalloc
+xalloc
+N_linkages_alloced * sizeof(int)
+N_linkages_alloced
+N_linkages_alloced
+sizeof(int)
+int
+int
+
+if (overflowed) {		for (in=0; in<N_linkages_alloced; in++) {			indices[in] = -(in+1);		}	}	else {		my_random_initialize(N_linkages_found + sent->length);		for (in=0; in<N_linkages_alloced; in++) {			denom = (double) N_linkages_alloced;			block_bottom = (int) (((double)in*(double) N_linkages_found)/denom);			block_top = (int) (((double)(in+1)*(double)N_linkages_found)/denom);			indices[in] = block_bottom + (my_random() % (block_top-block_bottom));		}		my_random_finalize();	}
+overflowed
+overflowed
+{		for (in=0; in<N_linkages_alloced; in++) {			indices[in] = -(in+1);		}	}
+for (in=0; in<N_linkages_alloced; in++) {			indices[in] = -(in+1);		}
+in=0;
+in=0
+in
+in
+0
+in<N_linkages_alloced
+in
+in
+N_linkages_alloced
+N_linkages_alloced
+in++
+in
+in
+{			indices[in] = -(in+1);		}
+indices[in] = -(in+1);
+indices[in] = -(in+1)
+indices[in]
+indices
+indices
+in
+in
+-(in+1)
+(in+1)
+in+1
+in
+in
+1
+{		my_random_initialize(N_linkages_found + sent->length);		for (in=0; in<N_linkages_alloced; in++) {			denom = (double) N_linkages_alloced;			block_bottom = (int) (((double)in*(double) N_linkages_found)/denom);			block_top = (int) (((double)(in+1)*(double)N_linkages_found)/denom);			indices[in] = block_bottom + (my_random() % (block_top-block_bottom));		}		my_random_finalize();	}
+my_random_initialize(N_linkages_found + sent->length);
+my_random_initialize(N_linkages_found + sent->length)
+my_random_initialize
+my_random_initialize
+N_linkages_found + sent->length
+N_linkages_found
+N_linkages_found
+sent->length
+sent
+sent
+length
+for (in=0; in<N_linkages_alloced; in++) {			denom = (double) N_linkages_alloced;			block_bottom = (int) (((double)in*(double) N_linkages_found)/denom);			block_top = (int) (((double)(in+1)*(double)N_linkages_found)/denom);			indices[in] = block_bottom + (my_random() % (block_top-block_bottom));		}
+in=0;
+in=0
+in
+in
+0
+in<N_linkages_alloced
+in
+in
+N_linkages_alloced
+N_linkages_alloced
+in++
+in
+in
+{			denom = (double) N_linkages_alloced;			block_bottom = (int) (((double)in*(double) N_linkages_found)/denom);			block_top = (int) (((double)(in+1)*(double)N_linkages_found)/denom);			indices[in] = block_bottom + (my_random() % (block_top-block_bottom));		}
+denom = (double) N_linkages_alloced;
+denom = (double) N_linkages_alloced
+denom
+denom
+(double) N_linkages_alloced
+double
+double
+
+N_linkages_alloced
+N_linkages_alloced
+block_bottom = (int) (((double)in*(double) N_linkages_found)/denom);
+block_bottom = (int) (((double)in*(double) N_linkages_found)/denom)
+block_bottom
+block_bottom
+(int) (((double)in*(double) N_linkages_found)/denom)
+int
+int
+
+(((double)in*(double) N_linkages_found)/denom)
+((double)in*(double) N_linkages_found)/denom
+((double)in*(double) N_linkages_found)
+(double)in*(double) N_linkages_found
+(double)in
+double
+double
+
+in
+in
+(double) N_linkages_found
+double
+double
+
+N_linkages_found
+N_linkages_found
+denom
+denom
+block_top = (int) (((double)(in+1)*(double)N_linkages_found)/denom);
+block_top = (int) (((double)(in+1)*(double)N_linkages_found)/denom)
+block_top
+block_top
+(int) (((double)(in+1)*(double)N_linkages_found)/denom)
+int
+int
+
+(((double)(in+1)*(double)N_linkages_found)/denom)
+((double)(in+1)*(double)N_linkages_found)/denom
+((double)(in+1)*(double)N_linkages_found)
+(double)(in+1)*(double)N_linkages_found
+(double)(in+1)
+double
+double
+
+(in+1)
+in+1
+in
+in
+1
+(double)N_linkages_found
+double
+double
+
+N_linkages_found
+N_linkages_found
+denom
+denom
+indices[in] = block_bottom + (my_random() % (block_top-block_bottom));
+indices[in] = block_bottom + (my_random() % (block_top-block_bottom))
+indices[in]
+indices
+indices
+in
+in
+block_bottom + (my_random() % (block_top-block_bottom))
+block_bottom
+block_bottom
+(my_random() % (block_top-block_bottom))
+my_random() % (block_top-block_bottom)
+my_random()
+my_random
+my_random
+(block_top-block_bottom)
+block_top-block_bottom
+block_top
+block_top
+block_bottom
+block_bottom
+my_random_finalize();
+my_random_finalize()
+my_random_finalize
+my_random_finalize
+only_canonical_allowed = (!(overflowed || (N_linkages_found > 2*opts->linkage_limit)));
+only_canonical_allowed = (!(overflowed || (N_linkages_found > 2*opts->linkage_limit)))
+only_canonical_allowed
+only_canonical_allowed
+(!(overflowed || (N_linkages_found > 2*opts->linkage_limit)))
+!(overflowed || (N_linkages_found > 2*opts->linkage_limit))
+(overflowed || (N_linkages_found > 2*opts->linkage_limit))
+overflowed || (N_linkages_found > 2*opts->linkage_limit)
+overflowed
+overflowed
+(N_linkages_found > 2*opts->linkage_limit)
+N_linkages_found > 2*opts->linkage_limit
+N_linkages_found
+N_linkages_found
+2*opts->linkage_limit
+2
+opts->linkage_limit
+opts
+opts
+linkage_limit
+if (sent->length >= opts->twopass_length) {		for (in=0; (in < N_linkages_alloced) &&				   (!resources_exhausted(opts->resources)); in++) {			extract_links(indices[in], sent->null_count, sent->parse_info);			if (set_has_fat_down(sent)) {				if (only_canonical_allowed && !is_canonical_linkage(sent)) continue;				analyze_fat_linkage(sent, opts, PP_FIRST_PASS);			}			else {				analyze_thin_linkage(sent, opts, PP_FIRST_PASS);			}		}	}
+sent->length >= opts->twopass_length
+sent->length
+sent
+sent
+length
+opts->twopass_length
+opts
+opts
+twopass_length
+{		for (in=0; (in < N_linkages_alloced) &&				   (!resources_exhausted(opts->resources)); in++) {			extract_links(indices[in], sent->null_count, sent->parse_info);			if (set_has_fat_down(sent)) {				if (only_canonical_allowed && !is_canonical_linkage(sent)) continue;				analyze_fat_linkage(sent, opts, PP_FIRST_PASS);			}			else {				analyze_thin_linkage(sent, opts, PP_FIRST_PASS);			}		}	}
+for (in=0; (in < N_linkages_alloced) &&				   (!resources_exhausted(opts->resources)); in++) {			extract_links(indices[in], sent->null_count, sent->parse_info);			if (set_has_fat_down(sent)) {				if (only_canonical_allowed && !is_canonical_linkage(sent)) continue;				analyze_fat_linkage(sent, opts, PP_FIRST_PASS);			}			else {				analyze_thin_linkage(sent, opts, PP_FIRST_PASS);			}		}
+in=0;
+in=0
+in
+in
+0
+(in < N_linkages_alloced) &&				   (!resources_exhausted(opts->resources))
+(in < N_linkages_alloced)
+in < N_linkages_alloced
+in
+in
+N_linkages_alloced
+N_linkages_alloced
+(!resources_exhausted(opts->resources))
+!resources_exhausted(opts->resources)
+resources_exhausted(opts->resources)
+resources_exhausted
+resources_exhausted
+opts->resources
+opts
+opts
+resources
+in++
+in
+in
+{			extract_links(indices[in], sent->null_count, sent->parse_info);			if (set_has_fat_down(sent)) {				if (only_canonical_allowed && !is_canonical_linkage(sent)) continue;				analyze_fat_linkage(sent, opts, PP_FIRST_PASS);			}			else {				analyze_thin_linkage(sent, opts, PP_FIRST_PASS);			}		}
+extract_links(indices[in], sent->null_count, sent->parse_info);
+extract_links(indices[in], sent->null_count, sent->parse_info)
+extract_links
+extract_links
+indices[in]
+indices
+indices
+in
+in
+sent->null_count
+sent
+sent
+null_count
+sent->parse_info
+sent
+sent
+parse_info
+if (set_has_fat_down(sent)) {				if (only_canonical_allowed && !is_canonical_linkage(sent)) continue;				analyze_fat_linkage(sent, opts, PP_FIRST_PASS);			}			else {				analyze_thin_linkage(sent, opts, PP_FIRST_PASS);			}
+set_has_fat_down(sent)
+set_has_fat_down
+set_has_fat_down
+sent
+sent
+{				if (only_canonical_allowed && !is_canonical_linkage(sent)) continue;				analyze_fat_linkage(sent, opts, PP_FIRST_PASS);			}
+if (only_canonical_allowed && !is_canonical_linkage(sent)) continue;
+only_canonical_allowed && !is_canonical_linkage(sent)
+only_canonical_allowed
+only_canonical_allowed
+!is_canonical_linkage(sent)
+is_canonical_linkage(sent)
+is_canonical_linkage
+is_canonical_linkage
+sent
+sent
+continue;
+analyze_fat_linkage(sent, opts, PP_FIRST_PASS);
+analyze_fat_linkage(sent, opts, PP_FIRST_PASS)
+analyze_fat_linkage
+analyze_fat_linkage
+sent
+sent
+opts
+opts
+PP_FIRST_PASS
+PP_FIRST_PASS
+{				analyze_thin_linkage(sent, opts, PP_FIRST_PASS);			}
+analyze_thin_linkage(sent, opts, PP_FIRST_PASS);
+analyze_thin_linkage(sent, opts, PP_FIRST_PASS)
+analyze_thin_linkage
+analyze_thin_linkage
+sent
+sent
+opts
+opts
+PP_FIRST_PASS
+PP_FIRST_PASS
+for (in=0; (in < N_linkages_alloced) &&			   (!resources_exhausted(opts->resources)); in++) {		extract_links(indices[in], sent->null_count, sent->parse_info);		if (set_has_fat_down(sent)) {			canonical = is_canonical_linkage(sent);			if (only_canonical_allowed && !canonical) continue;			link_info[N_linkages_post_processed] =				analyze_fat_linkage(sent, opts, PP_SECOND_PASS);			link_info[N_linkages_post_processed].fat = TRUE;			link_info[N_linkages_post_processed].canonical = canonical;		}		else {			link_info[N_linkages_post_processed] =				analyze_thin_linkage(sent, opts, PP_SECOND_PASS);			link_info[N_linkages_post_processed].fat = FALSE;			link_info[N_linkages_post_processed].canonical = TRUE;		}		if (link_info[N_linkages_post_processed].N_violations==0)			N_valid_linkages++;		link_info[N_linkages_post_processed].index = indices[in];		N_linkages_post_processed++;	}
+in=0;
+in=0
+in
+in
+0
+(in < N_linkages_alloced) &&			   (!resources_exhausted(opts->resources))
+(in < N_linkages_alloced)
+in < N_linkages_alloced
+in
+in
+N_linkages_alloced
+N_linkages_alloced
+(!resources_exhausted(opts->resources))
+!resources_exhausted(opts->resources)
+resources_exhausted(opts->resources)
+resources_exhausted
+resources_exhausted
+opts->resources
+opts
+opts
+resources
+in++
+in
+in
+{		extract_links(indices[in], sent->null_count, sent->parse_info);		if (set_has_fat_down(sent)) {			canonical = is_canonical_linkage(sent);			if (only_canonical_allowed && !canonical) continue;			link_info[N_linkages_post_processed] =				analyze_fat_linkage(sent, opts, PP_SECOND_PASS);			link_info[N_linkages_post_processed].fat = TRUE;			link_info[N_linkages_post_processed].canonical = canonical;		}		else {			link_info[N_linkages_post_processed] =				analyze_thin_linkage(sent, opts, PP_SECOND_PASS);			link_info[N_linkages_post_processed].fat = FALSE;			link_info[N_linkages_post_processed].canonical = TRUE;		}		if (link_info[N_linkages_post_processed].N_violations==0)			N_valid_linkages++;		link_info[N_linkages_post_processed].index = indices[in];		N_linkages_post_processed++;	}
+extract_links(indices[in], sent->null_count, sent->parse_info);
+extract_links(indices[in], sent->null_count, sent->parse_info)
+extract_links
+extract_links
+indices[in]
+indices
+indices
+in
+in
+sent->null_count
+sent
+sent
+null_count
+sent->parse_info
+sent
+sent
+parse_info
+if (set_has_fat_down(sent)) {			canonical = is_canonical_linkage(sent);			if (only_canonical_allowed && !canonical) continue;			link_info[N_linkages_post_processed] =				analyze_fat_linkage(sent, opts, PP_SECOND_PASS);			link_info[N_linkages_post_processed].fat = TRUE;			link_info[N_linkages_post_processed].canonical = canonical;		}		else {			link_info[N_linkages_post_processed] =				analyze_thin_linkage(sent, opts, PP_SECOND_PASS);			link_info[N_linkages_post_processed].fat = FALSE;			link_info[N_linkages_post_processed].canonical = TRUE;		}
+set_has_fat_down(sent)
+set_has_fat_down
+set_has_fat_down
+sent
+sent
+{			canonical = is_canonical_linkage(sent);			if (only_canonical_allowed && !canonical) continue;			link_info[N_linkages_post_processed] =				analyze_fat_linkage(sent, opts, PP_SECOND_PASS);			link_info[N_linkages_post_processed].fat = TRUE;			link_info[N_linkages_post_processed].canonical = canonical;		}
+canonical = is_canonical_linkage(sent);
+canonical = is_canonical_linkage(sent)
+canonical
+canonical
+is_canonical_linkage(sent)
+is_canonical_linkage
+is_canonical_linkage
+sent
+sent
+if (only_canonical_allowed && !canonical) continue;
+only_canonical_allowed && !canonical
+only_canonical_allowed
+only_canonical_allowed
+!canonical
+canonical
+canonical
+continue;
+link_info[N_linkages_post_processed] =				analyze_fat_linkage(sent, opts, PP_SECOND_PASS);
+link_info[N_linkages_post_processed] =				analyze_fat_linkage(sent, opts, PP_SECOND_PASS)
+link_info[N_linkages_post_processed]
+link_info
+link_info
+N_linkages_post_processed
+N_linkages_post_processed
+analyze_fat_linkage(sent, opts, PP_SECOND_PASS)
+analyze_fat_linkage
+analyze_fat_linkage
+sent
+sent
+opts
+opts
+PP_SECOND_PASS
+PP_SECOND_PASS
+link_info[N_linkages_post_processed].fat = TRUE;
+link_info[N_linkages_post_processed].fat = TRUE
+link_info[N_linkages_post_processed].fat
+link_info[N_linkages_post_processed]
+link_info
+link_info
+N_linkages_post_processed
+N_linkages_post_processed
+fat
+TRUE
+TRUE
+link_info[N_linkages_post_processed].canonical = canonical;
+link_info[N_linkages_post_processed].canonical = canonical
+link_info[N_linkages_post_processed].canonical
+link_info[N_linkages_post_processed]
+link_info
+link_info
+N_linkages_post_processed
+N_linkages_post_processed
+canonical
+canonical
+canonical
+{			link_info[N_linkages_post_processed] =				analyze_thin_linkage(sent, opts, PP_SECOND_PASS);			link_info[N_linkages_post_processed].fat = FALSE;			link_info[N_linkages_post_processed].canonical = TRUE;		}
+link_info[N_linkages_post_processed] =				analyze_thin_linkage(sent, opts, PP_SECOND_PASS);
+link_info[N_linkages_post_processed] =				analyze_thin_linkage(sent, opts, PP_SECOND_PASS)
+link_info[N_linkages_post_processed]
+link_info
+link_info
+N_linkages_post_processed
+N_linkages_post_processed
+analyze_thin_linkage(sent, opts, PP_SECOND_PASS)
+analyze_thin_linkage
+analyze_thin_linkage
+sent
+sent
+opts
+opts
+PP_SECOND_PASS
+PP_SECOND_PASS
+link_info[N_linkages_post_processed].fat = FALSE;
+link_info[N_linkages_post_processed].fat = FALSE
+link_info[N_linkages_post_processed].fat
+link_info[N_linkages_post_processed]
+link_info
+link_info
+N_linkages_post_processed
+N_linkages_post_processed
+fat
+FALSE
+FALSE
+link_info[N_linkages_post_processed].canonical = TRUE;
+link_info[N_linkages_post_processed].canonical = TRUE
+link_info[N_linkages_post_processed].canonical
+link_info[N_linkages_post_processed]
+link_info
+link_info
+N_linkages_post_processed
+N_linkages_post_processed
+canonical
+TRUE
+TRUE
+if (link_info[N_linkages_post_processed].N_violations==0)			N_valid_linkages++;
+link_info[N_linkages_post_processed].N_violations==0
+link_info[N_linkages_post_processed].N_violations
+link_info[N_linkages_post_processed]
+link_info
+link_info
+N_linkages_post_processed
+N_linkages_post_processed
+N_violations
+0
+N_valid_linkages++;
+N_valid_linkages++
+N_valid_linkages
+N_valid_linkages
+link_info[N_linkages_post_processed].index = indices[in];
+link_info[N_linkages_post_processed].index = indices[in]
+link_info[N_linkages_post_processed].index
+link_info[N_linkages_post_processed]
+link_info
+link_info
+N_linkages_post_processed
+N_linkages_post_processed
+index
+indices[in]
+indices
+indices
+in
+in
+N_linkages_post_processed++;
+N_linkages_post_processed++
+N_linkages_post_processed
+N_linkages_post_processed
+print_time(opts, "Postprocessed all linkages");
+print_time(opts, "Postprocessed all linkages")
+print_time
+print_time
+opts
+opts
+"Postprocessed all linkages"
+qsort((void *)link_info, N_linkages_post_processed, sizeof(Linkage_info),		  (int (*)(const void *, const void *)) opts->cost_model.compare_fn);
+qsort((void *)link_info, N_linkages_post_processed, sizeof(Linkage_info),		  (int (*)(const void *, const void *)) opts->cost_model.compare_fn)
+qsort
+qsort
+(void *)link_info
+void *
+void
+*
+*
+link_info
+link_info
+N_linkages_post_processed
+N_linkages_post_processed
+sizeof(Linkage_info)
+Linkage_info
+Linkage_info
+Linkage_info
+
+(int (*)(const void *, const void *)) opts->cost_model.compare_fn
+int (*)(const void *, const void *)
+int
+(*)(const void *, const void *)
+*
+*
+const void *
+const void
+*
+*
+
+const void *
+const void
+*
+*
+
+opts->cost_model.compare_fn
+opts->cost_model
+opts
+opts
+cost_model
+compare_fn
+if (!resources_exhausted(opts->resources)) {		assert(! ((N_linkages_post_processed == 0) &&				  (N_linkages_found > 0) &&				  (N_linkages_found < opts->linkage_limit)),			   "None of the linkages is canonical");	}
+!resources_exhausted(opts->resources)
+resources_exhausted(opts->resources)
+resources_exhausted
+resources_exhausted
+opts->resources
+opts
+opts
+resources
+{		assert(! ((N_linkages_post_processed == 0) &&				  (N_linkages_found > 0) &&				  (N_linkages_found < opts->linkage_limit)),			   "None of the linkages is canonical");	}
+assert(! ((N_linkages_post_processed == 0) &&				  (N_linkages_found > 0) &&				  (N_linkages_found < opts->linkage_limit)),			   "None of the linkages is canonical");
+assert(! ((N_linkages_post_processed == 0) &&				  (N_linkages_found > 0) &&				  (N_linkages_found < opts->linkage_limit)),			   "None of the linkages is canonical")
+assert
+assert
+! ((N_linkages_post_processed == 0) &&				  (N_linkages_found > 0) &&				  (N_linkages_found < opts->linkage_limit))
+((N_linkages_post_processed == 0) &&				  (N_linkages_found > 0) &&				  (N_linkages_found < opts->linkage_limit))
+(N_linkages_post_processed == 0) &&				  (N_linkages_found > 0) &&				  (N_linkages_found < opts->linkage_limit)
+(N_linkages_post_processed == 0) &&				  (N_linkages_found > 0)
+(N_linkages_post_processed == 0)
+N_linkages_post_processed == 0
+N_linkages_post_processed
+N_linkages_post_processed
+0
+(N_linkages_found > 0)
+N_linkages_found > 0
+N_linkages_found
+N_linkages_found
+0
+(N_linkages_found < opts->linkage_limit)
+N_linkages_found < opts->linkage_limit
+N_linkages_found
+N_linkages_found
+opts->linkage_limit
+opts
+opts
+linkage_limit
+"None of the linkages is canonical"
+if (opts->verbosity > 1) {		fprintf(stdout, "%d of %d linkages with no P.P. violations\n",				N_valid_linkages, N_linkages_post_processed);	}
+opts->verbosity > 1
+opts->verbosity
+opts
+opts
+verbosity
+1
+{		fprintf(stdout, "%d of %d linkages with no P.P. violations\n",				N_valid_linkages, N_linkages_post_processed);	}
+fprintf(stdout, "%d of %d linkages with no P.P. violations\n",				N_valid_linkages, N_linkages_post_processed);
+fprintf(stdout, "%d of %d linkages with no P.P. violations\n",				N_valid_linkages, N_linkages_post_processed)
+fprintf
+fprintf
+stdout
+stdout
+"%d of %d linkages with no P.P. violations\n"
+N_valid_linkages
+N_valid_linkages
+N_linkages_post_processed
+N_linkages_post_processed
+print_time(opts, "Sorted all linkages");
+print_time(opts, "Sorted all linkages")
+print_time
+print_time
+opts
+opts
+"Sorted all linkages"
+sent->num_linkages_alloced = N_linkages_alloced;
+sent->num_linkages_alloced = N_linkages_alloced
+sent->num_linkages_alloced
+sent
+sent
+num_linkages_alloced
+N_linkages_alloced
+N_linkages_alloced
+sent->num_linkages_post_processed = N_linkages_post_processed;
+sent->num_linkages_post_processed = N_linkages_post_processed
+sent->num_linkages_post_processed
+sent
+sent
+num_linkages_post_processed
+N_linkages_post_processed
+N_linkages_post_processed
+sent->num_valid_linkages = N_valid_linkages;
+sent->num_valid_linkages = N_valid_linkages
+sent->num_valid_linkages
+sent
+sent
+num_valid_linkages
+N_valid_linkages
+N_valid_linkages
+sent->link_info = link_info;
+sent->link_info = link_info
+sent->link_info
+sent
+sent
+link_info
+link_info
+link_info
+xfree(indices, N_linkages_alloced * sizeof(int));
+xfree(indices, N_linkages_alloced * sizeof(int))
+xfree
+xfree
+indices
+indices
+N_linkages_alloced * sizeof(int)
+N_linkages_alloced
+N_linkages_alloced
+sizeof(int)
+int
+int
+
+-----joern-----
+(271,185,0)
+(47,26,0)
+(27,401,0)
+(415,390,0)
+(317,153,0)
+(214,296,0)
+(95,23,0)
+(138,214,0)
+(236,14,0)
+(74,35,0)
+(225,319,0)
+(50,192,0)
+(307,166,0)
+(270,213,0)
+(303,306,0)
+(233,73,0)
+(148,172,0)
+(186,419,0)
+(50,18,0)
+(135,101,0)
+(440,297,0)
+(313,157,0)
+(176,350,0)
+(42,328,0)
+(256,313,0)
+(173,37,0)
+(424,85,0)
+(14,153,0)
+(73,172,0)
+(411,20,0)
+(384,306,0)
+(228,254,0)
+(213,276,0)
+(424,101,0)
+(143,343,0)
+(434,138,0)
+(197,443,0)
+(296,214,0)
+(198,263,0)
+(248,409,0)
+(387,153,0)
+(127,85,0)
+(81,157,0)
+(406,39,0)
+(267,305,0)
+(285,127,0)
+(166,172,0)
+(201,101,0)
+(440,276,0)
+(215,57,0)
+(171,87,0)
+(383,217,0)
+(119,26,0)
+(447,323,0)
+(172,313,0)
+(312,34,0)
+(82,345,0)
+(168,271,0)
+(128,101,0)
+(350,157,0)
+(280,34,0)
+(449,249,0)
+(337,348,0)
+(203,85,0)
+(31,101,0)
+(135,239,0)
+(399,38,0)
+(29,4,0)
+(142,219,0)
+(350,184,0)
+(111,263,0)
+(10,265,0)
+(62,196,0)
+(456,265,0)
+(163,351,0)
+(55,115,0)
+(104,235,0)
+(129,61,0)
+(65,354,0)
+(111,143,0)
+(314,101,0)
+(245,337,0)
+(265,276,0)
+(305,188,0)
+(43,359,0)
+(72,111,0)
+(313,23,0)
+(291,457,0)
+(24,25,0)
+(107,297,0)
+(97,411,0)
+(428,85,0)
+(179,222,0)
+(238,420,0)
+(99,71,0)
+(33,231,0)
+(363,219,0)
+(346,142,0)
+(263,101,0)
+(317,326,0)
+(411,157,0)
+(316,192,0)
+(435,52,0)
+(52,157,0)
+(195,315,0)
+(275,84,0)
+(56,366,0)
+(419,186,0)
+(351,163,0)
+(170,101,0)
+(144,93,0)
+(206,406,0)
+(111,276,0)
+(89,185,0)
+(141,317,0)
+(8,364,0)
+(93,298,0)
+(50,172,0)
+(286,419,0)
+(395,143,0)
+(394,127,0)
+(312,153,0)
+(261,118,0)
+(182,65,0)
+(224,204,0)
+(18,148,0)
+(443,42,0)
+(37,299,0)
+(53,359,0)
+(449,303,0)
+(399,35,0)
+(265,263,0)
+(222,157,0)
+(457,323,0)
+(445,395,0)
+(215,311,0)
+(377,101,0)
+(356,99,0)
+(10,109,0)
+(198,298,0)
+(115,263,0)
+(329,152,0)
+(354,168,0)
+(311,215,0)
+(416,65,0)
+(104,366,0)
+(5,153,0)
+(315,354,0)
+(111,72,0)
+(94,263,0)
+(295,90,0)
+(58,122,0)
+(300,265,0)
+(292,386,0)
+(232,85,0)
+(223,326,0)
+(3,203,0)
+(57,215,0)
+(92,112,0)
+(106,177,0)
+(453,357,0)
+(143,101,0)
+(109,56,0)
+(136,192,0)
+(288,12,0)
+(436,63,0)
+(15,203,0)
+(335,129,0)
+(237,150,0)
+(198,40,0)
+(11,232,0)
+(449,122,0)
+(382,254,0)
+(364,34,0)
+(243,101,0)
+(309,38,0)
+(366,37,0)
+(385,96,0)
+(26,385,0)
+(206,163,0)
+(235,104,0)
+(51,101,0)
+(49,101,0)
+(216,350,0)
+(390,85,0)
+(297,152,0)
+(155,157,0)
+(401,157,0)
+(262,186,0)
+(115,101,0)
+(154,157,0)
+(96,157,0)
+(48,219,0)
+(283,129,0)
+(105,85,0)
+(125,424,0)
+(205,391,0)
+(19,409,0)
+(36,188,0)
+(235,81,0)
+(104,369,0)
+(398,428,0)
+(336,107,0)
+(45,101,0)
+(410,188,0)
+(229,390,0)
+(149,326,0)
+(400,219,0)
+(440,143,0)
+(29,85,0)
+(1,364,0)
+(137,304,0)
+(26,177,0)
+(400,278,0)
+(105,332,0)
+(185,34,0)
+(349,84,0)
+(255,343,0)
+(184,386,0)
+(152,297,0)
+(371,104,0)
+(276,342,0)
+(372,219,0)
+(148,18,0)
+(35,399,0)
+(260,372,0)
+(142,369,0)
+(106,366,0)
+(112,254,0)
+(207,149,0)
+(60,20,0)
+(187,319,0)
+(360,41,0)
+(162,332,0)
+(2,118,0)
+(353,404,0)
+(12,157,0)
+(152,85,0)
+(272,213,0)
+(395,120,0)
+(380,73,0)
+(213,143,0)
+(404,353,0)
+(218,384,0)
+(433,407,0)
+(351,172,0)
+(14,140,0)
+(95,157,0)
+(364,314,0)
+(172,101,0)
+(147,401,0)
+(25,7,0)
+(342,276,0)
+(231,5,0)
+(423,22,0)
+(56,90,0)
+(116,203,0)
+(303,177,0)
+(7,25,0)
+(331,153,0)
+(139,186,0)
+(379,8,0)
+(129,335,0)
+(88,138,0)
+(455,93,0)
+(39,406,0)
+(304,263,0)
+(362,351,0)
+(33,261,0)
+(357,312,0)
+(347,315,0)
+(246,342,0)
+(268,440,0)
+(194,342,0)
+(419,157,0)
+(315,195,0)
+(160,439,0)
+(365,229,0)
+(204,101,0)
+(315,326,0)
+(140,14,0)
+(266,108,0)
+(163,6,0)
+(239,99,0)
+(117,342,0)
+(149,6,0)
+(373,178,0)
+(384,168,0)
+(68,144,0)
+(158,322,0)
+(323,457,0)
+(65,172,0)
+(138,85,0)
+(17,155,0)
+(93,144,0)
+(98,106,0)
+(227,338,0)
+(146,122,0)
+(52,235,0)
+(192,50,0)
+(63,101,0)
+(99,239,0)
+(150,143,0)
+(384,218,0)
+(217,135,0)
+(26,90,0)
+(322,407,0)
+(109,188,0)
+(331,34,0)
+(145,143,0)
+(274,101,0)
+(439,135,0)
+(221,72,0)
+(298,198,0)
+(401,393,0)
+(332,105,0)
+(153,429,0)
+(340,391,0)
+(406,206,0)
+(366,101,0)
+(75,204,0)
+(114,262,0)
+(140,447,0)
+(287,42,0)
+(413,81,0)
+(42,186,0)
+(121,412,0)
+(304,276,0)
+(213,297,0)
+(367,424,0)
+(163,206,0)
+(314,364,0)
+(265,10,0)
+(170,143,0)
+(26,366,0)
+(431,142,0)
+(0,154,0)
+(430,115,0)
+(161,148,0)
+(54,430,0)
+(407,322,0)
+(359,407,0)
+(376,438,0)
+(18,237,0)
+(327,150,0)
+(32,105,0)
+(422,101,0)
+(278,369,0)
+(325,304,0)
+(6,302,0)
+(244,311,0)
+(80,166,0)
+(71,112,0)
+(93,153,0)
+(297,348,0)
+(264,245,0)
+(253,166,0)
+(311,85,0)
+(34,172,0)
+(352,101,0)
+(448,395,0)
+(71,101,0)
+(425,157,0)
+(20,386,0)
+(23,178,0)
+(203,3,0)
+(393,101,0)
+(25,85,0)
+(217,262,0)
+(225,23,0)
+(385,200,0)
+(83,150,0)
+(212,386,0)
+(319,225,0)
+(418,149,0)
+(353,157,0)
+(56,369,0)
+(237,335,0)
+(183,105,0)
+(440,443,0)
+(199,101,0)
+(18,50,0)
+(278,400,0)
+(241,162,0)
+(342,85,0)
+(334,95,0)
+(299,37,0)
+(324,107,0)
+(303,449,0)
+(159,101,0)
+(290,148,0)
+(313,172,0)
+(284,399,0)
+(44,296,0)
+(191,326,0)
+(335,237,0)
+(35,143,0)
+(310,4,0)
+(440,263,0)
+(13,5,0)
+(364,153,0)
+(305,143,0)
+(56,109,0)
+(118,85,0)
+(96,385,0)
+(235,345,0)
+(225,157,0)
+(133,400,0)
+(369,156,0)
+(185,271,0)
+(432,104,0)
+(389,155,0)
+(155,181,0)
+(403,429,0)
+(438,409,0)
+(73,233,0)
+(404,439,0)
+(167,135,0)
+(103,282,0)
+(370,363,0)
+(293,351,0)
+(372,34,0)
+(132,52,0)
+(169,154,0)
+(38,348,0)
+(412,406,0)
+(210,152,0)
+(226,343,0)
+(372,153,0)
+(358,152,0)
+(153,127,0)
+(151,101,0)
+(37,173,0)
+(131,63,0)
+(251,106,0)
+(439,404,0)
+(333,35,0)
+(56,177,0)
+(296,157,0)
+(332,162,0)
+(100,292,0)
+(344,428,0)
+(304,143,0)
+(331,41,0)
+(35,297,0)
+(447,140,0)
+(282,157,0)
+(230,357,0)
+(229,172,0)
+(134,395,0)
+(397,4,0)
+(420,90,0)
+(254,112,0)
+(277,390,0)
+(446,71,0)
+(261,33,0)
+(265,297,0)
+(231,33,0)
+(412,130,0)
+(9,219,0)
+(99,162,0)
+(202,170,0)
+(35,276,0)
+(258,303,0)
+(166,193,0)
+(126,440,0)
+(239,135,0)
+(16,328,0)
+(93,34,0)
+(63,85,0)
+(354,65,0)
+(78,151,0)
+(396,34,0)
+(306,384,0)
+(385,188,0)
+(427,12,0)
+(180,400,0)
+(190,56,0)
+(276,328,0)
+(150,237,0)
+(323,447,0)
+(351,362,0)
+(127,153,0)
+(154,170,0)
+(385,26,0)
+(112,85,0)
+(269,430,0)
+(59,200,0)
+(354,315,0)
+(107,143,0)
+(364,8,0)
+(21,200,0)
+(381,312,0)
+(28,111,0)
+(395,343,0)
+(355,314,0)
+(14,90,0)
+(102,112,0)
+(451,306,0)
+(409,438,0)
+(331,299,0)
+(162,99,0)
+(234,29,0)
+(112,157,0)
+(12,212,0)
+(406,412,0)
+(122,412,0)
+(177,130,0)
+(208,29,0)
+(206,271,0)
+(282,73,0)
+(67,56,0)
+(454,16,0)
+(5,231,0)
+(122,306,0)
+(5,108,0)
+(391,292,0)
+(361,250,0)
+(213,263,0)
+(338,326,0)
+(189,337,0)
+(289,225,0)
+(254,157,0)
+(263,198,0)
+(318,212,0)
+(26,369,0)
+(14,34,0)
+(164,372,0)
+(155,85,0)
+(122,449,0)
+(369,278,0)
+(392,425,0)
+(124,225,0)
+(339,101,0)
+(87,386,0)
+(35,263,0)
+(273,50,0)
+(302,6,0)
+(409,85,0)
+(162,172,0)
+(30,155,0)
+(76,166,0)
+(452,5,0)
+(359,263,0)
+(86,343,0)
+(186,328,0)
+(233,84,0)
+(421,317,0)
+(321,168,0)
+(457,85,0)
+(265,143,0)
+(426,411,0)
+(213,245,0)
+(168,354,0)
+(5,34,0)
+(4,29,0)
+(357,157,0)
+(106,326,0)
+(281,271,0)
+(70,101,0)
+(390,229,0)
+(46,101,0)
+(40,198,0)
+(408,366,0)
+(240,311,0)
+(301,81,0)
+(443,440,0)
+(113,395,0)
+(437,111,0)
+(6,163,0)
+(450,282,0)
+(368,332,0)
+(441,25,0)
+(402,313,0)
+(111,297,0)
+(414,232,0)
+(235,52,0)
+(232,77,0)
+(271,130,0)
+(442,328,0)
+(262,217,0)
+(110,90,0)
+(165,206,0)
+(91,393,0)
+(237,18,0)
+(407,359,0)
+(430,157,0)
+(330,101,0)
+(359,297,0)
+(378,255,0)
+(314,366,0)
+(6,149,0)
+(177,303,0)
+(317,34,0)
+(112,71,0)
+(232,157,0)
+(22,108,0)
+(405,457,0)
+(185,153,0)
+(23,428,0)
+(342,157,0)
+(209,101,0)
+(343,143,0)
+(252,353,0)
+(306,130,0)
+(175,3,0)
+(308,101,0)
+(298,93,0)
+(388,296,0)
+(359,276,0)
+(320,7,0)
+(151,157,0)
+(192,85,0)
+(245,213,0)
+(41,331,0)
+(393,343,0)
+(107,263,0)
+(174,10,0)
+(65,182,0)
+(66,96,0)
+(444,184,0)
+(104,177,0)
+(428,23,0)
+(142,366,0)
+(200,385,0)
+(294,96,0)
+(118,261,0)
+(166,153,0)
+(259,77,0)
+(200,157,0)
+(64,118,0)
+(312,101,0)
+(299,331,0)
+(279,108,0)
+(185,375,0)
+(257,95,0)
+(249,449,0)
+(152,157,0)
+(214,138,0)
+(220,101,0)
+(79,232,0)
+(37,366,0)
+(168,384,0)
+(104,108,0)
+(247,172,0)
+(391,157,0)
+(69,14,0)
+(81,235,0)
+(72,16,0)
+(204,85,0)
+(417,331,0)
+(359,143,0)
+(375,185,0)
+(73,282,0)
+(341,101,0)
+(382,92,1)
+(19,57,1)
+(270,38,1)
+(169,0,1)
+(254,157,1)
+(441,24,1)
+(443,440,1)
+(44,135,1)
+(225,23,1)
+(149,207,1)
+(189,245,1)
+(276,342,1)
+(307,7,1)
+(122,58,1)
+(232,157,1)
+(288,20,1)
+(312,381,1)
+(439,135,1)
+(3,203,1)
+(452,22,1)
+(304,263,1)
+(26,369,1)
+(223,191,1)
+(140,447,1)
+(69,90,1)
+(142,431,1)
+(232,85,1)
+(325,137,1)
+(399,35,1)
+(371,432,1)
+(5,13,1)
+(112,157,1)
+(174,265,1)
+(374,204,1)
+(14,34,1)
+(430,157,1)
+(29,85,1)
+(431,346,1)
+(238,305,1)
+(235,52,1)
+(449,122,1)
+(452,108,1)
+(405,14,1)
+(53,42,1)
+(314,364,1)
+(296,388,1)
+(323,457,1)
+(423,232,1)
+(367,125,1)
+(148,161,1)
+(264,213,1)
+(262,186,1)
+(227,177,1)
+(254,228,1)
+(170,143,1)
+(212,318,1)
+(344,398,1)
+(398,95,1)
+(245,213,1)
+(185,34,1)
+(436,131,1)
+(419,157,1)
+(381,357,1)
+(265,143,1)
+(90,295,1)
+(291,405,1)
+(133,142,1)
+(260,219,1)
+(225,157,1)
+(266,214,1)
+(265,297,1)
+(16,454,1)
+(93,34,1)
+(376,409,1)
+(253,80,1)
+(317,326,1)
+(343,226,1)
+(99,162,1)
+(142,366,1)
+(60,411,1)
+(427,288,1)
+(337,189,1)
+(312,34,1)
+(107,324,1)
+(400,180,1)
+(440,276,1)
+(326,223,1)
+(265,300,1)
+(252,160,1)
+(342,194,1)
+(162,332,1)
+(283,335,1)
+(332,105,1)
+(208,234,1)
+(203,85,1)
+(271,185,1)
+(43,53,1)
+(184,444,1)
+(412,406,1)
+(210,358,1)
+(421,326,1)
+(380,242,1)
+(379,1,1)
+(404,353,1)
+(100,391,1)
+(289,172,1)
+(256,402,1)
+(171,314,1)
+(99,71,1)
+(204,224,1)
+(451,271,1)
+(35,74,1)
+(50,192,1)
+(440,143,1)
+(305,267,1)
+(115,55,1)
+(347,451,1)
+(433,359,1)
+(203,15,1)
+(185,153,1)
+(370,369,1)
+(170,202,1)
+(73,172,1)
+(416,315,1)
+(166,76,1)
+(138,434,1)
+(430,54,1)
+(258,106,1)
+(2,64,1)
+(262,114,1)
+(312,153,1)
+(342,157,1)
+(32,183,1)
+(335,237,1)
+(67,10,1)
+(166,153,1)
+(457,291,1)
+(183,368,1)
+(135,239,1)
+(104,371,1)
+(179,385,1)
+(384,168,1)
+(28,276,1)
+(440,263,1)
+(230,63,1)
+(425,157,1)
+(140,14,1)
+(395,343,1)
+(214,296,1)
+(239,99,1)
+(359,263,1)
+(456,322,1)
+(349,317,1)
+(213,263,1)
+(104,108,1)
+(112,85,1)
+(366,37,1)
+(391,157,1)
+(198,298,1)
+(93,144,1)
+(59,21,1)
+(331,41,1)
+(368,241,1)
+(304,325,1)
+(56,177,1)
+(245,264,1)
+(194,117,1)
+(131,438,1)
+(385,96,1)
+(235,104,1)
+(411,97,1)
+(80,307,1)
+(408,143,1)
+(150,143,1)
+(428,344,1)
+(390,277,1)
+(414,79,1)
+(129,335,1)
+(213,143,1)
+(114,383,1)
+(351,362,1)
+(65,182,1)
+(160,425,1)
+(424,85,1)
+(110,231,1)
+(363,219,1)
+(313,256,1)
+(269,393,1)
+(57,215,1)
+(74,333,1)
+(231,5,1)
+(282,103,1)
+(372,34,1)
+(18,50,1)
+(265,263,1)
+(162,172,1)
+(360,417,1)
+(143,343,1)
+(358,329,1)
+(233,73,1)
+(69,420,1)
+(387,229,1)
+(217,135,1)
+(280,396,1)
+(35,143,1)
+(5,153,1)
+(316,273,1)
+(123,217,1)
+(167,349,1)
+(116,23,1)
+(438,376,1)
+(76,253,1)
+(19,129,1)
+(20,60,1)
+(47,119,1)
+(64,5,1)
+(56,90,1)
+(213,272,1)
+(66,294,1)
+(105,85,1)
+(305,143,1)
+(79,11,1)
+(94,34,1)
+(111,297,1)
+(12,157,1)
+(297,152,1)
+(439,404,1)
+(456,255,1)
+(238,123,1)
+(319,187,1)
+(139,222,1)
+(131,395,1)
+(176,216,1)
+(108,279,1)
+(216,212,1)
+(97,426,1)
+(310,3,1)
+(303,306,1)
+(393,91,1)
+(122,306,1)
+(407,359,1)
+(5,108,1)
+(190,67,1)
+(127,85,1)
+(443,197,1)
+(420,90,1)
+(306,384,1)
+(22,108,1)
+(411,157,1)
+(351,293,1)
+(10,174,1)
+(354,315,1)
+(272,270,1)
+(206,163,1)
+(232,414,1)
+(237,150,1)
+(106,326,1)
+(401,147,1)
+(277,415,1)
+(27,170,1)
+(395,134,1)
+(56,190,1)
+(153,127,1)
+(213,297,1)
+(320,25,1)
+(315,347,1)
+(7,25,1)
+(207,418,1)
+(246,304,1)
+(136,316,1)
+(87,184,1)
+(235,81,1)
+(355,115,1)
+(52,157,1)
+(222,179,1)
+(122,412,1)
+(8,379,1)
+(353,252,1)
+(263,198,1)
+(148,172,1)
+(364,153,1)
+(89,281,1)
+(52,132,1)
+(334,374,1)
+(187,225,1)
+(6,302,1)
+(171,87,1)
+(111,437,1)
+(304,143,1)
+(385,200,1)
+(236,69,1)
+(154,169,1)
+(1,355,1)
+(149,326,1)
+(331,34,1)
+(3,175,1)
+(192,85,1)
+(251,98,1)
+(426,292,1)
+(292,100,1)
+(255,343,1)
+(455,94,1)
+(363,370,1)
+(229,172,1)
+(240,424,1)
+(409,248,1)
+(351,172,1)
+(449,249,1)
+(92,446,1)
+(168,354,1)
+(318,12,1)
+(285,387,1)
+(448,113,1)
+(35,297,1)
+(202,154,1)
+(96,157,1)
+(37,173,1)
+(26,90,1)
+(30,17,1)
+(372,153,1)
+(428,85,1)
+(372,219,1)
+(217,262,1)
+(298,93,1)
+(35,263,1)
+(354,65,1)
+(247,3,1)
+(296,157,1)
+(417,408,1)
+(137,217,1)
+(359,276,1)
+(24,153,1)
+(267,109,1)
+(134,445,1)
+(226,86,1)
+(301,52,1)
+(350,176,1)
+(12,427,1)
+(50,172,1)
+(152,210,1)
+(231,33,1)
+(168,321,1)
+(166,172,1)
+(438,409,1)
+(350,157,1)
+(96,66,1)
+(401,157,1)
+(192,136,1)
+(444,350,1)
+(111,276,1)
+(324,336,1)
+(111,143,1)
+(65,416,1)
+(168,271,1)
+(65,172,1)
+(440,297,1)
+(333,297,1)
+(290,150,1)
+(6,149,1)
+(284,35,1)
+(273,148,1)
+(186,419,1)
+(406,39,1)
+(322,158,1)
+(418,121,1)
+(25,441,1)
+(37,299,1)
+(356,167,1)
+(5,34,1)
+(155,85,1)
+(172,313,1)
+(83,57,1)
+(397,310,1)
+(406,206,1)
+(86,145,1)
+(338,227,1)
+(391,340,1)
+(340,205,1)
+(93,153,1)
+(293,6,1)
+(155,389,1)
+(229,390,1)
+(115,263,1)
+(424,367,1)
+(450,380,1)
+(104,177,1)
+(118,85,1)
+(311,85,1)
+(14,90,1)
+(217,383,1)
+(311,244,1)
+(117,246,1)
+(161,290,1)
+(197,440,1)
+(105,32,1)
+(359,43,1)
+(151,78,1)
+(91,401,1)
+(265,276,1)
+(26,47,1)
+(336,222,1)
+(241,356,1)
+(234,397,1)
+(9,242,1)
+(244,240,1)
+(205,319,1)
+(119,140,1)
+(219,48,1)
+(98,412,1)
+(121,306,1)
+(364,8,1)
+(278,400,1)
+(138,85,1)
+(94,166,1)
+(390,85,1)
+(319,225,1)
+(300,456,1)
+(346,372,1)
+(71,112,1)
+(295,110,1)
+(260,363,1)
+(369,278,1)
+(313,157,1)
+(73,282,1)
+(294,26,1)
+(400,219,1)
+(113,438,1)
+(206,271,1)
+(177,303,1)
+(142,219,1)
+(55,430,1)
+(242,366,1)
+(158,407,1)
+(21,96,1)
+(317,34,1)
+(394,285,1)
+(457,85,1)
+(58,146,1)
+(372,164,1)
+(152,85,1)
+(165,163,1)
+(4,29,1)
+(0,312,1)
+(389,30,1)
+(383,186,1)
+(393,343,1)
+(322,407,1)
+(434,88,1)
+(364,34,1)
+(420,238,1)
+(11,439,1)
+(167,372,1)
+(365,319,1)
+(396,229,1)
+(286,139,1)
+(35,276,1)
+(281,317,1)
+(331,153,1)
+(329,107,1)
+(224,75,1)
+(63,85,1)
+(53,337,1)
+(99,356,1)
+(419,286,1)
+(378,322,1)
+(439,160,1)
+(261,118,1)
+(109,56,1)
+(34,280,1)
+(63,436,1)
+(237,18,1)
+(213,276,1)
+(353,157,1)
+(314,366,1)
+(26,177,1)
+(56,366,1)
+(200,157,1)
+(204,85,1)
+(221,111,1)
+(415,365,1)
+(112,102,1)
+(94,7,1)
+(402,247,1)
+(110,214,1)
+(127,394,1)
+(154,157,1)
+(191,233,1)
+(144,68,1)
+(132,435,1)
+(447,323,1)
+(222,157,1)
+(95,257,1)
+(268,126,1)
+(147,27,1)
+(211,439,1)
+(23,428,1)
+(413,301,1)
+(357,453,1)
+(102,254,1)
+(150,327,1)
+(26,366,1)
+(282,157,1)
+(185,375,1)
+(104,369,1)
+(38,309,1)
+(214,138,1)
+(152,157,1)
+(175,203,1)
+(155,157,1)
+(299,331,1)
+(180,133,1)
+(247,4,1)
+(317,141,1)
+(445,448,1)
+(384,218,1)
+(392,235,1)
+(111,263,1)
+(10,265,1)
+(112,254,1)
+(206,165,1)
+(279,266,1)
+(18,148,1)
+(313,23,1)
+(68,455,1)
+(437,28,1)
+(29,208,1)
+(454,72,1)
+(257,334,1)
+(129,283,1)
+(48,9,1)
+(228,382,1)
+(13,452,1)
+(75,71,1)
+(25,85,1)
+(124,289,1)
+(321,354,1)
+(17,425,1)
+(446,151,1)
+(146,249,1)
+(317,153,1)
+(33,261,1)
+(248,19,1)
+(395,143,1)
+(453,230,1)
+(56,369,1)
+(126,16,1)
+(255,378,1)
+(421,338,1)
+(359,143,1)
+(125,140,1)
+(81,157,1)
+(41,360,1)
+(249,258,1)
+(118,2,1)
+(198,40,1)
+(247,374,1)
+(72,111,1)
+(107,263,1)
+(22,423,1)
+(440,268,1)
+(88,296,1)
+(72,221,1)
+(432,231,1)
+(34,172,1)
+(95,157,1)
+(425,392,1)
+(215,311,1)
+(14,153,1)
+(104,366,1)
+(163,6,1)
+(342,85,1)
+(303,449,1)
+(315,326,1)
+(409,85,1)
+(388,44,1)
+(385,26,1)
+(359,297,1)
+(81,413,1)
+(151,157,1)
+(42,186,1)
+(106,251,1)
+(141,421,1)
+(225,124,1)
+(315,195,1)
+(145,263,1)
+(164,260,1)
+(357,157,1)
+(200,59,1)
+(14,236,1)
+(103,450,1)
+(423,211,1)
+(423,155,1)
+(287,443,1)
+(107,143,1)
+(7,320,1)
+(309,399,1)
+(106,366,1)
+(399,284,1)
+(435,104,1)
+(185,89,1)
+(15,116,1)
+(327,83,1)
+(54,269,1)
+(338,326,1)
+(163,351,1)
+(407,433,1)
+(42,287,1)
+(317,326,2)
+(276,342,2)
+(135,319,2)
+(72,217,2)
+(168,354,2)
+(265,143,2)
+(363,219,2)
+(358,222,2)
+(246,217,2)
+(200,140,2)
+(314,364,2)
+(115,263,2)
+(439,425,2)
+(95,374,2)
+(65,182,2)
+(215,311,2)
+(94,319,2)
+(206,271,2)
+(283,57,2)
+(281,317,2)
+(18,50,2)
+(258,317,2)
+(416,317,2)
+(391,157,2)
+(14,153,2)
+(322,222,2)
+(65,172,2)
+(232,157,2)
+(267,217,2)
+(155,157,2)
+(266,214,2)
+(426,319,2)
+(215,319,2)
+(3,203,2)
+(323,14,2)
+(369,278,2)
+(318,319,2)
+(103,242,2)
+(12,319,2)
+(232,85,2)
+(234,3,2)
+(6,149,2)
+(282,157,2)
+(413,231,2)
+(372,372,2)
+(313,157,2)
+(316,148,2)
+(262,186,2)
+(331,41,2)
+(291,14,2)
+(33,5,2)
+(13,214,2)
+(372,242,2)
+(154,319,2)
+(255,343,2)
+(122,412,2)
+(169,319,2)
+(431,372,2)
+(390,85,2)
+(226,319,2)
+(457,14,2)
+(175,374,2)
+(65,317,2)
+(74,222,2)
+(99,319,2)
+(287,217,2)
+(350,319,2)
+(59,140,2)
+(359,217,2)
+(418,317,2)
+(26,140,2)
+(57,215,2)
+(18,150,2)
+(440,297,2)
+(365,319,2)
+(315,317,2)
+(231,214,2)
+(380,242,2)
+(210,222,2)
+(297,222,2)
+(276,217,2)
+(140,140,2)
+(312,34,2)
+(401,319,2)
+(406,317,2)
+(26,366,2)
+(349,242,2)
+(14,319,2)
+(163,317,2)
+(24,229,2)
+(351,172,2)
+(29,3,2)
+(411,319,2)
+(123,217,2)
+(453,319,2)
+(433,222,2)
+(269,319,2)
+(204,85,2)
+(57,319,2)
+(440,217,2)
+(335,57,2)
+(407,359,2)
+(149,317,2)
+(67,222,2)
+(43,222,2)
+(93,319,2)
+(35,297,2)
+(119,140,2)
+(324,222,2)
+(10,217,2)
+(216,319,2)
+(449,317,2)
+(398,374,2)
+(229,319,2)
+(311,85,2)
+(305,143,2)
+(261,5,2)
+(385,140,2)
+(409,319,2)
+(400,372,2)
+(332,105,2)
+(288,319,2)
+(233,73,2)
+(213,276,2)
+(23,374,2)
+(327,57,2)
+(357,157,2)
+(19,319,2)
+(372,153,2)
+(293,317,2)
+(315,195,2)
+(143,319,2)
+(72,111,2)
+(141,242,2)
+(162,332,2)
+(415,319,2)
+(4,29,2)
+(294,140,2)
+(311,319,2)
+(99,71,2)
+(439,135,2)
+(80,7,2)
+(14,140,2)
+(254,157,2)
+(437,217,2)
+(53,217,2)
+(229,390,2)
+(99,162,2)
+(1,319,2)
+(6,302,2)
+(407,222,2)
+(235,104,2)
+(129,57,2)
+(424,319,2)
+(28,217,2)
+(337,222,2)
+(185,375,2)
+(83,57,2)
+(190,222,2)
+(81,157,2)
+(158,222,2)
+(7,25,2)
+(166,7,2)
+(151,157,2)
+(278,400,2)
+(114,383,2)
+(56,217,2)
+(63,85,2)
+(395,143,2)
+(105,356,2)
+(95,157,2)
+(64,5,2)
+(56,222,2)
+(111,276,2)
+(73,282,2)
+(86,319,2)
+(52,231,2)
+(63,319,2)
+(277,319,2)
+(265,217,2)
+(364,153,2)
+(203,85,2)
+(126,217,2)
+(356,319,2)
+(26,369,2)
+(142,219,2)
+(34,229,2)
+(397,3,2)
+(405,14,2)
+(112,85,2)
+(42,186,2)
+(297,152,2)
+(17,425,2)
+(162,356,2)
+(317,242,2)
+(227,317,2)
+(140,319,2)
+(25,229,2)
+(296,319,2)
+(29,85,2)
+(332,356,2)
+(298,319,2)
+(340,319,2)
+(253,7,2)
+(430,319,2)
+(71,112,2)
+(233,242,2)
+(52,157,2)
+(279,214,2)
+(129,335,2)
+(54,319,2)
+(368,356,2)
+(163,6,2)
+(164,242,2)
+(9,242,2)
+(213,143,2)
+(5,214,2)
+(143,343,2)
+(50,172,2)
+(425,157,2)
+(140,14,2)
+(12,157,2)
+(50,192,2)
+(257,374,2)
+(313,23,2)
+(223,242,2)
+(164,372,2)
+(127,229,2)
+(384,218,2)
+(134,438,2)
+(131,319,2)
+(229,172,2)
+(239,99,2)
+(110,319,2)
+(251,317,2)
+(235,231,2)
+(231,5,2)
+(172,313,2)
+(88,319,2)
+(30,425,2)
+(270,222,2)
+(34,172,2)
+(22,108,2)
+(296,157,2)
+(155,425,2)
+(406,206,2)
+(69,319,2)
+(13,231,2)
+(0,319,2)
+(404,160,2)
+(323,457,2)
+(364,34,2)
+(440,143,2)
+(76,7,2)
+(347,317,2)
+(190,217,2)
+(153,229,2)
+(136,148,2)
+(96,157,2)
+(111,297,2)
+(425,231,2)
+(237,57,2)
+(191,242,2)
+(90,319,2)
+(268,217,2)
+(106,326,2)
+(109,56,2)
+(107,143,2)
+(222,140,2)
+(108,214,2)
+(14,34,2)
+(132,231,2)
+(385,26,2)
+(146,317,2)
+(14,90,2)
+(206,163,2)
+(271,185,2)
+(445,438,2)
+(307,7,2)
+(53,222,2)
+(432,231,2)
+(186,222,2)
+(335,237,2)
+(396,229,2)
+(317,153,2)
+(91,319,2)
+(197,217,2)
+(394,229,2)
+(428,374,2)
+(290,150,2)
+(22,231,2)
+(219,242,2)
+(148,150,2)
+(457,85,2)
+(305,222,2)
+(278,372,2)
+(239,319,2)
+(440,263,2)
+(366,319,2)
+(235,52,2)
+(421,242,2)
+(148,172,2)
+(112,157,2)
+(359,143,2)
+(292,319,2)
+(3,374,2)
+(421,317,2)
+(303,317,2)
+(89,317,2)
+(180,372,2)
+(43,217,2)
+(87,319,2)
+(37,173,2)
+(304,217,2)
+(8,319,2)
+(342,157,2)
+(167,319,2)
+(185,153,2)
+(350,157,2)
+(150,143,2)
+(25,85,2)
+(152,157,2)
+(149,326,2)
+(447,323,2)
+(322,407,2)
+(150,57,2)
+(300,222,2)
+(447,14,2)
+(217,135,2)
+(379,319,2)
+(299,331,2)
+(107,263,2)
+(439,404,2)
+(238,140,2)
+(428,85,2)
+(409,85,2)
+(344,374,2)
+(367,319,2)
+(298,93,2)
+(170,319,2)
+(423,231,2)
+(104,366,2)
+(96,140,2)
+(406,39,2)
+(312,153,2)
+(456,222,2)
+(414,439,2)
+(240,319,2)
+(106,366,2)
+(174,217,2)
+(389,425,2)
+(32,356,2)
+(47,140,2)
+(55,319,2)
+(265,297,2)
+(452,214,2)
+(26,177,2)
+(48,242,2)
+(37,299,2)
+(56,366,2)
+(342,85,2)
+(300,217,2)
+(69,140,2)
+(222,157,2)
+(79,439,2)
+(342,217,2)
+(56,177,2)
+(359,263,2)
+(2,5,2)
+(10,222,2)
+(35,276,2)
+(260,242,2)
+(18,148,2)
+(351,317,2)
+(263,319,2)
+(440,276,2)
+(262,383,2)
+(434,319,2)
+(248,319,2)
+(153,127,2)
+(117,217,2)
+(38,222,2)
+(115,319,2)
+(194,217,2)
+(212,319,2)
+(213,263,2)
+(284,222,2)
+(171,87,2)
+(249,317,2)
+(438,319,2)
+(111,217,2)
+(325,217,2)
+(203,374,2)
+(177,303,2)
+(135,239,2)
+(127,85,2)
+(81,231,2)
+(118,85,2)
+(448,438,2)
+(42,217,2)
+(306,317,2)
+(5,34,2)
+(420,90,2)
+(152,85,2)
+(137,217,2)
+(372,34,2)
+(211,439,2)
+(261,118,2)
+(158,217,2)
+(183,356,2)
+(443,217,2)
+(381,319,2)
+(343,319,2)
+(305,217,2)
+(433,217,2)
+(145,319,2)
+(192,148,2)
+(245,213,2)
+(144,319,2)
+(376,319,2)
+(264,222,2)
+(392,231,2)
+(456,217,2)
+(170,143,2)
+(147,319,2)
+(319,225,2)
+(378,322,2)
+(221,217,2)
+(138,85,2)
+(267,222,2)
+(390,319,2)
+(174,222,2)
+(41,319,2)
+(142,372,2)
+(109,217,2)
+(93,34,2)
+(198,319,2)
+(56,369,2)
+(393,319,2)
+(73,242,2)
+(33,261,2)
+(155,85,2)
+(7,229,2)
+(407,217,2)
+(10,265,2)
+(225,23,2)
+(354,317,2)
+(435,231,2)
+(273,148,2)
+(329,222,2)
+(230,319,2)
+(419,157,2)
+(282,242,2)
+(217,262,2)
+(122,306,2)
+(213,222,2)
+(160,425,2)
+(50,148,2)
+(436,319,2)
+(301,231,2)
+(255,322,2)
+(252,160,2)
+(359,222,2)
+(186,419,2)
+(245,222,2)
+(163,351,2)
+(400,219,2)
+(192,85,2)
+(286,222,2)
+(346,372,2)
+(372,219,2)
+(236,319,2)
+(263,198,2)
+(443,440,2)
+(184,319,2)
+(322,217,2)
+(23,428,2)
+(214,296,2)
+(133,372,2)
+(213,297,2)
+(198,40,2)
+(100,319,2)
+(6,317,2)
+(98,317,2)
+(166,172,2)
+(353,157,2)
+(236,140,2)
+(20,319,2)
+(27,319,2)
+(66,140,2)
+(122,317,2)
+(142,366,2)
+(105,85,2)
+(315,326,2)
+(162,172,2)
+(383,222,2)
+(412,317,2)
+(420,140,2)
+(217,222,2)
+(404,353,2)
+(450,242,2)
+(152,222,2)
+(310,3,2)
+(35,222,2)
+(168,271,2)
+(427,319,2)
+(309,222,2)
+(104,369,2)
+(441,229,2)
+(104,108,2)
+(15,374,2)
+(384,317,2)
+(366,37,2)
+(401,157,2)
+(138,319,2)
+(107,222,2)
+(355,319,2)
+(280,229,2)
+(317,317,2)
+(317,34,2)
+(161,150,2)
+(321,317,2)
+(395,343,2)
+(449,122,2)
+(37,319,2)
+(354,315,2)
+(353,160,2)
+(265,276,2)
+(111,263,2)
+(111,143,2)
+(417,319,2)
+(265,263,2)
+(113,438,2)
+(419,222,2)
+(242,319,2)
+(139,222,2)
+(207,317,2)
+(334,374,2)
+(387,229,2)
+(93,144,2)
+(16,217,2)
+(198,298,2)
+(451,317,2)
+(331,34,2)
+(154,157,2)
+(260,372,2)
+(106,317,2)
+(338,326,2)
+(338,317,2)
+(411,157,2)
+(35,263,2)
+(333,222,2)
+(202,319,2)
+(189,222,2)
+(295,319,2)
+(304,143,2)
+(104,177,2)
+(285,229,2)
+(363,372,2)
+(125,319,2)
+(359,297,2)
+(430,157,2)
+(364,8,2)
+(359,276,2)
+(56,90,2)
+(320,229,2)
+(73,172,2)
+(165,317,2)
+(116,374,2)
+(452,231,2)
+(166,153,2)
+(67,217,2)
+(97,319,2)
+(357,319,2)
+(455,319,2)
+(312,319,2)
+(395,438,2)
+(231,33,2)
+(237,150,2)
+(385,96,2)
+(21,140,2)
+(225,157,2)
+(68,319,2)
+(5,153,2)
+(121,317,2)
+(393,343,2)
+(118,5,2)
+(206,317,2)
+(351,362,2)
+(369,372,2)
+(232,439,2)
+(140,447,2)
+(235,81,2)
+(44,319,2)
+(179,140,2)
+(354,65,2)
+(205,319,2)
+(336,222,2)
+(185,34,2)
+(408,319,2)
+(454,217,2)
+(299,319,2)
+(370,372,2)
+(306,384,2)
+(26,90,2)
+(303,306,2)
+(168,317,2)
+(244,319,2)
+(5,231,2)
+(331,319,2)
+(384,168,2)
+(399,35,2)
+(399,222,2)
+(265,222,2)
+(331,153,2)
+(272,222,2)
+(271,317,2)
+(35,143,2)
+(412,406,2)
+(304,263,2)
+(214,138,2)
+(4,3,2)
+(208,3,2)
+(326,242,2)
+(364,319,2)
+(93,153,2)
+(185,317,2)
+(60,319,2)
+(424,85,2)
+(391,319,2)
+(449,249,2)
+(214,319,2)
+(58,317,2)
+(176,319,2)
+(109,222,2)
+(303,449,2)
+(371,231,2)
+(314,366,2)
+(104,231,2)
+(241,356,2)
+(112,254,2)
+(200,157,2)
+(11,439,2)
+(177,317,2)
+(5,108,2)
+(360,319,2)
+(388,319,2)
+(231,231,2)
+(444,319,2)
+(385,200,2)
+(141,317,2)
+(237,18,2)
+(314,319,2)
+(438,409,2)
+-----------------------------------
+(0,sent)
+(1,N_linkages_alloced)
+(2,resources)
+(3,opts->verbosity > 1)
+(4,fprintf(stdout,\n\\n\\t\\t\\t\\t  "Warning: Count overflow.\\n"\n\\n\\t\\t\\t\\t  "Considering a random subset of %d of an unknown and large number of linkages\\n",\n\\n\\t\\t\\t\\t  opts->linkage_limit)
+(5,in < N_linkages_alloced)
+(6,(double)
+(7,opts->verbosity > 1)
+(8,sizeof(int)
+(9,in)
+(10,link_info[N_linkages_post_processed].index)
+(11,sent)
+(12,sent->num_valid_linkages)
+(13,N_linkages_alloced)
+(14,in < N_linkages_alloced)
+(15,verbosity)
+(16,link_info[N_linkages_post_processed].fat = TRUE)
+(17,sent)
+(18,(N_linkages_found > 0)
+(19,opts)
+(20,sent->num_linkages_post_processed = 0)
+(21,sent)
+(22,in++)
+(23,sent->num_linkages_found = opts->linkage_limit)
+(24,opts)
+(25,opts->verbosity)
+(26,indices[in])
+(27,sent)
+(28,link_info)
+(29,opts->linkage_limit)
+(30,opts)
+(31,denom)
+(32,linkage_limit)
+(33,!resources_exhausted(opts->resources)
+(34,N_linkages_alloced = N_linkages_found)
+(35,link_info[N_linkages_post_processed])
+(36,if (set_has_fat_down(sent)
+(37,(int *)
+(38,link_info[N_linkages_post_processed].fat = FALSE)
+(39,int)
+(40,Linkage_info *)
+(41,sizeof(int)
+(42,link_info[N_linkages_post_processed].canonical = canonical)
+(43,N_linkages_post_processed)
+(44,sent)
+(45,if (sent->length >= opts->twopass_length)
+(46,N_valid_linkages)
+(47,in)
+(48,0)
+(49,N_linkages_post_processed)
+(50,N_linkages_found < opts->linkage_limit)
+(51,canonical)
+(52,sent->null_count)
+(53,link_info)
+(54,link_info)
+(55,link_info)
+(56,indices[in])
+(57,!resources_exhausted(opts->resources)
+(58,block_bottom)
+(59,parse_info)
+(60,0)
+(61,)
+(62,for (in=0; (in < N_linkages_alloced)
+(63,print_time(opts, "Sorted all linkages")
+(64,opts)
+(65,(double)
+(66,null_count)
+(67,indices)
+(68,Linkage_info)
+(69,in)
+(70,in)
+(71,overflowed = build_parse_set(sent, sent->null_count, opts)
+(72,link_info[N_linkages_post_processed].fat)
+(73,N_linkages_found + sent->length)
+(74,N_linkages_post_processed)
+(75,opts)
+(76,N_linkages_found)
+(77,)
+(78,sent)
+(79,opts)
+(80,"Warning: Considering a random subset of %d of %d linkages\\n")
+(81,sent->parse_info)
+(82,if (set_has_fat_down(sent)
+(83,N_linkages_post_processed)
+(84,)
+(85,Parse_Options opts)
+(86,N_valid_linkages)
+(87,return;)
+(88,opts)
+(89,N_linkages_alloced)
+(90,in=0)
+(91,N_valid_linkages)
+(92,sent)
+(93,N_linkages_alloced * sizeof(Linkage_info)
+(94,link_info)
+(95,sent->num_linkages_found)
+(96,sent->null_count)
+(97,num_linkages_post_processed)
+(98,indices)
+(99,overflowed || (N_linkages_found > 2*opts->linkage_limit)
+(100,0)
+(101,)
+(102,opts)
+(103,length)
+(104,indices[in])
+(105,opts->linkage_limit)
+(106,indices[in])
+(107,link_info[N_linkages_post_processed])
+(108,in=0)
+(109,link_info[N_linkages_post_processed].index = indices[in])
+(110,in)
+(111,link_info[N_linkages_post_processed])
+(112,build_parse_set(sent, sent->null_count, opts)
+(113,stdout)
+(114,canonical)
+(115,sent->link_info = link_info)
+(116,opts)
+(117,opts)
+(118,opts->resources)
+(119,indices)
+(120,)
+(121,block_top)
+(122,block_top-block_bottom)
+(123,continue;)
+(124,num_linkages_found)
+(125,opts)
+(126,link_info)
+(127,opts->linkage_limit)
+(128,if (N_linkages_found > opts->linkage_limit)
+(129,assert(! ((N_linkages_post_processed == 0)
+(130,)
+(131,opts)
+(132,null_count)
+(133,in)
+(134,N_linkages_post_processed)
+(135,only_canonical_allowed = (!(overflowed || (N_linkages_found > 2*opts->linkage_limit)
+(136,linkage_limit)
+(137,link_info)
+(138,opts->twopass_length)
+(139,canonical)
+(140,(in < N_linkages_alloced)
+(141,N_linkages_alloced)
+(142,indices[in])
+(143,N_linkages_post_processed = N_valid_linkages = 0)
+(144,sizeof(Linkage_info)
+(145,N_linkages_post_processed)
+(146,block_top)
+(147,num_valid_linkages)
+(148,N_linkages_found > 0)
+(149,in+1)
+(150,N_linkages_post_processed == 0)
+(151,free_post_processing(sent)
+(152,analyze_thin_linkage(sent, opts, PP_SECOND_PASS)
+(153,N_linkages_alloced = opts->linkage_limit)
+(154,sent->num_linkages_post_processed)
+(155,analyze_thin_linkage(sent, opts, PP_FIRST_PASS)
+(156,)
+(157,Sentence sent)
+(158,0)
+(159,N_linkages_found)
+(160,only_canonical_allowed)
+(161,0)
+(162,N_linkages_found > 2*opts->linkage_limit)
+(163,(double)
+(164,N_linkages_alloced)
+(165,denom)
+(166,fprintf(stdout,\n\\n\\t\\t\\t\\t  "Warning: Considering a random subset of %d of %d linkages\\n",\n\\n\\t\\t\\t\\t  N_linkages_alloced, N_linkages_found)
+(167,only_canonical_allowed)
+(168,((double)
+(169,num_linkages_post_processed)
+(170,sent->num_linkages_post_processed = N_linkages_post_processed)
+(171,RET)
+(172,N_linkages_found = sent->num_linkages_found)
+(173,int *)
+(174,index)
+(175,1)
+(176,link_info)
+(177,indices[in] = block_bottom + (my_random()
+(178,)
+(179,sent)
+(180,1)
+(181,)
+(182,double)
+(183,opts)
+(184,sent->link_info = NULL)
+(185,(double)
+(186,canonical = is_canonical_linkage(sent)
+(187,0)
+(188,)
+(189,TRUE)
+(190,in)
+(191,in)
+(192,opts->linkage_limit)
+(193,)
+(194,PP_SECOND_PASS)
+(195,double)
+(196,)
+(197,canonical)
+(198,(Linkage_info *)
+(199,if (overflowed)
+(200,sent->parse_info)
+(201,link_info)
+(202,N_linkages_post_processed)
+(203,opts->verbosity)
+(204,print_time(opts, "Built parse set")
+(205,sent)
+(206,((double)
+(207,1)
+(208,linkage_limit)
+(209,if (opts->verbosity > 1)
+(210,PP_SECOND_PASS)
+(211,continue;)
+(212,sent->num_valid_linkages = 0)
+(213,link_info[N_linkages_post_processed])
+(214,sent->length >= opts->twopass_length)
+(215,resources_exhausted(opts->resources)
+(216,sent)
+(217,only_canonical_allowed && !canonical)
+(218,int)
+(219,in=0)
+(220,if (!resources_exhausted(opts->resources)
+(221,fat)
+(222,set_has_fat_down(sent)
+(223,0)
+(224,"Built parse set")
+(225,sent->num_linkages_found)
+(226,0)
+(227,in)
+(228,null_count)
+(229,N_linkages_found > opts->linkage_limit)
+(230,sent)
+(231,(in < N_linkages_alloced)
+(232,analyze_fat_linkage(sent, opts, PP_FIRST_PASS)
+(233,my_random_initialize(N_linkages_found + sent->length)
+(234,opts)
+(235,extract_links(indices[in], sent->null_count, sent->parse_info)
+(236,N_linkages_alloced)
+(237,(N_linkages_post_processed == 0)
+(238,in)
+(239,!(overflowed || (N_linkages_found > 2*opts->linkage_limit)
+(240,opts)
+(241,N_linkages_found)
+(242,overflowed)
+(243,only_canonical_allowed)
+(244,resources)
+(245,link_info[N_linkages_post_processed].canonical)
+(246,sent)
+(247,N_linkages_found)
+(248,verbosity)
+(249,my_random()
+(250,)
+(251,in)
+(252,sent)
+(253,N_linkages_alloced)
+(254,sent->null_count)
+(255,N_valid_linkages++)
+(256,num_linkages_found)
+(257,num_linkages_found)
+(258,block_bottom)
+(259,if (only_canonical_allowed && !is_canonical_linkage(sent)
+(260,in)
+(261,resources_exhausted(opts->resources)
+(262,!canonical)
+(263,link_info=(Linkage_info *)
+(264,canonical)
+(265,link_info[N_linkages_post_processed])
+(266,in)
+(267,N_linkages_post_processed)
+(268,N_linkages_post_processed)
+(269,sent)
+(270,link_info)
+(271,denom = (double)
+(272,N_linkages_post_processed)
+(273,N_linkages_found)
+(274,overflowed)
+(275,for (in=0; in<N_linkages_alloced; in++)
+(276,link_info[N_linkages_post_processed] =\n\\n\\t\\t\\t\\tanalyze_fat_linkage(sent, opts, PP_SECOND_PASS)
+(277,linkage_limit)
+(278,-(in+1)
+(279,0)
+(280,N_linkages_found)
+(281,denom)
+(282,sent->length)
+(283,"None of the linkages is canonical")
+(284,fat)
+(285,opts)
+(286,sent)
+(287,canonical)
+(288,sent)
+(289,sent)
+(290,N_linkages_found)
+(291,resources)
+(292,sent->num_linkages_alloced = 0)
+(293,N_linkages_found)
+(294,sent)
+(295,0)
+(296,sent->length)
+(297,link_info[N_linkages_post_processed] =\n\\n\\t\\t\\t\\tanalyze_thin_linkage(sent, opts, PP_SECOND_PASS)
+(298,xalloc(N_linkages_alloced * sizeof(Linkage_info)
+(299,xalloc(N_linkages_alloced * sizeof(int)
+(300,N_linkages_post_processed)
+(301,sent)
+(302,double)
+(303,block_bottom + (my_random()
+(304,link_info[N_linkages_post_processed])
+(305,N_linkages_post_processed++)
+(306,block_bottom = (int)
+(307,stdout)
+(308,if (sent->num_linkages_found == 0)
+(309,FALSE)
+(310,stdout)
+(311,opts->resources)
+(312,sent->num_linkages_alloced = N_linkages_alloced)
+(313,sent->num_linkages_found)
+(314,xfree(indices, N_linkages_alloced * sizeof(int)
+(315,(double)
+(316,opts)
+(317,in<N_linkages_alloced)
+(318,0)
+(319,sent->num_linkages_found == 0)
+(320,1)
+(321,denom)
+(322,link_info[N_linkages_post_processed].N_violations==0)
+(323,resources_exhausted(opts->resources)
+(324,N_linkages_post_processed)
+(325,N_linkages_post_processed)
+(326,in=0)
+(327,0)
+(328,)
+(329,sent)
+(330,N_linkages_alloced)
+(331,N_linkages_alloced * sizeof(int)
+(332,2*opts->linkage_limit)
+(333,link_info)
+(334,sent)
+(335,! ((N_linkages_post_processed == 0)
+(336,link_info)
+(337,link_info[N_linkages_post_processed].canonical = TRUE)
+(338,in++)
+(339,indices)
+(340,num_linkages_alloced)
+(341,if (overflowed)
+(342,analyze_fat_linkage(sent, opts, PP_SECOND_PASS)
+(343,N_valid_linkages = 0)
+(344,linkage_limit)
+(345,)
+(346,indices)
+(347,in)
+(348,)
+(349,my_random_finalize()
+(350,sent->link_info)
+(351,(double)
+(352,block_top)
+(353,is_canonical_linkage(sent)
+(354,(double)
+(355,indices)
+(356,overflowed)
+(357,sent->num_linkages_alloced)
+(358,opts)
+(359,link_info[N_linkages_post_processed])
+(360,int)
+(361,for (in=0; in<N_linkages_alloced; in++)
+(362,double)
+(363,in++)
+(364,N_linkages_alloced * sizeof(int)
+(365,N_linkages_found)
+(366,indices = (int *)
+(367,"Postprocessed all linkages")
+(368,2)
+(369,indices[in] = -(in+1)
+(370,in)
+(371,in)
+(372,in<N_linkages_alloced)
+(373,if (opts->verbosity > 1)
+(374,overflowed)
+(375,double)
+(376,1)
+(377,block_bottom)
+(378,N_valid_linkages)
+(379,int)
+(380,N_linkages_found)
+(381,N_linkages_alloced)
+(382,sent)
+(383,only_canonical_allowed)
+(384,(int)
+(385,extract_links(indices[in], sent->null_count, sent->parse_info)
+(386,)
+(387,N_linkages_alloced)
+(388,length)
+(389,PP_FIRST_PASS)
+(390,opts->linkage_limit)
+(391,sent->num_linkages_alloced)
+(392,sent)
+(393,sent->num_valid_linkages = N_valid_linkages)
+(394,linkage_limit)
+(395,fprintf(stdout, "%d of %d linkages with no P.P. violations\\n",\n\\n\\t\\t\\t\\tN_valid_linkages, N_linkages_post_processed)
+(396,N_linkages_alloced)
+(397,"Warning: Count overflow.\\n"\n\\n\\t\\t\\t\\t  "Considering a random subset of %d of an unknown and large number of linkages\\n")
+(398,opts)
+(399,link_info[N_linkages_post_processed].fat)
+(400,in+1)
+(401,sent->num_valid_linkages)
+(402,sent)
+(403,if (opts->verbosity > 1)
+(404,!is_canonical_linkage(sent)
+(405,opts)
+(406,(int)
+(407,link_info[N_linkages_post_processed].N_violations)
+(408,indices)
+(409,opts->verbosity)
+(410,if (link_info[N_linkages_post_processed].N_violations==0)
+(411,sent->num_linkages_post_processed)
+(412,block_top = (int)
+(413,parse_info)
+(414,PP_FIRST_PASS)
+(415,opts)
+(416,N_linkages_found)
+(417,N_linkages_alloced)
+(418,in)
+(419,is_canonical_linkage(sent)
+(420,in++)
+(421,in)
+(422,for (in=0; (in < N_linkages_alloced)
+(423,in)
+(424,print_time(opts, "Postprocessed all linkages")
+(425,set_has_fat_down(sent)
+(426,sent)
+(427,num_valid_linkages)
+(428,opts->linkage_limit)
+(429,)
+(430,sent->link_info)
+(431,in)
+(432,indices)
+(433,N_violations)
+(434,twopass_length)
+(435,sent)
+(436,"Sorted all linkages")
+(437,N_linkages_post_processed)
+(438,opts->verbosity > 1)
+(439,only_canonical_allowed && !is_canonical_linkage(sent)
+(440,link_info[N_linkages_post_processed])
+(441,verbosity)
+(442,if (only_canonical_allowed && !canonical)
+(443,link_info[N_linkages_post_processed].canonical)
+(444,NULL)
+(445,N_valid_linkages)
+(446,overflowed)
+(447,!resources_exhausted(opts->resources)
+(448,"%d of %d linkages with no P.P. violations\\n")
+(449,my_random()
+(450,sent)
+(451,block_bottom)
+(452,in)
+(453,num_linkages_alloced)
+(454,TRUE)
+(455,N_linkages_alloced)
+(456,link_info)
+(457,opts->resources)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

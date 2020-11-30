@@ -1,0 +1,1292 @@
+-----label-----
+0
+-----code-----
+void rmonitor_dispatch_msg(void)
+{
+	struct rmonitor_msg msg;
+	struct rmonitor_process_info *p;
+
+	recv_monitor_msg(rmonitor_queue_fd, &msg);
+
+	debug(D_DEBUG,"message \"%s\" from %d\n", str_msgtype(msg.type), msg.origin);
+
+	p = itable_lookup(processes, (uint64_t) msg.origin);
+
+	if(!p)
+	{
+		/* We either got a malformed message, message from a
+		process we are not tracking anymore, or a message from
+		a newly created process.  */
+		if( msg.type == END_WAIT )
+        {
+			release_waiting_process(msg.origin);
+			return;
+        }
+		else if(msg.type != BRANCH)
+			return;
+	}
+
+    switch(msg.type)
+    {
+        case BRANCH:
+            rmonitor_track_process(msg.origin);
+            if(summary->max_concurrent_processes < itable_size(processes))
+                summary->max_concurrent_processes = itable_size(processes);
+            break;
+        case END_WAIT:
+            p->waiting = 1;
+            break;
+        case END:
+            rmonitor_untrack_process(msg.data.p);
+            break;
+        case CHDIR:
+            p->wd = lookup_or_create_wd(p->wd, msg.data.s);
+            break;
+		case OPEN_INPUT:
+		case OPEN_OUTPUT:
+			switch(msg.error) {
+				case 0:
+					debug(D_DEBUG, "File %s has been opened.\n", msg.data.s);
+					rmonitor_inotify_add_watch(msg.data.s, msg.type == OPEN_OUTPUT);
+					break;
+				case EMFILE:
+					/* Eventually report that we ran out of file descriptors. */
+					break;
+				default:
+					break;
+			}
+			break;
+        case READ:
+            break;
+        case WRITE:
+            break;
+        default:
+            break;
+    };
+
+	summary->last_error = msg.error;
+
+	if(rmonitor_check_limits(summary))
+		rmonitor_final_cleanup(SIGTERM);
+
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+5,6
+5,7
+7,8
+9,10
+9,11
+9,12
+9,13
+9,14
+9,15
+9,16
+9,17
+9,18
+9,19
+10,11
+11,12
+11,13
+12,13
+14,15
+16,17
+17,18
+17,19
+18,19
+20,21
+20,22
+23,24
+24,25
+24,26
+24,27
+25,26
+27,28
+29,30
+30,31
+32,33
+33,34
+33,35
+33,36
+33,37
+33,38
+34,35
+36,37
+39,40
+39,41
+40,41
+42,43
+42,44
+43,44
+46,47
+46,48
+47,48
+50,51
+51,52
+51,53
+52,53
+54,55
+54,56
+54,57
+55,56
+57,58
+59,60
+59,61
+60,61
+60,62
+61,62
+64,65
+64,66
+65,66
+68,69
+68,70
+69,70
+70,71
+72,73
+73,74
+73,75
+73,76
+74,75
+74,76
+75,76
+75,77
+76,77
+79,80
+81,82
+81,83
+82,83
+83,84
+83,85
+84,85
+86,87
+86,88
+87,88
+91,92
+91,93
+92,93
+92,94
+93,94
+93,95
+94,95
+97,98
+100,101
+100,102
+101,102
+101,103
+102,103
+105,106
+105,107
+105,108
+105,109
+105,110
+105,111
+105,112
+105,113
+105,114
+105,115
+105,116
+105,117
+105,118
+105,119
+105,120
+105,121
+105,122
+105,123
+105,124
+105,125
+105,126
+105,127
+105,128
+106,107
+107,108
+109,110
+110,111
+110,112
+111,112
+113,114
+113,115
+114,115
+117,118
+117,119
+118,119
+118,120
+119,120
+119,121
+120,121
+123,124
+123,125
+124,125
+126,127
+128,129
+129,130
+129,131
+130,131
+130,132
+131,132
+134,135
+134,136
+135,136
+137,138
+140,141
+141,142
+143,144
+144,145
+144,146
+145,146
+145,147
+146,147
+151,152
+152,153
+154,155
+155,156
+155,157
+156,157
+158,159
+158,160
+159,160
+159,161
+160,161
+165,166
+166,167
+168,169
+169,170
+169,171
+170,171
+170,172
+171,172
+174,175
+174,176
+174,177
+175,176
+177,178
+177,179
+178,179
+181,182
+181,183
+182,183
+182,184
+183,184
+188,189
+189,190
+191,192
+192,193
+194,195
+194,196
+195,196
+195,197
+196,197
+199,200
+199,201
+199,202
+199,203
+199,204
+199,205
+199,206
+199,207
+200,201
+202,203
+203,204
+203,205
+203,206
+203,207
+204,205
+206,207
+209,210
+209,211
+210,211
+210,212
+211,212
+215,216
+216,217
+216,218
+216,219
+217,218
+219,220
+219,221
+220,221
+220,222
+221,222
+225,226
+225,227
+226,227
+226,228
+227,228
+230,231
+233,234
+234,235
+240,241
+241,242
+244,245
+245,246
+251,252
+252,253
+252,254
+253,254
+253,255
+254,255
+257,258
+257,259
+258,259
+261,262
+261,263
+262,263
+262,264
+263,264
+265,266
+266,267
+268,269
+269,270
+269,271
+270,271
+272,273
+273,274
+-----nextToken-----
+2,4,6,8,13,15,19,21,22,26,28,31,35,37,38,41,44,45,48,49,53,56,58,62,63,66,67,71,77,78,80,85,88,89,90,95,96,98,99,103,104,108,112,115,116,121,122,125,127,132,133,136,138,139,142,147,148,149,150,153,157,161,162,163,164,167,172,173,176,179,180,184,185,186,187,190,193,197,198,201,205,207,208,212,213,214,218,222,223,224,228,229,231,232,235,236,237,238,239,242,243,246,247,248,249,250,255,256,259,260,264,267,271,274
+-----computeFrom-----
+51,52
+51,53
+74,75
+74,76
+92,93
+92,94
+118,119
+118,120
+129,130
+129,131
+144,145
+144,146
+169,170
+169,171
+225,226
+225,227
+252,253
+252,254
+-----guardedBy-----
+77,88
+121,132
+127,138
+122,133
+125,136
+-----guardedByNegation-----
+77,95
+78,96
+-----lastLexicalUse-----
+77,95
+-----jump-----
+77,95
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;FieldReference;IdExpression;Name;Name;IfStatement;UnaryExpression;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ReturnStatement;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ReturnStatement;SwitchStatement;FieldReference;IdExpression;Name;Name;CompoundStatement;CaseStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;BreakStatement;CaseStatement;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;BreakStatement;CaseStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;BreakStatement;CaseStatement;IdExpression;Name;CaseStatement;IdExpression;Name;SwitchStatement;FieldReference;IdExpression;Name;Name;CompoundStatement;CaseStatement;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;BreakStatement;DefaultStatement;BreakStatement;BreakStatement;CaseStatement;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;BreakStatement;DefaultStatement;BreakStatement;NullStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IfStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;
+-----ast_node-----
+void rmonitor_dispatch_msg(void){	struct rmonitor_msg msg;	struct rmonitor_process_info *p;	recv_monitor_msg(rmonitor_queue_fd, &msg);	debug(D_DEBUG,"message \"%s\" from %d\n", str_msgtype(msg.type), msg.origin);	p = itable_lookup(processes, (uint64_t) msg.origin);	if(!p)	{		/* We either got a malformed message, message from a		process we are not tracking anymore, or a message from		a newly created process.  */		if( msg.type == END_WAIT )        {			release_waiting_process(msg.origin);			return;        }		else if(msg.type != BRANCH)			return;	}    switch(msg.type)    {        case BRANCH:            rmonitor_track_process(msg.origin);            if(summary->max_concurrent_processes < itable_size(processes))                summary->max_concurrent_processes = itable_size(processes);            break;        case END_WAIT:            p->waiting = 1;            break;        case END:            rmonitor_untrack_process(msg.data.p);            break;        case CHDIR:            p->wd = lookup_or_create_wd(p->wd, msg.data.s);            break;		case OPEN_INPUT:		case OPEN_OUTPUT:			switch(msg.error) {				case 0:					debug(D_DEBUG, "File %s has been opened.\n", msg.data.s);					rmonitor_inotify_add_watch(msg.data.s, msg.type == OPEN_OUTPUT);					break;				case EMFILE:					/* Eventually report that we ran out of file descriptors. */					break;				default:					break;			}			break;        case READ:            break;        case WRITE:            break;        default:            break;    };	summary->last_error = msg.error;	if(rmonitor_check_limits(summary))		rmonitor_final_cleanup(SIGTERM);}
+void
+rmonitor_dispatch_msg(void)
+rmonitor_dispatch_msg
+void
+void
+
+
+{	struct rmonitor_msg msg;	struct rmonitor_process_info *p;	recv_monitor_msg(rmonitor_queue_fd, &msg);	debug(D_DEBUG,"message \"%s\" from %d\n", str_msgtype(msg.type), msg.origin);	p = itable_lookup(processes, (uint64_t) msg.origin);	if(!p)	{		/* We either got a malformed message, message from a		process we are not tracking anymore, or a message from		a newly created process.  */		if( msg.type == END_WAIT )        {			release_waiting_process(msg.origin);			return;        }		else if(msg.type != BRANCH)			return;	}    switch(msg.type)    {        case BRANCH:            rmonitor_track_process(msg.origin);            if(summary->max_concurrent_processes < itable_size(processes))                summary->max_concurrent_processes = itable_size(processes);            break;        case END_WAIT:            p->waiting = 1;            break;        case END:            rmonitor_untrack_process(msg.data.p);            break;        case CHDIR:            p->wd = lookup_or_create_wd(p->wd, msg.data.s);            break;		case OPEN_INPUT:		case OPEN_OUTPUT:			switch(msg.error) {				case 0:					debug(D_DEBUG, "File %s has been opened.\n", msg.data.s);					rmonitor_inotify_add_watch(msg.data.s, msg.type == OPEN_OUTPUT);					break;				case EMFILE:					/* Eventually report that we ran out of file descriptors. */					break;				default:					break;			}			break;        case READ:            break;        case WRITE:            break;        default:            break;    };	summary->last_error = msg.error;	if(rmonitor_check_limits(summary))		rmonitor_final_cleanup(SIGTERM);}
+struct rmonitor_msg msg;
+struct rmonitor_msg msg;
+struct rmonitor_msg
+rmonitor_msg
+msg
+msg
+struct rmonitor_process_info *p;
+struct rmonitor_process_info *p;
+struct rmonitor_process_info
+rmonitor_process_info
+*p
+*
+p
+recv_monitor_msg(rmonitor_queue_fd, &msg);
+recv_monitor_msg(rmonitor_queue_fd, &msg)
+recv_monitor_msg
+recv_monitor_msg
+rmonitor_queue_fd
+rmonitor_queue_fd
+&msg
+msg
+msg
+debug(D_DEBUG,"message \"%s\" from %d\n", str_msgtype(msg.type), msg.origin);
+debug(D_DEBUG,"message \"%s\" from %d\n", str_msgtype(msg.type), msg.origin)
+debug
+debug
+D_DEBUG
+D_DEBUG
+"message \"%s\" from %d\n"
+str_msgtype(msg.type)
+str_msgtype
+str_msgtype
+msg.type
+msg
+msg
+type
+msg.origin
+msg
+msg
+origin
+p = itable_lookup(processes, (uint64_t) msg.origin);
+p = itable_lookup(processes, (uint64_t) msg.origin)
+p
+p
+itable_lookup(processes, (uint64_t) msg.origin)
+itable_lookup
+itable_lookup
+processes
+processes
+(uint64_t) msg.origin
+uint64_t
+uint64_t
+uint64_t
+
+msg.origin
+msg
+msg
+origin
+if(!p)	{		/* We either got a malformed message, message from a		process we are not tracking anymore, or a message from		a newly created process.  */		if( msg.type == END_WAIT )        {			release_waiting_process(msg.origin);			return;        }		else if(msg.type != BRANCH)			return;	}
+!p
+p
+p
+{		/* We either got a malformed message, message from a		process we are not tracking anymore, or a message from		a newly created process.  */		if( msg.type == END_WAIT )        {			release_waiting_process(msg.origin);			return;        }		else if(msg.type != BRANCH)			return;	}
+if( msg.type == END_WAIT )        {			release_waiting_process(msg.origin);			return;        }		else if(msg.type != BRANCH)			return;
+msg.type == END_WAIT
+msg.type
+msg
+msg
+type
+END_WAIT
+END_WAIT
+{			release_waiting_process(msg.origin);			return;        }
+release_waiting_process(msg.origin);
+release_waiting_process(msg.origin)
+release_waiting_process
+release_waiting_process
+msg.origin
+msg
+msg
+origin
+return;
+if(msg.type != BRANCH)			return;
+msg.type != BRANCH
+msg.type
+msg
+msg
+type
+BRANCH
+BRANCH
+return;
+switch(msg.type)    {        case BRANCH:            rmonitor_track_process(msg.origin);            if(summary->max_concurrent_processes < itable_size(processes))                summary->max_concurrent_processes = itable_size(processes);            break;        case END_WAIT:            p->waiting = 1;            break;        case END:            rmonitor_untrack_process(msg.data.p);            break;        case CHDIR:            p->wd = lookup_or_create_wd(p->wd, msg.data.s);            break;		case OPEN_INPUT:		case OPEN_OUTPUT:			switch(msg.error) {				case 0:					debug(D_DEBUG, "File %s has been opened.\n", msg.data.s);					rmonitor_inotify_add_watch(msg.data.s, msg.type == OPEN_OUTPUT);					break;				case EMFILE:					/* Eventually report that we ran out of file descriptors. */					break;				default:					break;			}			break;        case READ:            break;        case WRITE:            break;        default:            break;    }
+msg.type
+msg
+msg
+type
+{        case BRANCH:            rmonitor_track_process(msg.origin);            if(summary->max_concurrent_processes < itable_size(processes))                summary->max_concurrent_processes = itable_size(processes);            break;        case END_WAIT:            p->waiting = 1;            break;        case END:            rmonitor_untrack_process(msg.data.p);            break;        case CHDIR:            p->wd = lookup_or_create_wd(p->wd, msg.data.s);            break;		case OPEN_INPUT:		case OPEN_OUTPUT:			switch(msg.error) {				case 0:					debug(D_DEBUG, "File %s has been opened.\n", msg.data.s);					rmonitor_inotify_add_watch(msg.data.s, msg.type == OPEN_OUTPUT);					break;				case EMFILE:					/* Eventually report that we ran out of file descriptors. */					break;				default:					break;			}			break;        case READ:            break;        case WRITE:            break;        default:            break;    }
+case BRANCH:
+BRANCH
+BRANCH
+rmonitor_track_process(msg.origin);
+rmonitor_track_process(msg.origin)
+rmonitor_track_process
+rmonitor_track_process
+msg.origin
+msg
+msg
+origin
+if(summary->max_concurrent_processes < itable_size(processes))                summary->max_concurrent_processes = itable_size(processes);
+summary->max_concurrent_processes < itable_size(processes)
+summary->max_concurrent_processes
+summary
+summary
+max_concurrent_processes
+itable_size(processes)
+itable_size
+itable_size
+processes
+processes
+summary->max_concurrent_processes = itable_size(processes);
+summary->max_concurrent_processes = itable_size(processes)
+summary->max_concurrent_processes
+summary
+summary
+max_concurrent_processes
+itable_size(processes)
+itable_size
+itable_size
+processes
+processes
+break;
+case END_WAIT:
+END_WAIT
+END_WAIT
+p->waiting = 1;
+p->waiting = 1
+p->waiting
+p
+p
+waiting
+1
+break;
+case END:
+END
+END
+rmonitor_untrack_process(msg.data.p);
+rmonitor_untrack_process(msg.data.p)
+rmonitor_untrack_process
+rmonitor_untrack_process
+msg.data.p
+msg.data
+msg
+msg
+data
+p
+break;
+case CHDIR:
+CHDIR
+CHDIR
+p->wd = lookup_or_create_wd(p->wd, msg.data.s);
+p->wd = lookup_or_create_wd(p->wd, msg.data.s)
+p->wd
+p
+p
+wd
+lookup_or_create_wd(p->wd, msg.data.s)
+lookup_or_create_wd
+lookup_or_create_wd
+p->wd
+p
+p
+wd
+msg.data.s
+msg.data
+msg
+msg
+data
+s
+break;
+case OPEN_INPUT:
+OPEN_INPUT
+OPEN_INPUT
+case OPEN_OUTPUT:
+OPEN_OUTPUT
+OPEN_OUTPUT
+switch(msg.error) {				case 0:					debug(D_DEBUG, "File %s has been opened.\n", msg.data.s);					rmonitor_inotify_add_watch(msg.data.s, msg.type == OPEN_OUTPUT);					break;				case EMFILE:					/* Eventually report that we ran out of file descriptors. */					break;				default:					break;			}
+msg.error
+msg
+msg
+error
+{				case 0:					debug(D_DEBUG, "File %s has been opened.\n", msg.data.s);					rmonitor_inotify_add_watch(msg.data.s, msg.type == OPEN_OUTPUT);					break;				case EMFILE:					/* Eventually report that we ran out of file descriptors. */					break;				default:					break;			}
+case 0:
+0
+debug(D_DEBUG, "File %s has been opened.\n", msg.data.s);
+debug(D_DEBUG, "File %s has been opened.\n", msg.data.s)
+debug
+debug
+D_DEBUG
+D_DEBUG
+"File %s has been opened.\n"
+msg.data.s
+msg.data
+msg
+msg
+data
+s
+rmonitor_inotify_add_watch(msg.data.s, msg.type == OPEN_OUTPUT);
+rmonitor_inotify_add_watch(msg.data.s, msg.type == OPEN_OUTPUT)
+rmonitor_inotify_add_watch
+rmonitor_inotify_add_watch
+msg.data.s
+msg.data
+msg
+msg
+data
+s
+msg.type == OPEN_OUTPUT
+msg.type
+msg
+msg
+type
+OPEN_OUTPUT
+OPEN_OUTPUT
+break;
+case EMFILE:
+EMFILE
+EMFILE
+break;
+default:
+break;
+break;
+case READ:
+READ
+READ
+break;
+case WRITE:
+WRITE
+WRITE
+break;
+default:
+break;
+;
+summary->last_error = msg.error;
+summary->last_error = msg.error
+summary->last_error
+summary
+summary
+last_error
+msg.error
+msg
+msg
+error
+if(rmonitor_check_limits(summary))		rmonitor_final_cleanup(SIGTERM);
+rmonitor_check_limits(summary)
+rmonitor_check_limits
+rmonitor_check_limits
+(summary)
+summary
+summary
+rmonitor_final_cleanup(SIGTERM);
+rmonitor_final_cleanup(SIGTERM);
+rmonitor_final_cleanup
+rmonitor_final_cleanup
+(SIGTERM)
+SIGTERM
+SIGTERM
+-----joern-----
+(151,32,0)
+(46,31,0)
+(86,79,0)
+(26,117,0)
+(37,25,0)
+(139,21,0)
+(77,75,0)
+(47,36,0)
+(97,84,0)
+(87,40,0)
+(65,84,0)
+(98,95,0)
+(126,75,0)
+(44,0,0)
+(35,13,0)
+(151,0,0)
+(68,95,0)
+(41,79,0)
+(133,116,0)
+(31,1,0)
+(149,40,0)
+(29,83,0)
+(104,0,0)
+(101,45,0)
+(135,58,0)
+(152,4,0)
+(101,84,0)
+(146,111,0)
+(22,112,0)
+(127,116,0)
+(61,19,0)
+(115,84,0)
+(113,84,0)
+(96,103,0)
+(96,84,0)
+(111,146,0)
+(90,151,0)
+(51,84,0)
+(105,38,0)
+(104,57,0)
+(112,22,0)
+(30,23,0)
+(12,0,0)
+(45,101,0)
+(52,103,0)
+(56,21,0)
+(132,99,0)
+(141,19,0)
+(109,0,0)
+(57,104,0)
+(4,149,0)
+(19,40,0)
+(150,2,0)
+(1,31,0)
+(83,19,0)
+(138,151,0)
+(149,38,0)
+(28,88,0)
+(78,151,0)
+(24,45,0)
+(99,89,0)
+(7,60,0)
+(147,52,0)
+(81,41,0)
+(73,1,0)
+(100,60,0)
+(79,86,0)
+(16,88,0)
+(71,25,0)
+(88,16,0)
+(36,23,0)
+(19,83,0)
+(89,99,0)
+(127,74,0)
+(153,40,0)
+(16,0,0)
+(112,104,0)
+(118,45,0)
+(11,2,0)
+(18,144,0)
+(79,0,0)
+(67,57,0)
+(125,84,0)
+(103,52,0)
+(151,90,0)
+(136,131,0)
+(63,16,0)
+(119,126,0)
+(14,43,0)
+(90,95,0)
+(134,84,0)
+(58,104,0)
+(76,99,0)
+(83,13,0)
+(59,104,0)
+(34,89,0)
+(108,84,0)
+(5,84,0)
+(21,37,0)
+(75,126,0)
+(115,22,0)
+(15,131,0)
+(22,1,0)
+(22,115,0)
+(131,39,0)
+(9,40,0)
+(55,52,0)
+(64,40,0)
+(120,86,0)
+(124,102,0)
+(1,22,0)
+(70,32,0)
+(131,104,0)
+(37,21,0)
+(145,0,0)
+(42,84,0)
+(48,104,0)
+(66,111,0)
+(149,4,0)
+(114,43,0)
+(122,75,0)
+(107,84,0)
+(128,31,0)
+(53,13,0)
+(148,80,0)
+(33,59,0)
+(129,133,0)
+(49,39,0)
+(110,84,0)
+(103,96,0)
+(39,84,0)
+(6,112,0)
+(3,84,0)
+(4,80,0)
+(17,58,0)
+(20,103,0)
+(91,84,0)
+(89,34,0)
+(10,86,0)
+(82,84,0)
+(38,149,0)
+(27,32,0)
+(23,36,0)
+(62,84,0)
+(89,57,0)
+(69,112,0)
+(140,74,0)
+(74,127,0)
+(102,38,0)
+(57,89,0)
+(13,83,0)
+(72,84,0)
+(106,41,0)
+(85,84,0)
+(60,146,0)
+(80,4,0)
+(121,40,0)
+(95,90,0)
+(123,23,0)
+(8,137,0)
+(93,0,0)
+(92,84,0)
+(58,115,0)
+(142,102,0)
+(32,151,0)
+(94,40,0)
+(130,80,0)
+(50,84,0)
+(38,102,0)
+(54,74,0)
+(129,143,0)
+(25,37,0)
+(129,144,1)
+(15,43,1)
+(106,113,1)
+(35,53,1)
+(38,105,1)
+(127,74,1)
+(68,98,1)
+(105,102,1)
+(57,89,1)
+(24,118,1)
+(6,69,1)
+(146,111,1)
+(103,20,1)
+(89,99,1)
+(120,10,1)
+(4,152,1)
+(48,151,1)
+(143,36,1)
+(4,80,1)
+(26,79,1)
+(1,73,1)
+(43,114,1)
+(138,16,1)
+(106,62,1)
+(81,106,1)
+(122,77,1)
+(60,7,1)
+(150,43,1)
+(100,37,1)
+(135,43,1)
+(38,102,1)
+(149,38,1)
+(61,2,1)
+(106,82,1)
+(31,128,1)
+(19,83,1)
+(119,75,1)
+(133,127,1)
+(36,23,1)
+(123,30,1)
+(22,1,1)
+(70,90,1)
+(124,142,1)
+(115,22,1)
+(51,43,1)
+(42,115,1)
+(41,81,1)
+(118,43,1)
+(121,149,1)
+(32,27,1)
+(76,67,1)
+(23,123,1)
+(66,60,1)
+(79,86,1)
+(54,126,1)
+(98,78,1)
+(129,117,1)
+(74,140,1)
+(14,36,1)
+(14,59,1)
+(142,4,1)
+(130,148,1)
+(83,13,1)
+(111,66,1)
+(45,24,1)
+(101,45,1)
+(33,104,1)
+(7,100,1)
+(25,71,1)
+(52,147,1)
+(55,43,1)
+(37,21,1)
+(102,124,1)
+(82,96,1)
+(65,9,1)
+(148,19,1)
+(16,88,1)
+(13,35,1)
+(11,150,1)
+(73,31,1)
+(1,31,1)
+(106,51,1)
+(153,2,1)
+(47,23,1)
+(28,63,1)
+(106,107,1)
+(88,28,1)
+(67,48,1)
+(27,70,1)
+(71,21,1)
+(9,2,1)
+(129,133,1)
+(132,76,1)
+(106,42,1)
+(75,122,1)
+(141,61,1)
+(22,112,1)
+(83,29,1)
+(37,25,1)
+(126,119,1)
+(91,146,1)
+(89,34,1)
+(104,57,1)
+(152,80,1)
+(21,56,1)
+(114,14,1)
+(46,112,1)
+(99,132,1)
+(62,39,1)
+(112,104,1)
+(69,58,1)
+(131,136,1)
+(86,120,1)
+(20,52,1)
+(131,104,1)
+(103,52,1)
+(106,91,1)
+(65,121,1)
+(139,101,1)
+(128,46,1)
+(129,143,1)
+(39,49,1)
+(151,32,1)
+(147,55,1)
+(78,138,1)
+(59,33,1)
+(151,90,1)
+(58,17,1)
+(58,104,1)
+(126,75,1)
+(96,103,1)
+(77,59,1)
+(80,130,1)
+(18,117,1)
+(140,54,1)
+(113,43,1)
+(56,139,1)
+(49,131,1)
+(10,41,1)
+(17,135,1)
+(53,141,1)
+(36,47,1)
+(29,13,1)
+(149,4,1)
+(59,104,1)
+(65,153,1)
+(95,68,1)
+(30,126,1)
+(136,15,1)
+(117,26,1)
+(91,37,1)
+(90,95,1)
+(112,6,1)
+(107,43,1)
+(106,65,1)
+(144,18,1)
+(2,11,1)
+(21,43,2)
+(55,43,2)
+(148,2,2)
+(90,95,2)
+(82,43,2)
+(149,38,2)
+(117,36,2)
+(151,32,2)
+(119,59,2)
+(136,43,2)
+(37,43,2)
+(58,43,2)
+(18,117,2)
+(36,126,2)
+(152,2,2)
+(17,43,2)
+(106,59,2)
+(16,88,2)
+(10,36,2)
+(59,104,2)
+(66,37,2)
+(121,2,2)
+(22,43,2)
+(38,2,2)
+(96,43,2)
+(57,89,2)
+(141,2,2)
+(114,59,2)
+(135,43,2)
+(114,36,2)
+(13,2,2)
+(111,37,2)
+(106,36,2)
+(115,43,2)
+(143,36,2)
+(24,43,2)
+(144,117,2)
+(60,37,2)
+(133,126,2)
+(140,126,2)
+(146,111,2)
+(79,36,2)
+(52,43,2)
+(79,59,2)
+(54,126,2)
+(147,43,2)
+(131,104,2)
+(81,36,2)
+(91,43,2)
+(14,36,2)
+(127,126,2)
+(115,22,2)
+(153,2,2)
+(104,57,2)
+(112,104,2)
+(112,43,2)
+(62,43,2)
+(89,34,2)
+(56,43,2)
+(129,133,2)
+(7,37,2)
+(30,126,2)
+(107,43,2)
+(102,2,2)
+(23,126,2)
+(128,43,2)
+(118,43,2)
+(10,59,2)
+(15,43,2)
+(71,43,2)
+(4,80,2)
+(9,2,2)
+(58,104,2)
+(29,2,2)
+(126,59,2)
+(105,2,2)
+(4,2,2)
+(69,43,2)
+(123,126,2)
+(49,43,2)
+(86,59,2)
+(25,43,2)
+(117,59,2)
+(101,45,2)
+(51,43,2)
+(127,74,2)
+(22,1,2)
+(101,43,2)
+(103,43,2)
+(37,25,2)
+(45,43,2)
+(43,36,2)
+(81,59,2)
+(73,43,2)
+(79,86,2)
+(103,52,2)
+(1,31,2)
+(120,59,2)
+(86,36,2)
+(131,43,2)
+(74,126,2)
+(20,43,2)
+(139,43,2)
+(26,59,2)
+(22,112,2)
+(37,21,2)
+(41,36,2)
+(2,43,2)
+(129,143,2)
+(151,90,2)
+(36,23,2)
+(96,103,2)
+(89,99,2)
+(26,36,2)
+(41,59,2)
+(39,43,2)
+(122,59,2)
+(35,2,2)
+(149,4,2)
+(75,59,2)
+(83,2,2)
+(77,59,2)
+(126,75,2)
+(142,2,2)
+(43,59,2)
+(42,43,2)
+(146,37,2)
+(83,13,2)
+(124,2,2)
+(100,37,2)
+(150,43,2)
+(65,43,2)
+(11,43,2)
+(47,126,2)
+(6,43,2)
+(19,83,2)
+(38,102,2)
+(130,2,2)
+(80,2,2)
+(31,43,2)
+(120,36,2)
+(53,2,2)
+(14,59,2)
+(113,43,2)
+(1,43,2)
+(19,2,2)
+(46,43,2)
+(61,2,2)
+(149,2,2)
+-----------------------------------
+(0,)
+(1,msg.data.s)
+(2,msg.error)
+(3,if(summary->max_concurrent_processes < itable_size(processes)
+(4,msg.data.s)
+(5,default:)
+(6,wd)
+(7,max_concurrent_processes)
+(8,if( msg.type == END_WAIT )
+(9,break;)
+(10,msg)
+(11,error)
+(12,p)
+(13,msg.data)
+(14,msg)
+(15,p)
+(16,recv_monitor_msg(rmonitor_queue_fd, &msg)
+(17,wd)
+(18,SIGTERM)
+(19,debug(D_DEBUG, "File %s has been opened.\\n", msg.data.s)
+(20,p)
+(21,summary->max_concurrent_processes)
+(22,lookup_or_create_wd(p->wd, msg.data.s)
+(23,msg.type)
+(24,origin)
+(25,itable_size(processes)
+(26,summary)
+(27,origin)
+(28,msg)
+(29,s)
+(30,msg)
+(31,msg.data)
+(32,msg.origin)
+(33,p)
+(34,uint64_t)
+(35,data)
+(36,msg.type != BRANCH)
+(37,summary->max_concurrent_processes < itable_size(processes)
+(38,msg.type == OPEN_OUTPUT)
+(39,p->waiting = 1)
+(40,)
+(41,summary->last_error)
+(42,break;)
+(43,msg.type)
+(44,if(rmonitor_check_limits(summary)
+(45,msg.origin)
+(46,msg)
+(47,BRANCH)
+(48,p)
+(49,1)
+(50,case OPEN_OUTPUT:)
+(51,break;)
+(52,msg.data)
+(53,msg)
+(54,msg)
+(55,msg)
+(56,max_concurrent_processes)
+(57,itable_lookup(processes, (uint64_t)
+(58,p->wd)
+(59,!p)
+(60,summary->max_concurrent_processes)
+(61,D_DEBUG)
+(62,break;)
+(63,rmonitor_queue_fd)
+(64,case 0:)
+(65,break;)
+(66,processes)
+(67,processes)
+(68,type)
+(69,p)
+(70,msg)
+(71,processes)
+(72,case CHDIR:)
+(73,s)
+(74,msg.origin)
+(75,msg.type)
+(76,msg)
+(77,msg)
+(78,"message \\"%s\\" from %d\\n")
+(79,summary->last_error = msg.error)
+(80,msg.data)
+(81,last_error)
+(82,break;)
+(83,msg.data.s)
+(84,)
+(85,case OPEN_INPUT:)
+(86,msg.error)
+(87,default:)
+(88,&msg)
+(89,(uint64_t)
+(90,str_msgtype(msg.type)
+(91,break;)
+(92,case END_WAIT:)
+(93,msg)
+(94,case EMFILE:)
+(95,msg.type)
+(96,rmonitor_untrack_process(msg.data.p)
+(97,case BRANCH:)
+(98,msg)
+(99,msg.origin)
+(100,summary)
+(101,rmonitor_track_process(msg.origin)
+(102,msg.type)
+(103,msg.data.p)
+(104,p = itable_lookup(processes, (uint64_t)
+(105,OPEN_OUTPUT)
+(106,summary)
+(107,break;)
+(108,case READ:)
+(109,if(!p)
+(110,case WRITE:)
+(111,itable_size(processes)
+(112,p->wd)
+(113,break;)
+(114,type)
+(115,p->wd = lookup_or_create_wd(p->wd, msg.data.s)
+(116,)
+(117,rmonitor_check_limits(summary)
+(118,msg)
+(119,END_WAIT)
+(120,error)
+(121,break;)
+(122,type)
+(123,type)
+(124,type)
+(125,switch(msg.error)
+(126,msg.type == END_WAIT)
+(127,release_waiting_process(msg.origin)
+(128,data)
+(129,RET)
+(130,data)
+(131,p->waiting)
+(132,origin)
+(133,return;)
+(134,case END:)
+(135,p)
+(136,waiting)
+(137,)
+(138,D_DEBUG)
+(139,summary)
+(140,origin)
+(141,"File %s has been opened.\\n")
+(142,msg)
+(143,return;)
+(144,rmonitor_final_cleanup(SIGTERM)
+(145,switch(msg.type)
+(146,summary->max_concurrent_processes = itable_size(processes)
+(147,data)
+(148,msg)
+(149,rmonitor_inotify_add_watch(msg.data.s, msg.type == OPEN_OUTPUT)
+(150,msg)
+(151,debug(D_DEBUG,"message \\"%s\\" from %d\\n", str_msgtype(msg.type)
+(152,s)
+(153,break;)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

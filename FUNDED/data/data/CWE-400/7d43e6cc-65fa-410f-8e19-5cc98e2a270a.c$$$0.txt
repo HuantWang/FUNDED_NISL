@@ -1,0 +1,2374 @@
+-----label-----
+1
+-----code-----
+static unsigned int xfrm_ascii_write(char **buf, unsigned int *buflen,
+    unsigned int bufsize) {
+  char *tmpbuf = *buf;
+  unsigned int tmplen = *buflen;
+  unsigned int lfcount = 0;
+  unsigned int added = 0;
+
+  int res = 0;
+  register unsigned int i = 0;
+
+  /* First, determine how many bare LFs are present. */
+  if (!have_dangling_cr && tmpbuf[0] == '\n')
+    lfcount++;
+
+  for (i = 1; i < tmplen; i++)
+    if (tmpbuf[i] == '\n' && tmpbuf[i-1] != '\r')
+      lfcount++;
+
+  /* If the last character in the buffer is CR, then we have a dangling CR.
+   * The first character in the next buffer could be an LF, and without
+   * this flag, that LF would be treated as a bare LF, thus resulting in
+   * an added extraneous CR in the stream.
+   */
+  have_dangling_cr = (tmpbuf[tmplen-1] == '\r') ? TRUE : FALSE;
+
+  if (lfcount == 0)
+    /* No translation needed. */
+    return 0;
+
+  /* Assume that for each LF (including a leading LF), space for another
+   * char (a '\r') is needed.  Determine whether there is enough space in
+   * the buffer for the adjusted data.  If not, allocate a new buffer that is
+   * large enough.  The new buffer is allocated from session.xfer.p, which is
+   * fine; this pool has a lifetime only for this current data transfer, and
+   * will be cleared after the transfer is done, either having succeeded or
+   * failed.
+   *
+   * Note: the res variable is needed in order to force signedness of the
+   * resulting difference.  Without it, this condition would never evaluate
+   * to true, as C's promotion rules would ensure that the resulting value
+   * would be of the same type as the operands: an unsigned int (which will
+   * never be less than zero).
+   */
+  if ((res = (bufsize - tmplen - lfcount)) <= 0) {
+    char *copybuf = malloc(tmplen);
+    if (copybuf == NULL) {
+      pr_log_pri(PR_LOG_ALERT, "Out of memory!");
+      exit(1);
+    }
+
+    memcpy(copybuf, tmpbuf, tmplen);
+
+    /* Allocate a new session.xfer.buf of the needed size. */
+    session.xfer.bufsize = tmplen + lfcount + 1;
+    session.xfer.buf = pcalloc(session.xfer.p, session.xfer.bufsize);
+
+    memcpy(session.xfer.buf, copybuf, tmplen);
+
+    free(copybuf);
+    copybuf = NULL;
+
+    tmpbuf = session.xfer.buf;
+    bufsize = session.xfer.bufsize;
+  }
+
+  if (tmpbuf[0] == '\n') {
+
+    /* Shift everything in the buffer to the right one character, making
+     * space for a '\r'
+     */
+    memmove(&(tmpbuf[1]), &(tmpbuf[0]), tmplen);
+    tmpbuf[0] = '\r';
+
+    /* Increment the number of added characters, and decrement the number
+     * of bare LFs.
+     */
+    added++;
+    lfcount--;
+  }
+
+  for (i = 1; i < bufsize && (lfcount > 0); i++) {
+    if (tmpbuf[i] == '\n' && tmpbuf[i-1] != '\r') {
+      memmove(&(tmpbuf[i+1]), &(tmpbuf[i]), bufsize - i - 1);
+      tmpbuf[i] = '\r';
+      added++;
+      lfcount--;
+    }
+  }
+
+  *buf = tmpbuf;
+  *buflen = tmplen + added;
+
+  return added;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+5,6
+5,7
+7,8
+7,9
+7,10
+11,12
+11,13
+13,14
+13,15
+16,17
+16,18
+18,19
+20,21
+20,22
+20,23
+20,24
+20,25
+20,26
+20,27
+20,28
+20,29
+20,30
+20,31
+20,32
+20,33
+20,34
+20,35
+20,36
+21,22
+22,23
+22,24
+24,25
+24,26
+24,27
+27,28
+28,29
+29,30
+31,32
+32,33
+32,34
+34,35
+34,36
+36,37
+37,38
+38,39
+40,41
+41,42
+41,43
+43,44
+43,45
+45,46
+47,48
+48,49
+48,50
+50,51
+50,52
+52,53
+54,55
+55,56
+55,57
+57,58
+57,59
+59,60
+61,62
+62,63
+62,64
+64,65
+64,66
+66,67
+68,69
+68,70
+69,70
+69,71
+70,71
+71,72
+73,74
+73,75
+74,75
+74,76
+75,76
+79,80
+80,81
+81,82
+83,84
+83,85
+83,86
+83,87
+84,85
+85,86
+85,87
+86,87
+89,90
+89,91
+90,91
+92,93
+94,95
+95,96
+97,98
+97,99
+98,99
+98,100
+99,100
+99,101
+100,101
+100,102
+101,102
+103,104
+106,107
+106,108
+107,108
+107,109
+108,109
+110,111
+110,112
+111,112
+115,116
+116,117
+117,118
+119,120
+120,121
+120,122
+121,122
+123,124
+123,125
+123,126
+124,125
+125,126
+125,127
+126,127
+126,128
+127,128
+129,130
+129,131
+130,131
+134,135
+136,137
+138,139
+138,140
+139,140
+139,141
+140,141
+143,144
+145,146
+145,147
+146,147
+146,148
+147,148
+148,149
+148,150
+149,150
+151,152
+152,153
+152,154
+153,154
+153,155
+154,155
+156,157
+158,159
+161,162
+161,163
+161,164
+161,165
+161,166
+161,167
+161,168
+161,169
+161,170
+161,171
+162,163
+163,164
+163,165
+165,166
+165,167
+165,168
+168,169
+169,170
+169,171
+170,171
+172,173
+174,175
+174,176
+175,176
+175,177
+176,177
+178,179
+180,181
+180,182
+181,182
+182,183
+182,184
+182,185
+183,184
+185,186
+188,189
+189,190
+189,191
+190,191
+193,194
+194,195
+194,196
+194,197
+194,198
+195,196
+197,198
+199,200
+201,202
+203,204
+204,205
+204,206
+205,206
+205,207
+206,207
+206,208
+207,208
+211,212
+211,213
+212,213
+212,214
+213,214
+215,216
+218,219
+219,220
+219,221
+220,221
+220,222
+221,222
+221,223
+222,223
+226,227
+226,228
+226,229
+227,228
+229,230
+229,231
+230,231
+230,232
+231,232
+235,236
+235,237
+236,237
+236,238
+237,238
+241,242
+242,243
+242,244
+242,245
+242,246
+243,244
+245,246
+245,247
+246,247
+246,248
+247,248
+251,252
+253,254
+255,256
+256,257
+256,258
+257,258
+259,260
+261,262
+262,263
+262,264
+263,264
+265,266
+267,268
+268,269
+268,270
+269,270
+271,272
+271,273
+272,273
+272,274
+273,274
+277,278
+278,279
+278,280
+279,280
+281,282
+281,283
+282,283
+282,284
+283,284
+287,288
+287,289
+288,289
+288,290
+289,290
+289,291
+290,291
+294,295
+294,296
+294,297
+294,298
+295,296
+296,297
+296,298
+296,299
+296,300
+297,298
+299,300
+300,301
+301,302
+301,303
+302,303
+305,306
+306,307
+307,308
+307,309
+308,309
+311,312
+313,314
+314,315
+314,316
+315,316
+315,317
+316,317
+320,321
+321,322
+322,323
+324,325
+325,326
+326,327
+328,329
+328,330
+328,331
+328,332
+329,330
+330,331
+330,332
+331,332
+334,335
+334,336
+335,336
+335,337
+336,337
+338,339
+340,341
+341,342
+341,343
+342,343
+345,346
+346,347
+348,349
+349,350
+349,351
+350,351
+350,352
+351,352
+351,353
+352,353
+352,354
+353,354
+355,356
+358,359
+358,360
+359,360
+359,361
+360,361
+362,363
+362,364
+363,364
+367,368
+367,369
+367,370
+367,371
+368,369
+369,370
+369,371
+369,372
+369,373
+370,371
+372,373
+373,374
+374,375
+374,376
+375,376
+377,378
+377,379
+378,379
+381,382
+382,383
+383,384
+383,385
+384,385
+386,387
+388,389
+388,390
+389,390
+389,391
+390,391
+392,393
+395,396
+396,397
+396,398
+397,398
+397,399
+398,399
+400,401
+403,404
+404,405
+405,406
+407,408
+408,409
+409,410
+411,412
+412,413
+412,414
+413,414
+414,415
+416,417
+418,419
+419,420
+419,421
+420,421
+421,422
+423,424
+423,425
+424,425
+426,427
+428,429
+429,430
+-----nextToken-----
+2,4,6,8,9,10,12,14,15,17,19,23,25,26,30,33,35,39,42,44,46,49,51,53,56,58,60,63,65,67,72,76,77,78,82,87,88,91,93,96,102,104,105,109,112,113,114,118,122,128,131,132,133,135,137,141,142,144,150,155,157,159,160,164,166,167,171,173,177,179,184,186,187,191,192,196,198,200,202,208,209,210,214,216,217,223,224,225,228,232,233,234,238,239,240,244,248,249,250,252,254,258,260,264,266,270,274,275,276,280,284,285,286,291,292,293,298,303,304,309,310,312,317,318,319,323,327,332,333,337,339,343,344,347,354,356,357,361,364,365,366,371,376,379,380,385,387,391,393,394,399,401,402,406,410,415,417,422,425,427,430
+-----computeFrom-----
+69,70
+69,71
+73,74
+73,75
+85,86
+85,87
+89,90
+89,91
+98,99
+98,100
+99,100
+99,101
+106,107
+106,108
+110,111
+110,112
+120,121
+120,122
+125,126
+125,127
+129,130
+129,131
+139,140
+139,141
+146,147
+146,148
+148,149
+148,150
+152,153
+152,154
+153,154
+153,155
+175,176
+175,177
+204,205
+204,206
+211,212
+211,213
+212,213
+212,214
+219,220
+219,221
+262,263
+262,264
+268,269
+268,270
+278,279
+278,280
+288,289
+288,290
+314,315
+314,316
+330,331
+330,332
+334,335
+334,336
+335,336
+335,337
+341,342
+341,343
+350,351
+350,352
+351,352
+351,353
+358,359
+358,360
+362,363
+362,364
+377,378
+377,379
+388,389
+388,390
+389,390
+389,391
+396,397
+396,398
+412,413
+412,414
+419,420
+419,421
+423,424
+423,425
+-----guardedBy-----
+159,216
+155,286
+157,254
+291,317
+364,401
+361,399
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;EqualsInitializer;UnaryExpression;IdExpression;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;UnaryExpression;IdExpression;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;IfStatement;BinaryExpression;UnaryExpression;IdExpression;Name;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;UnaryExpression;IdExpression;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;ConditionalExpression;UnaryExpression;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ReturnStatement;LiteralExpression;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IfStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;UnaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;UnaryExpression;UnaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;UnaryExpression;IdExpression;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;UnaryExpression;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;UnaryExpression;ArraySubscriptExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;UnaryExpression;UnaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;UnaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+static unsigned int xfrm_ascii_write(char **buf, unsigned int *buflen,    unsigned int bufsize) {  char *tmpbuf = *buf;  unsigned int tmplen = *buflen;  unsigned int lfcount = 0;  unsigned int added = 0;  int res = 0;  register unsigned int i = 0;  /* First, determine how many bare LFs are present. */  if (!have_dangling_cr && tmpbuf[0] == '\n')    lfcount++;  for (i = 1; i < tmplen; i++)    if (tmpbuf[i] == '\n' && tmpbuf[i-1] != '\r')      lfcount++;  /* If the last character in the buffer is CR, then we have a dangling CR.   * The first character in the next buffer could be an LF, and without   * this flag, that LF would be treated as a bare LF, thus resulting in   * an added extraneous CR in the stream.   */  have_dangling_cr = (tmpbuf[tmplen-1] == '\r') ? TRUE : FALSE;  if (lfcount == 0)    /* No translation needed. */    return 0;  /* Assume that for each LF (including a leading LF), space for another   * char (a '\r') is needed.  Determine whether there is enough space in   * the buffer for the adjusted data.  If not, allocate a new buffer that is   * large enough.  The new buffer is allocated from session.xfer.p, which is   * fine; this pool has a lifetime only for this current data transfer, and   * will be cleared after the transfer is done, either having succeeded or   * failed.   *   * Note: the res variable is needed in order to force signedness of the   * resulting difference.  Without it, this condition would never evaluate   * to true, as C's promotion rules would ensure that the resulting value   * would be of the same type as the operands: an unsigned int (which will   * never be less than zero).   */  if ((res = (bufsize - tmplen - lfcount)) <= 0) {    char *copybuf = malloc(tmplen);    if (copybuf == NULL) {      pr_log_pri(PR_LOG_ALERT, "Out of memory!");      exit(1);    }    memcpy(copybuf, tmpbuf, tmplen);    /* Allocate a new session.xfer.buf of the needed size. */    session.xfer.bufsize = tmplen + lfcount + 1;    session.xfer.buf = pcalloc(session.xfer.p, session.xfer.bufsize);    memcpy(session.xfer.buf, copybuf, tmplen);    free(copybuf);    copybuf = NULL;    tmpbuf = session.xfer.buf;    bufsize = session.xfer.bufsize;  }  if (tmpbuf[0] == '\n') {    /* Shift everything in the buffer to the right one character, making     * space for a '\r'     */    memmove(&(tmpbuf[1]), &(tmpbuf[0]), tmplen);    tmpbuf[0] = '\r';    /* Increment the number of added characters, and decrement the number     * of bare LFs.     */    added++;    lfcount--;  }  for (i = 1; i < bufsize && (lfcount > 0); i++) {    if (tmpbuf[i] == '\n' && tmpbuf[i-1] != '\r') {      memmove(&(tmpbuf[i+1]), &(tmpbuf[i]), bufsize - i - 1);      tmpbuf[i] = '\r';      added++;      lfcount--;    }  }  *buf = tmpbuf;  *buflen = tmplen + added;  return added;}
+static unsigned int
+xfrm_ascii_write(char **buf, unsigned int *buflen,    unsigned int bufsize)
+xfrm_ascii_write
+char **buf
+char
+**buf
+*
+*
+buf
+unsigned int *buflen
+unsigned int
+*buflen
+*
+buflen
+unsigned int bufsize
+unsigned int
+bufsize
+bufsize
+{  char *tmpbuf = *buf;  unsigned int tmplen = *buflen;  unsigned int lfcount = 0;  unsigned int added = 0;  int res = 0;  register unsigned int i = 0;  /* First, determine how many bare LFs are present. */  if (!have_dangling_cr && tmpbuf[0] == '\n')    lfcount++;  for (i = 1; i < tmplen; i++)    if (tmpbuf[i] == '\n' && tmpbuf[i-1] != '\r')      lfcount++;  /* If the last character in the buffer is CR, then we have a dangling CR.   * The first character in the next buffer could be an LF, and without   * this flag, that LF would be treated as a bare LF, thus resulting in   * an added extraneous CR in the stream.   */  have_dangling_cr = (tmpbuf[tmplen-1] == '\r') ? TRUE : FALSE;  if (lfcount == 0)    /* No translation needed. */    return 0;  /* Assume that for each LF (including a leading LF), space for another   * char (a '\r') is needed.  Determine whether there is enough space in   * the buffer for the adjusted data.  If not, allocate a new buffer that is   * large enough.  The new buffer is allocated from session.xfer.p, which is   * fine; this pool has a lifetime only for this current data transfer, and   * will be cleared after the transfer is done, either having succeeded or   * failed.   *   * Note: the res variable is needed in order to force signedness of the   * resulting difference.  Without it, this condition would never evaluate   * to true, as C's promotion rules would ensure that the resulting value   * would be of the same type as the operands: an unsigned int (which will   * never be less than zero).   */  if ((res = (bufsize - tmplen - lfcount)) <= 0) {    char *copybuf = malloc(tmplen);    if (copybuf == NULL) {      pr_log_pri(PR_LOG_ALERT, "Out of memory!");      exit(1);    }    memcpy(copybuf, tmpbuf, tmplen);    /* Allocate a new session.xfer.buf of the needed size. */    session.xfer.bufsize = tmplen + lfcount + 1;    session.xfer.buf = pcalloc(session.xfer.p, session.xfer.bufsize);    memcpy(session.xfer.buf, copybuf, tmplen);    free(copybuf);    copybuf = NULL;    tmpbuf = session.xfer.buf;    bufsize = session.xfer.bufsize;  }  if (tmpbuf[0] == '\n') {    /* Shift everything in the buffer to the right one character, making     * space for a '\r'     */    memmove(&(tmpbuf[1]), &(tmpbuf[0]), tmplen);    tmpbuf[0] = '\r';    /* Increment the number of added characters, and decrement the number     * of bare LFs.     */    added++;    lfcount--;  }  for (i = 1; i < bufsize && (lfcount > 0); i++) {    if (tmpbuf[i] == '\n' && tmpbuf[i-1] != '\r') {      memmove(&(tmpbuf[i+1]), &(tmpbuf[i]), bufsize - i - 1);      tmpbuf[i] = '\r';      added++;      lfcount--;    }  }  *buf = tmpbuf;  *buflen = tmplen + added;  return added;}
+char *tmpbuf = *buf;
+char *tmpbuf = *buf;
+char
+*tmpbuf = *buf
+*
+tmpbuf
+= *buf
+*buf
+buf
+buf
+unsigned int tmplen = *buflen;
+unsigned int tmplen = *buflen;
+unsigned int
+tmplen = *buflen
+tmplen
+= *buflen
+*buflen
+buflen
+buflen
+unsigned int lfcount = 0;
+unsigned int lfcount = 0;
+unsigned int
+lfcount = 0
+lfcount
+= 0
+0
+unsigned int added = 0;
+unsigned int added = 0;
+unsigned int
+added = 0
+added
+= 0
+0
+int res = 0;
+int res = 0;
+int
+res = 0
+res
+= 0
+0
+register unsigned int i = 0;
+register unsigned int i = 0;
+register unsigned int
+i = 0
+i
+= 0
+0
+if (!have_dangling_cr && tmpbuf[0] == '\n')    lfcount++;
+!have_dangling_cr && tmpbuf[0] == '\n'
+!have_dangling_cr
+have_dangling_cr
+have_dangling_cr
+tmpbuf[0] == '\n'
+tmpbuf[0]
+tmpbuf
+tmpbuf
+0
+'\n'
+lfcount++;
+lfcount++
+lfcount
+lfcount
+for (i = 1; i < tmplen; i++)    if (tmpbuf[i] == '\n' && tmpbuf[i-1] != '\r')      lfcount++;
+i = 1;
+i = 1
+i
+i
+1
+i < tmplen
+i
+i
+tmplen
+tmplen
+i++
+i
+i
+if (tmpbuf[i] == '\n' && tmpbuf[i-1] != '\r')      lfcount++;
+tmpbuf[i] == '\n' && tmpbuf[i-1] != '\r'
+tmpbuf[i] == '\n'
+tmpbuf[i]
+tmpbuf
+tmpbuf
+i
+i
+'\n'
+tmpbuf[i-1] != '\r'
+tmpbuf[i-1]
+tmpbuf
+tmpbuf
+i-1
+i
+i
+1
+'\r'
+lfcount++;
+lfcount++
+lfcount
+lfcount
+have_dangling_cr = (tmpbuf[tmplen-1] == '\r') ? TRUE : FALSE;
+have_dangling_cr = (tmpbuf[tmplen-1] == '\r') ? TRUE : FALSE
+have_dangling_cr
+have_dangling_cr
+(tmpbuf[tmplen-1] == '\r') ? TRUE : FALSE
+(tmpbuf[tmplen-1] == '\r')
+tmpbuf[tmplen-1] == '\r'
+tmpbuf[tmplen-1]
+tmpbuf
+tmpbuf
+tmplen-1
+tmplen
+tmplen
+1
+'\r'
+TRUE
+TRUE
+FALSE
+FALSE
+if (lfcount == 0)    /* No translation needed. */    return 0;
+lfcount == 0
+lfcount
+lfcount
+0
+return 0;
+0
+if ((res = (bufsize - tmplen - lfcount)) <= 0) {    char *copybuf = malloc(tmplen);    if (copybuf == NULL) {      pr_log_pri(PR_LOG_ALERT, "Out of memory!");      exit(1);    }    memcpy(copybuf, tmpbuf, tmplen);    /* Allocate a new session.xfer.buf of the needed size. */    session.xfer.bufsize = tmplen + lfcount + 1;    session.xfer.buf = pcalloc(session.xfer.p, session.xfer.bufsize);    memcpy(session.xfer.buf, copybuf, tmplen);    free(copybuf);    copybuf = NULL;    tmpbuf = session.xfer.buf;    bufsize = session.xfer.bufsize;  }
+(res = (bufsize - tmplen - lfcount)) <= 0
+(res = (bufsize - tmplen - lfcount))
+res = (bufsize - tmplen - lfcount)
+res
+res
+(bufsize - tmplen - lfcount)
+bufsize - tmplen - lfcount
+bufsize - tmplen
+bufsize
+bufsize
+tmplen
+tmplen
+lfcount
+lfcount
+0
+{    char *copybuf = malloc(tmplen);    if (copybuf == NULL) {      pr_log_pri(PR_LOG_ALERT, "Out of memory!");      exit(1);    }    memcpy(copybuf, tmpbuf, tmplen);    /* Allocate a new session.xfer.buf of the needed size. */    session.xfer.bufsize = tmplen + lfcount + 1;    session.xfer.buf = pcalloc(session.xfer.p, session.xfer.bufsize);    memcpy(session.xfer.buf, copybuf, tmplen);    free(copybuf);    copybuf = NULL;    tmpbuf = session.xfer.buf;    bufsize = session.xfer.bufsize;  }
+char *copybuf = malloc(tmplen);
+char *copybuf = malloc(tmplen);
+char
+*copybuf = malloc(tmplen)
+*
+copybuf
+= malloc(tmplen)
+malloc(tmplen)
+malloc
+malloc
+tmplen
+tmplen
+if (copybuf == NULL) {      pr_log_pri(PR_LOG_ALERT, "Out of memory!");      exit(1);    }
+copybuf == NULL
+copybuf
+copybuf
+NULL
+NULL
+{      pr_log_pri(PR_LOG_ALERT, "Out of memory!");      exit(1);    }
+pr_log_pri(PR_LOG_ALERT, "Out of memory!");
+pr_log_pri(PR_LOG_ALERT, "Out of memory!")
+pr_log_pri
+pr_log_pri
+PR_LOG_ALERT
+PR_LOG_ALERT
+"Out of memory!"
+exit(1);
+exit(1)
+exit
+exit
+1
+memcpy(copybuf, tmpbuf, tmplen);
+memcpy(copybuf, tmpbuf, tmplen)
+memcpy
+memcpy
+copybuf
+copybuf
+tmpbuf
+tmpbuf
+tmplen
+tmplen
+session.xfer.bufsize = tmplen + lfcount + 1;
+session.xfer.bufsize = tmplen + lfcount + 1
+session.xfer.bufsize
+session.xfer
+session
+session
+xfer
+bufsize
+tmplen + lfcount + 1
+tmplen + lfcount
+tmplen
+tmplen
+lfcount
+lfcount
+1
+session.xfer.buf = pcalloc(session.xfer.p, session.xfer.bufsize);
+session.xfer.buf = pcalloc(session.xfer.p, session.xfer.bufsize)
+session.xfer.buf
+session.xfer
+session
+session
+xfer
+buf
+pcalloc(session.xfer.p, session.xfer.bufsize)
+pcalloc
+pcalloc
+session.xfer.p
+session.xfer
+session
+session
+xfer
+p
+session.xfer.bufsize
+session.xfer
+session
+session
+xfer
+bufsize
+memcpy(session.xfer.buf, copybuf, tmplen);
+memcpy(session.xfer.buf, copybuf, tmplen)
+memcpy
+memcpy
+session.xfer.buf
+session.xfer
+session
+session
+xfer
+buf
+copybuf
+copybuf
+tmplen
+tmplen
+free(copybuf);
+free(copybuf)
+free
+free
+copybuf
+copybuf
+copybuf = NULL;
+copybuf = NULL
+copybuf
+copybuf
+NULL
+NULL
+tmpbuf = session.xfer.buf;
+tmpbuf = session.xfer.buf
+tmpbuf
+tmpbuf
+session.xfer.buf
+session.xfer
+session
+session
+xfer
+buf
+bufsize = session.xfer.bufsize;
+bufsize = session.xfer.bufsize
+bufsize
+bufsize
+session.xfer.bufsize
+session.xfer
+session
+session
+xfer
+bufsize
+if (tmpbuf[0] == '\n') {    /* Shift everything in the buffer to the right one character, making     * space for a '\r'     */    memmove(&(tmpbuf[1]), &(tmpbuf[0]), tmplen);    tmpbuf[0] = '\r';    /* Increment the number of added characters, and decrement the number     * of bare LFs.     */    added++;    lfcount--;  }
+tmpbuf[0] == '\n'
+tmpbuf[0]
+tmpbuf
+tmpbuf
+0
+'\n'
+{    /* Shift everything in the buffer to the right one character, making     * space for a '\r'     */    memmove(&(tmpbuf[1]), &(tmpbuf[0]), tmplen);    tmpbuf[0] = '\r';    /* Increment the number of added characters, and decrement the number     * of bare LFs.     */    added++;    lfcount--;  }
+memmove(&(tmpbuf[1]), &(tmpbuf[0]), tmplen);
+memmove(&(tmpbuf[1]), &(tmpbuf[0]), tmplen)
+memmove
+memmove
+&(tmpbuf[1])
+(tmpbuf[1])
+tmpbuf[1]
+tmpbuf
+tmpbuf
+1
+&(tmpbuf[0])
+(tmpbuf[0])
+tmpbuf[0]
+tmpbuf
+tmpbuf
+0
+tmplen
+tmplen
+tmpbuf[0] = '\r';
+tmpbuf[0] = '\r'
+tmpbuf[0]
+tmpbuf
+tmpbuf
+0
+'\r'
+added++;
+added++
+added
+added
+lfcount--;
+lfcount--
+lfcount
+lfcount
+for (i = 1; i < bufsize && (lfcount > 0); i++) {    if (tmpbuf[i] == '\n' && tmpbuf[i-1] != '\r') {      memmove(&(tmpbuf[i+1]), &(tmpbuf[i]), bufsize - i - 1);      tmpbuf[i] = '\r';      added++;      lfcount--;    }  }
+i = 1;
+i = 1
+i
+i
+1
+i < bufsize && (lfcount > 0)
+i < bufsize
+i
+i
+bufsize
+bufsize
+(lfcount > 0)
+lfcount > 0
+lfcount
+lfcount
+0
+i++
+i
+i
+{    if (tmpbuf[i] == '\n' && tmpbuf[i-1] != '\r') {      memmove(&(tmpbuf[i+1]), &(tmpbuf[i]), bufsize - i - 1);      tmpbuf[i] = '\r';      added++;      lfcount--;    }  }
+if (tmpbuf[i] == '\n' && tmpbuf[i-1] != '\r') {      memmove(&(tmpbuf[i+1]), &(tmpbuf[i]), bufsize - i - 1);      tmpbuf[i] = '\r';      added++;      lfcount--;    }
+tmpbuf[i] == '\n' && tmpbuf[i-1] != '\r'
+tmpbuf[i] == '\n'
+tmpbuf[i]
+tmpbuf
+tmpbuf
+i
+i
+'\n'
+tmpbuf[i-1] != '\r'
+tmpbuf[i-1]
+tmpbuf
+tmpbuf
+i-1
+i
+i
+1
+'\r'
+{      memmove(&(tmpbuf[i+1]), &(tmpbuf[i]), bufsize - i - 1);      tmpbuf[i] = '\r';      added++;      lfcount--;    }
+memmove(&(tmpbuf[i+1]), &(tmpbuf[i]), bufsize - i - 1);
+memmove(&(tmpbuf[i+1]), &(tmpbuf[i]), bufsize - i - 1)
+memmove
+memmove
+&(tmpbuf[i+1])
+(tmpbuf[i+1])
+tmpbuf[i+1]
+tmpbuf
+tmpbuf
+i+1
+i
+i
+1
+&(tmpbuf[i])
+(tmpbuf[i])
+tmpbuf[i]
+tmpbuf
+tmpbuf
+i
+i
+bufsize - i - 1
+bufsize - i
+bufsize
+bufsize
+i
+i
+1
+tmpbuf[i] = '\r';
+tmpbuf[i] = '\r'
+tmpbuf[i]
+tmpbuf
+tmpbuf
+i
+i
+'\r'
+added++;
+added++
+added
+added
+lfcount--;
+lfcount--
+lfcount
+lfcount
+*buf = tmpbuf;
+*buf = tmpbuf
+*buf
+buf
+buf
+tmpbuf
+tmpbuf
+*buflen = tmplen + added;
+*buflen = tmplen + added
+*buflen
+buflen
+buflen
+tmplen + added
+tmplen
+tmplen
+added
+added
+return added;
+added
+added
+-----joern-----
+(101,250,0)
+(80,131,0)
+(99,106,0)
+(31,107,0)
+(24,56,0)
+(120,80,0)
+(152,32,0)
+(16,253,0)
+(169,140,0)
+(68,250,0)
+(63,173,0)
+(115,48,0)
+(193,113,0)
+(248,254,0)
+(256,36,0)
+(30,95,0)
+(228,257,0)
+(238,250,0)
+(187,7,0)
+(146,3,0)
+(197,196,0)
+(90,150,0)
+(10,3,0)
+(241,243,0)
+(230,204,0)
+(21,60,0)
+(87,211,0)
+(65,236,0)
+(25,65,0)
+(74,178,0)
+(3,10,0)
+(33,152,0)
+(56,131,0)
+(216,236,0)
+(92,161,0)
+(194,150,0)
+(186,241,0)
+(106,99,0)
+(13,250,0)
+(214,131,0)
+(1,49,0)
+(150,90,0)
+(179,139,0)
+(181,253,0)
+(109,134,0)
+(78,7,0)
+(109,81,0)
+(9,252,0)
+(79,97,0)
+(196,243,0)
+(16,247,0)
+(160,244,0)
+(73,6,0)
+(91,62,0)
+(250,167,0)
+(34,2,0)
+(121,22,0)
+(99,95,0)
+(151,68,0)
+(62,134,0)
+(245,58,0)
+(45,243,0)
+(69,131,0)
+(147,49,0)
+(251,104,0)
+(72,106,0)
+(94,113,0)
+(214,160,0)
+(164,17,0)
+(14,123,0)
+(44,87,0)
+(46,216,0)
+(109,131,0)
+(125,241,0)
+(67,169,0)
+(180,21,0)
+(218,243,0)
+(65,9,0)
+(111,101,0)
+(140,169,0)
+(100,56,0)
+(230,51,0)
+(257,250,0)
+(138,243,0)
+(47,60,0)
+(139,179,0)
+(251,89,0)
+(128,212,0)
+(252,9,0)
+(144,201,0)
+(172,89,0)
+(247,81,0)
+(161,253,0)
+(104,211,0)
+(139,13,0)
+(13,139,0)
+(251,131,0)
+(119,167,0)
+(207,31,0)
+(220,16,0)
+(127,145,0)
+(35,80,0)
+(118,236,0)
+(219,83,0)
+(257,193,0)
+(242,153,0)
+(162,40,0)
+(231,65,0)
+(141,69,0)
+(95,243,0)
+(246,172,0)
+(160,214,0)
+(235,68,0)
+(148,243,0)
+(171,60,0)
+(6,131,0)
+(183,125,0)
+(9,48,0)
+(222,145,0)
+(228,205,0)
+(105,131,0)
+(244,155,0)
+(190,192,0)
+(232,93,0)
+(102,86,0)
+(130,90,0)
+(163,245,0)
+(224,228,0)
+(154,153,0)
+(103,174,0)
+(234,243,0)
+(97,236,0)
+(179,131,0)
+(23,257,0)
+(158,216,0)
+(257,228,0)
+(90,230,0)
+(254,32,0)
+(253,16,0)
+(132,193,0)
+(242,205,0)
+(239,205,0)
+(96,101,0)
+(215,105,0)
+(51,230,0)
+(19,196,0)
+(77,38,0)
+(111,106,0)
+(136,168,0)
+(174,142,0)
+(70,243,0)
+(168,213,0)
+(0,186,0)
+(149,93,0)
+(31,236,0)
+(240,174,0)
+(212,95,0)
+(56,89,0)
+(83,89,0)
+(178,108,0)
+(157,239,0)
+(135,131,0)
+(258,36,0)
+(174,241,0)
+(7,83,0)
+(211,104,0)
+(8,179,0)
+(145,3,0)
+(84,243,0)
+(228,224,0)
+(69,89,0)
+(98,190,0)
+(193,60,0)
+(230,90,0)
+(131,105,0)
+(50,160,0)
+(167,202,0)
+(13,100,0)
+(56,100,0)
+(247,16,0)
+(211,87,0)
+(44,131,0)
+(44,97,0)
+(170,172,0)
+(206,236,0)
+(169,243,0)
+(111,131,0)
+(137,236,0)
+(140,250,0)
+(66,149,0)
+(227,228,0)
+(17,108,0)
+(61,179,0)
+(93,149,0)
+(216,107,0)
+(189,31,0)
+(153,242,0)
+(167,250,0)
+(199,123,0)
+(142,65,0)
+(68,241,0)
+(55,104,0)
+(40,213,0)
+(145,241,0)
+(226,243,0)
+(216,89,0)
+(104,251,0)
+(115,68,0)
+(123,239,0)
+(6,89,0)
+(83,205,0)
+(51,69,0)
+(173,243,0)
+(210,134,0)
+(64,134,0)
+(122,243,0)
+(112,213,0)
+(259,109,0)
+(177,147,0)
+(81,109,0)
+(4,99,0)
+(11,243,0)
+(38,241,0)
+(216,131,0)
+(260,87,0)
+(129,182,0)
+(217,155,0)
+(90,9,0)
+(253,131,0)
+(82,89,0)
+(191,86,0)
+(52,56,0)
+(195,2,0)
+(81,247,0)
+(250,243,0)
+(106,111,0)
+(95,99,0)
+(113,193,0)
+(36,252,0)
+(67,202,0)
+(100,13,0)
+(105,58,0)
+(26,140,0)
+(131,243,0)
+(18,140,0)
+(49,115,0)
+(161,134,0)
+(41,141,0)
+(204,230,0)
+(2,153,0)
+(230,108,0)
+(40,241,0)
+(249,161,0)
+(229,109,0)
+(17,241,0)
+(80,60,0)
+(142,174,0)
+(204,216,0)
+(54,101,0)
+(221,251,0)
+(80,193,0)
+(184,224,0)
+(172,131,0)
+(172,112,0)
+(237,224,0)
+(251,107,0)
+(155,244,0)
+(233,149,0)
+(143,252,0)
+(182,60,0)
+(86,191,0)
+(65,48,0)
+(9,60,0)
+(198,243,0)
+(244,160,0)
+(188,107,0)
+(176,67,0)
+(85,80,0)
+(15,97,0)
+(225,141,0)
+(115,49,0)
+(27,112,0)
+(101,111,0)
+(42,214,0)
+(22,193,0)
+(245,6,0)
+(76,64,0)
+(43,182,0)
+(179,89,0)
+(165,254,0)
+(257,60,0)
+(242,191,0)
+(191,242,0)
+(156,212,0)
+(75,81,0)
+(168,173,0)
+(65,142,0)
+(252,10,0)
+(89,60,0)
+(5,69,0)
+(3,145,0)
+(159,241,0)
+(239,123,0)
+(178,173,0)
+(126,134,0)
+(93,10,0)
+(116,257,0)
+(191,10,0)
+(80,250,0)
+(13,213,0)
+(49,147,0)
+(57,13,0)
+(253,161,0)
+(175,99,0)
+(10,60,0)
+(37,115,0)
+(6,243,0)
+(203,208,0)
+(141,236,0)
+(89,83,0)
+(150,236,0)
+(190,131,0)
+(133,62,0)
+(216,204,0)
+(205,242,0)
+(68,115,0)
+(200,138,0)
+(208,243,0)
+(113,250,0)
+(124,191,0)
+(31,89,0)
+(97,44,0)
+(59,9,0)
+(128,208,0)
+(69,141,0)
+(209,190,0)
+(44,89,0)
+(190,89,0)
+(88,125,0)
+(185,22,0)
+(62,250,0)
+(153,2,0)
+(31,131,0)
+(110,214,0)
+(117,192,0)
+(12,251,0)
+(255,243,0)
+(223,44,0)
+(83,7,0)
+(208,173,0)
+(114,138,0)
+(205,60,0)
+(251,236,0)
+(29,243,0)
+(140,173,0)
+(71,118,0)
+(39,150,0)
+(20,241,0)
+(166,111,0)
+(69,51,0)
+(107,108,0)
+(21,193,0)
+(252,36,0)
+(192,190,0)
+(53,173,0)
+(90,48,0)
+(3,250,0)
+(28,86,0)
+(87,44,0)
+(253,161,1)
+(37,1,1)
+(127,146,1)
+(57,100,1)
+(72,111,1)
+(206,137,1)
+(42,155,1)
+(156,125,1)
+(76,247,1)
+(68,151,1)
+(131,105,1)
+(21,193,1)
+(245,163,1)
+(99,106,1)
+(24,139,1)
+(119,238,1)
+(54,96,1)
+(182,43,1)
+(53,63,1)
+(44,97,1)
+(257,250,1)
+(231,236,1)
+(143,36,1)
+(6,131,1)
+(246,13,1)
+(211,87,1)
+(98,9,1)
+(9,48,1)
+(164,178,1)
+(199,10,1)
+(91,64,1)
+(222,127,1)
+(192,190,1)
+(241,20,1)
+(14,199,1)
+(176,6,1)
+(40,162,1)
+(73,245,1)
+(109,131,1)
+(65,9,1)
+(21,180,1)
+(230,204,1)
+(252,36,1)
+(111,131,1)
+(111,101,1)
+(247,81,1)
+(87,44,1)
+(74,107,1)
+(257,193,1)
+(1,125,1)
+(173,53,1)
+(185,193,1)
+(128,208,1)
+(251,89,1)
+(163,142,1)
+(149,66,1)
+(186,0,1)
+(19,138,1)
+(160,50,1)
+(92,249,1)
+(23,116,1)
+(190,89,1)
+(168,173,1)
+(83,219,1)
+(212,95,1)
+(220,253,1)
+(214,110,1)
+(69,131,1)
+(252,143,1)
+(22,121,1)
+(25,231,1)
+(154,2,1)
+(124,86,1)
+(161,134,1)
+(121,185,1)
+(26,18,1)
+(192,117,1)
+(130,204,1)
+(145,241,1)
+(81,75,1)
+(51,69,1)
+(71,17,1)
+(215,135,1)
+(100,56,1)
+(140,173,1)
+(245,58,1)
+(0,247,1)
+(109,259,1)
+(189,230,1)
+(101,250,1)
+(112,27,1)
+(216,236,1)
+(150,39,1)
+(85,22,1)
+(239,157,1)
+(147,177,1)
+(229,62,1)
+(197,19,1)
+(251,221,1)
+(80,131,1)
+(191,124,1)
+(209,98,1)
+(44,89,1)
+(90,150,1)
+(34,195,1)
+(242,191,1)
+(16,253,1)
+(16,220,1)
+(31,131,1)
+(12,142,1)
+(160,214,1)
+(88,95,1)
+(56,52,1)
+(99,4,1)
+(17,164,1)
+(68,241,1)
+(194,130,1)
+(80,250,1)
+(101,54,1)
+(136,112,1)
+(106,72,1)
+(178,74,1)
+(172,89,1)
+(151,235,1)
+(193,113,1)
+(65,48,1)
+(80,193,1)
+(27,172,1)
+(167,119,1)
+(50,214,1)
+(157,123,1)
+(190,131,1)
+(258,59,1)
+(225,41,1)
+(211,104,1)
+(168,136,1)
+(5,211,1)
+(89,83,1)
+(155,217,1)
+(62,133,1)
+(96,166,1)
+(181,81,1)
+(228,227,1)
+(239,123,1)
+(107,188,1)
+(191,86,1)
+(98,147,1)
+(227,224,1)
+(102,153,1)
+(228,205,1)
+(103,240,1)
+(223,104,1)
+(196,197,1)
+(137,192,1)
+(244,160,1)
+(195,239,1)
+(83,7,1)
+(210,244,1)
+(86,28,1)
+(13,57,1)
+(236,206,1)
+(38,241,1)
+(174,241,1)
+(232,149,1)
+(150,236,1)
+(162,168,1)
+(13,250,1)
+(180,257,1)
+(68,250,1)
+(224,184,1)
+(179,89,1)
+(115,48,1)
+(116,228,1)
+(40,241,1)
+(252,10,1)
+(109,134,1)
+(247,16,1)
+(228,224,1)
+(177,49,1)
+(31,236,1)
+(87,260,1)
+(71,211,1)
+(99,175,1)
+(61,8,1)
+(10,3,1)
+(165,248,1)
+(62,250,1)
+(13,100,1)
+(134,126,1)
+(41,5,1)
+(190,209,1)
+(172,131,1)
+(129,21,1)
+(188,31,1)
+(174,103,1)
+(90,48,1)
+(66,233,1)
+(170,246,1)
+(67,176,1)
+(187,78,1)
+(240,65,1)
+(221,12,1)
+(172,170,1)
+(178,173,1)
+(167,202,1)
+(80,35,1)
+(230,51,1)
+(186,241,1)
+(75,109,1)
+(244,155,1)
+(125,183,1)
+(251,131,1)
+(152,33,1)
+(191,10,1)
+(117,190,1)
+(200,173,1)
+(52,24,1)
+(216,158,1)
+(179,131,1)
+(132,147,1)
+(113,250,1)
+(81,109,1)
+(210,38,1)
+(105,58,1)
+(175,106,1)
+(82,182,1)
+(158,46,1)
+(38,77,1)
+(238,131,1)
+(237,205,1)
+(104,55,1)
+(179,61,1)
+(33,254,1)
+(110,42,1)
+(85,152,1)
+(208,173,1)
+(216,89,1)
+(64,76,1)
+(166,30,1)
+(49,115,1)
+(22,193,1)
+(126,210,1)
+(63,241,1)
+(56,131,1)
+(140,26,1)
+(118,236,1)
+(253,131,1)
+(217,196,1)
+(205,242,1)
+(69,89,1)
+(30,62,1)
+(106,111,1)
+(44,131,1)
+(138,114,1)
+(55,251,1)
+(142,65,1)
+(153,2,1)
+(59,89,1)
+(118,71,1)
+(43,129,1)
+(256,258,1)
+(169,140,1)
+(3,250,1)
+(31,89,1)
+(183,88,1)
+(104,251,1)
+(203,169,1)
+(9,252,1)
+(259,229,1)
+(78,82,1)
+(214,131,1)
+(137,40,1)
+(4,106,1)
+(249,181,1)
+(39,194,1)
+(204,216,1)
+(35,120,1)
+(93,149,1)
+(146,93,1)
+(3,145,1)
+(76,186,1)
+(128,212,1)
+(56,89,1)
+(65,25,1)
+(248,22,1)
+(65,236,1)
+(97,236,1)
+(139,179,1)
+(216,107,1)
+(15,79,1)
+(90,9,1)
+(115,68,1)
+(257,23,1)
+(113,94,1)
+(83,205,1)
+(254,165,1)
+(235,37,1)
+(46,51,1)
+(120,85,1)
+(184,237,1)
+(36,256,1)
+(207,189,1)
+(145,222,1)
+(2,34,1)
+(79,223,1)
+(17,241,1)
+(95,99,1)
+(140,250,1)
+(94,132,1)
+(125,241,1)
+(153,154,1)
+(250,167,1)
+(141,225,1)
+(251,107,1)
+(13,139,1)
+(93,232,1)
+(28,102,1)
+(64,134,1)
+(219,7,1)
+(91,134,1)
+(230,90,1)
+(142,174,1)
+(251,236,1)
+(105,215,1)
+(141,236,1)
+(77,244,1)
+(212,156,1)
+(161,92,1)
+(242,153,1)
+(7,187,1)
+(20,159,1)
+(31,207,1)
+(133,91,1)
+(208,203,1)
+(62,134,1)
+(216,131,1)
+(67,202,1)
+(18,67,1)
+(257,228,1)
+(231,118,1)
+(147,49,1)
+(97,15,1)
+(8,192,1)
+(6,89,1)
+(6,73,1)
+(233,80,1)
+(114,200,1)
+(69,141,1)
+(159,250,1)
+(260,44,1)
+(123,14,1)
+(8,192,2)
+(55,142,2)
+(230,51,2)
+(179,131,2)
+(252,147,2)
+(220,81,2)
+(189,211,2)
+(44,97,2)
+(74,211,2)
+(93,149,2)
+(40,241,2)
+(89,83,2)
+(83,7,2)
+(75,62,2)
+(37,125,2)
+(64,62,2)
+(3,250,2)
+(232,147,2)
+(104,142,2)
+(115,125,2)
+(4,106,2)
+(25,142,2)
+(43,147,2)
+(190,131,2)
+(92,81,2)
+(178,211,2)
+(76,62,2)
+(160,155,2)
+(95,99,2)
+(172,192,2)
+(224,147,2)
+(79,104,2)
+(57,192,2)
+(235,125,2)
+(90,48,2)
+(174,241,2)
+(133,62,2)
+(24,192,2)
+(124,147,2)
+(1,125,2)
+(209,125,2)
+(182,147,2)
+(31,236,2)
+(228,224,2)
+(146,147,2)
+(15,104,2)
+(99,106,2)
+(22,193,2)
+(61,192,2)
+(132,147,2)
+(9,147,2)
+(3,147,2)
+(38,244,2)
+(259,62,2)
+(154,147,2)
+(28,147,2)
+(80,131,2)
+(251,89,2)
+(51,211,2)
+(185,147,2)
+(13,192,2)
+(251,131,2)
+(65,236,2)
+(31,89,2)
+(228,147,2)
+(168,173,2)
+(128,212,2)
+(252,10,2)
+(35,147,2)
+(216,131,2)
+(68,241,2)
+(80,147,2)
+(237,147,2)
+(14,147,2)
+(214,131,2)
+(65,9,2)
+(3,145,2)
+(94,147,2)
+(193,113,2)
+(208,173,2)
+(62,62,2)
+(25,125,2)
+(46,211,2)
+(247,62,2)
+(204,216,2)
+(216,211,2)
+(257,147,2)
+(162,192,2)
+(140,250,2)
+(257,228,2)
+(222,147,2)
+(242,191,2)
+(219,147,2)
+(59,147,2)
+(236,125,2)
+(212,125,2)
+(216,89,2)
+(65,125,2)
+(248,22,2)
+(244,160,2)
+(68,125,2)
+(89,147,2)
+(16,253,2)
+(31,211,2)
+(251,107,2)
+(150,211,2)
+(100,192,2)
+(140,125,2)
+(113,250,2)
+(117,125,2)
+(204,211,2)
+(52,192,2)
+(109,134,2)
+(6,89,2)
+(40,192,2)
+(254,22,2)
+(139,179,2)
+(116,147,2)
+(90,211,2)
+(165,22,2)
+(98,125,2)
+(121,147,2)
+(125,241,2)
+(115,48,2)
+(149,147,2)
+(115,68,2)
+(49,125,2)
+(102,147,2)
+(68,250,2)
+(13,139,2)
+(143,147,2)
+(160,214,2)
+(153,2,2)
+(150,236,2)
+(44,131,2)
+(229,62,2)
+(240,65,2)
+(104,251,2)
+(77,244,2)
+(199,147,2)
+(13,100,2)
+(233,147,2)
+(69,141,2)
+(21,193,2)
+(140,173,2)
+(203,125,2)
+(103,65,2)
+(211,142,2)
+(42,155,2)
+(127,147,2)
+(12,142,2)
+(23,147,2)
+(258,147,2)
+(172,89,2)
+(51,69,2)
+(109,62,2)
+(44,104,2)
+(139,192,2)
+(145,241,2)
+(136,192,2)
+(211,104,2)
+(17,241,2)
+(81,62,2)
+(65,142,2)
+(83,147,2)
+(142,174,2)
+(17,211,2)
+(253,131,2)
+(208,125,2)
+(36,147,2)
+(172,131,2)
+(177,125,2)
+(91,62,2)
+(86,147,2)
+(62,250,2)
+(194,211,2)
+(137,125,2)
+(188,211,2)
+(41,211,2)
+(191,86,2)
+(141,236,2)
+(118,236,2)
+(105,58,2)
+(10,147,2)
+(174,65,2)
+(223,104,2)
+(221,142,2)
+(85,147,2)
+(97,104,2)
+(190,125,2)
+(62,134,2)
+(225,211,2)
+(214,155,2)
+(257,250,2)
+(109,131,2)
+(93,147,2)
+(80,193,2)
+(184,147,2)
+(164,211,2)
+(13,250,2)
+(251,142,2)
+(113,147,2)
+(90,9,2)
+(205,242,2)
+(22,147,2)
+(118,142,2)
+(56,89,2)
+(158,211,2)
+(27,192,2)
+(87,104,2)
+(207,211,2)
+(64,134,2)
+(256,147,2)
+(216,107,2)
+(18,125,2)
+(161,81,2)
+(131,105,2)
+(145,147,2)
+(78,147,2)
+(186,247,2)
+(176,125,2)
+(31,131,2)
+(44,89,2)
+(100,56,2)
+(39,211,2)
+(205,147,2)
+(231,142,2)
+(244,155,2)
+(69,211,2)
+(67,125,2)
+(151,125,2)
+(0,247,2)
+(179,192,2)
+(163,125,2)
+(7,147,2)
+(130,211,2)
+(123,147,2)
+(82,147,2)
+(50,155,2)
+(175,106,2)
+(90,150,2)
+(69,89,2)
+(181,81,2)
+(110,155,2)
+(106,111,2)
+(34,147,2)
+(179,89,2)
+(190,89,2)
+(253,161,2)
+(111,131,2)
+(187,147,2)
+(128,208,2)
+(83,205,2)
+(153,147,2)
+(66,147,2)
+(21,147,2)
+(191,10,2)
+(212,95,2)
+(38,241,2)
+(80,250,2)
+(192,190,2)
+(167,202,2)
+(245,125,2)
+(6,131,2)
+(250,167,2)
+(73,125,2)
+(147,49,2)
+(170,192,2)
+(246,192,2)
+(228,205,2)
+(142,142,2)
+(2,147,2)
+(69,131,2)
+(180,147,2)
+(33,22,2)
+(71,142,2)
+(142,125,2)
+(152,22,2)
+(157,147,2)
+(107,211,2)
+(195,147,2)
+(230,90,2)
+(156,125,2)
+(56,131,2)
+(227,147,2)
+(67,202,2)
+(249,81,2)
+(242,147,2)
+(242,153,2)
+(9,48,2)
+(81,109,2)
+(56,192,2)
+(251,236,2)
+(9,252,2)
+(193,147,2)
+(260,104,2)
+(169,125,2)
+(49,115,2)
+(10,3,2)
+(5,211,2)
+(247,16,2)
+(6,125,2)
+(112,192,2)
+(101,250,2)
+(169,140,2)
+(16,81,2)
+(142,65,2)
+(230,204,2)
+(120,147,2)
+(147,125,2)
+(257,193,2)
+(206,125,2)
+(245,58,2)
+(111,101,2)
+(239,123,2)
+(211,87,2)
+(252,36,2)
+(186,241,2)
+(168,192,2)
+(192,125,2)
+(231,125,2)
+(87,44,2)
+(65,48,2)
+(97,236,2)
+(161,134,2)
+(178,173,2)
+(253,81,2)
+(247,81,2)
+(239,147,2)
+(26,125,2)
+(230,211,2)
+(129,147,2)
+(141,211,2)
+(191,147,2)
+(216,236,2)
+-----------------------------------
+(0,lfcount)
+(1,res)
+(2,session.xfer)
+(3,tmplen + lfcount + 1)
+(4,TRUE)
+(5,tmpbuf)
+(6,*buf = tmpbuf)
+(7,session.xfer)
+(8,tmpbuf)
+(9,bufsize = session.xfer.bufsize)
+(10,session.xfer.bufsize = tmplen + lfcount + 1)
+(11,if ((res = (bufsize - tmplen - lfcount)
+(12,tmpbuf)
+(13,memmove(&(tmpbuf[1])
+(14,xfer)
+(15,1)
+(16,tmpbuf[i-1] != \'\\r\')
+(17,lfcount--)
+(18,tmplen)
+(19,i)
+(20,0)
+(21,free(copybuf)
+(22,copybuf == NULL)
+(23,tmplen)
+(24,tmpbuf)
+(25,bufsize)
+(26,added)
+(27,\'\\r\')
+(28,xfer)
+(29,lfcount)
+(30,have_dangling_cr)
+(31,tmpbuf[i])
+(32,)
+(33,1)
+(34,xfer)
+(35,tmplen)
+(36,session.xfer)
+(37,bufsize)
+(38,lfcount++)
+(39,1)
+(40,lfcount--)
+(41,i)
+(42,tmpbuf)
+(43,NULL)
+(44,tmpbuf[i-1])
+(45,i)
+(46,tmpbuf)
+(47,if (copybuf == NULL)
+(48,unsigned int bufsize)
+(49,res = (bufsize - tmplen - lfcount)
+(50,\'\\n\')
+(51,&(tmpbuf[i+1])
+(52,0)
+(53,0)
+(54,1)
+(55,\'\\n\')
+(56,tmpbuf[0])
+(57,tmplen)
+(58,char **buf)
+(59,bufsize)
+(60,)
+(61,1)
+(62,i < tmplen)
+(63,added)
+(64,i++)
+(65,i < bufsize)
+(66,xfer)
+(67,*buflen)
+(68,tmplen - lfcount)
+(69,tmpbuf[i+1])
+(70,tmpbuf)
+(71,i)
+(72,\'\\r\')
+(73,tmpbuf)
+(74,added)
+(75,\'\\n\')
+(76,i)
+(77,lfcount)
+(78,session)
+(79,i)
+(80,memcpy(copybuf, tmpbuf, tmplen)
+(81,tmpbuf[i] == \'\\n\')
+(82,tmpbuf)
+(83,session.xfer.buf)
+(84,res)
+(85,copybuf)
+(86,session.xfer)
+(87,tmpbuf[i-1] != \'\\r\')
+(88,lfcount)
+(89,tmpbuf = session.xfer.buf)
+(90,bufsize - i - 1)
+(91,i)
+(92,1)
+(93,session.xfer.bufsize)
+(94,tmplen)
+(95,have_dangling_cr = (tmpbuf[tmplen-1] == \'\\r\')
+(96,tmplen)
+(97,i-1)
+(98,tmpbuf)
+(99,(tmpbuf[tmplen-1] == \'\\r\')
+(100,&(tmpbuf[0])
+(101,tmplen-1)
+(102,session)
+(103,0)
+(104,tmpbuf[i] == \'\\n\')
+(105,*buf)
+(106,tmpbuf[tmplen-1] == \'\\r\')
+(107,tmpbuf[i] = \'\\r\')
+(108,)
+(109,tmpbuf[i])
+(110,0)
+(111,tmpbuf[tmplen-1])
+(112,tmpbuf[0] = \'\\r\')
+(113,malloc(tmplen)
+(114,0)
+(115,bufsize - tmplen - lfcount)
+(116,copybuf)
+(117,\'\\n\')
+(118,i++)
+(119,buflen)
+(120,tmpbuf)
+(121,NULL)
+(122,added)
+(123,session.xfer)
+(124,bufsize)
+(125,lfcount == 0)
+(126,1)
+(127,lfcount)
+(128,RET)
+(129,copybuf)
+(130,bufsize)
+(131,*tmpbuf = *buf)
+(132,copybuf)
+(133,tmplen)
+(134,i = 1)
+(135,tmpbuf)
+(136,added)
+(137,i)
+(138,res = 0)
+(139,&(tmpbuf[1])
+(140,tmplen + added)
+(141,i+1)
+(142,i < bufsize && (lfcount > 0)
+(143,bufsize)
+(144,if (tmpbuf[i] == \'\\n\' && tmpbuf[i-1] != \'\\r\')
+(145,lfcount + 1)
+(146,tmplen)
+(147,(res = (bufsize - tmplen - lfcount)
+(148,if (tmpbuf[0] == \'\\n\')
+(149,session.xfer)
+(150,i - 1)
+(151,lfcount)
+(152,exit(1)
+(153,session.xfer.p)
+(154,p)
+(155,!have_dangling_cr)
+(156,0)
+(157,buf)
+(158,i)
+(159,lfcount)
+(160,tmpbuf[0] == \'\\n\')
+(161,i-1)
+(162,lfcount)
+(163,buf)
+(164,lfcount)
+(165,"Out of memory!")
+(166,tmpbuf)
+(167,*buflen)
+(168,added++)
+(169,*buflen = tmplen + added)
+(170,0)
+(171,copybuf)
+(172,tmpbuf[0])
+(173,added = 0)
+(174,lfcount > 0)
+(175,FALSE)
+(176,buflen)
+(177,0)
+(178,added++)
+(179,tmpbuf[1])
+(180,copybuf)
+(181,tmpbuf)
+(182,copybuf = NULL)
+(183,0)
+(184,xfer)
+(185,copybuf)
+(186,lfcount++)
+(187,xfer)
+(188,\'\\r\')
+(189,tmpbuf)
+(190,tmpbuf[0])
+(191,session.xfer.bufsize)
+(192,tmpbuf[0] == \'\\n\')
+(193,*copybuf = malloc(tmplen)
+(194,i)
+(195,session)
+(196,i = 0)
+(197,0)
+(198,for (i = 1; i < tmplen; i++)
+(199,session)
+(200,res)
+(201,)
+(202,unsigned int *buflen)
+(203,added)
+(204,&(tmpbuf[i])
+(205,session.xfer.buf = pcalloc(session.xfer.p, session.xfer.bufsize)
+(206,1)
+(207,i)
+(208,return added;)
+(209,0)
+(210,i)
+(211,tmpbuf[i] == \'\\n\' && tmpbuf[i-1] != \'\\r\')
+(212,return 0;)
+(213,)
+(214,tmpbuf[0])
+(215,buf)
+(216,tmpbuf[i])
+(217,have_dangling_cr)
+(218,for (i = 1; i < bufsize && (lfcount > 0)
+(219,buf)
+(220,\'\\r\')
+(221,i)
+(222,1)
+(223,tmpbuf)
+(224,session.xfer)
+(225,1)
+(226,if (lfcount == 0)
+(227,buf)
+(228,session.xfer.buf)
+(229,tmpbuf)
+(230,memmove(&(tmpbuf[i+1])
+(231,i)
+(232,bufsize)
+(233,session)
+(234,if (!have_dangling_cr && tmpbuf[0] == \'\\n\')
+(235,tmplen)
+(236,i = 1)
+(237,session)
+(238,tmplen)
+(239,session.xfer.buf)
+(240,lfcount)
+(241,lfcount = 0)
+(242,pcalloc(session.xfer.p, session.xfer.bufsize)
+(243,)
+(244,!have_dangling_cr && tmpbuf[0] == \'\\n\')
+(245,*buf)
+(246,tmpbuf)
+(247,tmpbuf[i] == \'\\n\' && tmpbuf[i-1] != \'\\r\')
+(248,PR_LOG_ALERT)
+(249,i)
+(250,tmplen = *buflen)
+(251,tmpbuf[i])
+(252,session.xfer.bufsize)
+(253,tmpbuf[i-1])
+(254,pr_log_pri(PR_LOG_ALERT, "Out of memory!")
+(255,tmplen)
+(256,xfer)
+(257,memcpy(session.xfer.buf, copybuf, tmplen)
+(258,session)
+(259,i)
+(260,\'\\r\')
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

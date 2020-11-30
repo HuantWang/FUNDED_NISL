@@ -1,0 +1,2427 @@
+-----label-----
+0
+-----code-----
+static int driver_notify_name_owner_changed(Bus *bus, MatchRegistry *matches, const char *name, const char *old_owner, const char *new_owner) {
+        _c_cleanup_(c_list_flush) CList destinations = C_LIST_INIT(destinations);
+        MessageMetadata metadata = {
+                .header = {
+                        .type = DBUS_MESSAGE_TYPE_SIGNAL,
+                },
+                .sender_id = ADDRESS_ID_INVALID,
+                .fields = {
+                        .path = "/org/freedesktop/DBus",
+                        .interface = "org.freedesktop.DBus",
+                        .member = "NameOwnerChanged",
+                },
+                .args = {
+                        {
+                                .value = name,
+                                .element = 's',
+                        },
+                        {
+                                .value = old_owner,
+                                .element = 's',
+                        },
+                        {
+                                .value = new_owner,
+                                .element = 's',
+                        },
+                },
+                .n_args = 3,
+        };
+        int r;
+
+        bus_get_monitor_destinations(bus, &destinations, NULL, &metadata);
+        bus_get_broadcast_destinations(bus, &destinations, matches, NULL, &metadata);
+
+        if (!c_list_is_empty(&destinations)) {
+                static const CDVarType type[] = {
+                        C_DVAR_T_INIT(
+                                DRIVER_T_MESSAGE(
+                                        C_DVAR_T_TUPLE3(
+                                                C_DVAR_T_s,
+                                                C_DVAR_T_s,
+                                                C_DVAR_T_s
+                                        )
+                                )
+                        )
+                };
+                _c_cleanup_(c_dvar_deinit) CDVar var = C_DVAR_INIT;
+                _c_cleanup_(message_unrefp) Message *message = NULL;
+                _c_cleanup_(c_freep) void *data = NULL;
+                MatchOwner *match_owner;
+                size_t n_data;
+
+                c_dvar_begin_write(&var, (__BYTE_ORDER == __BIG_ENDIAN), type, 1);
+                c_dvar_write(&var, "(");
+                driver_write_signal_header(&var, NULL, "NameOwnerChanged", "sss");
+                c_dvar_write(&var, "(sss)", name, old_owner, new_owner);
+                c_dvar_write(&var, ")");
+                r = c_dvar_end_write(&var, &data, &n_data);
+                if (r)
+                        return error_origin(r);
+
+                r = message_new_outgoing(&message, data, n_data);
+                if (r)
+                        return error_fold(r);
+                data = NULL;
+
+                while ((match_owner = c_list_first_entry(&destinations, MatchOwner, destinations_link))) {
+                        Peer *receiver = c_container_of(match_owner, Peer, owned_matches);
+
+                        c_list_unlink(&match_owner->destinations_link);
+
+                        r = policy_snapshot_check_receive(receiver->policy,
+                                                          NULL,
+                                                          metadata.fields.interface,
+                                                          metadata.fields.member,
+                                                          metadata.fields.path,
+                                                          metadata.header.type,
+                                                          true,
+                                                          0);
+                        if (r) {
+                                if (r == POLICY_E_ACCESS_DENIED)
+                                        continue;
+
+                                return error_fold(r);
+                        }
+
+                        r = connection_queue(&receiver->connection, NULL, message);
+                        if (r) {
+                                if (r == CONNECTION_E_QUOTA) {
+                                        NameSet receiver_names = NAME_SET_INIT_FROM_OWNER(&receiver->owned_names);
+
+                                        connection_shutdown(&receiver->connection);
+
+                                        log_append_here(bus->log, LOG_WARNING, 0);
+                                        bus_log_append_transaction(bus, ADDRESS_ID_INVALID, receiver->id, NULL, &receiver_names,
+                                                                   receiver->bus->seclabel, receiver->policy->seclabel,
+                                                                   message);
+                                        r = log_commitf(bus->log, "Peer :1.%llu is being disconnected as it does not have the resources to receive a signal it subscribed to.", receiver->id);
+                                        if (r)
+                                                return error_fold(r);
+                                } else {
+                                        return error_fold(r);
+                                }
+                        }
+                }
+        }
+
+        return 0;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+3,8
+3,9
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+17,19
+19,20
+19,21
+22,23
+22,24
+24,25
+24,26
+27,28
+27,29
+29,30
+29,31
+32,33
+32,34
+32,35
+32,36
+32,37
+32,38
+32,39
+32,40
+32,41
+32,42
+32,43
+33,34
+34,35
+34,36
+35,36
+37,38
+38,39
+40,41
+41,42
+42,43
+42,44
+43,44
+45,46
+45,47
+47,48
+48,49
+48,50
+49,50
+51,52
+53,54
+54,55
+56,57
+57,58
+58,59
+59,60
+59,61
+61,62
+63,64
+64,65
+64,66
+64,67
+64,68
+64,69
+65,66
+67,68
+69,70
+70,71
+72,73
+74,75
+75,76
+77,78
+78,79
+78,80
+78,81
+78,82
+78,83
+78,84
+79,80
+81,82
+83,84
+84,85
+86,87
+88,89
+90,91
+91,92
+93,94
+93,95
+94,95
+95,96
+95,97
+96,97
+98,99
+99,100
+101,102
+101,103
+101,104
+101,105
+101,106
+101,107
+101,108
+101,109
+101,110
+101,111
+101,112
+101,113
+101,114
+101,115
+101,116
+101,117
+101,118
+101,119
+101,120
+101,121
+101,122
+101,123
+101,124
+102,103
+103,104
+103,105
+104,105
+106,107
+106,108
+106,109
+109,110
+110,111
+111,112
+111,113
+112,113
+114,115
+114,116
+115,116
+117,118
+117,119
+117,120
+117,121
+118,119
+120,121
+122,123
+124,125
+126,127
+127,128
+127,129
+128,129
+130,131
+131,132
+133,134
+134,135
+135,136
+135,137
+136,137
+138,139
+138,140
+140,141
+141,142
+143,144
+144,145
+144,146
+145,146
+147,148
+148,149
+150,151
+151,152
+152,153
+152,154
+153,154
+155,156
+155,157
+155,158
+158,159
+159,160
+161,162
+162,163
+162,164
+163,164
+165,166
+166,167
+168,169
+169,170
+170,171
+170,172
+172,173
+172,174
+172,175
+175,176
+176,177
+178,179
+179,180
+179,181
+180,181
+182,183
+182,184
+185,186
+186,187
+186,188
+187,188
+189,190
+191,192
+192,193
+192,194
+192,195
+192,196
+192,197
+193,194
+195,196
+196,197
+198,199
+199,200
+199,201
+200,201
+202,203
+204,205
+207,208
+208,209
+208,210
+208,211
+209,210
+211,212
+212,213
+215,216
+216,217
+216,218
+216,219
+216,220
+216,221
+217,218
+219,220
+220,221
+222,223
+226,227
+227,228
+227,229
+227,230
+227,231
+227,232
+227,233
+228,229
+230,231
+231,232
+234,235
+236,237
+238,239
+240,241
+241,242
+241,243
+241,244
+242,243
+244,245
+245,246
+248,249
+249,250
+249,251
+250,251
+252,253
+252,254
+252,255
+252,256
+253,254
+255,256
+256,257
+258,259
+259,260
+261,262
+262,263
+264,265
+264,266
+265,266
+267,268
+268,269
+268,270
+269,270
+271,272
+273,274
+274,275
+274,276
+275,276
+277,278
+277,279
+277,280
+277,281
+278,279
+280,281
+281,282
+283,284
+285,286
+287,288
+287,289
+288,289
+290,291
+291,292
+291,293
+292,293
+294,295
+296,297
+297,298
+297,299
+298,299
+300,301
+302,303
+302,304
+303,304
+304,305
+304,306
+305,306
+307,308
+307,309
+307,310
+307,311
+308,309
+310,311
+311,312
+313,314
+315,316
+317,318
+317,319
+317,320
+317,321
+317,322
+317,323
+318,319
+319,320
+319,321
+320,321
+322,323
+322,324
+322,325
+325,326
+326,327
+326,328
+326,329
+326,330
+327,328
+329,330
+331,332
+333,334
+335,336
+336,337
+336,338
+337,338
+339,340
+340,341
+340,342
+341,342
+344,345
+345,346
+345,347
+346,347
+348,349
+348,350
+348,351
+348,352
+348,353
+348,354
+348,355
+348,356
+348,357
+349,350
+351,352
+351,353
+352,353
+355,356
+357,358
+357,359
+358,359
+358,360
+359,360
+363,364
+363,365
+364,365
+364,366
+365,366
+369,370
+369,371
+370,371
+370,372
+371,372
+375,376
+375,377
+376,377
+376,378
+377,378
+383,384
+383,385
+384,385
+386,387
+386,388
+387,388
+387,389
+388,389
+388,390
+389,390
+391,392
+394,395
+395,396
+395,397
+396,397
+398,399
+400,401
+401,402
+401,403
+402,403
+404,405
+404,406
+404,407
+404,408
+405,406
+407,408
+408,409
+408,410
+409,410
+412,413
+414,415
+416,417
+416,418
+417,418
+419,420
+420,421
+420,422
+420,423
+421,422
+421,423
+422,423
+424,425
+426,427
+426,428
+426,429
+426,430
+426,431
+426,432
+427,428
+428,429
+428,430
+429,430
+431,432
+431,433
+433,434
+434,435
+434,436
+435,436
+437,438
+438,439
+438,440
+439,440
+442,443
+443,444
+443,445
+444,445
+446,447
+447,448
+447,449
+448,449
+451,452
+452,453
+452,454
+452,455
+452,456
+453,454
+455,456
+455,457
+456,457
+459,460
+462,463
+463,464
+463,465
+463,466
+463,467
+463,468
+463,469
+463,470
+463,471
+463,472
+464,465
+466,467
+468,469
+470,471
+470,472
+471,472
+474,475
+476,477
+477,478
+479,480
+479,481
+480,481
+480,482
+481,482
+485,486
+485,487
+486,487
+486,488
+487,488
+491,492
+493,494
+494,495
+494,496
+495,496
+497,498
+497,499
+497,500
+497,501
+498,499
+500,501
+500,502
+501,502
+505,506
+505,507
+506,507
+509,510
+509,511
+510,511
+512,513
+513,514
+513,515
+514,515
+516,517
+518,519
+519,520
+520,521
+520,522
+521,522
+523,524
+525,526
+-----nextToken-----
+2,4,7,9,10,13,15,16,18,20,21,23,25,26,28,30,31,36,39,44,46,50,52,55,60,62,66,68,71,73,76,80,82,85,87,89,92,97,100,105,107,108,113,116,119,121,123,125,129,132,137,139,142,146,149,154,156,157,160,164,167,171,173,174,177,181,183,184,188,190,194,197,201,203,205,206,210,213,214,218,221,223,224,225,229,232,233,235,237,239,243,246,247,251,254,257,260,263,266,270,272,276,279,282,284,286,289,293,295,299,301,306,309,312,314,316,321,323,324,328,330,332,334,338,342,343,347,350,353,354,356,360,361,362,366,367,368,372,373,374,378,379,380,381,382,385,390,392,393,397,399,403,406,410,411,413,415,418,423,425,430,432,436,440,441,445,449,450,454,457,458,460,461,465,467,469,472,473,475,478,482,483,484,488,489,490,492,496,499,502,503,504,507,508,511,515,517,522,524,526
+-----computeFrom-----
+199,200
+199,201
+249,250
+249,251
+274,275
+274,276
+297,298
+297,299
+304,305
+304,306
+345,346
+345,347
+388,389
+388,390
+401,402
+401,403
+421,422
+421,423
+494,495
+494,496
+-----guardedBy-----
+423,517
+-----guardedByNegation-----
+423,524
+-----lastLexicalUse-----
+423,524
+-----jump-----
+423,524
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;ProblemStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;IdExpression;Name;ProblemStatement;ProblemStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;ArrayDeclarator;Name;ArrayModifier;EqualsInitializer;InitializerList;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;ProblemStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;ProblemStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;ProblemStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;IdExpression;Name;ReturnStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;IdExpression;Name;ReturnStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;WhileStatement;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;LiteralExpression;LiteralExpression;IfStatement;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ContinueStatement;ReturnStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IdExpression;Name;IfStatement;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;IfStatement;IdExpression;Name;ReturnStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ReturnStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;LiteralExpression;
+-----ast_node-----
+static int driver_notify_name_owner_changed(Bus *bus, MatchRegistry *matches, const char *name, const char *old_owner, const char *new_owner) {        _c_cleanup_(c_list_flush) CList destinations = C_LIST_INIT(destinations);        MessageMetadata metadata = {                .header = {                        .type = DBUS_MESSAGE_TYPE_SIGNAL,                },                .sender_id = ADDRESS_ID_INVALID,                .fields = {                        .path = "/org/freedesktop/DBus",                        .interface = "org.freedesktop.DBus",                        .member = "NameOwnerChanged",                },                .args = {                        {                                .value = name,                                .element = 's',                        },                        {                                .value = old_owner,                                .element = 's',                        },                        {                                .value = new_owner,                                .element = 's',                        },                },                .n_args = 3,        };        int r;        bus_get_monitor_destinations(bus, &destinations, NULL, &metadata);        bus_get_broadcast_destinations(bus, &destinations, matches, NULL, &metadata);        if (!c_list_is_empty(&destinations)) {                static const CDVarType type[] = {                        C_DVAR_T_INIT(                                DRIVER_T_MESSAGE(                                        C_DVAR_T_TUPLE3(                                                C_DVAR_T_s,                                                C_DVAR_T_s,                                                C_DVAR_T_s                                        )                                )                        )                };                _c_cleanup_(c_dvar_deinit) CDVar var = C_DVAR_INIT;                _c_cleanup_(message_unrefp) Message *message = NULL;                _c_cleanup_(c_freep) void *data = NULL;                MatchOwner *match_owner;                size_t n_data;                c_dvar_begin_write(&var, (__BYTE_ORDER == __BIG_ENDIAN), type, 1);                c_dvar_write(&var, "(");                driver_write_signal_header(&var, NULL, "NameOwnerChanged", "sss");                c_dvar_write(&var, "(sss)", name, old_owner, new_owner);                c_dvar_write(&var, ")");                r = c_dvar_end_write(&var, &data, &n_data);                if (r)                        return error_origin(r);                r = message_new_outgoing(&message, data, n_data);                if (r)                        return error_fold(r);                data = NULL;                while ((match_owner = c_list_first_entry(&destinations, MatchOwner, destinations_link))) {                        Peer *receiver = c_container_of(match_owner, Peer, owned_matches);                        c_list_unlink(&match_owner->destinations_link);                        r = policy_snapshot_check_receive(receiver->policy,                                                          NULL,                                                          metadata.fields.interface,                                                          metadata.fields.member,                                                          metadata.fields.path,                                                          metadata.header.type,                                                          true,                                                          0);                        if (r) {                                if (r == POLICY_E_ACCESS_DENIED)                                        continue;                                return error_fold(r);                        }                        r = connection_queue(&receiver->connection, NULL, message);                        if (r) {                                if (r == CONNECTION_E_QUOTA) {                                        NameSet receiver_names = NAME_SET_INIT_FROM_OWNER(&receiver->owned_names);                                        connection_shutdown(&receiver->connection);                                        log_append_here(bus->log, LOG_WARNING, 0);                                        bus_log_append_transaction(bus, ADDRESS_ID_INVALID, receiver->id, NULL, &receiver_names,                                                                   receiver->bus->seclabel, receiver->policy->seclabel,                                                                   message);                                        r = log_commitf(bus->log, "Peer :1.%llu is being disconnected as it does not have the resources to receive a signal it subscribed to.", receiver->id);                                        if (r)                                                return error_fold(r);                                } else {                                        return error_fold(r);                                }                        }                }        }        return 0;}
+static int
+driver_notify_name_owner_changed(Bus *bus, MatchRegistry *matches, const char *name, const char *old_owner, const char *new_owner)
+driver_notify_name_owner_changed
+Bus *bus
+Bus
+Bus
+*bus
+*
+bus
+MatchRegistry *matches
+MatchRegistry
+MatchRegistry
+*matches
+*
+matches
+const char *name
+const char
+*name
+*
+name
+const char *old_owner
+const char
+*old_owner
+*
+old_owner
+const char *new_owner
+const char
+*new_owner
+*
+new_owner
+{        _c_cleanup_(c_list_flush) CList destinations = C_LIST_INIT(destinations);        MessageMetadata metadata = {                .header = {                        .type = DBUS_MESSAGE_TYPE_SIGNAL,                },                .sender_id = ADDRESS_ID_INVALID,                .fields = {                        .path = "/org/freedesktop/DBus",                        .interface = "org.freedesktop.DBus",                        .member = "NameOwnerChanged",                },                .args = {                        {                                .value = name,                                .element = 's',                        },                        {                                .value = old_owner,                                .element = 's',                        },                        {                                .value = new_owner,                                .element = 's',                        },                },                .n_args = 3,        };        int r;        bus_get_monitor_destinations(bus, &destinations, NULL, &metadata);        bus_get_broadcast_destinations(bus, &destinations, matches, NULL, &metadata);        if (!c_list_is_empty(&destinations)) {                static const CDVarType type[] = {                        C_DVAR_T_INIT(                                DRIVER_T_MESSAGE(                                        C_DVAR_T_TUPLE3(                                                C_DVAR_T_s,                                                C_DVAR_T_s,                                                C_DVAR_T_s                                        )                                )                        )                };                _c_cleanup_(c_dvar_deinit) CDVar var = C_DVAR_INIT;                _c_cleanup_(message_unrefp) Message *message = NULL;                _c_cleanup_(c_freep) void *data = NULL;                MatchOwner *match_owner;                size_t n_data;                c_dvar_begin_write(&var, (__BYTE_ORDER == __BIG_ENDIAN), type, 1);                c_dvar_write(&var, "(");                driver_write_signal_header(&var, NULL, "NameOwnerChanged", "sss");                c_dvar_write(&var, "(sss)", name, old_owner, new_owner);                c_dvar_write(&var, ")");                r = c_dvar_end_write(&var, &data, &n_data);                if (r)                        return error_origin(r);                r = message_new_outgoing(&message, data, n_data);                if (r)                        return error_fold(r);                data = NULL;                while ((match_owner = c_list_first_entry(&destinations, MatchOwner, destinations_link))) {                        Peer *receiver = c_container_of(match_owner, Peer, owned_matches);                        c_list_unlink(&match_owner->destinations_link);                        r = policy_snapshot_check_receive(receiver->policy,                                                          NULL,                                                          metadata.fields.interface,                                                          metadata.fields.member,                                                          metadata.fields.path,                                                          metadata.header.type,                                                          true,                                                          0);                        if (r) {                                if (r == POLICY_E_ACCESS_DENIED)                                        continue;                                return error_fold(r);                        }                        r = connection_queue(&receiver->connection, NULL, message);                        if (r) {                                if (r == CONNECTION_E_QUOTA) {                                        NameSet receiver_names = NAME_SET_INIT_FROM_OWNER(&receiver->owned_names);                                        connection_shutdown(&receiver->connection);                                        log_append_here(bus->log, LOG_WARNING, 0);                                        bus_log_append_transaction(bus, ADDRESS_ID_INVALID, receiver->id, NULL, &receiver_names,                                                                   receiver->bus->seclabel, receiver->policy->seclabel,                                                                   message);                                        r = log_commitf(bus->log, "Peer :1.%llu is being disconnected as it does not have the resources to receive a signal it subscribed to.", receiver->id);                                        if (r)                                                return error_fold(r);                                } else {                                        return error_fold(r);                                }                        }                }        }        return 0;}
+_c_cleanup_(c_list_flush)
+_c_cleanup_(c_list_flush)
+_c_cleanup_
+_c_cleanup_
+(c_list_flush)
+c_list_flush
+c_list_flush
+)
+CList destinations = C_LIST_INIT(destinations);
+CList destinations = C_LIST_INIT(destinations);
+CList
+CList
+destinations = C_LIST_INIT(destinations)
+destinations
+= C_LIST_INIT(destinations)
+C_LIST_INIT(destinations)
+C_LIST_INIT
+C_LIST_INIT
+destinations
+destinations
+MessageMetadata
+MessageMetadata
+MessageMetadata
+a
+metadata = {                .header = {                        .type = DBUS_MESSAGE_TYPE_SIGNAL,                },                .sender_id = ADDRESS_ID_INVALID,                .fields = {                        .path = "/org/freedesktop/DBus",                        .interface = "org.freedesktop.DBus",                        .member = "NameOwnerChanged",                },                .args = {                        {                                .value = name,                                .element = 's',                        },                        {                                .value = old_owner,                                .element = 's',                        },                        {                                .value = new_owner,                                .element = 's',                        },                },                .n_args = 3,        };
+int r;
+int r;
+int
+r
+r
+bus_get_monitor_destinations(bus, &destinations, NULL, &metadata);
+bus_get_monitor_destinations(bus, &destinations, NULL, &metadata)
+bus_get_monitor_destinations
+bus_get_monitor_destinations
+bus
+bus
+&destinations
+destinations
+destinations
+NULL
+NULL
+&metadata
+metadata
+metadata
+bus_get_broadcast_destinations(bus, &destinations, matches, NULL, &metadata);
+bus_get_broadcast_destinations(bus, &destinations, matches, NULL, &metadata)
+bus_get_broadcast_destinations
+bus_get_broadcast_destinations
+bus
+bus
+&destinations
+destinations
+destinations
+matches
+matches
+NULL
+NULL
+&metadata
+metadata
+metadata
+if (!c_list_is_empty(&destinations)) {                static const CDVarType type[] = {                        C_DVAR_T_INIT(                                DRIVER_T_MESSAGE(                                        C_DVAR_T_TUPLE3(                                                C_DVAR_T_s,                                                C_DVAR_T_s,                                                C_DVAR_T_s                                        )                                )                        )                };                _c_cleanup_(c_dvar_deinit) CDVar var = C_DVAR_INIT;                _c_cleanup_(message_unrefp) Message *message = NULL;                _c_cleanup_(c_freep) void *data = NULL;                MatchOwner *match_owner;                size_t n_data;                c_dvar_begin_write(&var, (__BYTE_ORDER == __BIG_ENDIAN), type, 1);                c_dvar_write(&var, "(");                driver_write_signal_header(&var, NULL, "NameOwnerChanged", "sss");                c_dvar_write(&var, "(sss)", name, old_owner, new_owner);                c_dvar_write(&var, ")");                r = c_dvar_end_write(&var, &data, &n_data);                if (r)                        return error_origin(r);                r = message_new_outgoing(&message, data, n_data);                if (r)                        return error_fold(r);                data = NULL;                while ((match_owner = c_list_first_entry(&destinations, MatchOwner, destinations_link))) {                        Peer *receiver = c_container_of(match_owner, Peer, owned_matches);                        c_list_unlink(&match_owner->destinations_link);                        r = policy_snapshot_check_receive(receiver->policy,                                                          NULL,                                                          metadata.fields.interface,                                                          metadata.fields.member,                                                          metadata.fields.path,                                                          metadata.header.type,                                                          true,                                                          0);                        if (r) {                                if (r == POLICY_E_ACCESS_DENIED)                                        continue;                                return error_fold(r);                        }                        r = connection_queue(&receiver->connection, NULL, message);                        if (r) {                                if (r == CONNECTION_E_QUOTA) {                                        NameSet receiver_names = NAME_SET_INIT_FROM_OWNER(&receiver->owned_names);                                        connection_shutdown(&receiver->connection);                                        log_append_here(bus->log, LOG_WARNING, 0);                                        bus_log_append_transaction(bus, ADDRESS_ID_INVALID, receiver->id, NULL, &receiver_names,                                                                   receiver->bus->seclabel, receiver->policy->seclabel,                                                                   message);                                        r = log_commitf(bus->log, "Peer :1.%llu is being disconnected as it does not have the resources to receive a signal it subscribed to.", receiver->id);                                        if (r)                                                return error_fold(r);                                } else {                                        return error_fold(r);                                }                        }                }        }
+!c_list_is_empty(&destinations)
+c_list_is_empty(&destinations)
+c_list_is_empty
+c_list_is_empty
+&destinations
+destinations
+destinations
+{                static const CDVarType type[] = {                        C_DVAR_T_INIT(                                DRIVER_T_MESSAGE(                                        C_DVAR_T_TUPLE3(                                                C_DVAR_T_s,                                                C_DVAR_T_s,                                                C_DVAR_T_s                                        )                                )                        )                };                _c_cleanup_(c_dvar_deinit) CDVar var = C_DVAR_INIT;                _c_cleanup_(message_unrefp) Message *message = NULL;                _c_cleanup_(c_freep) void *data = NULL;                MatchOwner *match_owner;                size_t n_data;                c_dvar_begin_write(&var, (__BYTE_ORDER == __BIG_ENDIAN), type, 1);                c_dvar_write(&var, "(");                driver_write_signal_header(&var, NULL, "NameOwnerChanged", "sss");                c_dvar_write(&var, "(sss)", name, old_owner, new_owner);                c_dvar_write(&var, ")");                r = c_dvar_end_write(&var, &data, &n_data);                if (r)                        return error_origin(r);                r = message_new_outgoing(&message, data, n_data);                if (r)                        return error_fold(r);                data = NULL;                while ((match_owner = c_list_first_entry(&destinations, MatchOwner, destinations_link))) {                        Peer *receiver = c_container_of(match_owner, Peer, owned_matches);                        c_list_unlink(&match_owner->destinations_link);                        r = policy_snapshot_check_receive(receiver->policy,                                                          NULL,                                                          metadata.fields.interface,                                                          metadata.fields.member,                                                          metadata.fields.path,                                                          metadata.header.type,                                                          true,                                                          0);                        if (r) {                                if (r == POLICY_E_ACCESS_DENIED)                                        continue;                                return error_fold(r);                        }                        r = connection_queue(&receiver->connection, NULL, message);                        if (r) {                                if (r == CONNECTION_E_QUOTA) {                                        NameSet receiver_names = NAME_SET_INIT_FROM_OWNER(&receiver->owned_names);                                        connection_shutdown(&receiver->connection);                                        log_append_here(bus->log, LOG_WARNING, 0);                                        bus_log_append_transaction(bus, ADDRESS_ID_INVALID, receiver->id, NULL, &receiver_names,                                                                   receiver->bus->seclabel, receiver->policy->seclabel,                                                                   message);                                        r = log_commitf(bus->log, "Peer :1.%llu is being disconnected as it does not have the resources to receive a signal it subscribed to.", receiver->id);                                        if (r)                                                return error_fold(r);                                } else {                                        return error_fold(r);                                }                        }                }        }
+static const CDVarType type[] = {                        C_DVAR_T_INIT(                                DRIVER_T_MESSAGE(                                        C_DVAR_T_TUPLE3(                                                C_DVAR_T_s,                                                C_DVAR_T_s,                                                C_DVAR_T_s                                        )                                )                        )                };
+static const CDVarType type[] = {                        C_DVAR_T_INIT(                                DRIVER_T_MESSAGE(                                        C_DVAR_T_TUPLE3(                                                C_DVAR_T_s,                                                C_DVAR_T_s,                                                C_DVAR_T_s                                        )                                )                        )                };
+static const CDVarType
+CDVarType
+type[] = {                        C_DVAR_T_INIT(                                DRIVER_T_MESSAGE(                                        C_DVAR_T_TUPLE3(                                                C_DVAR_T_s,                                                C_DVAR_T_s,                                                C_DVAR_T_s                                        )                                )                        )                }
+type
+[]
+= {                        C_DVAR_T_INIT(                                DRIVER_T_MESSAGE(                                        C_DVAR_T_TUPLE3(                                                C_DVAR_T_s,                                                C_DVAR_T_s,                                                C_DVAR_T_s                                        )                                )                        )                }
+{                        C_DVAR_T_INIT(                                DRIVER_T_MESSAGE(                                        C_DVAR_T_TUPLE3(                                                C_DVAR_T_s,                                                C_DVAR_T_s,                                                C_DVAR_T_s                                        )                                )                        )                }
+C_DVAR_T_INIT(                                DRIVER_T_MESSAGE(                                        C_DVAR_T_TUPLE3(                                                C_DVAR_T_s,                                                C_DVAR_T_s,                                                C_DVAR_T_s                                        )                                )                        )
+C_DVAR_T_INIT
+C_DVAR_T_INIT
+DRIVER_T_MESSAGE(                                        C_DVAR_T_TUPLE3(                                                C_DVAR_T_s,                                                C_DVAR_T_s,                                                C_DVAR_T_s                                        )                                )
+DRIVER_T_MESSAGE
+DRIVER_T_MESSAGE
+C_DVAR_T_TUPLE3(                                                C_DVAR_T_s,                                                C_DVAR_T_s,                                                C_DVAR_T_s                                        )
+C_DVAR_T_TUPLE3
+C_DVAR_T_TUPLE3
+C_DVAR_T_s
+C_DVAR_T_s
+C_DVAR_T_s
+C_DVAR_T_s
+C_DVAR_T_s
+C_DVAR_T_s
+_c_cleanup_(c_dvar_deinit)
+_c_cleanup_(c_dvar_deinit)
+_c_cleanup_
+_c_cleanup_
+(c_dvar_deinit)
+c_dvar_deinit
+c_dvar_deinit
+)
+CDVar var = C_DVAR_INIT;
+CDVar var = C_DVAR_INIT;
+CDVar
+CDVar
+var = C_DVAR_INIT
+var
+= C_DVAR_INIT
+C_DVAR_INIT
+C_DVAR_INIT
+_c_cleanup_(message_unrefp)
+_c_cleanup_(message_unrefp)
+_c_cleanup_
+_c_cleanup_
+(message_unrefp)
+message_unrefp
+message_unrefp
+)
+Message *message = NULL;
+Message *message = NULL;
+Message
+Message
+*message = NULL
+*
+message
+= NULL
+NULL
+NULL
+_c_cleanup_(c_freep)
+_c_cleanup_(c_freep)
+_c_cleanup_
+_c_cleanup_
+(c_freep)
+c_freep
+c_freep
+)
+void *data = NULL;
+void *data = NULL;
+void
+*data = NULL
+*
+data
+= NULL
+NULL
+NULL
+MatchOwner *match_owner;
+MatchOwner *match_owner;
+MatchOwner
+MatchOwner
+*match_owner
+*
+match_owner
+size_t n_data;
+size_t n_data;
+size_t
+size_t
+n_data
+n_data
+c_dvar_begin_write(&var, (__BYTE_ORDER == __BIG_ENDIAN), type, 1);
+c_dvar_begin_write(&var, (__BYTE_ORDER == __BIG_ENDIAN), type, 1)
+c_dvar_begin_write
+c_dvar_begin_write
+&var
+var
+var
+(__BYTE_ORDER == __BIG_ENDIAN)
+__BYTE_ORDER == __BIG_ENDIAN
+__BYTE_ORDER
+__BYTE_ORDER
+__BIG_ENDIAN
+__BIG_ENDIAN
+type
+type
+1
+c_dvar_write(&var, "(");
+c_dvar_write(&var, "(")
+c_dvar_write
+c_dvar_write
+&var
+var
+var
+"("
+driver_write_signal_header(&var, NULL, "NameOwnerChanged", "sss");
+driver_write_signal_header(&var, NULL, "NameOwnerChanged", "sss")
+driver_write_signal_header
+driver_write_signal_header
+&var
+var
+var
+NULL
+NULL
+"NameOwnerChanged"
+"sss"
+c_dvar_write(&var, "(sss)", name, old_owner, new_owner);
+c_dvar_write(&var, "(sss)", name, old_owner, new_owner)
+c_dvar_write
+c_dvar_write
+&var
+var
+var
+"(sss)"
+name
+name
+old_owner
+old_owner
+new_owner
+new_owner
+c_dvar_write(&var, ")");
+c_dvar_write(&var, ")")
+c_dvar_write
+c_dvar_write
+&var
+var
+var
+")"
+r = c_dvar_end_write(&var, &data, &n_data);
+r = c_dvar_end_write(&var, &data, &n_data)
+r
+r
+c_dvar_end_write(&var, &data, &n_data)
+c_dvar_end_write
+c_dvar_end_write
+&var
+var
+var
+&data
+data
+data
+&n_data
+n_data
+n_data
+if (r)                        return error_origin(r);
+r
+r
+return error_origin(r);
+error_origin(r)
+error_origin
+error_origin
+r
+r
+r = message_new_outgoing(&message, data, n_data);
+r = message_new_outgoing(&message, data, n_data)
+r
+r
+message_new_outgoing(&message, data, n_data)
+message_new_outgoing
+message_new_outgoing
+&message
+message
+message
+data
+data
+n_data
+n_data
+if (r)                        return error_fold(r);
+r
+r
+return error_fold(r);
+error_fold(r)
+error_fold
+error_fold
+r
+r
+data = NULL;
+data = NULL
+data
+data
+NULL
+NULL
+while ((match_owner = c_list_first_entry(&destinations, MatchOwner, destinations_link))) {                        Peer *receiver = c_container_of(match_owner, Peer, owned_matches);                        c_list_unlink(&match_owner->destinations_link);                        r = policy_snapshot_check_receive(receiver->policy,                                                          NULL,                                                          metadata.fields.interface,                                                          metadata.fields.member,                                                          metadata.fields.path,                                                          metadata.header.type,                                                          true,                                                          0);                        if (r) {                                if (r == POLICY_E_ACCESS_DENIED)                                        continue;                                return error_fold(r);                        }                        r = connection_queue(&receiver->connection, NULL, message);                        if (r) {                                if (r == CONNECTION_E_QUOTA) {                                        NameSet receiver_names = NAME_SET_INIT_FROM_OWNER(&receiver->owned_names);                                        connection_shutdown(&receiver->connection);                                        log_append_here(bus->log, LOG_WARNING, 0);                                        bus_log_append_transaction(bus, ADDRESS_ID_INVALID, receiver->id, NULL, &receiver_names,                                                                   receiver->bus->seclabel, receiver->policy->seclabel,                                                                   message);                                        r = log_commitf(bus->log, "Peer :1.%llu is being disconnected as it does not have the resources to receive a signal it subscribed to.", receiver->id);                                        if (r)                                                return error_fold(r);                                } else {                                        return error_fold(r);                                }                        }                }
+(match_owner = c_list_first_entry(&destinations, MatchOwner, destinations_link))
+match_owner = c_list_first_entry(&destinations, MatchOwner, destinations_link)
+match_owner
+match_owner
+c_list_first_entry(&destinations, MatchOwner, destinations_link)
+c_list_first_entry
+c_list_first_entry
+&destinations
+destinations
+destinations
+MatchOwner
+MatchOwner
+destinations_link
+destinations_link
+{                        Peer *receiver = c_container_of(match_owner, Peer, owned_matches);                        c_list_unlink(&match_owner->destinations_link);                        r = policy_snapshot_check_receive(receiver->policy,                                                          NULL,                                                          metadata.fields.interface,                                                          metadata.fields.member,                                                          metadata.fields.path,                                                          metadata.header.type,                                                          true,                                                          0);                        if (r) {                                if (r == POLICY_E_ACCESS_DENIED)                                        continue;                                return error_fold(r);                        }                        r = connection_queue(&receiver->connection, NULL, message);                        if (r) {                                if (r == CONNECTION_E_QUOTA) {                                        NameSet receiver_names = NAME_SET_INIT_FROM_OWNER(&receiver->owned_names);                                        connection_shutdown(&receiver->connection);                                        log_append_here(bus->log, LOG_WARNING, 0);                                        bus_log_append_transaction(bus, ADDRESS_ID_INVALID, receiver->id, NULL, &receiver_names,                                                                   receiver->bus->seclabel, receiver->policy->seclabel,                                                                   message);                                        r = log_commitf(bus->log, "Peer :1.%llu is being disconnected as it does not have the resources to receive a signal it subscribed to.", receiver->id);                                        if (r)                                                return error_fold(r);                                } else {                                        return error_fold(r);                                }                        }                }
+Peer *receiver = c_container_of(match_owner, Peer, owned_matches);
+Peer *receiver = c_container_of(match_owner, Peer, owned_matches);
+Peer
+Peer
+*receiver = c_container_of(match_owner, Peer, owned_matches)
+*
+receiver
+= c_container_of(match_owner, Peer, owned_matches)
+c_container_of(match_owner, Peer, owned_matches)
+c_container_of
+c_container_of
+match_owner
+match_owner
+Peer
+Peer
+owned_matches
+owned_matches
+c_list_unlink(&match_owner->destinations_link);
+c_list_unlink(&match_owner->destinations_link)
+c_list_unlink
+c_list_unlink
+&match_owner->destinations_link
+match_owner->destinations_link
+match_owner
+match_owner
+destinations_link
+r = policy_snapshot_check_receive(receiver->policy,                                                          NULL,                                                          metadata.fields.interface,                                                          metadata.fields.member,                                                          metadata.fields.path,                                                          metadata.header.type,                                                          true,                                                          0);
+r = policy_snapshot_check_receive(receiver->policy,                                                          NULL,                                                          metadata.fields.interface,                                                          metadata.fields.member,                                                          metadata.fields.path,                                                          metadata.header.type,                                                          true,                                                          0)
+r
+r
+policy_snapshot_check_receive(receiver->policy,                                                          NULL,                                                          metadata.fields.interface,                                                          metadata.fields.member,                                                          metadata.fields.path,                                                          metadata.header.type,                                                          true,                                                          0)
+policy_snapshot_check_receive
+policy_snapshot_check_receive
+receiver->policy
+receiver
+receiver
+policy
+NULL
+NULL
+metadata.fields.interface
+metadata.fields
+metadata
+metadata
+fields
+interface
+metadata.fields.member
+metadata.fields
+metadata
+metadata
+fields
+member
+metadata.fields.path
+metadata.fields
+metadata
+metadata
+fields
+path
+metadata.header.type
+metadata.header
+metadata
+metadata
+header
+type
+true
+0
+if (r) {                                if (r == POLICY_E_ACCESS_DENIED)                                        continue;                                return error_fold(r);                        }
+r
+r
+{                                if (r == POLICY_E_ACCESS_DENIED)                                        continue;                                return error_fold(r);                        }
+if (r == POLICY_E_ACCESS_DENIED)                                        continue;
+r == POLICY_E_ACCESS_DENIED
+r
+r
+POLICY_E_ACCESS_DENIED
+POLICY_E_ACCESS_DENIED
+continue;
+return error_fold(r);
+error_fold(r)
+error_fold
+error_fold
+r
+r
+r = connection_queue(&receiver->connection, NULL, message);
+r = connection_queue(&receiver->connection, NULL, message)
+r
+r
+connection_queue(&receiver->connection, NULL, message)
+connection_queue
+connection_queue
+&receiver->connection
+receiver->connection
+receiver
+receiver
+connection
+NULL
+NULL
+message
+message
+if (r) {                                if (r == CONNECTION_E_QUOTA) {                                        NameSet receiver_names = NAME_SET_INIT_FROM_OWNER(&receiver->owned_names);                                        connection_shutdown(&receiver->connection);                                        log_append_here(bus->log, LOG_WARNING, 0);                                        bus_log_append_transaction(bus, ADDRESS_ID_INVALID, receiver->id, NULL, &receiver_names,                                                                   receiver->bus->seclabel, receiver->policy->seclabel,                                                                   message);                                        r = log_commitf(bus->log, "Peer :1.%llu is being disconnected as it does not have the resources to receive a signal it subscribed to.", receiver->id);                                        if (r)                                                return error_fold(r);                                } else {                                        return error_fold(r);                                }                        }
+r
+r
+{                                if (r == CONNECTION_E_QUOTA) {                                        NameSet receiver_names = NAME_SET_INIT_FROM_OWNER(&receiver->owned_names);                                        connection_shutdown(&receiver->connection);                                        log_append_here(bus->log, LOG_WARNING, 0);                                        bus_log_append_transaction(bus, ADDRESS_ID_INVALID, receiver->id, NULL, &receiver_names,                                                                   receiver->bus->seclabel, receiver->policy->seclabel,                                                                   message);                                        r = log_commitf(bus->log, "Peer :1.%llu is being disconnected as it does not have the resources to receive a signal it subscribed to.", receiver->id);                                        if (r)                                                return error_fold(r);                                } else {                                        return error_fold(r);                                }                        }
+if (r == CONNECTION_E_QUOTA) {                                        NameSet receiver_names = NAME_SET_INIT_FROM_OWNER(&receiver->owned_names);                                        connection_shutdown(&receiver->connection);                                        log_append_here(bus->log, LOG_WARNING, 0);                                        bus_log_append_transaction(bus, ADDRESS_ID_INVALID, receiver->id, NULL, &receiver_names,                                                                   receiver->bus->seclabel, receiver->policy->seclabel,                                                                   message);                                        r = log_commitf(bus->log, "Peer :1.%llu is being disconnected as it does not have the resources to receive a signal it subscribed to.", receiver->id);                                        if (r)                                                return error_fold(r);                                } else {                                        return error_fold(r);                                }
+r == CONNECTION_E_QUOTA
+r
+r
+CONNECTION_E_QUOTA
+CONNECTION_E_QUOTA
+{                                        NameSet receiver_names = NAME_SET_INIT_FROM_OWNER(&receiver->owned_names);                                        connection_shutdown(&receiver->connection);                                        log_append_here(bus->log, LOG_WARNING, 0);                                        bus_log_append_transaction(bus, ADDRESS_ID_INVALID, receiver->id, NULL, &receiver_names,                                                                   receiver->bus->seclabel, receiver->policy->seclabel,                                                                   message);                                        r = log_commitf(bus->log, "Peer :1.%llu is being disconnected as it does not have the resources to receive a signal it subscribed to.", receiver->id);                                        if (r)                                                return error_fold(r);                                }
+NameSet receiver_names = NAME_SET_INIT_FROM_OWNER(&receiver->owned_names);
+NameSet receiver_names = NAME_SET_INIT_FROM_OWNER(&receiver->owned_names);
+NameSet
+NameSet
+receiver_names = NAME_SET_INIT_FROM_OWNER(&receiver->owned_names)
+receiver_names
+= NAME_SET_INIT_FROM_OWNER(&receiver->owned_names)
+NAME_SET_INIT_FROM_OWNER(&receiver->owned_names)
+NAME_SET_INIT_FROM_OWNER
+NAME_SET_INIT_FROM_OWNER
+&receiver->owned_names
+receiver->owned_names
+receiver
+receiver
+owned_names
+connection_shutdown(&receiver->connection);
+connection_shutdown(&receiver->connection)
+connection_shutdown
+connection_shutdown
+&receiver->connection
+receiver->connection
+receiver
+receiver
+connection
+log_append_here(bus->log, LOG_WARNING, 0);
+log_append_here(bus->log, LOG_WARNING, 0)
+log_append_here
+log_append_here
+bus->log
+bus
+bus
+log
+LOG_WARNING
+LOG_WARNING
+0
+bus_log_append_transaction(bus, ADDRESS_ID_INVALID, receiver->id, NULL, &receiver_names,                                                                   receiver->bus->seclabel, receiver->policy->seclabel,                                                                   message);
+bus_log_append_transaction(bus, ADDRESS_ID_INVALID, receiver->id, NULL, &receiver_names,                                                                   receiver->bus->seclabel, receiver->policy->seclabel,                                                                   message)
+bus_log_append_transaction
+bus_log_append_transaction
+bus
+bus
+ADDRESS_ID_INVALID
+ADDRESS_ID_INVALID
+receiver->id
+receiver
+receiver
+id
+NULL
+NULL
+&receiver_names
+receiver_names
+receiver_names
+receiver->bus->seclabel
+receiver->bus
+receiver
+receiver
+bus
+seclabel
+receiver->policy->seclabel
+receiver->policy
+receiver
+receiver
+policy
+seclabel
+message
+message
+r = log_commitf(bus->log, "Peer :1.%llu is being disconnected as it does not have the resources to receive a signal it subscribed to.", receiver->id);
+r = log_commitf(bus->log, "Peer :1.%llu is being disconnected as it does not have the resources to receive a signal it subscribed to.", receiver->id)
+r
+r
+log_commitf(bus->log, "Peer :1.%llu is being disconnected as it does not have the resources to receive a signal it subscribed to.", receiver->id)
+log_commitf
+log_commitf
+bus->log
+bus
+bus
+log
+"Peer :1.%llu is being disconnected as it does not have the resources to receive a signal it subscribed to."
+receiver->id
+receiver
+receiver
+id
+if (r)                                                return error_fold(r);
+r
+r
+return error_fold(r);
+error_fold(r)
+error_fold
+error_fold
+r
+r
+{                                        return error_fold(r);                                }
+return error_fold(r);
+error_fold(r)
+error_fold
+error_fold
+r
+r
+return 0;
+0
+-----joern-----
+(149,62,0)
+(87,199,0)
+(27,71,0)
+(231,73,0)
+(156,143,0)
+(17,225,0)
+(101,131,0)
+(195,177,0)
+(123,155,0)
+(193,181,0)
+(14,137,0)
+(147,181,0)
+(24,138,0)
+(112,178,0)
+(197,70,0)
+(69,78,0)
+(254,218,0)
+(121,218,0)
+(30,240,0)
+(107,133,0)
+(162,96,0)
+(254,133,0)
+(216,65,0)
+(119,109,0)
+(170,198,0)
+(83,201,0)
+(240,96,0)
+(85,191,0)
+(243,178,0)
+(80,57,0)
+(129,221,0)
+(8,28,0)
+(9,123,0)
+(92,47,0)
+(224,236,0)
+(240,138,0)
+(210,177,0)
+(120,84,0)
+(217,84,0)
+(128,90,0)
+(70,33,0)
+(155,65,0)
+(84,198,0)
+(204,41,0)
+(89,85,0)
+(91,237,0)
+(115,56,0)
+(255,171,0)
+(105,72,0)
+(93,122,0)
+(44,172,0)
+(28,8,0)
+(218,65,0)
+(201,235,0)
+(201,182,0)
+(186,181,0)
+(114,199,0)
+(56,65,0)
+(165,120,0)
+(241,230,0)
+(148,57,0)
+(252,43,0)
+(137,133,0)
+(205,14,0)
+(158,122,0)
+(82,238,0)
+(193,43,0)
+(75,221,0)
+(169,177,0)
+(81,123,0)
+(198,109,0)
+(23,171,0)
+(242,71,0)
+(225,57,0)
+(2,169,0)
+(151,113,0)
+(184,149,0)
+(113,191,0)
+(164,191,0)
+(206,255,0)
+(168,201,0)
+(199,131,0)
+(130,59,0)
+(5,116,0)
+(191,238,0)
+(45,43,0)
+(70,177,0)
+(29,28,0)
+(14,174,0)
+(213,116,0)
+(87,56,0)
+(153,243,0)
+(31,128,0)
+(198,84,0)
+(0,196,0)
+(235,243,0)
+(212,254,0)
+(159,188,0)
+(173,255,0)
+(228,89,0)
+(84,65,0)
+(110,245,0)
+(73,178,0)
+(201,68,0)
+(9,133,0)
+(95,124,0)
+(14,12,0)
+(166,243,0)
+(188,159,0)
+(248,218,0)
+(150,189,0)
+(11,122,0)
+(243,153,0)
+(221,191,0)
+(47,171,0)
+(226,72,0)
+(43,45,0)
+(37,6,0)
+(113,181,0)
+(62,149,0)
+(55,243,0)
+(36,118,0)
+(42,87,0)
+(143,191,0)
+(4,88,0)
+(227,124,0)
+(172,191,0)
+(88,203,0)
+(229,151,0)
+(137,14,0)
+(85,89,0)
+(1,39,0)
+(197,13,0)
+(61,183,0)
+(236,193,0)
+(127,72,0)
+(200,58,0)
+(2,193,0)
+(149,122,0)
+(183,232,0)
+(88,59,0)
+(179,166,0)
+(77,133,0)
+(50,65,0)
+(106,188,0)
+(136,193,0)
+(51,173,0)
+(158,51,0)
+(191,143,0)
+(122,183,0)
+(176,71,0)
+(62,71,0)
+(146,67,0)
+(96,171,0)
+(249,178,0)
+(253,41,0)
+(169,34,0)
+(196,123,0)
+(201,178,0)
+(28,65,0)
+(57,58,0)
+(118,70,0)
+(237,91,0)
+(93,45,0)
+(8,133,0)
+(90,128,0)
+(203,177,0)
+(209,123,0)
+(63,232,0)
+(215,125,0)
+(191,113,0)
+(13,177,0)
+(19,67,0)
+(118,113,0)
+(60,155,0)
+(78,26,0)
+(223,93,0)
+(190,73,0)
+(124,189,0)
+(64,24,0)
+(14,246,0)
+(132,196,0)
+(21,158,0)
+(191,85,0)
+(14,65,0)
+(71,39,0)
+(167,195,0)
+(46,167,0)
+(86,22,0)
+(218,254,0)
+(68,201,0)
+(104,240,0)
+(207,71,0)
+(199,87,0)
+(134,207,0)
+(207,122,0)
+(5,133,0)
+(245,15,0)
+(128,232,0)
+(163,65,0)
+(71,22,0)
+(188,177,0)
+(123,65,0)
+(198,56,0)
+(210,178,0)
+(142,6,0)
+(197,210,0)
+(18,68,0)
+(219,177,0)
+(99,65,0)
+(235,201,0)
+(238,122,0)
+(20,65,0)
+(114,133,0)
+(141,62,0)
+(199,114,0)
+(233,96,0)
+(238,191,0)
+(96,240,0)
+(58,243,0)
+(221,129,0)
+(197,203,0)
+(26,122,0)
+(172,67,0)
+(59,65,0)
+(72,73,0)
+(120,13,0)
+(26,78,0)
+(49,207,0)
+(76,113,0)
+(71,207,0)
+(71,171,0)
+(133,65,0)
+(57,138,0)
+(255,173,0)
+(143,6,0)
+(189,243,0)
+(247,137,0)
+(140,129,0)
+(100,183,0)
+(111,129,0)
+(32,93,0)
+(191,172,0)
+(256,128,0)
+(15,245,0)
+(197,169,0)
+(51,158,0)
+(22,71,0)
+(116,65,0)
+(177,230,0)
+(53,114,0)
+(185,33,0)
+(177,188,0)
+(39,255,0)
+(90,74,0)
+(131,199,0)
+(161,26,0)
+(222,151,0)
+(71,62,0)
+(123,196,0)
+(160,65,0)
+(234,14,0)
+(59,199,0)
+(183,122,0)
+(202,181,0)
+(173,51,0)
+(79,238,0)
+(123,9,0)
+(57,178,0)
+(98,191,0)
+(43,193,0)
+(15,24,0)
+(187,149,0)
+(71,138,0)
+(15,47,0)
+(16,65,0)
+(197,195,0)
+(66,14,0)
+(208,14,0)
+(74,181,0)
+(3,71,0)
+(7,15,0)
+(45,93,0)
+(199,59,0)
+(103,236,0)
+(139,178,0)
+(220,5,0)
+(152,2,0)
+(245,122,0)
+(144,8,0)
+(109,198,0)
+(22,41,0)
+(117,9,0)
+(48,26,0)
+(167,47,0)
+(244,153,0)
+(232,124,0)
+(239,43,0)
+(39,71,0)
+(35,218,0)
+(41,22,0)
+(157,210,0)
+(54,180,0)
+(237,166,0)
+(41,122,0)
+(6,143,0)
+(154,24,0)
+(67,172,0)
+(145,191,0)
+(78,69,0)
+(47,15,0)
+(201,138,0)
+(58,57,0)
+(214,171,0)
+(57,225,0)
+(38,183,0)
+(189,124,0)
+(230,65,0)
+(126,158,0)
+(122,181,0)
+(94,65,0)
+(251,56,0)
+(108,125,0)
+(194,85,0)
+(211,235,0)
+(166,237,0)
+(250,201,0)
+(24,15,0)
+(125,65,0)
+(74,90,0)
+(97,198,0)
+(69,171,0)
+(116,5,0)
+(25,245,0)
+(124,232,0)
+(191,221,0)
+(102,89,0)
+(176,27,1)
+(162,240,1)
+(77,107,1)
+(193,43,1)
+(63,10,1)
+(6,37,1)
+(198,56,1)
+(206,236,1)
+(191,221,1)
+(101,87,1)
+(17,148,1)
+(69,78,1)
+(85,194,1)
+(238,79,1)
+(143,6,1)
+(201,68,1)
+(142,172,1)
+(86,41,1)
+(188,106,1)
+(2,152,1)
+(88,59,1)
+(26,161,1)
+(197,203,1)
+(183,100,1)
+(97,109,1)
+(68,18,1)
+(235,211,1)
+(177,188,1)
+(14,208,1)
+(135,84,1)
+(241,177,1)
+(239,45,1)
+(53,130,1)
+(237,166,1)
+(247,218,1)
+(243,153,1)
+(169,177,1)
+(67,19,1)
+(59,199,1)
+(24,138,1)
+(222,229,1)
+(31,256,1)
+(57,225,1)
+(118,36,1)
+(197,210,1)
+(14,174,1)
+(154,92,1)
+(251,230,1)
+(93,122,1)
+(79,82,1)
+(248,121,1)
+(38,61,1)
+(250,235,1)
+(64,154,1)
+(238,122,1)
+(1,242,1)
+(129,111,1)
+(199,131,1)
+(5,220,1)
+(15,245,1)
+(141,149,1)
+(8,133,1)
+(173,51,1)
+(93,32,1)
+(42,114,1)
+(57,138,1)
+(145,164,1)
+(254,133,1)
+(51,158,1)
+(60,91,1)
+(207,122,1)
+(242,207,1)
+(157,91,1)
+(76,74,1)
+(204,253,1)
+(225,17,1)
+(24,64,1)
+(56,115,1)
+(219,188,1)
+(149,187,1)
+(48,255,1)
+(227,189,1)
+(131,101,1)
+(90,128,1)
+(134,176,1)
+(15,24,1)
+(128,232,1)
+(71,3,1)
+(3,22,1)
+(125,108,1)
+(200,80,1)
+(120,165,1)
+(87,56,1)
+(252,239,1)
+(132,0,1)
+(43,252,1)
+(211,83,1)
+(194,89,1)
+(88,4,1)
+(167,47,1)
+(164,143,1)
+(123,81,1)
+(100,38,1)
+(14,12,1)
+(4,175,1)
+(96,240,1)
+(192,113,1)
+(189,150,1)
+(102,228,1)
+(255,173,1)
+(166,243,1)
+(207,49,1)
+(153,244,1)
+(210,157,1)
+(85,89,1)
+(71,39,1)
+(165,135,1)
+(213,5,1)
+(235,243,1)
+(22,86,1)
+(203,88,1)
+(96,233,1)
+(201,235,1)
+(89,102,1)
+(183,232,1)
+(113,191,1)
+(161,48,1)
+(201,182,1)
+(158,21,1)
+(198,170,1)
+(78,26,1)
+(210,177,1)
+(123,9,1)
+(197,70,1)
+(8,144,1)
+(119,217,1)
+(155,60,1)
+(116,213,1)
+(229,192,1)
+(245,110,1)
+(208,234,1)
+(116,5,1)
+(230,241,1)
+(217,175,1)
+(156,6,1)
+(39,1,1)
+(63,125,1)
+(169,2,1)
+(203,177,1)
+(167,46,1)
+(110,25,1)
+(30,69,1)
+(37,142,1)
+(240,104,1)
+(124,189,1)
+(108,215,1)
+(149,122,1)
+(146,221,1)
+(191,143,1)
+(197,195,1)
+(151,113,1)
+(253,62,1)
+(44,67,1)
+(195,167,1)
+(124,95,1)
+(21,126,1)
+(46,10,1)
+(195,177,1)
+(104,30,1)
+(70,118,1)
+(87,42,1)
+(27,96,1)
+(5,133,1)
+(43,45,1)
+(197,13,1)
+(114,53,1)
+(223,136,1)
+(14,246,1)
+(71,62,1)
+(71,138,1)
+(91,237,1)
+(136,192,1)
+(254,212,1)
+(228,98,1)
+(151,222,1)
+(137,247,1)
+(158,122,1)
+(98,238,1)
+(245,122,1)
+(13,177,1)
+(11,232,1)
+(80,243,1)
+(197,169,1)
+(82,76,1)
+(148,58,1)
+(168,250,1)
+(170,97,1)
+(234,66,1)
+(218,35,1)
+(240,138,1)
+(71,207,1)
+(63,40,1)
+(199,114,1)
+(9,133,1)
+(191,172,1)
+(111,140,1)
+(191,145,1)
+(236,224,1)
+(41,204,1)
+(140,85,1)
+(109,119,1)
+(128,31,1)
+(71,22,1)
+(10,47,1)
+(0,9,1)
+(144,14,1)
+(143,156,1)
+(58,200,1)
+(215,135,1)
+(221,129,1)
+(232,124,1)
+(25,7,1)
+(130,28,1)
+(177,219,1)
+(157,232,1)
+(187,184,1)
+(150,63,1)
+(175,59,1)
+(63,52,1)
+(74,90,1)
+(199,87,1)
+(45,93,1)
+(47,15,1)
+(2,193,1)
+(22,41,1)
+(224,103,1)
+(115,251,1)
+(107,155,1)
+(121,254,1)
+(13,120,1)
+(189,243,1)
+(114,133,1)
+(83,57,1)
+(120,84,1)
+(95,227,1)
+(201,138,1)
+(122,183,1)
+(62,141,1)
+(209,196,1)
+(205,137,1)
+(221,75,1)
+(123,196,1)
+(62,149,1)
+(220,123,1)
+(41,122,1)
+(58,243,1)
+(52,193,1)
+(137,133,1)
+(117,56,1)
+(166,179,1)
+(188,159,1)
+(212,116,1)
+(28,8,1)
+(32,223,1)
+(123,155,1)
+(70,177,1)
+(172,67,1)
+(179,201,1)
+(256,122,1)
+(196,132,1)
+(35,248,1)
+(84,198,1)
+(7,24,1)
+(191,238,1)
+(244,55,1)
+(106,133,1)
+(118,113,1)
+(184,39,1)
+(236,193,1)
+(126,206,1)
+(14,137,1)
+(29,8,1)
+(191,85,1)
+(172,44,1)
+(57,58,1)
+(133,77,1)
+(152,236,1)
+(198,109,1)
+(75,129,1)
+(40,151,1)
+(81,209,1)
+(28,29,1)
+(66,205,1)
+(19,146,1)
+(26,122,1)
+(103,52,1)
+(61,11,1)
+(92,71,1)
+(218,254,1)
+(9,117,1)
+(18,168,1)
+(39,255,1)
+(36,151,1)
+(49,134,1)
+(233,162,1)
+(59,199,2)
+(240,138,2)
+(189,151,2)
+(2,193,2)
+(95,52,2)
+(201,68,2)
+(235,243,2)
+(13,135,2)
+(113,191,2)
+(245,236,2)
+(136,192,2)
+(238,122,2)
+(64,236,2)
+(193,43,2)
+(124,189,2)
+(212,91,2)
+(142,232,2)
+(29,91,2)
+(71,236,2)
+(2,236,2)
+(199,114,2)
+(236,52,2)
+(169,236,2)
+(157,232,2)
+(57,225,2)
+(223,192,2)
+(45,93,2)
+(172,232,2)
+(149,122,2)
+(201,182,2)
+(213,91,2)
+(5,133,2)
+(82,232,2)
+(39,236,2)
+(238,232,2)
+(191,143,2)
+(84,175,2)
+(30,236,2)
+(57,138,2)
+(251,91,2)
+(197,13,2)
+(74,90,2)
+(19,232,2)
+(97,175,2)
+(39,255,2)
+(14,137,2)
+(87,56,2)
+(11,232,2)
+(166,243,2)
+(240,236,2)
+(167,10,2)
+(14,246,2)
+(220,91,2)
+(158,122,2)
+(198,109,2)
+(43,192,2)
+(106,91,2)
+(183,232,2)
+(22,41,2)
+(9,91,2)
+(121,91,2)
+(76,232,2)
+(7,236,2)
+(170,175,2)
+(118,113,2)
+(56,91,2)
+(8,91,2)
+(158,236,2)
+(237,166,2)
+(95,10,2)
+(116,91,2)
+(253,236,2)
+(189,135,2)
+(191,85,2)
+(152,236,2)
+(201,138,2)
+(248,91,2)
+(209,91,2)
+(114,133,2)
+(227,151,2)
+(208,91,2)
+(123,91,2)
+(86,236,2)
+(232,135,2)
+(45,192,2)
+(131,91,2)
+(78,236,2)
+(120,135,2)
+(194,232,2)
+(151,192,2)
+(32,192,2)
+(189,243,2)
+(110,236,2)
+(132,91,2)
+(176,236,2)
+(204,236,2)
+(156,232,2)
+(232,10,2)
+(215,135,2)
+(197,203,2)
+(102,232,2)
+(221,232,2)
+(165,135,2)
+(243,153,2)
+(61,232,2)
+(43,45,2)
+(196,91,2)
+(116,5,2)
+(74,232,2)
+(210,232,2)
+(6,232,2)
+(191,221,2)
+(124,135,2)
+(26,236,2)
+(89,232,2)
+(128,232,2)
+(175,91,2)
+(25,236,2)
+(173,51,2)
+(197,70,2)
+(222,192,2)
+(236,193,2)
+(218,254,2)
+(95,135,2)
+(242,236,2)
+(87,91,2)
+(199,131,2)
+(173,236,2)
+(151,113,2)
+(88,59,2)
+(140,232,2)
+(252,192,2)
+(111,232,2)
+(84,198,2)
+(62,149,2)
+(199,91,2)
+(69,78,2)
+(15,24,2)
+(150,10,2)
+(9,133,2)
+(117,91,2)
+(154,236,2)
+(57,58,2)
+(14,12,2)
+(167,47,2)
+(62,236,2)
+(95,151,2)
+(21,236,2)
+(119,175,2)
+(75,232,2)
+(96,236,2)
+(113,232,2)
+(63,135,2)
+(35,91,2)
+(129,232,2)
+(197,195,2)
+(192,232,2)
+(205,91,2)
+(230,91,2)
+(10,236,2)
+(146,232,2)
+(44,232,2)
+(150,151,2)
+(93,192,2)
+(206,236,2)
+(137,91,2)
+(162,236,2)
+(78,26,2)
+(48,236,2)
+(31,232,2)
+(118,151,2)
+(224,52,2)
+(143,6,2)
+(109,175,2)
+(172,67,2)
+(130,91,2)
+(71,138,2)
+(234,91,2)
+(217,175,2)
+(169,177,2)
+(24,138,2)
+(198,175,2)
+(203,175,2)
+(14,174,2)
+(191,172,2)
+(90,128,2)
+(63,52,2)
+(46,10,2)
+(123,196,2)
+(239,192,2)
+(98,232,2)
+(188,91,2)
+(49,236,2)
+(198,56,2)
+(157,91,2)
+(184,236,2)
+(187,236,2)
+(218,91,2)
+(1,236,2)
+(137,133,2)
+(177,188,2)
+(207,236,2)
+(195,177,2)
+(93,122,2)
+(63,10,2)
+(53,91,2)
+(36,151,2)
+(51,158,2)
+(134,236,2)
+(227,135,2)
+(42,91,2)
+(104,236,2)
+(232,124,2)
+(24,236,2)
+(8,133,2)
+(28,91,2)
+(193,192,2)
+(210,91,2)
+(28,8,2)
+(195,10,2)
+(38,232,2)
+(219,91,2)
+(3,236,2)
+(107,91,2)
+(47,236,2)
+(150,52,2)
+(5,91,2)
+(22,236,2)
+(0,91,2)
+(85,232,2)
+(88,175,2)
+(207,122,2)
+(77,91,2)
+(149,236,2)
+(123,155,2)
+(254,133,2)
+(4,175,2)
+(191,238,2)
+(164,232,2)
+(141,236,2)
+(227,10,2)
+(114,91,2)
+(71,39,2)
+(59,91,2)
+(41,122,2)
+(81,91,2)
+(69,236,2)
+(37,232,2)
+(71,22,2)
+(27,236,2)
+(221,129,2)
+(92,236,2)
+(13,177,2)
+(227,52,2)
+(60,91,2)
+(210,177,2)
+(63,151,2)
+(85,89,2)
+(124,52,2)
+(145,232,2)
+(124,151,2)
+(150,135,2)
+(66,91,2)
+(161,236,2)
+(255,236,2)
+(232,151,2)
+(228,232,2)
+(115,91,2)
+(201,235,2)
+(108,135,2)
+(70,177,2)
+(100,232,2)
+(122,232,2)
+(189,10,2)
+(124,10,2)
+(133,91,2)
+(103,52,2)
+(70,151,2)
+(15,245,2)
+(256,232,2)
+(15,236,2)
+(123,9,2)
+(254,91,2)
+(120,84,2)
+(41,236,2)
+(71,207,2)
+(26,122,2)
+(71,62,2)
+(197,210,2)
+(143,232,2)
+(197,169,2)
+(52,192,2)
+(189,52,2)
+(79,232,2)
+(203,177,2)
+(126,236,2)
+(191,232,2)
+(51,236,2)
+(241,91,2)
+(199,87,2)
+(96,240,2)
+(58,243,2)
+(91,237,2)
+(247,91,2)
+(245,122,2)
+(14,91,2)
+(144,91,2)
+(47,15,2)
+(233,236,2)
+(155,91,2)
+(255,173,2)
+(135,175,2)
+(40,151,2)
+(122,183,2)
+(229,192,2)
+(101,91,2)
+(188,159,2)
+(90,232,2)
+(232,52,2)
+(67,232,2)
+(177,91,2)
+(125,135,2)
+-----------------------------------
+(0,__BYTE_ORDER)
+(1,receiver_names)
+(2,error_fold(r)
+(3,message)
+(4,r)
+(5,&var)
+(6,metadata.header)
+(7,"Peer :1.%llu is being disconnected as it does not have the resources to receive a signal it subscribed to.")
+(8,&var)
+(9,&var)
+(10,r)
+(11,receiver)
+(12,const char *name)
+(13,return error_fold(r)
+(14,c_dvar_write(&var, "(sss)
+(15,log_commitf(bus->log, "Peer :1.%llu is being disconnected as it does not have the resources to receive a signal it subscribed to.", receiver->id)
+(16,n_data)
+(17,metadata)
+(18,metadata)
+(19,fields)
+(20,while ((match_owner = c_list_first_entry(&destinations, MatchOwner, destinations_link)
+(21,owned_names)
+(22,receiver->policy->seclabel)
+(23,receiver_names)
+(24,bus->log)
+(25,receiver)
+(26,receiver->connection)
+(27,bus)
+(28,c_dvar_write(&var, ")
+(29,")
+(30,bus)
+(31,destinations_link)
+(32,connection)
+(33,)
+(34,)
+(35,"sss")
+(36,r)
+(37,header)
+(38,Peer)
+(39,&receiver_names)
+(40,continue;)
+(41,receiver->policy)
+(42,data)
+(43,connection_queue(&receiver->connection, NULL, message)
+(44,path)
+(45,&receiver->connection)
+(46,r)
+(47,r = log_commitf(bus->log, "Peer :1.%llu is being disconnected as it does not have the resources to receive a signal it subscribed to.", receiver->id)
+(48,receiver)
+(49,id)
+(50,type)
+(51,&receiver->owned_names)
+(52,r)
+(53,var)
+(54,if (r == CONNECTION_E_QUOTA)
+(55,destinations)
+(56,*data = NULL)
+(57,bus_get_monitor_destinations(bus, &destinations, NULL, &metadata)
+(58,&destinations)
+(59,r = c_dvar_end_write(&var, &data, &n_data)
+(60,type)
+(61,match_owner)
+(62,receiver->bus->seclabel)
+(63,match_owner)
+(64,log)
+(65,)
+(66,name)
+(67,metadata.fields)
+(68,&metadata)
+(69,connection_shutdown(&receiver->connection)
+(70,return error_fold(r)
+(71,bus_log_append_transaction(bus, ADDRESS_ID_INVALID, receiver->id, NULL, &receiver_names,\n\\n                                                                   receiver->bus->seclabel, receiver->policy->seclabel,\n\\n                                                                   message)
+(72,)
+(73,)
+(74,c_list_unlink(&match_owner->destinations_link)
+(75,member)
+(76,r)
+(77,C_DVAR_INIT)
+(78,&receiver->connection)
+(79,policy)
+(80,bus)
+(81,1)
+(82,receiver)
+(83,bus)
+(84,r = message_new_outgoing(&message, data, n_data)
+(85,metadata.fields.interface)
+(86,seclabel)
+(87,&data)
+(88,error_origin(r)
+(89,metadata.fields)
+(90,&match_owner->destinations_link)
+(91,!c_list_is_empty(&destinations)
+(92,r)
+(93,receiver->connection)
+(94,if (r)
+(95,destinations_link)
+(96,log_append_here(bus->log, LOG_WARNING, 0)
+(97,data)
+(98,NULL)
+(99,if (r)
+(100,owned_matches)
+(101,n_data)
+(102,fields)
+(103,r)
+(104,log)
+(105,)
+(106,Message)
+(107,var)
+(108,NULL)
+(109,&message)
+(110,id)
+(111,fields)
+(112,if (!c_list_is_empty(&destinations)
+(113,r = policy_snapshot_check_receive(receiver->policy,\n\\n                                                          NULL,\n\\n                                                          metadata.fields.interface,\n\\n                                                          metadata.fields.member,\n\\n                                                          metadata.fields.path,\n\\n                                                          metadata.header.type,\n\\n                                                          true,\n\\n                                                          0)
+(114,&var)
+(115,NULL)
+(116,c_dvar_write(&var, "(")
+(117,var)
+(118,error_fold(r)
+(119,message)
+(120,error_fold(r)
+(121,NULL)
+(122,*receiver = c_container_of(match_owner, Peer, owned_matches)
+(123,c_dvar_begin_write(&var, (__BYTE_ORDER == __BIG_ENDIAN)
+(124,c_list_first_entry(&destinations, MatchOwner, destinations_link)
+(125,data = NULL)
+(126,receiver)
+(127,)
+(128,match_owner->destinations_link)
+(129,metadata.fields)
+(130,r)
+(131,&n_data)
+(132,__BIG_ENDIAN)
+(133,var = C_DVAR_INIT)
+(134,receiver)
+(135,r)
+(136,r)
+(137,&var)
+(138,Bus *bus)
+(139,r)
+(140,metadata)
+(141,seclabel)
+(142,metadata)
+(143,metadata.header.type)
+(144,var)
+(145,0)
+(146,metadata)
+(147,if (r)
+(148,NULL)
+(149,receiver->bus)
+(150,destinations)
+(151,r == POLICY_E_ACCESS_DENIED)
+(152,r)
+(153,C_LIST_INIT(destinations)
+(154,bus)
+(155,type[] = {\n\\n                        C_DVAR_T_INIT(\n\\n                                DRIVER_T_MESSAGE(\n\\n                                        C_DVAR_T_TUPLE3(\n\\n                                                C_DVAR_T_s,\n\\n                                                C_DVAR_T_s,\n\\n                                                C_DVAR_T_s\n\\n                                        )
+(156,type)
+(157,0)
+(158,receiver->owned_names)
+(159,message_unrefp)
+(160,match_owner)
+(161,connection)
+(162,LOG_WARNING)
+(163,data)
+(164,true)
+(165,r)
+(166,&destinations)
+(167,error_fold(r)
+(168,NULL)
+(169,return error_fold(r)
+(170,n_data)
+(171,)
+(172,metadata.fields.path)
+(173,NAME_SET_INIT_FROM_OWNER(&receiver->owned_names)
+(174,const char *old_owner)
+(175,r)
+(176,ADDRESS_ID_INVALID)
+(177,(message_unrefp)
+(178,)
+(179,destinations)
+(180,)
+(181,)
+(182,MatchRegistry *matches)
+(183,c_container_of(match_owner, Peer, owned_matches)
+(184,receiver)
+(185,if (r == POLICY_E_ACCESS_DENIED)
+(186,receiver)
+(187,bus)
+(188,(message_unrefp)
+(189,&destinations)
+(190,)
+(191,policy_snapshot_check_receive(receiver->policy,\n\\n                                                          NULL,\n\\n                                                          metadata.fields.interface,\n\\n                                                          metadata.fields.member,\n\\n                                                          metadata.fields.path,\n\\n                                                          metadata.header.type,\n\\n                                                          true,\n\\n                                                          0)
+(192,r)
+(193,r = connection_queue(&receiver->connection, NULL, message)
+(194,interface)
+(195,return error_fold(r)
+(196,__BYTE_ORDER == __BIG_ENDIAN)
+(197,RET)
+(198,message_new_outgoing(&message, data, n_data)
+(199,c_dvar_end_write(&var, &data, &n_data)
+(200,destinations)
+(201,bus_get_broadcast_destinations(bus, &destinations, matches, NULL, &metadata)
+(202,if (r)
+(203,return error_origin(r)
+(204,policy)
+(205,"(sss)
+(206,receiver_names)
+(207,receiver->id)
+(208,new_owner)
+(209,type)
+(210,return 0;)
+(211,destinations)
+(212,var)
+(213,"(")
+(214,if (r)
+(215,data)
+(216,var)
+(217,r)
+(218,driver_write_signal_header(&var, NULL, "NameOwnerChanged", "sss")
+(219,message)
+(220,var)
+(221,metadata.fields.member)
+(222,POLICY_E_ACCESS_DENIED)
+(223,receiver)
+(224,CONNECTION_E_QUOTA)
+(225,&metadata)
+(226,)
+(227,MatchOwner)
+(228,metadata)
+(229,r)
+(230,(message_unrefp)
+(231,)
+(232,match_owner = c_list_first_entry(&destinations, MatchOwner, destinations_link)
+(233,0)
+(234,old_owner)
+(235,&destinations)
+(236,r == CONNECTION_E_QUOTA)
+(237,c_list_is_empty(&destinations)
+(238,receiver->policy)
+(239,NULL)
+(240,bus->log)
+(241,NULL)
+(242,NULL)
+(243,destinations = C_LIST_INIT(destinations)
+(244,destinations)
+(245,receiver->id)
+(246,const char *new_owner)
+(247,var)
+(248,"NameOwnerChanged")
+(249,destinations)
+(250,matches)
+(251,data)
+(252,message)
+(253,receiver)
+(254,&var)
+(255,receiver_names = NAME_SET_INIT_FROM_OWNER(&receiver->owned_names)
+(256,match_owner)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,1154 @@
+-----label-----
+1
+-----code-----
+int net_accept(int sockfd, int epfd)
+{
+	struct sockaddr_in in_addr;
+	socklen_t in_len = sizeof(in_addr);
+	struct epoll_event ev;
+	struct client *client;
+	int connfd;
+
+	clients_purge();
+	vdebug("accepting inbound connection");
+	if ((connfd = accept(sockfd, (struct sockaddr*)&in_addr, &in_len)) < 0) {
+		// EAGAIN / EWOULDBLOCK == no more pending connections
+		if ((errno == EAGAIN) || (errno == EWOULDBLOCK)) {
+			vdebug("accept bailed with an EAGAIN, done accepting inbound connections");
+			return -1;
+		}
+
+		syslog(LOG_WARN, "accept failed: %s", strerror(errno));
+		return -1;
+	}
+
+	if (nonblocking(connfd) < 0) {
+		syslog(LOG_ERROR, "failed to make new socket non-blocking: %s", strerror(errno));
+		vdebug("closing fd %d", connfd);
+		close(connfd);
+		return -1;
+	}
+
+	ev.data.fd = connfd;
+	ev.events = EPOLLIN | EPOLLET;
+	if (epoll_ctl(epfd, EPOLL_CTL_ADD, connfd, &ev) != 0) {
+		syslog(LOG_ERROR, "failed to inform epoll about new socket fd: %s", strerror(errno));
+		vdebug("closing fd %d", connfd);
+		close(connfd);
+		return -1;
+	}
+
+	if ((client = client_new(connfd, &(in_addr.sin_addr))) != NULL) {
+		vdebug("accepted inbound connection from %s, fd %d", client->addr, connfd);
+	}
+	return connfd;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+5,6
+5,7
+7,8
+9,10
+9,11
+11,12
+13,14
+13,15
+13,16
+13,17
+13,18
+13,19
+13,20
+13,21
+13,22
+13,23
+13,24
+13,25
+13,26
+13,27
+14,15
+15,16
+15,17
+16,17
+18,19
+20,21
+21,22
+21,23
+22,23
+24,25
+24,26
+26,27
+27,28
+28,29
+29,30
+31,32
+32,33
+32,34
+33,34
+35,36
+37,38
+38,39
+38,40
+39,40
+41,42
+41,43
+44,45
+45,46
+45,47
+47,48
+49,50
+50,51
+51,52
+53,54
+54,55
+54,56
+55,56
+58,59
+58,60
+59,60
+59,61
+60,61
+61,62
+61,63
+62,63
+64,65
+64,66
+64,67
+64,68
+65,66
+67,68
+69,70
+69,71
+70,71
+70,72
+71,72
+73,74
+75,76
+76,77
+78,79
+79,80
+82,83
+82,84
+82,85
+83,84
+83,85
+84,85
+84,86
+85,86
+86,87
+86,88
+87,88
+89,90
+91,92
+92,93
+92,94
+93,94
+95,96
+97,98
+97,99
+98,99
+99,100
+99,101
+100,101
+103,104
+104,105
+106,107
+107,108
+107,109
+107,110
+107,111
+108,109
+110,111
+113,114
+113,115
+114,115
+116,117
+118,119
+119,120
+121,122
+121,123
+122,123
+122,124
+123,124
+123,125
+124,125
+126,127
+129,130
+129,131
+129,132
+129,133
+130,131
+131,132
+131,133
+131,134
+131,135
+132,133
+134,135
+137,138
+137,139
+138,139
+140,141
+142,143
+143,144
+143,145
+143,146
+144,145
+147,148
+149,150
+150,151
+150,152
+151,152
+153,154
+155,156
+156,157
+158,159
+159,160
+159,161
+160,161
+160,162
+161,162
+161,163
+162,163
+166,167
+168,169
+169,170
+169,171
+170,171
+170,172
+171,172
+174,175
+174,176
+175,176
+177,178
+179,180
+179,181
+180,181
+180,182
+181,182
+181,183
+181,184
+181,185
+181,186
+182,183
+184,185
+186,187
+188,189
+190,191
+191,192
+194,195
+194,196
+194,197
+194,198
+195,196
+196,197
+196,198
+196,199
+196,200
+197,198
+199,200
+202,203
+202,204
+203,204
+205,206
+207,208
+208,209
+208,210
+208,211
+209,210
+212,213
+214,215
+215,216
+215,217
+216,217
+218,219
+220,221
+221,222
+223,224
+223,225
+224,225
+224,226
+225,226
+226,227
+226,228
+227,228
+229,230
+229,231
+229,232
+230,231
+232,233
+234,235
+235,236
+236,237
+236,238
+237,238
+240,241
+242,243
+243,244
+244,245
+244,246
+244,247
+244,248
+245,246
+248,249
+248,250
+249,250
+252,253
+254,255
+255,256
+-----nextToken-----
+2,4,6,8,10,12,17,19,23,25,30,34,36,40,42,43,46,48,52,56,57,63,66,68,72,74,77,80,81,88,90,94,96,101,102,105,109,111,112,115,117,120,125,127,128,133,135,136,139,141,145,146,148,152,154,157,163,164,165,167,172,173,176,178,183,185,187,189,192,193,198,200,201,204,206,210,211,213,217,219,222,228,231,233,238,239,241,246,247,250,251,253,256
+-----computeFrom-----
+59,60
+59,61
+61,62
+61,63
+84,85
+84,86
+86,87
+86,88
+92,93
+92,94
+122,123
+122,124
+159,160
+159,161
+169,170
+169,171
+174,175
+174,176
+180,181
+180,182
+224,225
+224,226
+226,227
+226,228
+-----guardedBy-----
+127,154
+189,219
+233,253
+228,250
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;UnaryExpression;UnaryExpression;IdExpression;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CastExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;Pointer;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ReturnStatement;UnaryExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;UnaryExpression;LiteralExpression;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;UnaryExpression;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;UnaryExpression;LiteralExpression;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;UnaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+int net_accept(int sockfd, int epfd){	struct sockaddr_in in_addr;	socklen_t in_len = sizeof(in_addr);	struct epoll_event ev;	struct client *client;	int connfd;	clients_purge();	vdebug("accepting inbound connection");	if ((connfd = accept(sockfd, (struct sockaddr*)&in_addr, &in_len)) < 0) {		// EAGAIN / EWOULDBLOCK == no more pending connections		if ((errno == EAGAIN) || (errno == EWOULDBLOCK)) {			vdebug("accept bailed with an EAGAIN, done accepting inbound connections");			return -1;		}		syslog(LOG_WARN, "accept failed: %s", strerror(errno));		return -1;	}	if (nonblocking(connfd) < 0) {		syslog(LOG_ERROR, "failed to make new socket non-blocking: %s", strerror(errno));		vdebug("closing fd %d", connfd);		close(connfd);		return -1;	}	ev.data.fd = connfd;	ev.events = EPOLLIN | EPOLLET;	if (epoll_ctl(epfd, EPOLL_CTL_ADD, connfd, &ev) != 0) {		syslog(LOG_ERROR, "failed to inform epoll about new socket fd: %s", strerror(errno));		vdebug("closing fd %d", connfd);		close(connfd);		return -1;	}	if ((client = client_new(connfd, &(in_addr.sin_addr))) != NULL) {		vdebug("accepted inbound connection from %s, fd %d", client->addr, connfd);	}	return connfd;}
+int
+net_accept(int sockfd, int epfd)
+net_accept
+int sockfd
+int
+sockfd
+sockfd
+int epfd
+int
+epfd
+epfd
+{	struct sockaddr_in in_addr;	socklen_t in_len = sizeof(in_addr);	struct epoll_event ev;	struct client *client;	int connfd;	clients_purge();	vdebug("accepting inbound connection");	if ((connfd = accept(sockfd, (struct sockaddr*)&in_addr, &in_len)) < 0) {		// EAGAIN / EWOULDBLOCK == no more pending connections		if ((errno == EAGAIN) || (errno == EWOULDBLOCK)) {			vdebug("accept bailed with an EAGAIN, done accepting inbound connections");			return -1;		}		syslog(LOG_WARN, "accept failed: %s", strerror(errno));		return -1;	}	if (nonblocking(connfd) < 0) {		syslog(LOG_ERROR, "failed to make new socket non-blocking: %s", strerror(errno));		vdebug("closing fd %d", connfd);		close(connfd);		return -1;	}	ev.data.fd = connfd;	ev.events = EPOLLIN | EPOLLET;	if (epoll_ctl(epfd, EPOLL_CTL_ADD, connfd, &ev) != 0) {		syslog(LOG_ERROR, "failed to inform epoll about new socket fd: %s", strerror(errno));		vdebug("closing fd %d", connfd);		close(connfd);		return -1;	}	if ((client = client_new(connfd, &(in_addr.sin_addr))) != NULL) {		vdebug("accepted inbound connection from %s, fd %d", client->addr, connfd);	}	return connfd;}
+struct sockaddr_in in_addr;
+struct sockaddr_in in_addr;
+struct sockaddr_in
+sockaddr_in
+in_addr
+in_addr
+socklen_t in_len = sizeof(in_addr);
+socklen_t in_len = sizeof(in_addr);
+socklen_t
+socklen_t
+in_len = sizeof(in_addr)
+in_len
+= sizeof(in_addr)
+sizeof(in_addr)
+(in_addr)
+in_addr
+in_addr
+struct epoll_event ev;
+struct epoll_event ev;
+struct epoll_event
+epoll_event
+ev
+ev
+struct client *client;
+struct client *client;
+struct client
+client
+*client
+*
+client
+int connfd;
+int connfd;
+int
+connfd
+connfd
+clients_purge();
+clients_purge()
+clients_purge
+clients_purge
+vdebug("accepting inbound connection");
+vdebug("accepting inbound connection")
+vdebug
+vdebug
+"accepting inbound connection"
+if ((connfd = accept(sockfd, (struct sockaddr*)&in_addr, &in_len)) < 0) {		// EAGAIN / EWOULDBLOCK == no more pending connections		if ((errno == EAGAIN) || (errno == EWOULDBLOCK)) {			vdebug("accept bailed with an EAGAIN, done accepting inbound connections");			return -1;		}		syslog(LOG_WARN, "accept failed: %s", strerror(errno));		return -1;	}
+(connfd = accept(sockfd, (struct sockaddr*)&in_addr, &in_len)) < 0
+(connfd = accept(sockfd, (struct sockaddr*)&in_addr, &in_len))
+connfd = accept(sockfd, (struct sockaddr*)&in_addr, &in_len)
+connfd
+connfd
+accept(sockfd, (struct sockaddr*)&in_addr, &in_len)
+accept
+accept
+sockfd
+sockfd
+(struct sockaddr*)&in_addr
+struct sockaddr*
+struct sockaddr
+sockaddr
+*
+*
+&in_addr
+in_addr
+in_addr
+&in_len
+in_len
+in_len
+0
+{		// EAGAIN / EWOULDBLOCK == no more pending connections		if ((errno == EAGAIN) || (errno == EWOULDBLOCK)) {			vdebug("accept bailed with an EAGAIN, done accepting inbound connections");			return -1;		}		syslog(LOG_WARN, "accept failed: %s", strerror(errno));		return -1;	}
+if ((errno == EAGAIN) || (errno == EWOULDBLOCK)) {			vdebug("accept bailed with an EAGAIN, done accepting inbound connections");			return -1;		}
+(errno == EAGAIN) || (errno == EWOULDBLOCK)
+(errno == EAGAIN)
+errno == EAGAIN
+errno
+errno
+EAGAIN
+EAGAIN
+(errno == EWOULDBLOCK)
+errno == EWOULDBLOCK
+errno
+errno
+EWOULDBLOCK
+EWOULDBLOCK
+{			vdebug("accept bailed with an EAGAIN, done accepting inbound connections");			return -1;		}
+vdebug("accept bailed with an EAGAIN, done accepting inbound connections");
+vdebug("accept bailed with an EAGAIN, done accepting inbound connections")
+vdebug
+vdebug
+"accept bailed with an EAGAIN, done accepting inbound connections"
+return -1;
+-1
+1
+syslog(LOG_WARN, "accept failed: %s", strerror(errno));
+syslog(LOG_WARN, "accept failed: %s", strerror(errno))
+syslog
+syslog
+LOG_WARN
+LOG_WARN
+"accept failed: %s"
+strerror(errno)
+strerror
+strerror
+errno
+errno
+return -1;
+-1
+1
+if (nonblocking(connfd) < 0) {		syslog(LOG_ERROR, "failed to make new socket non-blocking: %s", strerror(errno));		vdebug("closing fd %d", connfd);		close(connfd);		return -1;	}
+nonblocking(connfd) < 0
+nonblocking(connfd)
+nonblocking
+nonblocking
+connfd
+connfd
+0
+{		syslog(LOG_ERROR, "failed to make new socket non-blocking: %s", strerror(errno));		vdebug("closing fd %d", connfd);		close(connfd);		return -1;	}
+syslog(LOG_ERROR, "failed to make new socket non-blocking: %s", strerror(errno));
+syslog(LOG_ERROR, "failed to make new socket non-blocking: %s", strerror(errno))
+syslog
+syslog
+LOG_ERROR
+LOG_ERROR
+"failed to make new socket non-blocking: %s"
+strerror(errno)
+strerror
+strerror
+errno
+errno
+vdebug("closing fd %d", connfd);
+vdebug("closing fd %d", connfd)
+vdebug
+vdebug
+"closing fd %d"
+connfd
+connfd
+close(connfd);
+close(connfd)
+close
+close
+connfd
+connfd
+return -1;
+-1
+1
+ev.data.fd = connfd;
+ev.data.fd = connfd
+ev.data.fd
+ev.data
+ev
+ev
+data
+fd
+connfd
+connfd
+ev.events = EPOLLIN | EPOLLET;
+ev.events = EPOLLIN | EPOLLET
+ev.events
+ev
+ev
+events
+EPOLLIN | EPOLLET
+EPOLLIN
+EPOLLIN
+EPOLLET
+EPOLLET
+if (epoll_ctl(epfd, EPOLL_CTL_ADD, connfd, &ev) != 0) {		syslog(LOG_ERROR, "failed to inform epoll about new socket fd: %s", strerror(errno));		vdebug("closing fd %d", connfd);		close(connfd);		return -1;	}
+epoll_ctl(epfd, EPOLL_CTL_ADD, connfd, &ev) != 0
+epoll_ctl(epfd, EPOLL_CTL_ADD, connfd, &ev)
+epoll_ctl
+epoll_ctl
+epfd
+epfd
+EPOLL_CTL_ADD
+EPOLL_CTL_ADD
+connfd
+connfd
+&ev
+ev
+ev
+0
+{		syslog(LOG_ERROR, "failed to inform epoll about new socket fd: %s", strerror(errno));		vdebug("closing fd %d", connfd);		close(connfd);		return -1;	}
+syslog(LOG_ERROR, "failed to inform epoll about new socket fd: %s", strerror(errno));
+syslog(LOG_ERROR, "failed to inform epoll about new socket fd: %s", strerror(errno))
+syslog
+syslog
+LOG_ERROR
+LOG_ERROR
+"failed to inform epoll about new socket fd: %s"
+strerror(errno)
+strerror
+strerror
+errno
+errno
+vdebug("closing fd %d", connfd);
+vdebug("closing fd %d", connfd)
+vdebug
+vdebug
+"closing fd %d"
+connfd
+connfd
+close(connfd);
+close(connfd)
+close
+close
+connfd
+connfd
+return -1;
+-1
+1
+if ((client = client_new(connfd, &(in_addr.sin_addr))) != NULL) {		vdebug("accepted inbound connection from %s, fd %d", client->addr, connfd);	}
+(client = client_new(connfd, &(in_addr.sin_addr))) != NULL
+(client = client_new(connfd, &(in_addr.sin_addr)))
+client = client_new(connfd, &(in_addr.sin_addr))
+client
+client
+client_new(connfd, &(in_addr.sin_addr))
+client_new
+client_new
+connfd
+connfd
+&(in_addr.sin_addr)
+(in_addr.sin_addr)
+in_addr.sin_addr
+in_addr
+in_addr
+sin_addr
+NULL
+NULL
+{		vdebug("accepted inbound connection from %s, fd %d", client->addr, connfd);	}
+vdebug("accepted inbound connection from %s, fd %d", client->addr, connfd);
+vdebug("accepted inbound connection from %s, fd %d", client->addr, connfd)
+vdebug
+vdebug
+"accepted inbound connection from %s, fd %d"
+client->addr
+client
+client
+addr
+connfd
+connfd
+return connfd;
+connfd
+connfd
+-----joern-----
+(115,96,0)
+(33,17,0)
+(64,46,0)
+(38,55,0)
+(46,64,0)
+(60,25,0)
+(54,122,0)
+(22,61,0)
+(12,51,0)
+(73,30,0)
+(68,123,0)
+(92,94,0)
+(96,115,0)
+(34,98,0)
+(75,70,0)
+(17,83,0)
+(99,13,0)
+(66,13,0)
+(123,30,0)
+(125,30,0)
+(74,12,0)
+(22,30,0)
+(28,117,0)
+(89,52,0)
+(65,116,0)
+(15,63,0)
+(72,52,0)
+(40,107,0)
+(52,96,0)
+(73,15,0)
+(100,61,0)
+(18,22,0)
+(70,107,0)
+(45,6,0)
+(42,115,0)
+(19,59,0)
+(51,66,0)
+(14,124,0)
+(46,106,0)
+(108,13,0)
+(22,18,0)
+(117,55,0)
+(38,37,0)
+(45,67,0)
+(71,46,0)
+(84,14,0)
+(37,6,0)
+(57,29,0)
+(30,22,0)
+(124,14,0)
+(29,30,0)
+(39,124,0)
+(107,70,0)
+(79,13,0)
+(70,30,0)
+(25,30,0)
+(18,14,0)
+(109,43,0)
+(51,12,0)
+(83,17,0)
+(25,91,0)
+(32,66,0)
+(118,79,0)
+(15,73,0)
+(76,13,0)
+(31,13,0)
+(94,6,0)
+(126,114,0)
+(101,46,0)
+(81,115,0)
+(14,13,0)
+(5,34,0)
+(55,106,0)
+(85,65,0)
+(22,27,0)
+(43,30,0)
+(119,12,0)
+(38,79,0)
+(82,29,0)
+(114,51,0)
+(25,8,0)
+(29,110,0)
+(61,22,0)
+(47,22,0)
+(58,49,0)
+(0,13,0)
+(120,91,0)
+(30,125,0)
+(25,56,0)
+(87,64,0)
+(77,63,0)
+(114,98,0)
+(80,98,0)
+(20,54,0)
+(43,6,0)
+(61,100,0)
+(11,80,0)
+(38,122,0)
+(67,45,0)
+(90,21,0)
+(53,56,0)
+(79,30,0)
+(114,52,0)
+(41,100,0)
+(7,73,0)
+(35,111,0)
+(123,98,0)
+(59,83,0)
+(10,30,0)
+(105,11,0)
+(86,49,0)
+(97,13,0)
+(29,111,0)
+(3,13,0)
+(96,13,0)
+(58,73,0)
+(21,37,0)
+(63,15,0)
+(56,25,0)
+(50,49,0)
+(122,116,0)
+(111,29,0)
+(83,59,0)
+(102,111,0)
+(88,106,0)
+(49,58,0)
+(121,78,0)
+(103,80,0)
+(38,114,0)
+(95,13,0)
+(69,34,0)
+(1,67,0)
+(48,94,0)
+(80,11,0)
+(26,13,0)
+(34,30,0)
+(94,30,0)
+(61,16,0)
+(44,13,0)
+(91,25,0)
+(78,13,0)
+(9,45,0)
+(104,15,0)
+(62,17,0)
+(16,61,0)
+(36,126,0)
+(111,15,0)
+(23,51,0)
+(24,25,0)
+(113,59,0)
+(93,45,0)
+(66,30,0)
+(127,25,0)
+(73,58,0)
+(112,80,0)
+(2,125,0)
+(4,18,0)
+(119,74,1)
+(46,64,1)
+(115,81,1)
+(107,70,1)
+(12,119,1)
+(67,1,1)
+(18,4,1)
+(1,93,1)
+(42,52,1)
+(82,63,1)
+(51,23,1)
+(57,111,1)
+(93,9,1)
+(54,20,1)
+(120,25,1)
+(35,102,1)
+(114,52,1)
+(52,72,1)
+(29,111,1)
+(101,71,1)
+(26,14,1)
+(125,30,1)
+(25,30,1)
+(80,11,1)
+(25,8,1)
+(66,32,1)
+(72,89,1)
+(48,45,1)
+(47,10,1)
+(61,100,1)
+(69,5,1)
+(21,90,1)
+(38,37,1)
+(10,78,1)
+(14,124,1)
+(29,30,1)
+(125,2,1)
+(58,49,1)
+(63,15,1)
+(96,115,1)
+(90,43,1)
+(30,22,1)
+(23,12,1)
+(105,103,1)
+(79,30,1)
+(22,61,1)
+(11,105,1)
+(60,24,1)
+(4,61,1)
+(18,14,1)
+(87,101,1)
+(32,51,1)
+(113,17,1)
+(70,30,1)
+(85,83,1)
+(114,126,1)
+(15,73,1)
+(100,41,1)
+(102,82,1)
+(33,62,1)
+(78,121,1)
+(123,68,1)
+(9,107,1)
+(2,30,1)
+(66,30,1)
+(34,69,1)
+(5,80,1)
+(81,42,1)
+(55,117,1)
+(94,30,1)
+(111,15,1)
+(91,25,1)
+(86,7,1)
+(123,30,1)
+(121,26,1)
+(22,18,1)
+(64,87,1)
+(43,109,1)
+(109,94,1)
+(19,113,1)
+(117,28,1)
+(51,12,1)
+(83,59,1)
+(17,33,1)
+(56,53,1)
+(38,79,1)
+(73,58,1)
+(24,127,1)
+(65,85,1)
+(38,114,1)
+(43,30,1)
+(91,120,1)
+(71,83,1)
+(37,21,1)
+(122,54,1)
+(22,27,1)
+(34,30,1)
+(126,36,1)
+(73,30,1)
+(111,35,1)
+(62,125,1)
+(49,50,1)
+(36,123,1)
+(103,112,1)
+(114,51,1)
+(38,122,1)
+(83,17,1)
+(50,86,1)
+(7,104,1)
+(39,84,1)
+(41,47,1)
+(74,107,1)
+(70,75,1)
+(92,48,1)
+(20,65,1)
+(118,29,1)
+(124,39,1)
+(104,91,1)
+(28,46,1)
+(53,60,1)
+(75,125,1)
+(127,96,1)
+(25,56,1)
+(107,40,1)
+(77,15,1)
+(40,70,1)
+(68,34,1)
+(79,118,1)
+(38,55,1)
+(112,91,1)
+(59,19,1)
+(118,63,1)
+(94,92,1)
+(63,77,1)
+(61,16,1)
+(29,57,1)
+(89,66,1)
+(45,67,1)
+(48,107,2)
+(23,107,2)
+(62,125,2)
+(51,12,2)
+(120,107,2)
+(43,107,2)
+(1,107,2)
+(68,91,2)
+(87,83,2)
+(109,107,2)
+(111,15,2)
+(82,63,2)
+(38,79,2)
+(61,100,2)
+(17,125,2)
+(103,91,2)
+(12,107,2)
+(29,30,2)
+(114,51,2)
+(38,55,2)
+(52,107,2)
+(57,63,2)
+(85,83,2)
+(83,17,2)
+(113,17,2)
+(58,49,2)
+(51,107,2)
+(83,59,2)
+(71,83,2)
+(73,58,2)
+(15,73,2)
+(114,91,2)
+(107,125,2)
+(75,125,2)
+(34,30,2)
+(86,91,2)
+(38,122,2)
+(114,52,2)
+(9,107,2)
+(30,22,2)
+(107,70,2)
+(73,30,2)
+(54,83,2)
+(72,107,2)
+(123,91,2)
+(42,107,2)
+(94,30,2)
+(77,91,2)
+(122,83,2)
+(38,37,2)
+(63,15,2)
+(20,83,2)
+(79,91,2)
+(83,125,2)
+(25,8,2)
+(65,83,2)
+(60,107,2)
+(7,91,2)
+(22,18,2)
+(73,91,2)
+(40,125,2)
+(80,91,2)
+(37,107,2)
+(70,125,2)
+(46,83,2)
+(35,63,2)
+(53,107,2)
+(92,107,2)
+(66,107,2)
+(22,27,2)
+(45,67,2)
+(25,56,2)
+(91,25,2)
+(91,107,2)
+(69,91,2)
+(66,30,2)
+(94,107,2)
+(96,107,2)
+(58,91,2)
+(22,61,2)
+(34,91,2)
+(56,107,2)
+(25,30,2)
+(105,91,2)
+(45,107,2)
+(61,16,2)
+(29,63,2)
+(21,107,2)
+(63,91,2)
+(93,107,2)
+(81,107,2)
+(119,107,2)
+(117,83,2)
+(115,107,2)
+(96,115,2)
+(28,83,2)
+(32,107,2)
+(104,91,2)
+(127,107,2)
+(55,83,2)
+(64,83,2)
+(11,91,2)
+(123,30,2)
+(118,91,2)
+(46,64,2)
+(89,107,2)
+(14,124,2)
+(43,30,2)
+(33,125,2)
+(67,107,2)
+(79,30,2)
+(102,63,2)
+(59,17,2)
+(70,30,2)
+(125,30,2)
+(18,14,2)
+(101,83,2)
+(112,91,2)
+(90,107,2)
+(126,91,2)
+(25,107,2)
+(5,91,2)
+(111,63,2)
+(24,107,2)
+(36,91,2)
+(74,107,2)
+(19,17,2)
+(50,91,2)
+(29,111,2)
+(38,114,2)
+(80,11,2)
+(49,91,2)
+(15,91,2)
+-----------------------------------
+(0,in_len)
+(1,errno)
+(2,0)
+(3,if ((client = client_new(connfd, &(in_addr.sin_addr)
+(4,in_len)
+(5,"closing fd %d")
+(6,)
+(7,connfd)
+(8,int epfd)
+(9,LOG_ERROR)
+(10,connfd)
+(11,strerror(errno)
+(12,ev.data)
+(13,)
+(14,in_len = sizeof(in_addr)
+(15,client = client_new(connfd, &(in_addr.sin_addr)
+(16,struct sockaddr*)
+(17,errno == EAGAIN)
+(18,&in_len)
+(19,EWOULDBLOCK)
+(20,1)
+(21,-1)
+(22,accept(sockfd, (struct sockaddr*)
+(23,fd)
+(24,EPOLL_CTL_ADD)
+(25,epoll_ctl(epfd, EPOLL_CTL_ADD, connfd, &ev)
+(26,clients_purge()
+(27,int sockfd)
+(28,1)
+(29,vdebug("accepted inbound connection from %s, fd %d", client->addr, connfd)
+(30,connfd = accept(sockfd, (struct sockaddr*)
+(31,if ((connfd = accept(sockfd, (struct sockaddr*)
+(32,connfd)
+(33,EAGAIN)
+(34,vdebug("closing fd %d", connfd)
+(35,addr)
+(36,1)
+(37,return -1;)
+(38,RET)
+(39,in_addr)
+(40,0)
+(41,in_addr)
+(42,EPOLLIN)
+(43,close(connfd)
+(44,if (epoll_ctl(epfd, EPOLL_CTL_ADD, connfd, &ev)
+(45,syslog(LOG_ERROR, "failed to make new socket non-blocking: %s", strerror(errno)
+(46,syslog(LOG_WARN, "accept failed: %s", strerror(errno)
+(47,sockfd)
+(48,"closing fd %d")
+(49,in_addr.sin_addr)
+(50,sin_addr)
+(51,ev.data.fd)
+(52,ev.events)
+(53,ev)
+(54,-1)
+(55,return -1;)
+(56,&ev)
+(57,connfd)
+(58,&(in_addr.sin_addr)
+(59,errno == EWOULDBLOCK)
+(60,connfd)
+(61,(struct sockaddr*)
+(62,errno)
+(63,(client = client_new(connfd, &(in_addr.sin_addr)
+(64,strerror(errno)
+(65,vdebug("accept bailed with an EAGAIN, done accepting inbound connections")
+(66,ev.data.fd = connfd)
+(67,strerror(errno)
+(68,connfd)
+(69,connfd)
+(70,nonblocking(connfd)
+(71,LOG_WARN)
+(72,events)
+(73,client_new(connfd, &(in_addr.sin_addr)
+(74,ev)
+(75,connfd)
+(76,client)
+(77,NULL)
+(78,vdebug("accepting inbound connection")
+(79,return connfd;)
+(80,syslog(LOG_ERROR, "failed to inform epoll about new socket fd: %s", strerror(errno)
+(81,EPOLLET)
+(82,"accepted inbound connection from %s, fd %d")
+(83,(errno == EAGAIN)
+(84,in_len)
+(85,"accept bailed with an EAGAIN, done accepting inbound connections")
+(86,in_addr)
+(87,errno)
+(88,if ((errno == EAGAIN)
+(89,ev)
+(90,1)
+(91,epoll_ctl(epfd, EPOLL_CTL_ADD, connfd, &ev)
+(92,connfd)
+(93,"failed to make new socket non-blocking: %s")
+(94,vdebug("closing fd %d", connfd)
+(95,in_addr)
+(96,ev.events = EPOLLIN | EPOLLET)
+(97,if (nonblocking(connfd)
+(98,)
+(99,ev)
+(100,&in_addr)
+(101,"accept failed: %s")
+(102,client)
+(103,"failed to inform epoll about new socket fd: %s")
+(104,client)
+(105,errno)
+(106,)
+(107,nonblocking(connfd)
+(108,connfd)
+(109,connfd)
+(110,)
+(111,client->addr)
+(112,LOG_ERROR)
+(113,errno)
+(114,return -1;)
+(115,EPOLLIN | EPOLLET)
+(116,)
+(117,-1)
+(118,connfd)
+(119,data)
+(120,0)
+(121,"accepting inbound connection")
+(122,return -1;)
+(123,close(connfd)
+(124,sizeof(in_addr)
+(125,(connfd = accept(sockfd, (struct sockaddr*)
+(126,-1)
+(127,epfd)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

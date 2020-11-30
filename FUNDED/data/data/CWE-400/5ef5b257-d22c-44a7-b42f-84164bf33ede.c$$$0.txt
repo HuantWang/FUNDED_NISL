@@ -1,0 +1,2597 @@
+-----label-----
+1
+-----code-----
+static void init_queue(struct call_queue *q)
+{
+	int i;
+	struct penalty_rule *pr_iter;
+
+	q->dead = 0;
+	q->retry = DEFAULT_RETRY;
+	q->timeout = DEFAULT_TIMEOUT;
+	q->maxlen = 0;
+	q->announcefrequency = 0;
+	q->minannouncefrequency = DEFAULT_MIN_ANNOUNCE_FREQUENCY;
+	q->announceholdtime = 1;
+	q->announcepositionlimit = 10; /* Default 10 positions */
+	q->announceposition = ANNOUNCEPOSITION_YES; /* Default yes */
+	q->roundingseconds = 0; /* Default - don't announce seconds */
+	q->servicelevel = 0;
+	q->ringinuse = 1;
+	q->setinterfacevar = 0;
+	q->setqueuevar = 0;
+	q->setqueueentryvar = 0;
+	q->autofill = autofill_default;
+	q->montype = montype_default;
+	q->monfmt[0] = '\0';
+	q->reportholdtime = 0;
+	q->wrapuptime = 0;
+	q->penaltymemberslimit = 0;
+	q->joinempty = 0;
+	q->leavewhenempty = 0;
+	q->memberdelay = 0;
+	q->maskmemberstatus = 0;
+	q->eventwhencalled = 0;
+	q->weight = 0;
+	q->timeoutrestart = 0;
+	q->periodicannouncefrequency = 0;
+	q->randomperiodicannounce = 0;
+	q->numperiodicannounce = 0;
+	q->autopause = QUEUE_AUTOPAUSE_OFF;
+	q->timeoutpriority = TIMEOUT_PRIORITY_APP;
+	q->autopausedelay = 0;
+	if (!q->members) {
+		if (q->strategy == QUEUE_STRATEGY_LINEAR || q->strategy == QUEUE_STRATEGY_RRORDERED) {
+			/* linear strategy depends on order, so we have to place all members in a single bucket */
+			q->members = ao2_container_alloc(1, member_hash_fn, member_cmp_fn);
+		} else {
+			q->members = ao2_container_alloc(37, member_hash_fn, member_cmp_fn);
+		}
+	}
+	q->found = 1;
+
+	ast_string_field_set(q, sound_next, "queue-youarenext");
+	ast_string_field_set(q, sound_thereare, "queue-thereare");
+	ast_string_field_set(q, sound_calls, "queue-callswaiting");
+	ast_string_field_set(q, queue_quantity1, "queue-quantity1");
+	ast_string_field_set(q, queue_quantity2, "queue-quantity2");
+	ast_string_field_set(q, sound_holdtime, "queue-holdtime");
+	ast_string_field_set(q, sound_minutes, "queue-minutes");
+	ast_string_field_set(q, sound_minute, "queue-minute");
+	ast_string_field_set(q, sound_seconds, "queue-seconds");
+	ast_string_field_set(q, sound_thanks, "queue-thankyou");
+	ast_string_field_set(q, sound_reporthold, "queue-reporthold");
+
+	if (!q->sound_periodicannounce[0]) {
+		q->sound_periodicannounce[0] = ast_str_create(32);
+	}
+
+	if (q->sound_periodicannounce[0]) {
+		ast_str_set(&q->sound_periodicannounce[0], 0, "queue-periodic-announce");
+	}
+
+	for (i = 1; i < MAX_PERIODIC_ANNOUNCEMENTS; i++) {
+		if (q->sound_periodicannounce[i]) {
+			ast_str_set(&q->sound_periodicannounce[i], 0, "%s", "");
+		}
+	}
+
+	while ((pr_iter = AST_LIST_REMOVE_HEAD(&q->rules,list))) {
+		ast_free(pr_iter);
+	}
+
+	/* On restart assume no members are available.
+	 * The queue_avail hint is a boolean state to indicate whether a member is available or not.
+	 *
+	 * This seems counter intuitive, but is required to light a BLF
+	 * AST_DEVICE_INUSE indicates no members are available.
+	 * AST_DEVICE_NOT_INUSE indicates a member is available.
+	 */
+	ast_devstate_changed(AST_DEVICE_INUSE, "Queue:%s_avail", q->name);
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+11,14
+11,15
+11,16
+11,17
+11,18
+11,19
+11,20
+11,21
+11,22
+11,23
+11,24
+11,25
+11,26
+11,27
+11,28
+11,29
+11,30
+11,31
+11,32
+11,33
+11,34
+11,35
+11,36
+11,37
+11,38
+11,39
+11,40
+11,41
+11,42
+11,43
+11,44
+11,45
+11,46
+11,47
+11,48
+11,49
+11,50
+11,51
+11,52
+11,53
+11,54
+11,55
+11,56
+11,57
+11,58
+11,59
+11,60
+11,61
+11,62
+11,63
+11,64
+11,65
+12,13
+13,14
+13,15
+15,16
+17,18
+18,19
+18,20
+19,20
+21,22
+21,23
+24,25
+25,26
+25,27
+26,27
+26,28
+27,28
+31,32
+32,33
+32,34
+33,34
+33,35
+34,35
+37,38
+39,40
+40,41
+40,42
+41,42
+41,43
+42,43
+45,46
+47,48
+48,49
+48,50
+49,50
+49,51
+50,51
+54,55
+55,56
+55,57
+56,57
+56,58
+57,58
+61,62
+62,63
+62,64
+63,64
+63,65
+64,65
+67,68
+69,70
+70,71
+70,72
+71,72
+71,73
+72,73
+76,77
+77,78
+77,79
+78,79
+78,80
+79,80
+83,84
+84,85
+84,86
+85,86
+85,87
+86,87
+89,90
+91,92
+92,93
+92,94
+93,94
+93,95
+94,95
+98,99
+99,100
+99,101
+100,101
+100,102
+101,102
+105,106
+106,107
+106,108
+107,108
+107,109
+108,109
+112,113
+113,114
+113,115
+114,115
+114,116
+115,116
+119,120
+120,121
+120,122
+121,122
+121,123
+122,123
+126,127
+127,128
+127,129
+128,129
+128,130
+129,130
+133,134
+134,135
+134,136
+135,136
+135,137
+136,137
+139,140
+141,142
+142,143
+142,144
+143,144
+143,145
+144,145
+147,148
+149,150
+150,151
+150,152
+151,152
+151,153
+152,153
+152,154
+153,154
+158,159
+159,160
+159,161
+160,161
+160,162
+161,162
+165,166
+166,167
+166,168
+167,168
+167,169
+168,169
+172,173
+173,174
+173,175
+174,175
+174,176
+175,176
+179,180
+180,181
+180,182
+181,182
+181,183
+182,183
+186,187
+187,188
+187,189
+188,189
+188,190
+189,190
+193,194
+194,195
+194,196
+195,196
+195,197
+196,197
+200,201
+201,202
+201,203
+202,203
+202,204
+203,204
+207,208
+208,209
+208,210
+209,210
+209,211
+210,211
+214,215
+215,216
+215,217
+216,217
+216,218
+217,218
+221,222
+222,223
+222,224
+223,224
+223,225
+224,225
+228,229
+229,230
+229,231
+230,231
+230,232
+231,232
+235,236
+236,237
+236,238
+237,238
+237,239
+238,239
+242,243
+243,244
+243,245
+244,245
+244,246
+245,246
+249,250
+250,251
+250,252
+251,252
+251,253
+252,253
+255,256
+257,258
+258,259
+258,260
+259,260
+259,261
+260,261
+263,264
+265,266
+266,267
+266,268
+267,268
+267,269
+268,269
+272,273
+272,274
+273,274
+274,275
+274,276
+275,276
+278,279
+279,280
+279,281
+279,282
+280,281
+280,282
+281,282
+281,283
+282,283
+282,284
+283,284
+286,287
+288,289
+288,290
+289,290
+289,291
+290,291
+293,294
+295,296
+296,297
+297,298
+297,299
+298,299
+298,300
+299,300
+302,303
+302,304
+302,305
+302,306
+303,304
+306,307
+308,309
+310,311
+311,312
+312,313
+312,314
+313,314
+313,315
+314,315
+317,318
+317,319
+317,320
+317,321
+318,319
+321,322
+323,324
+325,326
+326,327
+326,328
+327,328
+327,329
+328,329
+332,333
+333,334
+333,335
+333,336
+333,337
+334,335
+336,337
+338,339
+341,342
+342,343
+342,344
+342,345
+342,346
+343,344
+345,346
+347,348
+350,351
+351,352
+351,353
+351,354
+351,355
+352,353
+354,355
+356,357
+359,360
+360,361
+360,362
+360,363
+360,364
+361,362
+363,364
+365,366
+368,369
+369,370
+369,371
+369,372
+369,373
+370,371
+372,373
+374,375
+377,378
+378,379
+378,380
+378,381
+378,382
+379,380
+381,382
+383,384
+386,387
+387,388
+387,389
+387,390
+387,391
+388,389
+390,391
+392,393
+395,396
+396,397
+396,398
+396,399
+396,400
+397,398
+399,400
+401,402
+404,405
+405,406
+405,407
+405,408
+405,409
+406,407
+408,409
+410,411
+413,414
+414,415
+414,416
+414,417
+414,418
+415,416
+417,418
+419,420
+422,423
+423,424
+423,425
+423,426
+423,427
+424,425
+426,427
+428,429
+431,432
+431,433
+432,433
+433,434
+433,435
+434,435
+434,436
+435,436
+439,440
+440,441
+441,442
+441,443
+442,443
+442,444
+443,444
+443,445
+444,445
+448,449
+448,450
+449,450
+452,453
+452,454
+453,454
+453,455
+454,455
+454,456
+455,456
+459,460
+460,461
+461,462
+461,463
+461,464
+461,465
+462,463
+464,465
+465,466
+465,467
+466,467
+466,468
+467,468
+473,474
+473,475
+473,476
+473,477
+474,475
+475,476
+475,477
+476,477
+479,480
+479,481
+480,481
+482,483
+484,485
+485,486
+487,488
+488,489
+488,490
+489,490
+489,491
+490,491
+490,492
+491,492
+494,495
+496,497
+497,498
+498,499
+498,500
+498,501
+498,502
+498,503
+499,500
+501,502
+502,503
+502,504
+503,504
+503,505
+504,505
+507,508
+512,513
+512,514
+513,514
+514,515
+514,516
+515,516
+517,518
+517,519
+517,520
+518,519
+520,521
+521,522
+521,523
+522,523
+525,526
+527,528
+528,529
+529,530
+529,531
+530,531
+532,533
+534,535
+535,536
+535,537
+535,538
+535,539
+536,537
+538,539
+541,542
+541,543
+542,543
+-----nextToken-----
+2,4,7,9,10,14,16,20,22,23,28,29,30,35,36,38,43,44,46,51,52,53,58,59,60,65,66,68,73,74,75,80,81,82,87,88,90,95,96,97,102,103,104,109,110,111,116,117,118,123,124,125,130,131,132,137,138,140,145,146,148,154,155,156,157,162,163,164,169,170,171,176,177,178,183,184,185,190,191,192,197,198,199,204,205,206,211,212,213,218,219,220,225,226,227,232,233,234,239,240,241,246,247,248,253,254,256,261,262,264,269,270,271,276,277,284,285,287,291,292,294,300,301,304,305,307,309,315,316,319,320,322,324,329,330,331,335,337,339,340,344,346,348,349,353,355,357,358,362,364,366,367,371,373,375,376,380,382,384,385,389,391,393,394,398,400,402,403,407,409,411,412,416,418,420,421,425,427,429,430,436,437,438,445,446,447,450,451,456,457,458,463,468,469,470,471,472,477,478,481,483,486,492,493,495,500,505,506,508,509,510,511,516,519,523,524,526,531,533,537,539,540,543,544
+-----computeFrom-----
+25,26
+25,27
+32,33
+32,34
+40,41
+40,42
+48,49
+48,50
+55,56
+55,57
+62,63
+62,64
+70,71
+70,72
+77,78
+77,79
+84,85
+84,86
+92,93
+92,94
+99,100
+99,101
+106,107
+106,108
+113,114
+113,115
+120,121
+120,122
+127,128
+127,129
+134,135
+134,136
+142,143
+142,144
+150,151
+150,152
+159,160
+159,161
+166,167
+166,168
+173,174
+173,175
+180,181
+180,182
+187,188
+187,189
+194,195
+194,196
+201,202
+201,203
+208,209
+208,210
+215,216
+215,217
+222,223
+222,224
+229,230
+229,231
+236,237
+236,238
+243,244
+243,245
+250,251
+250,252
+258,259
+258,260
+266,267
+266,268
+280,281
+280,282
+281,282
+281,283
+288,289
+288,290
+297,298
+297,299
+312,313
+312,314
+326,327
+326,328
+441,442
+441,443
+475,476
+475,477
+479,480
+479,481
+514,515
+514,516
+-----guardedBy-----
+291,300
+-----guardedByNegation-----
+291,315
+-----lastLexicalUse-----
+291,315
+-----jump-----
+291,315
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;IfStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;CompoundStatement;IfStatement;BinaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;IfStatement;UnaryExpression;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;CompoundStatement;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;FunctionCallExpression;IdExpression;Name;LiteralExpression;IfStatement;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;LiteralExpression;LiteralExpression;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;IfStatement;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;LiteralExpression;LiteralExpression;LiteralExpression;WhileStatement;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;
+-----ast_node-----
+static void init_queue(struct call_queue *q){	int i;	struct penalty_rule *pr_iter;	q->dead = 0;	q->retry = DEFAULT_RETRY;	q->timeout = DEFAULT_TIMEOUT;	q->maxlen = 0;	q->announcefrequency = 0;	q->minannouncefrequency = DEFAULT_MIN_ANNOUNCE_FREQUENCY;	q->announceholdtime = 1;	q->announcepositionlimit = 10; /* Default 10 positions */	q->announceposition = ANNOUNCEPOSITION_YES; /* Default yes */	q->roundingseconds = 0; /* Default - don't announce seconds */	q->servicelevel = 0;	q->ringinuse = 1;	q->setinterfacevar = 0;	q->setqueuevar = 0;	q->setqueueentryvar = 0;	q->autofill = autofill_default;	q->montype = montype_default;	q->monfmt[0] = '\0';	q->reportholdtime = 0;	q->wrapuptime = 0;	q->penaltymemberslimit = 0;	q->joinempty = 0;	q->leavewhenempty = 0;	q->memberdelay = 0;	q->maskmemberstatus = 0;	q->eventwhencalled = 0;	q->weight = 0;	q->timeoutrestart = 0;	q->periodicannouncefrequency = 0;	q->randomperiodicannounce = 0;	q->numperiodicannounce = 0;	q->autopause = QUEUE_AUTOPAUSE_OFF;	q->timeoutpriority = TIMEOUT_PRIORITY_APP;	q->autopausedelay = 0;	if (!q->members) {		if (q->strategy == QUEUE_STRATEGY_LINEAR || q->strategy == QUEUE_STRATEGY_RRORDERED) {			/* linear strategy depends on order, so we have to place all members in a single bucket */			q->members = ao2_container_alloc(1, member_hash_fn, member_cmp_fn);		} else {			q->members = ao2_container_alloc(37, member_hash_fn, member_cmp_fn);		}	}	q->found = 1;	ast_string_field_set(q, sound_next, "queue-youarenext");	ast_string_field_set(q, sound_thereare, "queue-thereare");	ast_string_field_set(q, sound_calls, "queue-callswaiting");	ast_string_field_set(q, queue_quantity1, "queue-quantity1");	ast_string_field_set(q, queue_quantity2, "queue-quantity2");	ast_string_field_set(q, sound_holdtime, "queue-holdtime");	ast_string_field_set(q, sound_minutes, "queue-minutes");	ast_string_field_set(q, sound_minute, "queue-minute");	ast_string_field_set(q, sound_seconds, "queue-seconds");	ast_string_field_set(q, sound_thanks, "queue-thankyou");	ast_string_field_set(q, sound_reporthold, "queue-reporthold");	if (!q->sound_periodicannounce[0]) {		q->sound_periodicannounce[0] = ast_str_create(32);	}	if (q->sound_periodicannounce[0]) {		ast_str_set(&q->sound_periodicannounce[0], 0, "queue-periodic-announce");	}	for (i = 1; i < MAX_PERIODIC_ANNOUNCEMENTS; i++) {		if (q->sound_periodicannounce[i]) {			ast_str_set(&q->sound_periodicannounce[i], 0, "%s", "");		}	}	while ((pr_iter = AST_LIST_REMOVE_HEAD(&q->rules,list))) {		ast_free(pr_iter);	}	/* On restart assume no members are available.	 * The queue_avail hint is a boolean state to indicate whether a member is available or not.	 *	 * This seems counter intuitive, but is required to light a BLF	 * AST_DEVICE_INUSE indicates no members are available.	 * AST_DEVICE_NOT_INUSE indicates a member is available.	 */	ast_devstate_changed(AST_DEVICE_INUSE, "Queue:%s_avail", q->name);}
+static void
+init_queue(struct call_queue *q)
+init_queue
+struct call_queue *q
+struct call_queue
+call_queue
+*q
+*
+q
+{	int i;	struct penalty_rule *pr_iter;	q->dead = 0;	q->retry = DEFAULT_RETRY;	q->timeout = DEFAULT_TIMEOUT;	q->maxlen = 0;	q->announcefrequency = 0;	q->minannouncefrequency = DEFAULT_MIN_ANNOUNCE_FREQUENCY;	q->announceholdtime = 1;	q->announcepositionlimit = 10; /* Default 10 positions */	q->announceposition = ANNOUNCEPOSITION_YES; /* Default yes */	q->roundingseconds = 0; /* Default - don't announce seconds */	q->servicelevel = 0;	q->ringinuse = 1;	q->setinterfacevar = 0;	q->setqueuevar = 0;	q->setqueueentryvar = 0;	q->autofill = autofill_default;	q->montype = montype_default;	q->monfmt[0] = '\0';	q->reportholdtime = 0;	q->wrapuptime = 0;	q->penaltymemberslimit = 0;	q->joinempty = 0;	q->leavewhenempty = 0;	q->memberdelay = 0;	q->maskmemberstatus = 0;	q->eventwhencalled = 0;	q->weight = 0;	q->timeoutrestart = 0;	q->periodicannouncefrequency = 0;	q->randomperiodicannounce = 0;	q->numperiodicannounce = 0;	q->autopause = QUEUE_AUTOPAUSE_OFF;	q->timeoutpriority = TIMEOUT_PRIORITY_APP;	q->autopausedelay = 0;	if (!q->members) {		if (q->strategy == QUEUE_STRATEGY_LINEAR || q->strategy == QUEUE_STRATEGY_RRORDERED) {			/* linear strategy depends on order, so we have to place all members in a single bucket */			q->members = ao2_container_alloc(1, member_hash_fn, member_cmp_fn);		} else {			q->members = ao2_container_alloc(37, member_hash_fn, member_cmp_fn);		}	}	q->found = 1;	ast_string_field_set(q, sound_next, "queue-youarenext");	ast_string_field_set(q, sound_thereare, "queue-thereare");	ast_string_field_set(q, sound_calls, "queue-callswaiting");	ast_string_field_set(q, queue_quantity1, "queue-quantity1");	ast_string_field_set(q, queue_quantity2, "queue-quantity2");	ast_string_field_set(q, sound_holdtime, "queue-holdtime");	ast_string_field_set(q, sound_minutes, "queue-minutes");	ast_string_field_set(q, sound_minute, "queue-minute");	ast_string_field_set(q, sound_seconds, "queue-seconds");	ast_string_field_set(q, sound_thanks, "queue-thankyou");	ast_string_field_set(q, sound_reporthold, "queue-reporthold");	if (!q->sound_periodicannounce[0]) {		q->sound_periodicannounce[0] = ast_str_create(32);	}	if (q->sound_periodicannounce[0]) {		ast_str_set(&q->sound_periodicannounce[0], 0, "queue-periodic-announce");	}	for (i = 1; i < MAX_PERIODIC_ANNOUNCEMENTS; i++) {		if (q->sound_periodicannounce[i]) {			ast_str_set(&q->sound_periodicannounce[i], 0, "%s", "");		}	}	while ((pr_iter = AST_LIST_REMOVE_HEAD(&q->rules,list))) {		ast_free(pr_iter);	}	/* On restart assume no members are available.	 * The queue_avail hint is a boolean state to indicate whether a member is available or not.	 *	 * This seems counter intuitive, but is required to light a BLF	 * AST_DEVICE_INUSE indicates no members are available.	 * AST_DEVICE_NOT_INUSE indicates a member is available.	 */	ast_devstate_changed(AST_DEVICE_INUSE, "Queue:%s_avail", q->name);}
+int i;
+int i;
+int
+i
+i
+struct penalty_rule *pr_iter;
+struct penalty_rule *pr_iter;
+struct penalty_rule
+penalty_rule
+*pr_iter
+*
+pr_iter
+q->dead = 0;
+q->dead = 0
+q->dead
+q
+q
+dead
+0
+q->retry = DEFAULT_RETRY;
+q->retry = DEFAULT_RETRY
+q->retry
+q
+q
+retry
+DEFAULT_RETRY
+DEFAULT_RETRY
+q->timeout = DEFAULT_TIMEOUT;
+q->timeout = DEFAULT_TIMEOUT
+q->timeout
+q
+q
+timeout
+DEFAULT_TIMEOUT
+DEFAULT_TIMEOUT
+q->maxlen = 0;
+q->maxlen = 0
+q->maxlen
+q
+q
+maxlen
+0
+q->announcefrequency = 0;
+q->announcefrequency = 0
+q->announcefrequency
+q
+q
+announcefrequency
+0
+q->minannouncefrequency = DEFAULT_MIN_ANNOUNCE_FREQUENCY;
+q->minannouncefrequency = DEFAULT_MIN_ANNOUNCE_FREQUENCY
+q->minannouncefrequency
+q
+q
+minannouncefrequency
+DEFAULT_MIN_ANNOUNCE_FREQUENCY
+DEFAULT_MIN_ANNOUNCE_FREQUENCY
+q->announceholdtime = 1;
+q->announceholdtime = 1
+q->announceholdtime
+q
+q
+announceholdtime
+1
+q->announcepositionlimit = 10;
+q->announcepositionlimit = 10
+q->announcepositionlimit
+q
+q
+announcepositionlimit
+10
+q->announceposition = ANNOUNCEPOSITION_YES;
+q->announceposition = ANNOUNCEPOSITION_YES
+q->announceposition
+q
+q
+announceposition
+ANNOUNCEPOSITION_YES
+ANNOUNCEPOSITION_YES
+q->roundingseconds = 0;
+q->roundingseconds = 0
+q->roundingseconds
+q
+q
+roundingseconds
+0
+q->servicelevel = 0;
+q->servicelevel = 0
+q->servicelevel
+q
+q
+servicelevel
+0
+q->ringinuse = 1;
+q->ringinuse = 1
+q->ringinuse
+q
+q
+ringinuse
+1
+q->setinterfacevar = 0;
+q->setinterfacevar = 0
+q->setinterfacevar
+q
+q
+setinterfacevar
+0
+q->setqueuevar = 0;
+q->setqueuevar = 0
+q->setqueuevar
+q
+q
+setqueuevar
+0
+q->setqueueentryvar = 0;
+q->setqueueentryvar = 0
+q->setqueueentryvar
+q
+q
+setqueueentryvar
+0
+q->autofill = autofill_default;
+q->autofill = autofill_default
+q->autofill
+q
+q
+autofill
+autofill_default
+autofill_default
+q->montype = montype_default;
+q->montype = montype_default
+q->montype
+q
+q
+montype
+montype_default
+montype_default
+q->monfmt[0] = '\0';
+q->monfmt[0] = '\0'
+q->monfmt[0]
+q->monfmt
+q
+q
+monfmt
+0
+'\0'
+q->reportholdtime = 0;
+q->reportholdtime = 0
+q->reportholdtime
+q
+q
+reportholdtime
+0
+q->wrapuptime = 0;
+q->wrapuptime = 0
+q->wrapuptime
+q
+q
+wrapuptime
+0
+q->penaltymemberslimit = 0;
+q->penaltymemberslimit = 0
+q->penaltymemberslimit
+q
+q
+penaltymemberslimit
+0
+q->joinempty = 0;
+q->joinempty = 0
+q->joinempty
+q
+q
+joinempty
+0
+q->leavewhenempty = 0;
+q->leavewhenempty = 0
+q->leavewhenempty
+q
+q
+leavewhenempty
+0
+q->memberdelay = 0;
+q->memberdelay = 0
+q->memberdelay
+q
+q
+memberdelay
+0
+q->maskmemberstatus = 0;
+q->maskmemberstatus = 0
+q->maskmemberstatus
+q
+q
+maskmemberstatus
+0
+q->eventwhencalled = 0;
+q->eventwhencalled = 0
+q->eventwhencalled
+q
+q
+eventwhencalled
+0
+q->weight = 0;
+q->weight = 0
+q->weight
+q
+q
+weight
+0
+q->timeoutrestart = 0;
+q->timeoutrestart = 0
+q->timeoutrestart
+q
+q
+timeoutrestart
+0
+q->periodicannouncefrequency = 0;
+q->periodicannouncefrequency = 0
+q->periodicannouncefrequency
+q
+q
+periodicannouncefrequency
+0
+q->randomperiodicannounce = 0;
+q->randomperiodicannounce = 0
+q->randomperiodicannounce
+q
+q
+randomperiodicannounce
+0
+q->numperiodicannounce = 0;
+q->numperiodicannounce = 0
+q->numperiodicannounce
+q
+q
+numperiodicannounce
+0
+q->autopause = QUEUE_AUTOPAUSE_OFF;
+q->autopause = QUEUE_AUTOPAUSE_OFF
+q->autopause
+q
+q
+autopause
+QUEUE_AUTOPAUSE_OFF
+QUEUE_AUTOPAUSE_OFF
+q->timeoutpriority = TIMEOUT_PRIORITY_APP;
+q->timeoutpriority = TIMEOUT_PRIORITY_APP
+q->timeoutpriority
+q
+q
+timeoutpriority
+TIMEOUT_PRIORITY_APP
+TIMEOUT_PRIORITY_APP
+q->autopausedelay = 0;
+q->autopausedelay = 0
+q->autopausedelay
+q
+q
+autopausedelay
+0
+if (!q->members) {		if (q->strategy == QUEUE_STRATEGY_LINEAR || q->strategy == QUEUE_STRATEGY_RRORDERED) {			/* linear strategy depends on order, so we have to place all members in a single bucket */			q->members = ao2_container_alloc(1, member_hash_fn, member_cmp_fn);		} else {			q->members = ao2_container_alloc(37, member_hash_fn, member_cmp_fn);		}	}
+!q->members
+q->members
+q
+q
+members
+{		if (q->strategy == QUEUE_STRATEGY_LINEAR || q->strategy == QUEUE_STRATEGY_RRORDERED) {			/* linear strategy depends on order, so we have to place all members in a single bucket */			q->members = ao2_container_alloc(1, member_hash_fn, member_cmp_fn);		} else {			q->members = ao2_container_alloc(37, member_hash_fn, member_cmp_fn);		}	}
+if (q->strategy == QUEUE_STRATEGY_LINEAR || q->strategy == QUEUE_STRATEGY_RRORDERED) {			/* linear strategy depends on order, so we have to place all members in a single bucket */			q->members = ao2_container_alloc(1, member_hash_fn, member_cmp_fn);		} else {			q->members = ao2_container_alloc(37, member_hash_fn, member_cmp_fn);		}
+q->strategy == QUEUE_STRATEGY_LINEAR || q->strategy == QUEUE_STRATEGY_RRORDERED
+q->strategy == QUEUE_STRATEGY_LINEAR
+q->strategy
+q
+q
+strategy
+QUEUE_STRATEGY_LINEAR
+QUEUE_STRATEGY_LINEAR
+q->strategy == QUEUE_STRATEGY_RRORDERED
+q->strategy
+q
+q
+strategy
+QUEUE_STRATEGY_RRORDERED
+QUEUE_STRATEGY_RRORDERED
+{			/* linear strategy depends on order, so we have to place all members in a single bucket */			q->members = ao2_container_alloc(1, member_hash_fn, member_cmp_fn);		}
+q->members = ao2_container_alloc(1, member_hash_fn, member_cmp_fn);
+q->members = ao2_container_alloc(1, member_hash_fn, member_cmp_fn)
+q->members
+q
+q
+members
+ao2_container_alloc(1, member_hash_fn, member_cmp_fn)
+ao2_container_alloc
+ao2_container_alloc
+1
+member_hash_fn
+member_hash_fn
+member_cmp_fn
+member_cmp_fn
+{			q->members = ao2_container_alloc(37, member_hash_fn, member_cmp_fn);		}
+q->members = ao2_container_alloc(37, member_hash_fn, member_cmp_fn);
+q->members = ao2_container_alloc(37, member_hash_fn, member_cmp_fn)
+q->members
+q
+q
+members
+ao2_container_alloc(37, member_hash_fn, member_cmp_fn)
+ao2_container_alloc
+ao2_container_alloc
+37
+member_hash_fn
+member_hash_fn
+member_cmp_fn
+member_cmp_fn
+q->found = 1;
+q->found = 1
+q->found
+q
+q
+found
+1
+ast_string_field_set(q, sound_next, "queue-youarenext");
+ast_string_field_set(q, sound_next, "queue-youarenext")
+ast_string_field_set
+ast_string_field_set
+q
+q
+sound_next
+sound_next
+"queue-youarenext"
+ast_string_field_set(q, sound_thereare, "queue-thereare");
+ast_string_field_set(q, sound_thereare, "queue-thereare")
+ast_string_field_set
+ast_string_field_set
+q
+q
+sound_thereare
+sound_thereare
+"queue-thereare"
+ast_string_field_set(q, sound_calls, "queue-callswaiting");
+ast_string_field_set(q, sound_calls, "queue-callswaiting")
+ast_string_field_set
+ast_string_field_set
+q
+q
+sound_calls
+sound_calls
+"queue-callswaiting"
+ast_string_field_set(q, queue_quantity1, "queue-quantity1");
+ast_string_field_set(q, queue_quantity1, "queue-quantity1")
+ast_string_field_set
+ast_string_field_set
+q
+q
+queue_quantity1
+queue_quantity1
+"queue-quantity1"
+ast_string_field_set(q, queue_quantity2, "queue-quantity2");
+ast_string_field_set(q, queue_quantity2, "queue-quantity2")
+ast_string_field_set
+ast_string_field_set
+q
+q
+queue_quantity2
+queue_quantity2
+"queue-quantity2"
+ast_string_field_set(q, sound_holdtime, "queue-holdtime");
+ast_string_field_set(q, sound_holdtime, "queue-holdtime")
+ast_string_field_set
+ast_string_field_set
+q
+q
+sound_holdtime
+sound_holdtime
+"queue-holdtime"
+ast_string_field_set(q, sound_minutes, "queue-minutes");
+ast_string_field_set(q, sound_minutes, "queue-minutes")
+ast_string_field_set
+ast_string_field_set
+q
+q
+sound_minutes
+sound_minutes
+"queue-minutes"
+ast_string_field_set(q, sound_minute, "queue-minute");
+ast_string_field_set(q, sound_minute, "queue-minute")
+ast_string_field_set
+ast_string_field_set
+q
+q
+sound_minute
+sound_minute
+"queue-minute"
+ast_string_field_set(q, sound_seconds, "queue-seconds");
+ast_string_field_set(q, sound_seconds, "queue-seconds")
+ast_string_field_set
+ast_string_field_set
+q
+q
+sound_seconds
+sound_seconds
+"queue-seconds"
+ast_string_field_set(q, sound_thanks, "queue-thankyou");
+ast_string_field_set(q, sound_thanks, "queue-thankyou")
+ast_string_field_set
+ast_string_field_set
+q
+q
+sound_thanks
+sound_thanks
+"queue-thankyou"
+ast_string_field_set(q, sound_reporthold, "queue-reporthold");
+ast_string_field_set(q, sound_reporthold, "queue-reporthold")
+ast_string_field_set
+ast_string_field_set
+q
+q
+sound_reporthold
+sound_reporthold
+"queue-reporthold"
+if (!q->sound_periodicannounce[0]) {		q->sound_periodicannounce[0] = ast_str_create(32);	}
+!q->sound_periodicannounce[0]
+q->sound_periodicannounce[0]
+q->sound_periodicannounce
+q
+q
+sound_periodicannounce
+0
+{		q->sound_periodicannounce[0] = ast_str_create(32);	}
+q->sound_periodicannounce[0] = ast_str_create(32);
+q->sound_periodicannounce[0] = ast_str_create(32)
+q->sound_periodicannounce[0]
+q->sound_periodicannounce
+q
+q
+sound_periodicannounce
+0
+ast_str_create(32)
+ast_str_create
+ast_str_create
+32
+if (q->sound_periodicannounce[0]) {		ast_str_set(&q->sound_periodicannounce[0], 0, "queue-periodic-announce");	}
+q->sound_periodicannounce[0]
+q->sound_periodicannounce
+q
+q
+sound_periodicannounce
+0
+{		ast_str_set(&q->sound_periodicannounce[0], 0, "queue-periodic-announce");	}
+ast_str_set(&q->sound_periodicannounce[0], 0, "queue-periodic-announce");
+ast_str_set(&q->sound_periodicannounce[0], 0, "queue-periodic-announce")
+ast_str_set
+ast_str_set
+&q->sound_periodicannounce[0]
+q->sound_periodicannounce[0]
+q->sound_periodicannounce
+q
+q
+sound_periodicannounce
+0
+0
+"queue-periodic-announce"
+for (i = 1; i < MAX_PERIODIC_ANNOUNCEMENTS; i++) {		if (q->sound_periodicannounce[i]) {			ast_str_set(&q->sound_periodicannounce[i], 0, "%s", "");		}	}
+i = 1;
+i = 1
+i
+i
+1
+i < MAX_PERIODIC_ANNOUNCEMENTS
+i
+i
+MAX_PERIODIC_ANNOUNCEMENTS
+MAX_PERIODIC_ANNOUNCEMENTS
+i++
+i
+i
+{		if (q->sound_periodicannounce[i]) {			ast_str_set(&q->sound_periodicannounce[i], 0, "%s", "");		}	}
+if (q->sound_periodicannounce[i]) {			ast_str_set(&q->sound_periodicannounce[i], 0, "%s", "");		}
+q->sound_periodicannounce[i]
+q->sound_periodicannounce
+q
+q
+sound_periodicannounce
+i
+i
+{			ast_str_set(&q->sound_periodicannounce[i], 0, "%s", "");		}
+ast_str_set(&q->sound_periodicannounce[i], 0, "%s", "");
+ast_str_set(&q->sound_periodicannounce[i], 0, "%s", "")
+ast_str_set
+ast_str_set
+&q->sound_periodicannounce[i]
+q->sound_periodicannounce[i]
+q->sound_periodicannounce
+q
+q
+sound_periodicannounce
+i
+i
+0
+"%s"
+""
+while ((pr_iter = AST_LIST_REMOVE_HEAD(&q->rules,list))) {		ast_free(pr_iter);	}
+(pr_iter = AST_LIST_REMOVE_HEAD(&q->rules,list))
+pr_iter = AST_LIST_REMOVE_HEAD(&q->rules,list)
+pr_iter
+pr_iter
+AST_LIST_REMOVE_HEAD(&q->rules,list)
+AST_LIST_REMOVE_HEAD
+AST_LIST_REMOVE_HEAD
+&q->rules
+q->rules
+q
+q
+rules
+list
+list
+{		ast_free(pr_iter);	}
+ast_free(pr_iter);
+ast_free(pr_iter)
+ast_free
+ast_free
+pr_iter
+pr_iter
+ast_devstate_changed(AST_DEVICE_INUSE, "Queue:%s_avail", q->name);
+ast_devstate_changed(AST_DEVICE_INUSE, "Queue:%s_avail", q->name)
+ast_devstate_changed
+ast_devstate_changed
+AST_DEVICE_INUSE
+AST_DEVICE_INUSE
+"Queue:%s_avail"
+q->name
+q
+q
+name
+-----joern-----
+(196,69,0)
+(259,69,0)
+(226,271,0)
+(94,294,0)
+(245,237,0)
+(229,250,0)
+(102,185,0)
+(171,230,0)
+(160,10,0)
+(96,70,0)
+(132,37,0)
+(189,142,0)
+(233,271,0)
+(188,69,0)
+(125,271,0)
+(234,148,0)
+(103,1,0)
+(54,243,0)
+(173,30,0)
+(27,148,0)
+(12,62,0)
+(294,94,0)
+(3,286,0)
+(60,195,0)
+(37,271,0)
+(101,69,0)
+(260,136,0)
+(232,226,0)
+(170,131,0)
+(63,216,0)
+(57,312,0)
+(156,69,0)
+(140,13,0)
+(108,206,0)
+(264,101,0)
+(127,156,0)
+(255,162,0)
+(42,180,0)
+(297,250,0)
+(26,166,0)
+(178,261,0)
+(321,271,0)
+(82,179,0)
+(98,126,0)
+(257,311,0)
+(88,271,0)
+(15,69,0)
+(225,326,0)
+(168,271,0)
+(286,234,0)
+(4,5,0)
+(50,271,0)
+(166,141,0)
+(199,69,0)
+(192,21,0)
+(263,271,0)
+(314,219,0)
+(323,193,0)
+(6,151,0)
+(62,69,0)
+(111,271,0)
+(95,13,0)
+(74,291,0)
+(56,180,0)
+(302,29,0)
+(71,77,0)
+(325,35,0)
+(253,119,0)
+(335,320,0)
+(242,69,0)
+(337,111,0)
+(70,271,0)
+(180,271,0)
+(316,69,0)
+(112,69,0)
+(153,101,0)
+(209,37,0)
+(261,187,0)
+(48,69,0)
+(126,148,0)
+(234,286,0)
+(28,29,0)
+(85,69,0)
+(109,306,0)
+(266,142,0)
+(321,259,0)
+(206,69,0)
+(184,7,0)
+(261,185,0)
+(313,228,0)
+(26,271,0)
+(64,314,0)
+(252,88,0)
+(149,219,0)
+(82,336,0)
+(301,26,0)
+(304,222,0)
+(218,264,0)
+(25,133,0)
+(90,3,0)
+(256,237,0)
+(14,156,0)
+(155,115,0)
+(219,69,0)
+(125,69,0)
+(43,291,0)
+(247,243,0)
+(182,259,0)
+(24,79,0)
+(98,271,0)
+(93,138,0)
+(84,155,0)
+(113,108,0)
+(34,137,0)
+(77,112,0)
+(320,10,0)
+(129,271,0)
+(32,69,0)
+(251,271,0)
+(333,69,0)
+(99,211,0)
+(108,271,0)
+(272,238,0)
+(324,271,0)
+(311,69,0)
+(95,271,0)
+(279,274,0)
+(45,206,0)
+(208,233,0)
+(92,80,0)
+(165,222,0)
+(193,272,0)
+(204,283,0)
+(55,331,0)
+(89,125,0)
+(77,271,0)
+(66,274,0)
+(263,311,0)
+(148,27,0)
+(320,274,0)
+(336,82,0)
+(148,44,0)
+(224,195,0)
+(88,1,0)
+(75,144,0)
+(52,69,0)
+(30,69,0)
+(200,292,0)
+(212,180,0)
+(214,21,0)
+(97,70,0)
+(228,69,0)
+(5,185,0)
+(128,105,0)
+(198,179,0)
+(49,283,0)
+(261,233,0)
+(121,94,0)
+(217,47,0)
+(0,129,0)
+(135,69,0)
+(284,151,0)
+(138,271,0)
+(227,172,0)
+(332,95,0)
+(241,58,0)
+(295,226,0)
+(53,35,0)
+(318,69,0)
+(268,74,0)
+(283,271,0)
+(150,50,0)
+(306,199,0)
+(273,135,0)
+(292,65,0)
+(326,242,0)
+(316,271,0)
+(118,251,0)
+(130,133,0)
+(158,243,0)
+(145,98,0)
+(16,111,0)
+(292,271,0)
+(287,123,0)
+(83,318,0)
+(37,196,0)
+(234,144,0)
+(79,155,0)
+(73,32,0)
+(139,211,0)
+(144,271,0)
+(195,271,0)
+(307,125,0)
+(10,69,0)
+(281,294,0)
+(78,137,0)
+(282,271,0)
+(131,271,0)
+(40,147,0)
+(179,271,0)
+(8,129,0)
+(211,271,0)
+(308,298,0)
+(105,271,0)
+(116,69,0)
+(146,263,0)
+(278,14,0)
+(244,237,0)
+(215,324,0)
+(164,242,0)
+(94,185,0)
+(324,69,0)
+(280,234,0)
+(162,48,0)
+(72,216,0)
+(216,271,0)
+(106,14,0)
+(187,243,0)
+(258,316,0)
+(114,125,0)
+(312,166,0)
+(286,3,0)
+(233,261,0)
+(133,270,0)
+(21,119,0)
+(47,271,0)
+(129,0,0)
+(236,189,0)
+(133,271,0)
+(326,271,0)
+(105,135,0)
+(163,36,0)
+(162,271,0)
+(250,271,0)
+(276,69,0)
+(310,7,0)
+(41,241,0)
+(175,196,0)
+(46,271,0)
+(181,79,0)
+(235,46,0)
+(274,271,0)
+(20,85,0)
+(122,137,0)
+(157,98,0)
+(28,271,0)
+(138,62,0)
+(338,324,0)
+(167,27,0)
+(220,168,0)
+(207,88,0)
+(65,69,0)
+(275,312,0)
+(117,251,0)
+(213,69,0)
+(330,327,0)
+(317,168,0)
+(154,313,0)
+(111,329,0)
+(120,159,0)
+(319,179,0)
+(329,69,0)
+(328,28,0)
+(334,298,0)
+(237,271,0)
+(17,50,0)
+(51,271,0)
+(152,69,0)
+(230,69,0)
+(155,79,0)
+(177,172,0)
+(151,327,0)
+(2,51,0)
+(190,221,0)
+(23,48,0)
+(142,189,0)
+(306,271,0)
+(226,15,0)
+(283,67,0)
+(79,271,0)
+(296,185,0)
+(39,228,0)
+(59,144,0)
+(282,69,0)
+(47,331,0)
+(221,69,0)
+(1,69,0)
+(9,251,0)
+(211,69,0)
+(221,271,0)
+(183,321,0)
+(250,32,0)
+(7,241,0)
+(14,271,0)
+(191,324,0)
+(38,126,0)
+(86,162,0)
+(289,189,0)
+(174,74,0)
+(265,105,0)
+(290,0,0)
+(58,168,0)
+(300,65,0)
+(184,223,0)
+(51,30,0)
+(274,320,0)
+(186,5,0)
+(81,329,0)
+(115,155,0)
+(18,316,0)
+(254,263,0)
+(202,69,0)
+(239,172,0)
+(104,3,0)
+(119,69,0)
+(272,137,0)
+(70,85,0)
+(110,82,0)
+(35,271,0)
+(294,271,0)
+(222,271,0)
+(269,28,0)
+(210,188,0)
+(0,336,0)
+(3,19,0)
+(309,131,0)
+(314,271,0)
+(246,282,0)
+(67,69,0)
+(237,69,0)
+(277,199,0)
+(327,69,0)
+(80,69,0)
+(13,69,0)
+(267,184,0)
+(100,292,0)
+(243,187,0)
+(33,312,0)
+(193,271,0)
+(243,262,0)
+(248,108,0)
+(35,230,0)
+(61,282,0)
+(21,271,0)
+(203,129,0)
+(195,136,0)
+(172,271,0)
+(276,46,0)
+(293,47,0)
+(134,211,0)
+(298,271,0)
+(159,185,0)
+(249,95,0)
+(241,7,0)
+(74,271,0)
+(240,51,0)
+(205,69,0)
+(124,193,0)
+(222,188,0)
+(172,69,0)
+(29,69,0)
+(285,326,0)
+(336,0,0)
+(76,233,0)
+(143,221,0)
+(107,314,0)
+(147,69,0)
+(315,15,0)
+(176,67,0)
+(299,276,0)
+(161,46,0)
+(151,271,0)
+(166,312,0)
+(194,313,0)
+(305,112,0)
+(68,26,0)
+(137,272,0)
+(87,321,0)
+(288,276,0)
+(197,294,0)
+(313,271,0)
+(22,282,0)
+(231,221,0)
+(187,261,0)
+(179,82,0)
+(303,138,0)
+(322,316,0)
+(136,69,0)
+(270,133,0)
+(180,69,0)
+(144,234,0)
+(189,271,0)
+(201,306,0)
+(91,216,0)
+(251,69,0)
+(11,77,0)
+(168,58,0)
+(331,69,0)
+(46,276,0)
+(131,318,0)
+(50,80,0)
+(298,147,0)
+(264,271,0)
+(31,264,0)
+(216,69,0)
+(58,241,0)
+(291,69,0)
+(126,98,0)
+(87,183,1)
+(254,331,1)
+(82,110,1)
+(317,220,1)
+(318,83,1)
+(11,71,1)
+(155,79,1)
+(250,229,1)
+(65,300,1)
+(198,319,1)
+(16,337,1)
+(193,271,1)
+(310,5,1)
+(70,96,1)
+(109,147,1)
+(26,301,1)
+(151,6,1)
+(117,118,1)
+(110,179,1)
+(243,187,1)
+(283,271,1)
+(111,16,1)
+(168,271,1)
+(241,58,1)
+(74,268,1)
+(30,173,1)
+(120,94,1)
+(183,29,1)
+(148,27,1)
+(60,291,1)
+(37,209,1)
+(256,244,1)
+(6,284,1)
+(64,107,1)
+(290,129,1)
+(92,50,1)
+(321,271,1)
+(105,128,1)
+(207,329,1)
+(316,271,1)
+(275,33,1)
+(127,14,1)
+(173,51,1)
+(115,155,1)
+(158,54,1)
+(319,270,1)
+(143,190,1)
+(46,235,1)
+(81,111,1)
+(94,294,1)
+(321,87,1)
+(323,124,1)
+(261,185,1)
+(34,78,1)
+(55,47,1)
+(236,289,1)
+(300,292,1)
+(2,240,1)
+(208,94,1)
+(316,18,1)
+(216,72,1)
+(28,328,1)
+(276,46,1)
+(176,283,1)
+(18,258,1)
+(179,198,1)
+(91,63,1)
+(234,148,1)
+(9,117,1)
+(259,182,1)
+(214,192,1)
+(62,12,1)
+(151,271,1)
+(324,271,1)
+(234,144,1)
+(197,281,1)
+(244,245,1)
+(159,185,1)
+(181,282,1)
+(0,129,1)
+(90,286,1)
+(106,278,1)
+(240,166,1)
+(278,199,1)
+(245,324,1)
+(280,144,1)
+(281,5,1)
+(169,276,1)
+(75,142,1)
+(237,256,1)
+(230,171,1)
+(217,196,1)
+(3,104,1)
+(48,23,1)
+(209,132,1)
+(170,327,1)
+(222,271,1)
+(206,45,1)
+(17,135,1)
+(311,257,1)
+(3,286,1)
+(146,254,1)
+(327,330,1)
+(122,193,1)
+(299,288,1)
+(39,313,1)
+(40,298,1)
+(4,159,1)
+(114,307,1)
+(273,105,1)
+(187,261,1)
+(63,237,1)
+(234,280,1)
+(296,142,1)
+(128,265,1)
+(57,26,1)
+(37,271,1)
+(314,64,1)
+(294,197,1)
+(315,226,1)
+(268,174,1)
+(284,32,1)
+(331,55,1)
+(67,176,1)
+(182,321,1)
+(58,168,1)
+(258,322,1)
+(289,115,1)
+(263,271,1)
+(172,271,1)
+(269,136,1)
+(235,161,1)
+(41,58,1)
+(59,75,1)
+(53,188,1)
+(77,271,1)
+(200,13,1)
+(162,255,1)
+(97,311,1)
+(140,95,1)
+(265,10,1)
+(261,233,1)
+(237,271,1)
+(31,156,1)
+(175,37,1)
+(338,180,1)
+(80,92,1)
+(326,271,1)
+(46,271,1)
+(204,49,1)
+(263,146,1)
+(49,85,1)
+(257,263,1)
+(76,208,1)
+(292,271,1)
+(162,271,1)
+(103,88,1)
+(168,317,1)
+(250,271,1)
+(99,134,1)
+(42,221,1)
+(160,320,1)
+(270,133,1)
+(129,271,1)
+(310,184,1)
+(135,273,1)
+(285,225,1)
+(118,216,1)
+(161,299,1)
+(212,56,1)
+(274,66,1)
+(320,274,1)
+(282,246,1)
+(136,260,1)
+(159,120,1)
+(43,74,1)
+(13,140,1)
+(112,305,1)
+(35,325,1)
+(126,38,1)
+(248,65,1)
+(82,179,1)
+(85,20,1)
+(177,227,1)
+(25,130,1)
+(172,239,1)
+(98,271,1)
+(74,271,1)
+(260,195,1)
+(165,1,1)
+(12,138,1)
+(219,149,1)
+(180,212,1)
+(324,191,1)
+(288,7,1)
+(133,271,1)
+(224,60,1)
+(302,28,1)
+(54,187,1)
+(266,189,1)
+(178,233,1)
+(104,90,1)
+(322,211,1)
+(220,310,1)
+(7,241,1)
+(26,271,1)
+(4,185,1)
+(337,228,1)
+(50,150,1)
+(264,218,1)
+(144,271,1)
+(14,271,1)
+(10,160,1)
+(5,185,1)
+(201,109,1)
+(277,306,1)
+(210,222,1)
+(51,271,1)
+(296,3,1)
+(142,189,1)
+(15,315,1)
+(185,102,1)
+(195,224,1)
+(131,271,1)
+(105,271,1)
+(24,181,1)
+(255,86,1)
+(79,271,1)
+(336,0,1)
+(102,296,1)
+(233,271,1)
+(229,297,1)
+(120,243,1)
+(289,148,1)
+(184,7,1)
+(189,236,1)
+(221,271,1)
+(334,206,1)
+(89,30,1)
+(157,145,1)
+(129,203,1)
+(142,266,1)
+(21,214,1)
+(20,70,1)
+(153,264,1)
+(27,167,1)
+(66,279,1)
+(94,121,1)
+(222,304,1)
+(293,217,1)
+(253,21,1)
+(267,7,1)
+(125,271,1)
+(113,248,1)
+(306,201,1)
+(147,40,1)
+(279,48,1)
+(232,295,1)
+(298,271,1)
+(29,302,1)
+(107,112,1)
+(108,271,1)
+(226,232,1)
+(328,269,1)
+(216,271,1)
+(93,303,1)
+(330,151,1)
+(251,9,1)
+(167,126,1)
+(144,59,1)
+(226,271,1)
+(242,164,1)
+(68,336,1)
+(308,334,1)
+(233,76,1)
+(88,271,1)
+(184,267,1)
+(313,271,1)
+(291,43,1)
+(33,57,1)
+(164,326,1)
+(77,11,1)
+(156,127,1)
+(225,219,1)
+(95,332,1)
+(124,336,1)
+(126,98,1)
+(23,162,1)
+(71,80,1)
+(211,99,1)
+(174,101,1)
+(1,103,1)
+(189,271,1)
+(195,271,1)
+(192,230,1)
+(301,68,1)
+(98,157,1)
+(272,137,1)
+(79,24,1)
+(51,2,1)
+(38,98,1)
+(47,271,1)
+(282,271,1)
+(228,39,1)
+(171,35,1)
+(138,271,1)
+(78,122,1)
+(247,158,1)
+(138,93,1)
+(194,318,1)
+(305,77,1)
+(309,170,1)
+(139,251,1)
+(35,271,1)
+(125,114,1)
+(130,62,1)
+(190,172,1)
+(0,290,1)
+(326,285,1)
+(246,22,1)
+(179,271,1)
+(218,31,1)
+(196,175,1)
+(240,270,1)
+(96,97,1)
+(304,165,1)
+(239,177,1)
+(154,194,1)
+(221,231,1)
+(336,82,1)
+(211,271,1)
+(325,53,1)
+(121,294,1)
+(111,271,1)
+(188,210,1)
+(70,271,1)
+(21,271,1)
+(145,115,1)
+(329,81,1)
+(119,253,1)
+(8,82,1)
+(108,113,1)
+(56,42,1)
+(264,271,1)
+(295,242,1)
+(215,338,1)
+(133,25,1)
+(261,178,1)
+(95,271,1)
+(320,335,1)
+(47,293,1)
+(86,67,1)
+(332,249,1)
+(83,131,1)
+(251,271,1)
+(283,204,1)
+(241,41,1)
+(94,185,1)
+(297,15,1)
+(193,323,1)
+(137,34,1)
+(307,89,1)
+(199,277,1)
+(150,17,1)
+(149,314,1)
+(227,125,1)
+(313,154,1)
+(292,100,1)
+(274,271,1)
+(314,271,1)
+(132,259,1)
+(101,153,1)
+(231,143,1)
+(303,119,1)
+(84,79,1)
+(306,271,1)
+(243,247,1)
+(28,271,1)
+(166,312,1)
+(88,252,1)
+(50,271,1)
+(73,250,1)
+(45,108,1)
+(100,200,1)
+(186,4,1)
+(252,207,1)
+(22,61,1)
+(14,106,1)
+(335,274,1)
+(191,215,1)
+(203,8,1)
+(61,316,1)
+(32,73,1)
+(5,186,1)
+(286,234,1)
+(180,271,1)
+(131,309,1)
+(312,275,1)
+(240,272,1)
+(294,271,1)
+(155,84,1)
+(298,308,1)
+(134,139,1)
+(72,91,1)
+(68,336,2)
+(137,336,2)
+(37,271,2)
+(233,94,2)
+(26,271,2)
+(155,79,2)
+(59,142,2)
+(50,271,2)
+(272,336,2)
+(166,336,2)
+(144,271,2)
+(120,5,2)
+(7,241,2)
+(82,270,2)
+(280,142,2)
+(234,148,2)
+(168,7,2)
+(159,185,2)
+(0,82,2)
+(57,336,2)
+(151,271,2)
+(264,271,2)
+(94,5,2)
+(111,271,2)
+(5,5,2)
+(158,94,2)
+(168,271,2)
+(193,271,2)
+(126,115,2)
+(77,271,2)
+(104,142,2)
+(286,142,2)
+(110,270,2)
+(133,271,2)
+(26,336,2)
+(180,271,2)
+(131,271,2)
+(211,271,2)
+(47,271,2)
+(270,133,2)
+(105,271,2)
+(142,189,2)
+(306,271,2)
+(58,168,2)
+(250,271,2)
+(178,94,2)
+(187,94,2)
+(286,234,2)
+(220,7,2)
+(324,271,2)
+(144,142,2)
+(79,271,2)
+(216,271,2)
+(320,274,2)
+(3,286,2)
+(203,82,2)
+(294,5,2)
+(263,271,2)
+(241,58,2)
+(282,271,2)
+(274,271,2)
+(7,7,2)
+(261,94,2)
+(313,271,2)
+(124,336,2)
+(4,5,2)
+(301,336,2)
+(108,271,2)
+(129,82,2)
+(321,271,2)
+(54,94,2)
+(234,142,2)
+(222,271,2)
+(21,271,2)
+(121,5,2)
+(195,271,2)
+(261,233,2)
+(234,144,2)
+(51,271,2)
+(70,271,2)
+(162,271,2)
+(76,94,2)
+(272,137,2)
+(167,115,2)
+(88,271,2)
+(292,271,2)
+(115,155,2)
+(193,336,2)
+(75,142,2)
+(326,271,2)
+(35,271,2)
+(243,187,2)
+(319,270,2)
+(94,294,2)
+(28,271,2)
+(94,185,2)
+(46,271,2)
+(0,129,2)
+(312,336,2)
+(276,46,2)
+(336,0,2)
+(179,270,2)
+(336,82,2)
+(317,7,2)
+(95,271,2)
+(82,179,2)
+(310,7,2)
+(3,142,2)
+(138,271,2)
+(90,142,2)
+(148,27,2)
+(126,98,2)
+(148,115,2)
+(251,271,2)
+(78,336,2)
+(261,185,2)
+(5,185,2)
+(184,7,2)
+(172,271,2)
+(237,271,2)
+(323,336,2)
+(186,5,2)
+(267,7,2)
+(283,271,2)
+(122,336,2)
+(98,271,2)
+(145,115,2)
+(157,115,2)
+(226,271,2)
+(275,336,2)
+(41,7,2)
+(243,94,2)
+(314,271,2)
+(247,94,2)
+(298,271,2)
+(34,336,2)
+(316,271,2)
+(129,271,2)
+(208,94,2)
+(221,271,2)
+(294,271,2)
+(281,5,2)
+(179,271,2)
+(98,115,2)
+(27,115,2)
+(198,270,2)
+(38,115,2)
+(187,261,2)
+(159,5,2)
+(125,271,2)
+(241,7,2)
+(336,270,2)
+(197,5,2)
+(74,271,2)
+(290,82,2)
+(33,336,2)
+(58,7,2)
+(14,271,2)
+(166,312,2)
+(8,82,2)
+(189,271,2)
+(233,271,2)
+-----------------------------------
+(0,q->strategy == QUEUE_STRATEGY_RRORDERED)
+(1,q->randomperiodicannounce = 0)
+(2,found)
+(3,ast_str_set(&q->sound_periodicannounce[0], 0, "queue-periodic-announce")
+(4,i)
+(5,i < MAX_PERIODIC_ANNOUNCEMENTS)
+(6,eventwhencalled)
+(7,pr_iter = AST_LIST_REMOVE_HEAD(&q->rules,list)
+(8,q)
+(9,"queue-minute")
+(10,q->monfmt[0] = \'\\0\')
+(11,penaltymemberslimit)
+(12,0)
+(13,q->dead = 0)
+(14,q->minannouncefrequency)
+(15,q->memberdelay = 0)
+(16,periodicannouncefrequency)
+(17,q)
+(18,"queue-thankyou")
+(19,)
+(20,0)
+(21,q->timeoutpriority)
+(22,sound_reporthold)
+(23,montype_default)
+(24,sound_periodicannounce)
+(25,members)
+(26,q->members)
+(27,ast_str_create(32)
+(28,q->roundingseconds)
+(29,q->roundingseconds = 0)
+(30,q->found = 1)
+(31,q)
+(32,q->maskmemberstatus = 0)
+(33,member_hash_fn)
+(34,member_cmp_fn)
+(35,q->autopause)
+(36,)
+(37,q->ringinuse)
+(38,0)
+(39,0)
+(40,0)
+(41,list)
+(42,q)
+(43,10)
+(44,)
+(45,DEFAULT_TIMEOUT)
+(46,q->name)
+(47,q->setinterfacevar)
+(48,q->montype = montype_default)
+(49,q)
+(50,q->wrapuptime)
+(51,q->found)
+(52,pr_iter)
+(53,q)
+(54,0)
+(55,0)
+(56,queue_quantity1)
+(57,37)
+(58,&q->rules)
+(59,sound_periodicannounce)
+(60,q)
+(61,q)
+(62,q->autopausedelay = 0)
+(63,q)
+(64,joinempty)
+(65,q->retry = DEFAULT_RETRY)
+(66,monfmt)
+(67,q->autofill = autofill_default)
+(68,q)
+(69,)
+(70,q->setqueueentryvar)
+(71,q)
+(72,"queue-minutes")
+(73,0)
+(74,q->announcepositionlimit)
+(75,q)
+(76,sound_periodicannounce)
+(77,q->penaltymemberslimit)
+(78,member_hash_fn)
+(79,q->sound_periodicannounce)
+(80,q->wrapuptime = 0)
+(81,0)
+(82,q->strategy == QUEUE_STRATEGY_LINEAR)
+(83,0)
+(84,0)
+(85,q->setqueueentryvar = 0)
+(86,q)
+(87,servicelevel)
+(88,q->randomperiodicannounce)
+(89,q)
+(90,0)
+(91,sound_minutes)
+(92,0)
+(93,autopausedelay)
+(94,q->sound_periodicannounce[i])
+(95,q->dead)
+(96,setqueueentryvar)
+(97,q)
+(98,q->sound_periodicannounce)
+(99,"queue-seconds")
+(100,retry)
+(101,q->announceholdtime = 1)
+(102,1)
+(103,0)
+(104,"queue-periodic-announce")
+(105,q->reportholdtime)
+(106,minannouncefrequency)
+(107,q)
+(108,q->timeout)
+(109,q)
+(110,QUEUE_STRATEGY_LINEAR)
+(111,q->periodicannouncefrequency)
+(112,q->penaltymemberslimit = 0)
+(113,timeout)
+(114,"queue-youarenext")
+(115,!q->sound_periodicannounce[0])
+(116,i)
+(117,sound_minute)
+(118,q)
+(119,q->timeoutpriority = TIMEOUT_PRIORITY_APP)
+(120,i)
+(121,i)
+(122,1)
+(123,)
+(124,q)
+(125,ast_string_field_set(q, sound_next, "queue-youarenext")
+(126,q->sound_periodicannounce[0])
+(127,DEFAULT_MIN_ANNOUNCE_FREQUENCY)
+(128,reportholdtime)
+(129,q->strategy)
+(130,q)
+(131,q->weight)
+(132,q)
+(133,q->members)
+(134,sound_seconds)
+(135,q->reportholdtime = 0)
+(136,q->announceposition = ANNOUNCEPOSITION_YES)
+(137,ao2_container_alloc(1, member_hash_fn, member_cmp_fn)
+(138,q->autopausedelay)
+(139,q)
+(140,0)
+(141,)
+(142,q->sound_periodicannounce[0])
+(143,sound_calls)
+(144,q->sound_periodicannounce)
+(145,q)
+(146,setqueuevar)
+(147,q->maxlen = 0)
+(148,q->sound_periodicannounce[0] = ast_str_create(32)
+(149,0)
+(150,wrapuptime)
+(151,q->eventwhencalled)
+(152,while ((pr_iter = AST_LIST_REMOVE_HEAD(&q->rules,list)
+(153,1)
+(154,timeoutrestart)
+(155,q->sound_periodicannounce[0])
+(156,q->minannouncefrequency = DEFAULT_MIN_ANNOUNCE_FREQUENCY)
+(157,sound_periodicannounce)
+(158,"%s")
+(159,i++)
+(160,\'\\0\')
+(161,q)
+(162,q->montype)
+(163,if (q->sound_periodicannounce[i])
+(164,0)
+(165,q)
+(166,q->members = ao2_container_alloc(37, member_hash_fn, member_cmp_fn)
+(167,32)
+(168,q->rules)
+(169,RET)
+(170,q)
+(171,QUEUE_AUTOPAUSE_OFF)
+(172,ast_string_field_set(q, sound_thereare, "queue-thereare")
+(173,1)
+(174,q)
+(175,1)
+(176,autofill_default)
+(177,sound_thereare)
+(178,i)
+(179,q->strategy)
+(180,ast_string_field_set(q, queue_quantity1, "queue-quantity1")
+(181,q)
+(182,0)
+(183,q)
+(184,ast_free(pr_iter)
+(185,i = 1)
+(186,MAX_PERIODIC_ANNOUNCEMENTS)
+(187,&q->sound_periodicannounce[i])
+(188,q->numperiodicannounce = 0)
+(189,q->sound_periodicannounce)
+(190,q)
+(191,"queue-quantity2")
+(192,q)
+(193,q->members)
+(194,q)
+(195,q->announceposition)
+(196,q->ringinuse = 1)
+(197,sound_periodicannounce)
+(198,strategy)
+(199,q->announcefrequency = 0)
+(200,q)
+(201,announcefrequency)
+(202,if (!q->members)
+(203,strategy)
+(204,autofill)
+(205,for (i = 1; i < MAX_PERIODIC_ANNOUNCEMENTS; i++)
+(206,q->timeout = DEFAULT_TIMEOUT)
+(207,q)
+(208,q)
+(209,ringinuse)
+(210,0)
+(211,ast_string_field_set(q, sound_seconds, "queue-seconds")
+(212,"queue-quantity1")
+(213,if (!q->sound_periodicannounce[0])
+(214,timeoutpriority)
+(215,queue_quantity2)
+(216,ast_string_field_set(q, sound_minutes, "queue-minutes")
+(217,q)
+(218,announceholdtime)
+(219,q->joinempty = 0)
+(220,q)
+(221,ast_string_field_set(q, sound_calls, "queue-callswaiting")
+(222,q->numperiodicannounce)
+(223,)
+(224,announceposition)
+(225,q)
+(226,q->memberdelay)
+(227,q)
+(228,q->timeoutrestart = 0)
+(229,maskmemberstatus)
+(230,q->autopause = QUEUE_AUTOPAUSE_OFF)
+(231,"queue-callswaiting")
+(232,memberdelay)
+(233,q->sound_periodicannounce)
+(234,q->sound_periodicannounce[0])
+(235,name)
+(236,sound_periodicannounce)
+(237,ast_string_field_set(q, sound_holdtime, "queue-holdtime")
+(238,)
+(239,"queue-thereare")
+(240,q)
+(241,AST_LIST_REMOVE_HEAD(&q->rules,list)
+(242,q->leavewhenempty = 0)
+(243,ast_str_set(&q->sound_periodicannounce[i], 0, "%s", "")
+(244,sound_holdtime)
+(245,q)
+(246,"queue-reporthold")
+(247,"")
+(248,q)
+(249,q)
+(250,q->maskmemberstatus)
+(251,ast_string_field_set(q, sound_minute, "queue-minute")
+(252,randomperiodicannounce)
+(253,TIMEOUT_PRIORITY_APP)
+(254,q)
+(255,montype)
+(256,"queue-holdtime")
+(257,0)
+(258,sound_thanks)
+(259,q->servicelevel = 0)
+(260,ANNOUNCEPOSITION_YES)
+(261,q->sound_periodicannounce[i])
+(262,)
+(263,q->setqueuevar)
+(264,q->announceholdtime)
+(265,q)
+(266,0)
+(267,pr_iter)
+(268,announcepositionlimit)
+(269,q)
+(270,!q->members)
+(271,struct call_queue *q)
+(272,q->members = ao2_container_alloc(1, member_hash_fn, member_cmp_fn)
+(273,0)
+(274,q->monfmt)
+(275,member_cmp_fn)
+(276,ast_devstate_changed(AST_DEVICE_INUSE, "Queue:%s_avail", q->name)
+(277,0)
+(278,q)
+(279,q)
+(280,0)
+(281,q)
+(282,ast_string_field_set(q, sound_reporthold, "queue-reporthold")
+(283,q->autofill)
+(284,q)
+(285,leavewhenempty)
+(286,&q->sound_periodicannounce[0])
+(287,if (q->strategy == QUEUE_STRATEGY_LINEAR || q->strategy == QUEUE_STRATEGY_RRORDERED)
+(288,AST_DEVICE_INUSE)
+(289,q)
+(290,QUEUE_STRATEGY_RRORDERED)
+(291,q->announcepositionlimit = 10)
+(292,q->retry)
+(293,setinterfacevar)
+(294,q->sound_periodicannounce)
+(295,q)
+(296,i)
+(297,q)
+(298,q->maxlen)
+(299,"Queue:%s_avail")
+(300,DEFAULT_RETRY)
+(301,members)
+(302,0)
+(303,q)
+(304,numperiodicannounce)
+(305,0)
+(306,q->announcefrequency)
+(307,sound_next)
+(308,maxlen)
+(309,weight)
+(310,pr_iter)
+(311,q->setqueuevar = 0)
+(312,ao2_container_alloc(37, member_hash_fn, member_cmp_fn)
+(313,q->timeoutrestart)
+(314,q->joinempty)
+(315,0)
+(316,ast_string_field_set(q, sound_thanks, "queue-thankyou")
+(317,rules)
+(318,q->weight = 0)
+(319,q)
+(320,q->monfmt[0])
+(321,q->servicelevel)
+(322,q)
+(323,members)
+(324,ast_string_field_set(q, queue_quantity2, "queue-quantity2")
+(325,autopause)
+(326,q->leavewhenempty)
+(327,q->eventwhencalled = 0)
+(328,roundingseconds)
+(329,q->periodicannouncefrequency = 0)
+(330,0)
+(331,q->setinterfacevar = 0)
+(332,dead)
+(333,if (q->sound_periodicannounce[0])
+(334,q)
+(335,0)
+(336,q->strategy == QUEUE_STRATEGY_LINEAR || q->strategy == QUEUE_STRATEGY_RRORDERED)
+(337,q)
+(338,q)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

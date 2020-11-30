@@ -1,0 +1,1219 @@
+-----label-----
+0
+-----code-----
+static int qrtr_recvmsg(struct socket *sock, struct msghdr *msg,
+			size_t size, int flags)
+{
+	DECLARE_SOCKADDR(struct sockaddr_qrtr *, addr, msg->msg_name);
+	struct sock *sk = sock->sk;
+	struct sk_buff *skb;
+	struct qrtr_cb *cb;
+	int copied, rc;
+
+	lock_sock(sk);
+
+	if (sock_flag(sk, SOCK_ZAPPED)) {
+		release_sock(sk);
+		return -EADDRNOTAVAIL;
+	}
+
+	skb = skb_recv_datagram(sk, flags & ~MSG_DONTWAIT,
+				flags & MSG_DONTWAIT, &rc);
+	if (!skb) {
+		release_sock(sk);
+		return rc;
+	}
+	cb = (struct qrtr_cb *)skb->cb;
+
+	copied = skb->len;
+	if (copied > size) {
+		copied = size;
+		msg->msg_flags |= MSG_TRUNC;
+	}
+
+	rc = skb_copy_datagram_msg(skb, 0, msg, copied);
+	if (rc < 0)
+		goto out;
+	rc = copied;
+
+	if (addr) {
+		addr->sq_family = AF_QIPCRTR;
+		addr->sq_node = cb->src_node;
+		addr->sq_port = cb->src_port;
+		msg->msg_namelen = sizeof(*addr);
+	}
+
+out:
+	if (cb->confirm_rx)
+		qrtr_resume_tx(cb);
+
+	skb_free_datagram(sk, skb);
+	release_sock(sk);
+
+	return rc;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+3,8
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+17,19
+18,19
+20,21
+22,23
+22,24
+24,25
+26,27
+26,28
+26,29
+26,30
+26,31
+26,32
+26,33
+26,34
+26,35
+26,36
+26,37
+26,38
+26,39
+26,40
+26,41
+26,42
+26,43
+26,44
+26,45
+26,46
+27,28
+28,29
+29,30
+29,31
+30,31
+32,33
+32,34
+32,35
+35,36
+36,37
+36,38
+37,38
+40,41
+41,42
+41,43
+42,43
+44,45
+44,46
+47,48
+48,49
+48,50
+49,50
+51,52
+51,53
+54,55
+55,56
+55,57
+55,58
+57,58
+59,60
+61,62
+62,63
+62,64
+63,64
+65,66
+67,68
+67,69
+68,69
+68,70
+68,71
+69,70
+71,72
+73,74
+75,76
+75,77
+76,77
+77,78
+77,79
+78,79
+80,81
+82,83
+83,84
+84,85
+86,87
+87,88
+87,89
+88,89
+90,91
+90,92
+90,93
+90,94
+90,95
+91,92
+93,94
+95,96
+95,97
+96,97
+98,99
+99,100
+101,102
+101,103
+102,103
+104,105
+106,107
+107,108
+109,110
+109,111
+110,111
+111,112
+113,114
+113,115
+114,115
+115,116
+115,117
+116,117
+118,119
+120,121
+121,122
+123,124
+124,125
+124,126
+125,126
+127,128
+127,129
+128,129
+128,130
+129,130
+131,132
+133,134
+133,135
+134,135
+137,138
+138,139
+138,140
+139,140
+141,142
+141,143
+142,143
+145,146
+145,147
+146,147
+146,148
+147,148
+149,150
+151,152
+151,153
+152,153
+153,154
+153,155
+154,155
+156,157
+158,159
+159,160
+159,161
+160,161
+160,162
+161,162
+164,165
+166,167
+167,168
+167,169
+168,169
+170,171
+170,172
+170,173
+170,174
+170,175
+171,172
+173,174
+176,177
+178,179
+180,181
+180,182
+181,182
+181,183
+182,183
+185,186
+187,188
+188,189
+188,190
+189,190
+191,192
+193,194
+193,195
+194,195
+196,197
+196,198
+196,199
+196,200
+197,198
+198,199
+198,200
+199,200
+199,201
+200,201
+203,204
+205,206
+206,207
+206,208
+207,208
+207,209
+208,209
+211,212
+211,213
+212,213
+215,216
+216,217
+216,218
+217,218
+217,219
+218,219
+221,222
+221,223
+222,223
+225,226
+226,227
+226,228
+227,228
+227,229
+228,229
+231,232
+232,233
+233,234
+234,235
+236,237
+236,238
+238,239
+238,240
+239,240
+239,241
+240,241
+243,244
+244,245
+244,246
+245,246
+247,248
+249,250
+250,251
+250,252
+250,253
+251,252
+253,254
+255,256
+257,258
+258,259
+258,260
+259,260
+261,262
+263,264
+264,265
+-----nextToken-----
+2,4,7,9,10,13,15,16,19,21,23,25,31,33,34,38,39,43,45,46,50,52,53,56,58,60,64,66,70,72,74,79,81,85,89,92,94,97,100,103,105,108,112,117,119,122,126,130,132,135,136,140,143,144,148,150,155,157,162,163,165,169,172,174,175,177,179,183,184,186,190,192,195,201,202,204,209,210,213,214,219,220,223,224,229,230,235,237,241,242,246,248,252,254,256,260,262,265
+-----computeFrom-----
+87,88
+87,89
+95,96
+95,97
+101,102
+101,103
+124,125
+124,126
+138,139
+138,140
+146,147
+146,148
+153,154
+153,155
+159,160
+159,161
+167,168
+167,169
+181,182
+181,183
+188,189
+188,190
+198,199
+198,200
+206,207
+206,208
+216,217
+216,218
+226,227
+226,228
+-----guardedBy-----
+148,155
+150,157
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;CompoundStatement;ProblemStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;Declarator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;Pointer;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;GotoStatement;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;UnaryExpression;UnaryExpression;IdExpression;Name;LabelStatement;Name;IfStatement;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+static int qrtr_recvmsg(struct socket *sock, struct msghdr *msg,			size_t size, int flags){	DECLARE_SOCKADDR(struct sockaddr_qrtr *, addr, msg->msg_name);	struct sock *sk = sock->sk;	struct sk_buff *skb;	struct qrtr_cb *cb;	int copied, rc;	lock_sock(sk);	if (sock_flag(sk, SOCK_ZAPPED)) {		release_sock(sk);		return -EADDRNOTAVAIL;	}	skb = skb_recv_datagram(sk, flags & ~MSG_DONTWAIT,				flags & MSG_DONTWAIT, &rc);	if (!skb) {		release_sock(sk);		return rc;	}	cb = (struct qrtr_cb *)skb->cb;	copied = skb->len;	if (copied > size) {		copied = size;		msg->msg_flags |= MSG_TRUNC;	}	rc = skb_copy_datagram_msg(skb, 0, msg, copied);	if (rc < 0)		goto out;	rc = copied;	if (addr) {		addr->sq_family = AF_QIPCRTR;		addr->sq_node = cb->src_node;		addr->sq_port = cb->src_port;		msg->msg_namelen = sizeof(*addr);	}out:	if (cb->confirm_rx)		qrtr_resume_tx(cb);	skb_free_datagram(sk, skb);	release_sock(sk);	return rc;}
+static int
+qrtr_recvmsg(struct socket *sock, struct msghdr *msg,			size_t size, int flags)
+qrtr_recvmsg
+struct socket *sock
+struct socket
+socket
+*sock
+*
+sock
+struct msghdr *msg
+struct msghdr
+msghdr
+*msg
+*
+msg
+size_t size
+size_t
+size_t
+size
+size
+int flags
+int
+flags
+flags
+{	DECLARE_SOCKADDR(struct sockaddr_qrtr *, addr, msg->msg_name);	struct sock *sk = sock->sk;	struct sk_buff *skb;	struct qrtr_cb *cb;	int copied, rc;	lock_sock(sk);	if (sock_flag(sk, SOCK_ZAPPED)) {		release_sock(sk);		return -EADDRNOTAVAIL;	}	skb = skb_recv_datagram(sk, flags & ~MSG_DONTWAIT,				flags & MSG_DONTWAIT, &rc);	if (!skb) {		release_sock(sk);		return rc;	}	cb = (struct qrtr_cb *)skb->cb;	copied = skb->len;	if (copied > size) {		copied = size;		msg->msg_flags |= MSG_TRUNC;	}	rc = skb_copy_datagram_msg(skb, 0, msg, copied);	if (rc < 0)		goto out;	rc = copied;	if (addr) {		addr->sq_family = AF_QIPCRTR;		addr->sq_node = cb->src_node;		addr->sq_port = cb->src_port;		msg->msg_namelen = sizeof(*addr);	}out:	if (cb->confirm_rx)		qrtr_resume_tx(cb);	skb_free_datagram(sk, skb);	release_sock(sk);	return rc;}
+DECLARE_SOCKADDR(struct sockaddr_qrtr *, addr, msg->msg_name);
+struct sock *sk = sock->sk;
+struct sock *sk = sock->sk;
+struct sock
+sock
+*sk = sock->sk
+*
+sk
+= sock->sk
+sock->sk
+sock
+sock
+sk
+struct sk_buff *skb;
+struct sk_buff *skb;
+struct sk_buff
+sk_buff
+*skb
+*
+skb
+struct qrtr_cb *cb;
+struct qrtr_cb *cb;
+struct qrtr_cb
+qrtr_cb
+*cb
+*
+cb
+int copied, rc;
+int copied, rc;
+int
+copied
+copied
+rc
+rc
+lock_sock(sk);
+lock_sock(sk)
+lock_sock
+lock_sock
+sk
+sk
+if (sock_flag(sk, SOCK_ZAPPED)) {		release_sock(sk);		return -EADDRNOTAVAIL;	}
+sock_flag(sk, SOCK_ZAPPED)
+sock_flag
+sock_flag
+sk
+sk
+SOCK_ZAPPED
+SOCK_ZAPPED
+{		release_sock(sk);		return -EADDRNOTAVAIL;	}
+release_sock(sk);
+release_sock(sk)
+release_sock
+release_sock
+sk
+sk
+return -EADDRNOTAVAIL;
+-EADDRNOTAVAIL
+EADDRNOTAVAIL
+EADDRNOTAVAIL
+skb = skb_recv_datagram(sk, flags & ~MSG_DONTWAIT,				flags & MSG_DONTWAIT, &rc);
+skb = skb_recv_datagram(sk, flags & ~MSG_DONTWAIT,				flags & MSG_DONTWAIT, &rc)
+skb
+skb
+skb_recv_datagram(sk, flags & ~MSG_DONTWAIT,				flags & MSG_DONTWAIT, &rc)
+skb_recv_datagram
+skb_recv_datagram
+sk
+sk
+flags & ~MSG_DONTWAIT
+flags
+flags
+~MSG_DONTWAIT
+MSG_DONTWAIT
+MSG_DONTWAIT
+flags & MSG_DONTWAIT
+flags
+flags
+MSG_DONTWAIT
+MSG_DONTWAIT
+&rc
+rc
+rc
+if (!skb) {		release_sock(sk);		return rc;	}
+!skb
+skb
+skb
+{		release_sock(sk);		return rc;	}
+release_sock(sk);
+release_sock(sk)
+release_sock
+release_sock
+sk
+sk
+return rc;
+rc
+rc
+cb = (struct qrtr_cb *)skb->cb;
+cb = (struct qrtr_cb *)skb->cb
+cb
+cb
+(struct qrtr_cb *)skb->cb
+struct qrtr_cb *
+struct qrtr_cb
+qrtr_cb
+*
+*
+skb->cb
+skb
+skb
+cb
+copied = skb->len;
+copied = skb->len
+copied
+copied
+skb->len
+skb
+skb
+len
+if (copied > size) {		copied = size;		msg->msg_flags |= MSG_TRUNC;	}
+copied > size
+copied
+copied
+size
+size
+{		copied = size;		msg->msg_flags |= MSG_TRUNC;	}
+copied = size;
+copied = size
+copied
+copied
+size
+size
+msg->msg_flags |= MSG_TRUNC;
+msg->msg_flags |= MSG_TRUNC
+msg->msg_flags
+msg
+msg
+msg_flags
+MSG_TRUNC
+MSG_TRUNC
+rc = skb_copy_datagram_msg(skb, 0, msg, copied);
+rc = skb_copy_datagram_msg(skb, 0, msg, copied)
+rc
+rc
+skb_copy_datagram_msg(skb, 0, msg, copied)
+skb_copy_datagram_msg
+skb_copy_datagram_msg
+skb
+skb
+0
+msg
+msg
+copied
+copied
+if (rc < 0)		goto out;
+rc < 0
+rc
+rc
+0
+goto out;
+out
+rc = copied;
+rc = copied
+rc
+rc
+copied
+copied
+if (addr) {		addr->sq_family = AF_QIPCRTR;		addr->sq_node = cb->src_node;		addr->sq_port = cb->src_port;		msg->msg_namelen = sizeof(*addr);	}
+addr
+addr
+{		addr->sq_family = AF_QIPCRTR;		addr->sq_node = cb->src_node;		addr->sq_port = cb->src_port;		msg->msg_namelen = sizeof(*addr);	}
+addr->sq_family = AF_QIPCRTR;
+addr->sq_family = AF_QIPCRTR
+addr->sq_family
+addr
+addr
+sq_family
+AF_QIPCRTR
+AF_QIPCRTR
+addr->sq_node = cb->src_node;
+addr->sq_node = cb->src_node
+addr->sq_node
+addr
+addr
+sq_node
+cb->src_node
+cb
+cb
+src_node
+addr->sq_port = cb->src_port;
+addr->sq_port = cb->src_port
+addr->sq_port
+addr
+addr
+sq_port
+cb->src_port
+cb
+cb
+src_port
+msg->msg_namelen = sizeof(*addr);
+msg->msg_namelen = sizeof(*addr)
+msg->msg_namelen
+msg
+msg
+msg_namelen
+sizeof(*addr)
+(*addr)
+*addr
+addr
+addr
+out:	if (cb->confirm_rx)		qrtr_resume_tx(cb);
+out
+if (cb->confirm_rx)		qrtr_resume_tx(cb);
+cb->confirm_rx
+cb
+cb
+confirm_rx
+qrtr_resume_tx(cb);
+qrtr_resume_tx(cb)
+qrtr_resume_tx
+qrtr_resume_tx
+cb
+cb
+skb_free_datagram(sk, skb);
+skb_free_datagram(sk, skb)
+skb_free_datagram
+skb_free_datagram
+sk
+sk
+skb
+skb
+release_sock(sk);
+release_sock(sk)
+release_sock
+release_sock
+sk
+sk
+return rc;
+rc
+rc
+-----joern-----
+(84,16,0)
+(128,82,0)
+(111,14,0)
+(60,105,0)
+(55,25,0)
+(31,2,0)
+(56,45,0)
+(17,31,0)
+(58,111,0)
+(19,9,0)
+(45,70,0)
+(96,105,0)
+(63,1,0)
+(0,6,0)
+(36,7,0)
+(110,97,0)
+(97,103,0)
+(8,9,0)
+(36,45,0)
+(104,14,0)
+(130,104,0)
+(13,87,0)
+(7,14,0)
+(1,5,0)
+(6,16,0)
+(15,51,0)
+(72,125,0)
+(8,111,0)
+(80,2,0)
+(34,123,0)
+(46,3,0)
+(88,70,0)
+(22,125,0)
+(25,97,0)
+(18,88,0)
+(43,63,0)
+(117,16,0)
+(42,16,0)
+(28,50,0)
+(52,36,0)
+(4,0,0)
+(94,19,0)
+(113,5,0)
+(70,45,0)
+(70,88,0)
+(73,16,0)
+(83,15,0)
+(26,106,0)
+(120,110,0)
+(11,122,0)
+(86,2,0)
+(106,2,0)
+(11,115,0)
+(88,6,0)
+(85,16,0)
+(62,8,0)
+(7,36,0)
+(127,123,0)
+(97,2,0)
+(75,63,0)
+(70,20,0)
+(3,2,0)
+(81,64,0)
+(61,6,0)
+(10,13,0)
+(119,3,0)
+(99,1,0)
+(5,6,0)
+(47,88,0)
+(129,103,0)
+(59,0,0)
+(92,6,0)
+(106,16,0)
+(38,16,0)
+(79,92,0)
+(109,0,0)
+(93,43,0)
+(50,51,0)
+(97,25,0)
+(92,16,0)
+(126,58,0)
+(92,2,0)
+(54,130,0)
+(2,3,0)
+(89,97,0)
+(107,5,0)
+(97,110,0)
+(100,53,0)
+(43,16,0)
+(45,16,0)
+(5,1,0)
+(91,122,0)
+(95,16,0)
+(3,32,0)
+(2,16,0)
+(76,91,0)
+(24,16,0)
+(90,16,0)
+(41,92,0)
+(112,130,0)
+(123,45,0)
+(115,57,0)
+(15,1,0)
+(44,65,0)
+(102,103,0)
+(29,65,0)
+(118,16,0)
+(48,0,0)
+(77,57,0)
+(49,16,0)
+(64,45,0)
+(38,0,0)
+(68,25,0)
+(77,2,0)
+(122,82,0)
+(11,43,0)
+(30,6,0)
+(78,115,0)
+(74,50,0)
+(27,128,0)
+(0,9,0)
+(114,53,0)
+(39,126,0)
+(66,53,0)
+(125,66,0)
+(25,35,0)
+(20,70,0)
+(40,38,0)
+(111,58,0)
+(116,104,0)
+(0,38,0)
+(103,97,0)
+(50,87,0)
+(43,38,0)
+(71,30,0)
+(58,126,0)
+(21,86,0)
+(124,86,0)
+(33,77,0)
+(63,16,0)
+(19,13,0)
+(1,16,0)
+(101,63,0)
+(6,97,0)
+(31,16,0)
+(12,19,0)
+(128,2,0)
+(98,36,0)
+(63,50,0)
+(65,38,0)
+(67,8,0)
+(0,1,0)
+(121,15,0)
+(97,6,0)
+(108,16,0)
+(66,14,0)
+(103,35,0)
+(53,45,0)
+(23,16,0)
+(105,7,0)
+(0,50,0)
+(53,66,0)
+(91,76,1)
+(98,105,1)
+(2,3,1)
+(78,77,1)
+(97,2,1)
+(120,25,1)
+(119,46,1)
+(104,116,1)
+(125,22,1)
+(112,69,1)
+(97,103,1)
+(127,37,1)
+(39,8,1)
+(100,114,1)
+(69,63,1)
+(45,70,1)
+(59,109,1)
+(1,5,1)
+(74,28,1)
+(123,45,1)
+(25,35,1)
+(61,86,1)
+(31,17,1)
+(52,98,1)
+(33,30,1)
+(15,1,1)
+(0,6,1)
+(3,119,1)
+(50,74,1)
+(47,56,1)
+(97,110,1)
+(41,123,1)
+(64,81,1)
+(10,19,1)
+(19,12,1)
+(28,15,1)
+(22,72,1)
+(43,63,1)
+(31,2,1)
+(53,45,1)
+(109,48,1)
+(26,2,1)
+(63,50,1)
+(81,123,1)
+(122,91,1)
+(11,115,1)
+(21,124,1)
+(13,10,1)
+(101,65,1)
+(60,104,1)
+(92,6,1)
+(75,101,1)
+(15,51,1)
+(30,71,1)
+(92,79,1)
+(94,50,1)
+(12,94,1)
+(77,2,1)
+(70,88,1)
+(5,113,1)
+(70,20,1)
+(65,38,1)
+(106,26,1)
+(88,6,1)
+(7,36,1)
+(123,34,1)
+(43,93,1)
+(11,43,1)
+(63,1,1)
+(48,4,1)
+(40,15,1)
+(62,67,1)
+(130,54,1)
+(86,21,1)
+(29,38,1)
+(17,92,1)
+(96,60,1)
+(4,40,1)
+(30,6,1)
+(77,33,1)
+(128,27,1)
+(127,69,1)
+(71,6,1)
+(124,106,1)
+(97,25,1)
+(11,122,1)
+(37,65,1)
+(41,64,1)
+(34,127,1)
+(126,39,1)
+(46,80,1)
+(38,0,1)
+(114,125,1)
+(53,100,1)
+(99,45,1)
+(0,50,1)
+(72,7,1)
+(116,130,1)
+(88,18,1)
+(58,126,1)
+(43,38,1)
+(65,44,1)
+(129,102,1)
+(56,30,1)
+(18,47,1)
+(8,62,1)
+(128,2,1)
+(27,86,1)
+(105,96,1)
+(86,2,1)
+(111,58,1)
+(66,53,1)
+(106,2,1)
+(3,32,1)
+(83,121,1)
+(67,66,1)
+(19,9,1)
+(92,2,1)
+(64,45,1)
+(115,78,1)
+(0,59,1)
+(113,107,1)
+(107,99,1)
+(102,89,1)
+(55,103,1)
+(63,75,1)
+(25,68,1)
+(68,55,1)
+(79,41,1)
+(76,128,1)
+(8,9,1)
+(121,1,1)
+(103,129,1)
+(89,61,1)
+(110,120,1)
+(40,13,1)
+(15,83,1)
+(103,35,1)
+(93,31,1)
+(44,29,1)
+(36,52,1)
+(0,9,1)
+(5,6,1)
+(6,97,1)
+(54,112,1)
+(127,111,1)
+(50,51,1)
+(0,1,1)
+(36,45,1)
+(1,30,2)
+(0,6,2)
+(63,50,2)
+(44,30,2)
+(39,69,2)
+(63,65,2)
+(6,97,2)
+(59,30,2)
+(96,69,2)
+(29,30,2)
+(63,1,2)
+(58,69,2)
+(88,6,2)
+(33,30,2)
+(50,15,2)
+(28,15,2)
+(70,88,2)
+(91,86,2)
+(122,86,2)
+(103,35,2)
+(48,30,2)
+(68,86,2)
+(89,86,2)
+(0,9,2)
+(75,65,2)
+(17,30,2)
+(77,2,2)
+(76,86,2)
+(50,51,2)
+(116,69,2)
+(8,9,2)
+(27,86,2)
+(56,30,2)
+(103,86,2)
+(99,30,2)
+(5,30,2)
+(127,30,2)
+(111,69,2)
+(110,86,2)
+(79,30,2)
+(130,69,2)
+(0,1,2)
+(8,69,2)
+(15,51,2)
+(69,65,2)
+(12,15,2)
+(97,110,2)
+(60,69,2)
+(38,30,2)
+(125,69,2)
+(38,0,2)
+(120,86,2)
+(36,45,2)
+(0,50,2)
+(97,86,2)
+(128,2,2)
+(115,30,2)
+(113,30,2)
+(64,123,2)
+(104,69,2)
+(1,5,2)
+(66,69,2)
+(92,2,2)
+(45,70,2)
+(41,30,2)
+(18,30,2)
+(111,58,2)
+(106,2,2)
+(64,45,2)
+(97,103,2)
+(3,32,2)
+(129,86,2)
+(13,15,2)
+(109,30,2)
+(6,86,2)
+(54,69,2)
+(123,45,2)
+(92,6,2)
+(72,69,2)
+(10,15,2)
+(58,126,2)
+(52,69,2)
+(7,36,2)
+(107,30,2)
+(97,2,2)
+(31,30,2)
+(2,3,2)
+(81,123,2)
+(62,69,2)
+(5,6,2)
+(70,20,2)
+(66,53,2)
+(83,30,2)
+(11,43,2)
+(30,86,2)
+(30,6,2)
+(55,86,2)
+(43,30,2)
+(22,69,2)
+(40,30,2)
+(100,69,2)
+(4,30,2)
+(11,115,2)
+(88,30,2)
+(97,25,2)
+(61,86,2)
+(105,69,2)
+(65,30,2)
+(15,30,2)
+(25,86,2)
+(53,69,2)
+(123,30,2)
+(53,45,2)
+(43,63,2)
+(19,15,2)
+(15,1,2)
+(98,69,2)
+(93,30,2)
+(101,65,2)
+(126,69,2)
+(67,69,2)
+(112,69,2)
+(70,30,2)
+(128,86,2)
+(34,30,2)
+(19,9,2)
+(37,65,2)
+(86,2,2)
+(7,69,2)
+(31,2,2)
+(25,35,2)
+(65,38,2)
+(36,69,2)
+(121,30,2)
+(78,30,2)
+(0,30,2)
+(77,30,2)
+(45,30,2)
+(71,86,2)
+(11,122,2)
+(94,15,2)
+(43,38,2)
+(102,86,2)
+(74,15,2)
+(47,30,2)
+(114,69,2)
+(92,30,2)
+-----------------------------------
+(0,skb_copy_datagram_msg(skb, 0, msg, copied)
+(1,copied = skb->len)
+(2,*sk = sock->sk)
+(3,sock->sk)
+(4,skb)
+(5,skb->len)
+(6,skb = skb_recv_datagram(sk, flags & ~MSG_DONTWAIT,\n\\n\\t\\t\\t\\tflags & MSG_DONTWAIT, &rc)
+(7,addr->sq_node = cb->src_node)
+(8,msg->msg_namelen)
+(9,struct msghdr *msg)
+(10,MSG_TRUNC)
+(11,RET)
+(12,msg_flags)
+(13,msg->msg_flags |= MSG_TRUNC)
+(14,)
+(15,copied > size)
+(16,)
+(17,sk)
+(18,cb)
+(19,msg->msg_flags)
+(20,struct qrtr_cb *)
+(21,SOCK_ZAPPED)
+(22,sq_port)
+(23,if (cb->confirm_rx)
+(24,skb)
+(25,flags & MSG_DONTWAIT)
+(26,sk)
+(27,sk)
+(28,copied)
+(29,rc)
+(30,!skb)
+(31,release_sock(sk)
+(32,struct socket *sock)
+(33,sk)
+(34,confirm_rx)
+(35,int flags)
+(36,cb->src_node)
+(37,goto out;)
+(38,rc = skb_copy_datagram_msg(skb, 0, msg, copied)
+(39,addr)
+(40,rc)
+(41,sk)
+(42,copied)
+(43,return rc;)
+(44,0)
+(45,cb = (struct qrtr_cb *)
+(46,sock)
+(47,skb)
+(48,0)
+(49,sk)
+(50,copied = size)
+(51,size_t size)
+(52,src_node)
+(53,cb->src_port)
+(54,sq_family)
+(55,flags)
+(56,cb)
+(57,)
+(58,sizeof(*addr)
+(59,copied)
+(60,addr)
+(61,skb)
+(62,msg_namelen)
+(63,rc = copied)
+(64,qrtr_resume_tx(cb)
+(65,rc < 0)
+(66,addr->sq_port = cb->src_port)
+(67,msg)
+(68,MSG_DONTWAIT)
+(69,addr)
+(70,(struct qrtr_cb *)
+(71,skb)
+(72,addr)
+(73,rc)
+(74,size)
+(75,copied)
+(76,EADDRNOTAVAIL)
+(77,release_sock(sk)
+(78,rc)
+(79,skb)
+(80,sk)
+(81,cb)
+(82,)
+(83,size)
+(84,out:)
+(85,cb)
+(86,sock_flag(sk, SOCK_ZAPPED)
+(87,)
+(88,skb->cb)
+(89,sk)
+(90,if (!skb)
+(91,-EADDRNOTAVAIL)
+(92,skb_free_datagram(sk, skb)
+(93,rc)
+(94,msg)
+(95,if (rc < 0)
+(96,sq_node)
+(97,skb_recv_datagram(sk, flags & ~MSG_DONTWAIT,\n\\n\\t\\t\\t\\tflags & MSG_DONTWAIT, &rc)
+(98,cb)
+(99,copied)
+(100,src_port)
+(101,rc)
+(102,flags)
+(103,flags & ~MSG_DONTWAIT)
+(104,addr->sq_family = AF_QIPCRTR)
+(105,addr->sq_node)
+(106,lock_sock(sk)
+(107,skb)
+(108,if (addr)
+(109,msg)
+(110,&rc)
+(111,msg->msg_namelen = sizeof(*addr)
+(112,addr)
+(113,len)
+(114,cb)
+(115,return rc;)
+(116,AF_QIPCRTR)
+(117,if (sock_flag(sk, SOCK_ZAPPED)
+(118,if (copied > size)
+(119,sk)
+(120,rc)
+(121,copied)
+(122,return -EADDRNOTAVAIL;)
+(123,cb->confirm_rx)
+(124,sk)
+(125,addr->sq_port)
+(126,*addr)
+(127,cb)
+(128,release_sock(sk)
+(129,~MSG_DONTWAIT)
+(130,addr->sq_family)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

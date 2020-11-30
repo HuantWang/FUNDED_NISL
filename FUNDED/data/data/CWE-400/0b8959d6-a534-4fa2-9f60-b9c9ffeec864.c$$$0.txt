@@ -1,0 +1,7157 @@
+-----label-----
+1
+-----code-----
+int wpa_sm_rx_eapol(struct wpa_sm *sm, const u8 *src_addr,
+		    const u8 *buf, size_t len)
+{
+	size_t plen, data_len, key_data_len;
+	const struct ieee802_1x_hdr *hdr;
+	struct wpa_eapol_key *key;
+	struct wpa_eapol_key_192 *key192;
+	u16 key_info, ver;
+	u8 *tmp = NULL;
+	int ret = -1;
+	struct wpa_peerkey *peerkey = NULL;
+	u8 *key_data;
+	size_t mic_len, keyhdrlen;
+
+#ifdef CONFIG_IEEE80211R
+	sm->ft_completed = 0;
+#endif /* CONFIG_IEEE80211R */
+
+	mic_len = wpa_mic_len(sm->key_mgmt);
+	keyhdrlen = mic_len == 24 ? sizeof(*key192) : sizeof(*key);
+
+	if (len < sizeof(*hdr) + keyhdrlen) {
+		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+			"WPA: EAPOL frame too short to be a WPA "
+			"EAPOL-Key (len %lu, expecting at least %lu)",
+			(unsigned long) len,
+			(unsigned long) sizeof(*hdr) + keyhdrlen);
+		return 0;
+	}
+
+	hdr = (const struct ieee802_1x_hdr *) buf;
+	plen = be_to_host16(hdr->length);
+	data_len = plen + sizeof(*hdr);
+	wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+		"IEEE 802.1X RX: version=%d type=%d length=%lu",
+		hdr->version, hdr->type, (unsigned long) plen);
+
+	if (hdr->version < EAPOL_VERSION) {
+		/* TODO: backwards compatibility */
+	}
+	if (hdr->type != IEEE802_1X_TYPE_EAPOL_KEY) {
+		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+			"WPA: EAPOL frame (type %u) discarded, "
+			"not a Key frame", hdr->type);
+		ret = 0;
+		goto out;
+	}
+	wpa_hexdump(MSG_MSGDUMP, "WPA: RX EAPOL-Key", buf, len);
+	if (plen > len - sizeof(*hdr) || plen < keyhdrlen) {
+		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+			"WPA: EAPOL frame payload size %lu "
+			"invalid (frame size %lu)",
+			(unsigned long) plen, (unsigned long) len);
+		ret = 0;
+		goto out;
+	}
+	if (data_len < len) {
+		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+			"WPA: ignoring %lu bytes after the IEEE 802.1X data",
+			(unsigned long) len - data_len);
+	}
+
+	/*
+	 * Make a copy of the frame since we need to modify the buffer during
+	 * MAC validation and Key Data decryption.
+	 */
+	tmp = os_malloc(data_len);
+	if (tmp == NULL)
+		goto out;
+	os_memcpy(tmp, buf, data_len);
+	key = (struct wpa_eapol_key *) (tmp + sizeof(struct ieee802_1x_hdr));
+	key192 = (struct wpa_eapol_key_192 *)
+		(tmp + sizeof(struct ieee802_1x_hdr));
+	if (mic_len == 24)
+		key_data = (u8 *) (key192 + 1);
+	else
+		key_data = (u8 *) (key + 1);
+
+	if (key->type != EAPOL_KEY_TYPE_WPA && key->type != EAPOL_KEY_TYPE_RSN)
+	{
+		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+			"WPA: EAPOL-Key type (%d) unknown, discarded",
+			key->type);
+		ret = 0;
+		goto out;
+	}
+
+	if (mic_len == 24)
+		key_data_len = WPA_GET_BE16(key192->key_data_length);
+	else
+		key_data_len = WPA_GET_BE16(key->key_data_length);
+	wpa_eapol_key_dump(sm, key, key_data_len, key192->key_mic, mic_len);
+
+	if (key_data_len > plen - keyhdrlen) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_INFO, "WPA: Invalid EAPOL-Key "
+			"frame - key_data overflow (%u > %u)",
+			(unsigned int) key_data_len,
+			(unsigned int) (plen - keyhdrlen));
+		goto out;
+	}
+
+	eapol_sm_notify_lower_layer_success(sm->eapol, 0);
+	key_info = WPA_GET_BE16(key->key_info);
+	ver = key_info & WPA_KEY_INFO_TYPE_MASK;
+	if (ver != WPA_KEY_INFO_TYPE_HMAC_MD5_RC4 &&
+#if defined(CONFIG_IEEE80211R) || defined(CONFIG_IEEE80211W)
+	    ver != WPA_KEY_INFO_TYPE_AES_128_CMAC &&
+#endif /* CONFIG_IEEE80211R || CONFIG_IEEE80211W */
+	    ver != WPA_KEY_INFO_TYPE_HMAC_SHA1_AES &&
+	    !wpa_key_mgmt_suite_b(sm->key_mgmt) &&
+	    sm->key_mgmt != WPA_KEY_MGMT_OSEN) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,
+			"WPA: Unsupported EAPOL-Key descriptor version %d",
+			ver);
+		goto out;
+	}
+
+	if (sm->key_mgmt == WPA_KEY_MGMT_OSEN &&
+	    ver != WPA_KEY_INFO_TYPE_AKM_DEFINED) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,
+			"OSEN: Unsupported EAPOL-Key descriptor version %d",
+			ver);
+		goto out;
+	}
+
+	if (wpa_key_mgmt_suite_b(sm->key_mgmt) &&
+	    ver != WPA_KEY_INFO_TYPE_AKM_DEFINED) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,
+			"RSN: Unsupported EAPOL-Key descriptor version %d (expected AKM defined = 0)",
+			ver);
+		goto out;
+	}
+
+#ifdef CONFIG_IEEE80211R
+	if (wpa_key_mgmt_ft(sm->key_mgmt)) {
+		/* IEEE 802.11r uses a new key_info type (AES-128-CMAC). */
+		if (ver != WPA_KEY_INFO_TYPE_AES_128_CMAC) {
+			wpa_msg(sm->ctx->msg_ctx, MSG_INFO,
+				"FT: AP did not use AES-128-CMAC");
+			goto out;
+		}
+	} else
+#endif /* CONFIG_IEEE80211R */
+#ifdef CONFIG_IEEE80211W
+	if (wpa_key_mgmt_sha256(sm->key_mgmt)) {
+		if (ver != WPA_KEY_INFO_TYPE_AES_128_CMAC &&
+		    sm->key_mgmt != WPA_KEY_MGMT_OSEN &&
+		    !wpa_key_mgmt_suite_b(sm->key_mgmt)) {
+			wpa_msg(sm->ctx->msg_ctx, MSG_INFO,
+				"WPA: AP did not use the "
+				"negotiated AES-128-CMAC");
+			goto out;
+		}
+	} else
+#endif /* CONFIG_IEEE80211W */
+	if (sm->pairwise_cipher == WPA_CIPHER_CCMP &&
+	    !wpa_key_mgmt_suite_b(sm->key_mgmt) &&
+	    ver != WPA_KEY_INFO_TYPE_HMAC_SHA1_AES) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,
+			"WPA: CCMP is used, but EAPOL-Key "
+			"descriptor version (%d) is not 2", ver);
+		if (sm->group_cipher != WPA_CIPHER_CCMP &&
+		    !(key_info & WPA_KEY_INFO_KEY_TYPE)) {
+			/* Earlier versions of IEEE 802.11i did not explicitly
+			 * require version 2 descriptor for all EAPOL-Key
+			 * packets, so allow group keys to use version 1 if
+			 * CCMP is not used for them. */
+			wpa_msg(sm->ctx->msg_ctx, MSG_INFO,
+				"WPA: Backwards compatibility: allow invalid "
+				"version for non-CCMP group keys");
+		} else if (ver == WPA_KEY_INFO_TYPE_AES_128_CMAC) {
+			wpa_msg(sm->ctx->msg_ctx, MSG_INFO,
+				"WPA: Interoperability workaround: allow incorrect (should have been HMAC-SHA1), but stronger (is AES-128-CMAC), descriptor version to be used");
+		} else
+			goto out;
+	} else if (sm->pairwise_cipher == WPA_CIPHER_GCMP &&
+		   !wpa_key_mgmt_suite_b(sm->key_mgmt) &&
+		   ver != WPA_KEY_INFO_TYPE_HMAC_SHA1_AES) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,
+			"WPA: GCMP is used, but EAPOL-Key "
+			"descriptor version (%d) is not 2", ver);
+		goto out;
+	}
+
+#ifdef CONFIG_PEERKEY
+	for (peerkey = sm->peerkey; peerkey; peerkey = peerkey->next) {
+		if (os_memcmp(peerkey->addr, src_addr, ETH_ALEN) == 0)
+			break;
+	}
+
+	if (!(key_info & WPA_KEY_INFO_SMK_MESSAGE) && peerkey) {
+		if (!peerkey->initiator && peerkey->replay_counter_set &&
+		    os_memcmp(key->replay_counter, peerkey->replay_counter,
+			      WPA_REPLAY_COUNTER_LEN) <= 0) {
+			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+				"RSN: EAPOL-Key Replay Counter did not "
+				"increase (STK) - dropping packet");
+			goto out;
+		} else if (peerkey->initiator) {
+			u8 _tmp[WPA_REPLAY_COUNTER_LEN];
+			os_memcpy(_tmp, key->replay_counter,
+				  WPA_REPLAY_COUNTER_LEN);
+			inc_byte_array(_tmp, WPA_REPLAY_COUNTER_LEN);
+			if (os_memcmp(_tmp, peerkey->replay_counter,
+				      WPA_REPLAY_COUNTER_LEN) != 0) {
+				wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+					"RSN: EAPOL-Key Replay "
+					"Counter did not match (STK) - "
+					"dropping packet");
+				goto out;
+			}
+		}
+	}
+
+	if (peerkey && peerkey->initiator && (key_info & WPA_KEY_INFO_ACK)) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,
+			"RSN: Ack bit in key_info from STK peer");
+		goto out;
+	}
+#endif /* CONFIG_PEERKEY */
+
+	if (!peerkey && sm->rx_replay_counter_set &&
+	    os_memcmp(key->replay_counter, sm->rx_replay_counter,
+		      WPA_REPLAY_COUNTER_LEN) <= 0) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+			"WPA: EAPOL-Key Replay Counter did not increase - "
+			"dropping packet");
+		goto out;
+	}
+
+	if (!(key_info & (WPA_KEY_INFO_ACK | WPA_KEY_INFO_SMK_MESSAGE))
+#ifdef CONFIG_PEERKEY
+	    && (peerkey == NULL || !peerkey->initiator)
+#endif /* CONFIG_PEERKEY */
+		) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,
+			"WPA: No Ack bit in key_info");
+		goto out;
+	}
+
+	if (key_info & WPA_KEY_INFO_REQUEST) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,
+			"WPA: EAPOL-Key with Request bit - dropped");
+		goto out;
+	}
+
+	if ((key_info & WPA_KEY_INFO_MIC) && !peerkey &&
+	    wpa_supplicant_verify_eapol_key_mic(sm, key192, ver, tmp, data_len))
+		goto out;
+
+#ifdef CONFIG_PEERKEY
+	if ((key_info & WPA_KEY_INFO_MIC) && peerkey &&
+	    peerkey_verify_eapol_key_mic(sm, peerkey, key192, ver, tmp,
+					 data_len))
+		goto out;
+#endif /* CONFIG_PEERKEY */
+
+	if ((sm->proto == WPA_PROTO_RSN || sm->proto == WPA_PROTO_OSEN) &&
+	    (key_info & WPA_KEY_INFO_ENCR_KEY_DATA)) {
+		/*
+		 * Only decrypt the Key Data field if the frame's authenticity
+		 * was verified. When using AES-SIV (FILS), the MIC flag is not
+		 * set, so this check should only be performed if mic_len != 0
+		 * which is the case in this code branch.
+		 */
+		if (!(key_info & WPA_KEY_INFO_MIC)) {
+			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+				"WPA: Ignore EAPOL-Key with encrypted but unauthenticated data");
+			goto out;
+		}
+		if (wpa_supplicant_decrypt_key_data(sm, key, ver, key_data,
+						    &key_data_len))
+			goto out;
+	}
+
+	if (key_info & WPA_KEY_INFO_KEY_TYPE) {
+		if (key_info & WPA_KEY_INFO_KEY_INDEX_MASK) {
+			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+				"WPA: Ignored EAPOL-Key (Pairwise) with "
+				"non-zero key index");
+			goto out;
+		}
+		if (peerkey) {
+			/* PeerKey 4-Way Handshake */
+			peerkey_rx_eapol_4way(sm, peerkey, key, key_info, ver,
+					      key_data, key_data_len);
+		} else if (key_info & WPA_KEY_INFO_MIC) {
+			/* 3/4 4-Way Handshake */
+			wpa_supplicant_process_3_of_4(sm, key, ver, key_data,
+						      key_data_len);
+		} else {
+			/* 1/4 4-Way Handshake */
+			wpa_supplicant_process_1_of_4(sm, src_addr, key,
+						      ver, key_data,
+						      key_data_len);
+		}
+	} else if (key_info & WPA_KEY_INFO_SMK_MESSAGE) {
+		/* PeerKey SMK Handshake */
+		peerkey_rx_eapol_smk(sm, src_addr, key, key_data_len, key_info,
+				     ver);
+	} else {
+		if (key_info & WPA_KEY_INFO_MIC) {
+			/* 1/2 Group Key Handshake */
+			wpa_supplicant_process_1_of_2(sm, src_addr, key,
+						      key_data, key_data_len,
+						      ver);
+		} else {
+			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+				"WPA: EAPOL-Key (Group) without Mic bit - "
+				"dropped");
+		}
+	}
+
+	ret = 1;
+
+out:
+	bin_clear_free(tmp, data_len);
+	return ret;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+3,8
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+17,19
+18,19
+20,21
+20,22
+23,24
+23,25
+24,25
+26,27
+28,29
+28,30
+28,31
+28,32
+28,33
+28,34
+28,35
+28,36
+28,37
+28,38
+28,39
+28,40
+28,41
+28,42
+28,43
+28,44
+28,45
+28,46
+28,47
+28,48
+28,49
+28,50
+28,51
+28,52
+28,53
+28,54
+28,55
+28,56
+28,57
+28,58
+28,59
+28,60
+28,61
+28,62
+28,63
+28,64
+28,65
+28,66
+28,67
+28,68
+28,69
+28,70
+28,71
+28,72
+28,73
+28,74
+28,75
+28,76
+29,30
+30,31
+30,32
+30,33
+30,34
+31,32
+33,34
+35,36
+37,38
+39,40
+40,41
+40,42
+41,42
+43,44
+43,45
+46,47
+47,48
+47,49
+48,49
+50,51
+50,52
+53,54
+54,55
+54,56
+55,56
+57,58
+57,59
+60,61
+61,62
+61,63
+61,64
+62,63
+64,65
+66,67
+68,69
+69,70
+69,71
+70,71
+72,73
+72,74
+72,75
+75,76
+76,77
+78,79
+79,80
+79,81
+81,82
+81,83
+83,84
+84,85
+86,87
+87,88
+87,89
+88,89
+90,91
+90,92
+90,93
+93,94
+94,95
+96,97
+97,98
+97,99
+98,99
+100,101
+100,102
+103,104
+104,105
+104,106
+104,107
+105,106
+107,108
+109,110
+111,112
+112,113
+112,114
+113,114
+115,116
+115,117
+116,117
+118,119
+118,120
+119,120
+122,123
+123,124
+123,125
+124,125
+126,127
+126,128
+126,129
+127,128
+127,129
+128,129
+131,132
+132,133
+133,134
+134,135
+136,137
+137,138
+138,139
+139,140
+141,142
+141,143
+142,143
+142,144
+143,144
+145,146
+145,147
+146,147
+147,148
+148,149
+149,150
+151,152
+153,154
+153,155
+154,155
+155,156
+155,157
+155,158
+155,159
+155,160
+155,161
+156,157
+158,159
+158,160
+159,160
+159,161
+160,161
+164,165
+167,168
+167,169
+168,169
+168,170
+171,172
+173,174
+173,175
+174,175
+174,176
+175,176
+175,177
+178,179
+179,180
+180,181
+181,182
+183,184
+185,186
+187,188
+188,189
+188,190
+189,190
+191,192
+191,193
+192,193
+192,194
+193,194
+195,196
+197,198
+199,200
+200,201
+200,202
+201,202
+203,204
+203,205
+204,205
+206,207
+206,208
+207,208
+210,211
+211,212
+211,213
+212,213
+214,215
+214,216
+215,216
+217,218
+218,219
+219,220
+220,221
+222,223
+223,224
+223,225
+223,226
+223,227
+223,228
+223,229
+223,230
+224,225
+226,227
+226,228
+227,228
+227,229
+228,229
+232,233
+235,236
+235,237
+236,237
+239,240
+239,241
+240,241
+243,244
+243,245
+244,245
+244,246
+247,248
+249,250
+249,251
+250,251
+250,252
+251,252
+251,253
+252,253
+255,256
+258,259
+258,260
+259,260
+259,261
+260,261
+260,262
+261,262
+264,265
+266,267
+266,268
+266,269
+267,268
+268,269
+268,270
+268,271
+268,272
+268,273
+269,270
+271,272
+271,273
+272,273
+272,274
+273,274
+277,278
+280,281
+280,282
+281,282
+284,285
+285,286
+285,287
+286,287
+289,290
+291,292
+292,293
+292,294
+292,295
+292,296
+292,297
+293,294
+295,296
+298,299
+300,301
+302,303
+302,304
+303,304
+303,305
+304,305
+304,306
+305,306
+307,308
+307,309
+308,309
+310,311
+311,312
+312,313
+313,314
+315,316
+315,317
+316,317
+318,319
+320,321
+320,322
+320,323
+321,322
+322,323
+322,324
+322,325
+322,326
+322,327
+322,328
+323,324
+325,326
+325,327
+326,327
+326,328
+327,328
+331,332
+334,335
+334,336
+335,336
+335,337
+338,339
+340,341
+340,342
+341,342
+341,343
+344,345
+346,347
+347,348
+347,349
+348,349
+351,352
+353,354
+353,355
+354,355
+354,356
+355,356
+357,358
+359,360
+360,361
+361,362
+361,363
+361,364
+361,365
+361,366
+362,363
+364,365
+364,366
+365,366
+365,367
+366,367
+370,371
+373,374
+373,375
+374,375
+374,376
+375,376
+375,377
+378,379
+380,381
+382,383
+383,384
+383,385
+384,385
+386,387
+386,388
+387,388
+389,390
+391,392
+391,393
+392,393
+392,394
+393,394
+395,396
+397,398
+399,400
+400,401
+400,402
+400,403
+400,404
+401,402
+403,404
+405,406
+407,408
+409,410
+410,411
+410,412
+411,412
+413,414
+413,415
+414,415
+414,416
+415,416
+417,418
+419,420
+420,421
+420,422
+421,422
+423,424
+424,425
+424,426
+425,426
+428,429
+429,430
+429,431
+430,431
+432,433
+432,434
+433,434
+433,435
+434,435
+436,437
+438,439
+439,440
+439,441
+440,441
+442,443
+443,444
+443,445
+444,445
+447,448
+447,449
+447,450
+448,449
+448,450
+449,450
+452,453
+453,454
+453,455
+454,455
+456,457
+456,458
+457,458
+457,459
+458,459
+460,461
+462,463
+463,464
+463,465
+464,465
+467,468
+468,469
+468,470
+469,470
+471,472
+471,473
+472,473
+472,474
+473,474
+475,476
+477,478
+478,479
+478,480
+479,480
+482,483
+482,484
+483,484
+483,485
+484,485
+484,486
+485,486
+485,487
+486,487
+489,490
+491,492
+491,493
+492,493
+492,494
+493,494
+496,497
+498,499
+498,500
+498,501
+499,500
+500,501
+500,502
+500,503
+500,504
+500,505
+501,502
+503,504
+503,505
+504,505
+504,506
+505,506
+509,510
+512,513
+512,514
+513,514
+516,517
+517,518
+517,519
+518,519
+521,522
+523,524
+523,525
+523,526
+524,525
+524,526
+525,526
+528,529
+529,530
+529,531
+530,531
+532,533
+532,534
+533,534
+535,536
+535,537
+536,537
+539,540
+540,541
+540,542
+541,542
+543,544
+543,545
+544,545
+546,547
+546,548
+547,548
+550,551
+551,552
+551,553
+551,554
+551,555
+551,556
+551,557
+552,553
+554,555
+556,557
+558,559
+560,561
+560,562
+561,562
+564,565
+566,567
+566,568
+567,568
+567,569
+568,569
+570,571
+570,572
+571,572
+573,574
+575,576
+575,577
+576,577
+577,578
+577,579
+577,580
+577,581
+577,582
+577,583
+578,579
+580,581
+580,582
+581,582
+581,583
+582,583
+586,587
+589,590
+589,591
+590,591
+590,592
+593,594
+595,596
+595,597
+596,597
+596,598
+599,600
+600,601
+600,602
+601,602
+603,604
+605,606
+607,608
+608,609
+608,610
+608,611
+609,610
+611,612
+611,613
+612,613
+616,617
+617,618
+617,619
+618,619
+620,621
+620,622
+621,622
+623,624
+623,625
+624,625
+627,628
+628,629
+628,630
+629,630
+631,632
+631,633
+632,633
+634,635
+636,637
+636,638
+637,638
+637,639
+638,639
+638,640
+639,640
+639,641
+640,641
+640,642
+641,642
+643,644
+645,646
+645,647
+646,647
+648,649
+650,651
+651,652
+651,653
+652,653
+654,655
+654,656
+655,656
+658,659
+658,660
+659,660
+659,661
+660,661
+663,664
+665,666
+665,667
+666,667
+667,668
+667,669
+667,670
+667,671
+667,672
+668,669
+670,671
+670,672
+671,672
+671,673
+672,673
+676,677
+679,680
+681,682
+683,684
+683,685
+684,685
+684,686
+685,686
+685,687
+686,687
+686,688
+687,688
+690,691
+692,693
+692,694
+693,694
+695,696
+697,698
+697,699
+698,699
+699,700
+699,701
+699,702
+699,703
+699,704
+700,701
+702,703
+702,704
+703,704
+703,705
+704,705
+708,709
+711,712
+713,714
+715,716
+715,717
+716,717
+716,718
+717,718
+717,719
+718,719
+720,721
+720,722
+721,722
+724,725
+724,726
+725,726
+727,728
+729,730
+729,731
+730,731
+731,732
+731,733
+731,734
+731,735
+731,736
+732,733
+734,735
+734,736
+735,736
+735,737
+736,737
+740,741
+743,744
+745,746
+747,748
+747,749
+747,750
+748,749
+748,750
+749,750
+749,751
+750,751
+750,752
+751,752
+751,753
+752,753
+755,756
+757,758
+758,759
+758,760
+759,760
+761,762
+761,763
+762,763
+765,766
+765,767
+766,767
+768,769
+770,771
+770,772
+771,772
+772,773
+772,774
+772,775
+772,776
+772,777
+773,774
+775,776
+775,777
+776,777
+776,778
+777,778
+781,782
+784,785
+786,787
+786,788
+786,789
+787,788
+787,789
+788,789
+788,790
+789,790
+789,791
+790,791
+793,794
+795,796
+796,797
+797,798
+797,799
+798,799
+800,801
+802,803
+803,804
+804,805
+804,806
+804,807
+804,808
+805,806
+807,808
+807,809
+808,809
+808,810
+809,810
+813,814
+816,817
+816,818
+816,819
+817,818
+817,819
+818,819
+820,821
+822,823
+823,824
+824,825
+824,826
+824,827
+824,828
+825,826
+827,828
+827,829
+828,829
+828,830
+829,830
+833,834
+836,837
+838,839
+838,840
+839,840
+839,841
+840,841
+840,842
+841,842
+841,843
+842,843
+842,844
+843,844
+846,847
+848,849
+849,850
+849,851
+850,851
+852,853
+852,854
+853,854
+856,857
+856,858
+857,858
+859,860
+861,862
+861,863
+862,863
+863,864
+863,865
+863,866
+863,867
+863,868
+864,865
+866,867
+866,868
+867,868
+867,869
+868,869
+872,873
+875,876
+877,878
+879,880
+879,881
+880,881
+880,882
+881,882
+881,883
+882,883
+883,884
+885,886
+885,887
+886,887
+889,890
+889,891
+890,891
+890,892
+890,893
+890,894
+891,892
+893,894
+893,895
+894,895
+897,898
+897,899
+898,899
+901,902
+904,905
+904,906
+905,906
+906,907
+906,908
+906,909
+906,910
+907,908
+909,910
+909,911
+910,911
+910,912
+911,912
+915,916
+918,919
+920,921
+920,922
+921,922
+922,923
+923,924
+923,925
+924,925
+926,927
+927,928
+927,929
+928,929
+930,931
+932,933
+932,934
+933,934
+934,935
+934,936
+934,937
+934,938
+935,936
+937,938
+937,939
+938,939
+938,940
+939,940
+943,944
+946,947
+948,949
+948,950
+949,950
+949,951
+950,951
+952,953
+954,955
+954,956
+955,956
+956,957
+956,958
+956,959
+956,960
+957,958
+959,960
+959,961
+960,961
+960,962
+961,962
+965,966
+968,969
+970,971
+970,972
+971,972
+971,973
+972,973
+972,974
+973,974
+974,975
+974,976
+975,976
+977,978
+979,980
+980,981
+982,983
+982,984
+982,985
+982,986
+982,987
+982,988
+983,984
+985,986
+987,988
+989,990
+991,992
+993,994
+995,996
+997,998
+997,999
+998,999
+998,1000
+999,1000
+1000,1001
+1000,1002
+1001,1002
+1001,1003
+1002,1003
+1002,1004
+1003,1004
+1006,1007
+1008,1009
+1008,1010
+1009,1010
+1009,1011
+1010,1011
+1013,1014
+1015,1016
+1016,1017
+1016,1018
+1017,1018
+1019,1020
+1021,1022
+1021,1023
+1022,1023
+1022,1024
+1023,1024
+1024,1025
+1025,1026
+1025,1027
+1026,1027
+1028,1029
+1030,1031
+1030,1032
+1031,1032
+1032,1033
+1032,1034
+1032,1035
+1032,1036
+1033,1034
+1035,1036
+1035,1037
+1036,1037
+1036,1038
+1037,1038
+1041,1042
+1044,1045
+1046,1047
+1046,1048
+1047,1048
+1047,1049
+1047,1050
+1047,1051
+1047,1052
+1047,1053
+1048,1049
+1050,1051
+1052,1053
+1054,1055
+1056,1057
+1058,1059
+1059,1060
+1061,1062
+1063,1064
+1063,1065
+1063,1066
+1064,1065
+1064,1066
+1065,1066
+1067,1068
+1069,1070
+1069,1071
+1070,1071
+1070,1072
+1071,1072
+1071,1073
+1072,1073
+1074,1075
+1076,1077
+1076,1078
+1077,1078
+1078,1079
+1078,1080
+1078,1081
+1078,1082
+1079,1080
+1081,1082
+1081,1083
+1082,1083
+1082,1084
+1083,1084
+1087,1088
+1090,1091
+1092,1093
+1092,1094
+1092,1095
+1093,1094
+1095,1096
+1096,1097
+1097,1098
+1097,1099
+1097,1100
+1097,1101
+1097,1102
+1097,1103
+1097,1104
+1097,1105
+1098,1099
+1100,1101
+1102,1103
+1104,1105
+1106,1107
+1108,1109
+1110,1111
+1112,1113
+1114,1115
+1114,1116
+1114,1117
+1115,1116
+1115,1117
+1116,1117
+1118,1119
+1120,1121
+1121,1122
+1122,1123
+1122,1124
+1122,1125
+1122,1126
+1122,1127
+1122,1128
+1123,1124
+1125,1126
+1127,1128
+1129,1130
+1131,1132
+1133,1134
+1135,1136
+1136,1137
+1137,1138
+1137,1139
+1137,1140
+1137,1141
+1137,1142
+1137,1143
+1137,1144
+1138,1139
+1140,1141
+1142,1143
+1144,1145
+1146,1147
+1148,1149
+1150,1151
+1152,1153
+1152,1154
+1152,1155
+1153,1154
+1153,1155
+1154,1155
+1156,1157
+1158,1159
+1159,1160
+1160,1161
+1160,1162
+1160,1163
+1160,1164
+1160,1165
+1160,1166
+1160,1167
+1161,1162
+1163,1164
+1165,1166
+1167,1168
+1169,1170
+1171,1172
+1173,1174
+1175,1176
+1176,1177
+1176,1178
+1176,1179
+1177,1178
+1177,1179
+1178,1179
+1180,1181
+1182,1183
+1183,1184
+1184,1185
+1184,1186
+1184,1187
+1184,1188
+1184,1189
+1184,1190
+1184,1191
+1185,1186
+1187,1188
+1189,1190
+1191,1192
+1193,1194
+1195,1196
+1197,1198
+1199,1200
+1200,1201
+1201,1202
+1201,1203
+1201,1204
+1201,1205
+1202,1203
+1204,1205
+1204,1206
+1205,1206
+1205,1207
+1206,1207
+1210,1211
+1213,1214
+1214,1215
+1214,1216
+1215,1216
+1218,1219
+1218,1220
+1220,1221
+1221,1222
+1221,1223
+1221,1224
+1222,1223
+1224,1225
+1226,1227
+1228,1229
+1229,1230
+-----nextToken-----
+2,4,7,9,10,13,15,16,19,21,22,25,27,32,34,36,38,42,44,45,49,51,52,56,58,59,63,65,67,71,73,74,77,80,82,85,89,91,92,95,99,101,102,106,108,110,114,117,120,121,125,129,130,135,140,144,150,152,157,161,162,163,165,166,169,170,172,176,177,182,184,186,190,194,196,198,202,205,208,209,213,216,221,225,229,230,231,233,234,237,238,241,242,245,246,248,253,254,256,257,262,263,265,270,274,275,276,278,279,282,283,287,288,290,294,296,297,299,301,306,309,314,317,319,324,328,329,330,332,333,336,337,339,342,343,345,349,350,352,356,358,363,367,368,369,371,372,376,377,379,381,385,388,390,394,396,398,402,404,406,408,412,416,418,422,426,427,431,435,437,441,445,446,450,451,455,459,461,465,466,470,474,476,480,481,487,488,490,494,495,497,502,506,507,508,510,511,514,515,519,520,522,526,527,531,534,537,538,542,545,548,549,553,555,557,559,562,563,565,569,572,574,579,583,584,585,587,588,591,592,594,597,598,602,604,606,610,613,614,615,619,622,625,626,630,633,635,642,644,647,649,653,656,657,661,662,664,669,673,674,675,677,678,680,682,688,689,691,694,696,701,705,706,707,709,710,712,714,719,722,723,726,728,733,737,738,739,741,742,744,746,753,754,756,760,763,764,767,769,774,778,779,780,782,783,785,791,792,794,799,801,806,810,811,812,814,815,819,821,826,830,831,832,834,835,837,844,845,847,851,854,855,858,860,865,869,870,871,873,874,876,878,884,887,888,892,895,896,899,900,902,903,908,912,913,914,916,917,919,925,929,931,936,940,941,942,944,945,947,951,953,958,962,963,964,966,967,969,976,978,981,984,986,988,990,992,994,996,1004,1005,1007,1011,1012,1014,1018,1020,1027,1029,1034,1038,1039,1040,1042,1043,1045,1049,1051,1053,1055,1057,1060,1062,1066,1068,1073,1075,1080,1084,1085,1086,1088,1089,1091,1094,1099,1101,1103,1105,1107,1109,1111,1113,1117,1119,1124,1126,1128,1130,1132,1134,1139,1141,1143,1145,1147,1149,1151,1155,1157,1162,1164,1166,1168,1170,1172,1174,1179,1181,1186,1188,1190,1192,1194,1196,1198,1203,1207,1208,1209,1211,1212,1216,1217,1219,1223,1225,1227,1230
+-----computeFrom-----
+112,113
+112,114
+123,124
+123,125
+127,128
+127,129
+142,143
+142,144
+145,146
+145,147
+173,174
+173,175
+188,189
+188,190
+200,201
+200,202
+211,212
+211,213
+214,215
+214,216
+250,251
+250,252
+259,260
+259,261
+285,286
+285,287
+303,304
+303,305
+304,305
+304,306
+307,308
+307,309
+315,316
+315,317
+347,348
+347,349
+354,355
+354,356
+373,374
+373,375
+383,384
+383,385
+392,393
+392,394
+410,411
+410,412
+420,421
+420,422
+429,430
+429,431
+439,440
+439,441
+448,449
+448,450
+453,454
+453,455
+463,464
+463,465
+468,469
+468,470
+478,479
+478,480
+483,484
+483,485
+484,485
+484,486
+491,492
+491,493
+517,518
+517,519
+524,525
+524,526
+529,530
+529,531
+540,541
+540,542
+567,568
+567,569
+570,571
+570,572
+600,601
+600,602
+617,618
+617,619
+628,629
+628,630
+631,632
+631,633
+637,638
+637,639
+638,639
+638,640
+639,640
+639,641
+640,641
+640,642
+645,646
+645,647
+658,659
+658,660
+684,685
+684,686
+685,686
+685,687
+692,693
+692,694
+716,717
+716,718
+724,725
+724,726
+748,749
+748,750
+749,750
+749,751
+750,751
+750,752
+765,766
+765,767
+787,788
+787,789
+788,789
+788,790
+797,798
+797,799
+817,818
+817,819
+839,840
+839,841
+840,841
+840,842
+841,842
+841,843
+856,857
+856,858
+880,881
+880,882
+881,882
+881,883
+889,890
+889,891
+923,924
+923,925
+927,928
+927,929
+949,950
+949,951
+971,972
+971,973
+972,973
+972,974
+974,975
+974,976
+998,999
+998,1000
+1000,1001
+1000,1002
+1001,1002
+1001,1003
+1008,1009
+1008,1010
+1016,1017
+1016,1018
+1025,1026
+1025,1027
+1064,1065
+1064,1066
+1071,1072
+1071,1073
+1115,1116
+1115,1117
+1153,1154
+1153,1155
+1177,1178
+1177,1179
+1214,1215
+1214,1216
+-----guardedBy-----
+144,172
+150,182
+152,184
+262,282
+263,283
+317,339
+309,345
+358,379
+356,381
+495,515
+494,514
+572,602
+569,594
+574,604
+647,680
+661,673
+694,712
+688,705
+726,744
+722,737
+767,819
+763,830
+756,794
+791,810
+858,876
+854,869
+899,912
+1018,1027
+1011,1051
+1066,1117
+1155,1172
+-----guardedByNegation-----
+767,876
+760,851
+769,860
+763,869
+764,855
+754,845
+791,830
+1066,1179
+1155,1179
+-----lastLexicalUse-----
+767,876
+763,869
+791,830
+1066,1179
+1155,1179
+-----jump-----
+767,876
+763,869
+791,830
+1066,1179
+1155,1179
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;Declarator;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;UnaryExpression;LiteralExpression;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;ConditionalExpression;BinaryExpression;IdExpression;Name;LiteralExpression;UnaryExpression;UnaryExpression;UnaryExpression;IdExpression;Name;UnaryExpression;UnaryExpression;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;BinaryExpression;UnaryExpression;UnaryExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;LiteralExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;IdExpression;Name;BinaryExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;UnaryExpression;UnaryExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;Pointer;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;UnaryExpression;UnaryExpression;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;IdExpression;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;GotoStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;UnaryExpression;UnaryExpression;UnaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;LiteralExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;IdExpression;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;GotoStatement;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;LiteralExpression;BinaryExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;GotoStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;Pointer;UnaryExpression;BinaryExpression;IdExpression;Name;TypeIdExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;Pointer;UnaryExpression;BinaryExpression;IdExpression;Name;TypeIdExpression;TypeId;ElaboratedTypeSpecifier;Name;Declarator;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;Pointer;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;Pointer;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;GotoStatement;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;LiteralExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;IdExpression;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;GotoStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;GotoStatement;Name;IfStatement;BinaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;GotoStatement;Name;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;GotoStatement;Name;IfStatement;BinaryExpression;BinaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;IfStatement;BinaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;UnaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;LiteralExpression;GotoStatement;Name;IfStatement;BinaryExpression;BinaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;GotoStatement;Name;IfStatement;BinaryExpression;BinaryExpression;UnaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;LiteralExpression;GotoStatement;Name;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;LiteralExpression;GotoStatement;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;LiteralExpression;GotoStatement;Name;IfStatement;BinaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;GotoStatement;Name;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;LiteralExpression;GotoStatement;Name;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;GotoStatement;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;LiteralExpression;GotoStatement;Name;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;LabelStatement;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+int wpa_sm_rx_eapol(struct wpa_sm *sm, const u8 *src_addr,		    const u8 *buf, size_t len){	size_t plen, data_len, key_data_len;	const struct ieee802_1x_hdr *hdr;	struct wpa_eapol_key *key;	struct wpa_eapol_key_192 *key192;	u16 key_info, ver;	u8 *tmp = NULL;	int ret = -1;	struct wpa_peerkey *peerkey = NULL;	u8 *key_data;	size_t mic_len, keyhdrlen;#ifdef CONFIG_IEEE80211R	sm->ft_completed = 0;#endif /* CONFIG_IEEE80211R */	mic_len = wpa_mic_len(sm->key_mgmt);	keyhdrlen = mic_len == 24 ? sizeof(*key192) : sizeof(*key);	if (len < sizeof(*hdr) + keyhdrlen) {		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: EAPOL frame too short to be a WPA "			"EAPOL-Key (len %lu, expecting at least %lu)",			(unsigned long) len,			(unsigned long) sizeof(*hdr) + keyhdrlen);		return 0;	}	hdr = (const struct ieee802_1x_hdr *) buf;	plen = be_to_host16(hdr->length);	data_len = plen + sizeof(*hdr);	wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,		"IEEE 802.1X RX: version=%d type=%d length=%lu",		hdr->version, hdr->type, (unsigned long) plen);	if (hdr->version < EAPOL_VERSION) {		/* TODO: backwards compatibility */	}	if (hdr->type != IEEE802_1X_TYPE_EAPOL_KEY) {		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: EAPOL frame (type %u) discarded, "			"not a Key frame", hdr->type);		ret = 0;		goto out;	}	wpa_hexdump(MSG_MSGDUMP, "WPA: RX EAPOL-Key", buf, len);	if (plen > len - sizeof(*hdr) || plen < keyhdrlen) {		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: EAPOL frame payload size %lu "			"invalid (frame size %lu)",			(unsigned long) plen, (unsigned long) len);		ret = 0;		goto out;	}	if (data_len < len) {		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: ignoring %lu bytes after the IEEE 802.1X data",			(unsigned long) len - data_len);	}	/*	 * Make a copy of the frame since we need to modify the buffer during	 * MAC validation and Key Data decryption.	 */	tmp = os_malloc(data_len);	if (tmp == NULL)		goto out;	os_memcpy(tmp, buf, data_len);	key = (struct wpa_eapol_key *) (tmp + sizeof(struct ieee802_1x_hdr));	key192 = (struct wpa_eapol_key_192 *)		(tmp + sizeof(struct ieee802_1x_hdr));	if (mic_len == 24)		key_data = (u8 *) (key192 + 1);	else		key_data = (u8 *) (key + 1);	if (key->type != EAPOL_KEY_TYPE_WPA && key->type != EAPOL_KEY_TYPE_RSN)	{		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: EAPOL-Key type (%d) unknown, discarded",			key->type);		ret = 0;		goto out;	}	if (mic_len == 24)		key_data_len = WPA_GET_BE16(key192->key_data_length);	else		key_data_len = WPA_GET_BE16(key->key_data_length);	wpa_eapol_key_dump(sm, key, key_data_len, key192->key_mic, mic_len);	if (key_data_len > plen - keyhdrlen) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO, "WPA: Invalid EAPOL-Key "			"frame - key_data overflow (%u > %u)",			(unsigned int) key_data_len,			(unsigned int) (plen - keyhdrlen));		goto out;	}	eapol_sm_notify_lower_layer_success(sm->eapol, 0);	key_info = WPA_GET_BE16(key->key_info);	ver = key_info & WPA_KEY_INFO_TYPE_MASK;	if (ver != WPA_KEY_INFO_TYPE_HMAC_MD5_RC4 &&#if defined(CONFIG_IEEE80211R) || defined(CONFIG_IEEE80211W)	    ver != WPA_KEY_INFO_TYPE_AES_128_CMAC &&#endif /* CONFIG_IEEE80211R || CONFIG_IEEE80211W */	    ver != WPA_KEY_INFO_TYPE_HMAC_SHA1_AES &&	    !wpa_key_mgmt_suite_b(sm->key_mgmt) &&	    sm->key_mgmt != WPA_KEY_MGMT_OSEN) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: Unsupported EAPOL-Key descriptor version %d",			ver);		goto out;	}	if (sm->key_mgmt == WPA_KEY_MGMT_OSEN &&	    ver != WPA_KEY_INFO_TYPE_AKM_DEFINED) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"OSEN: Unsupported EAPOL-Key descriptor version %d",			ver);		goto out;	}	if (wpa_key_mgmt_suite_b(sm->key_mgmt) &&	    ver != WPA_KEY_INFO_TYPE_AKM_DEFINED) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"RSN: Unsupported EAPOL-Key descriptor version %d (expected AKM defined = 0)",			ver);		goto out;	}#ifdef CONFIG_IEEE80211R	if (wpa_key_mgmt_ft(sm->key_mgmt)) {		/* IEEE 802.11r uses a new key_info type (AES-128-CMAC). */		if (ver != WPA_KEY_INFO_TYPE_AES_128_CMAC) {			wpa_msg(sm->ctx->msg_ctx, MSG_INFO,				"FT: AP did not use AES-128-CMAC");			goto out;		}	} else#endif /* CONFIG_IEEE80211R */#ifdef CONFIG_IEEE80211W	if (wpa_key_mgmt_sha256(sm->key_mgmt)) {		if (ver != WPA_KEY_INFO_TYPE_AES_128_CMAC &&		    sm->key_mgmt != WPA_KEY_MGMT_OSEN &&		    !wpa_key_mgmt_suite_b(sm->key_mgmt)) {			wpa_msg(sm->ctx->msg_ctx, MSG_INFO,				"WPA: AP did not use the "				"negotiated AES-128-CMAC");			goto out;		}	} else#endif /* CONFIG_IEEE80211W */	if (sm->pairwise_cipher == WPA_CIPHER_CCMP &&	    !wpa_key_mgmt_suite_b(sm->key_mgmt) &&	    ver != WPA_KEY_INFO_TYPE_HMAC_SHA1_AES) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: CCMP is used, but EAPOL-Key "			"descriptor version (%d) is not 2", ver);		if (sm->group_cipher != WPA_CIPHER_CCMP &&		    !(key_info & WPA_KEY_INFO_KEY_TYPE)) {			/* Earlier versions of IEEE 802.11i did not explicitly			 * require version 2 descriptor for all EAPOL-Key			 * packets, so allow group keys to use version 1 if			 * CCMP is not used for them. */			wpa_msg(sm->ctx->msg_ctx, MSG_INFO,				"WPA: Backwards compatibility: allow invalid "				"version for non-CCMP group keys");		} else if (ver == WPA_KEY_INFO_TYPE_AES_128_CMAC) {			wpa_msg(sm->ctx->msg_ctx, MSG_INFO,				"WPA: Interoperability workaround: allow incorrect (should have been HMAC-SHA1), but stronger (is AES-128-CMAC), descriptor version to be used");		} else			goto out;	} else if (sm->pairwise_cipher == WPA_CIPHER_GCMP &&		   !wpa_key_mgmt_suite_b(sm->key_mgmt) &&		   ver != WPA_KEY_INFO_TYPE_HMAC_SHA1_AES) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: GCMP is used, but EAPOL-Key "			"descriptor version (%d) is not 2", ver);		goto out;	}#ifdef CONFIG_PEERKEY	for (peerkey = sm->peerkey; peerkey; peerkey = peerkey->next) {		if (os_memcmp(peerkey->addr, src_addr, ETH_ALEN) == 0)			break;	}	if (!(key_info & WPA_KEY_INFO_SMK_MESSAGE) && peerkey) {		if (!peerkey->initiator && peerkey->replay_counter_set &&		    os_memcmp(key->replay_counter, peerkey->replay_counter,			      WPA_REPLAY_COUNTER_LEN) <= 0) {			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"RSN: EAPOL-Key Replay Counter did not "				"increase (STK) - dropping packet");			goto out;		} else if (peerkey->initiator) {			u8 _tmp[WPA_REPLAY_COUNTER_LEN];			os_memcpy(_tmp, key->replay_counter,				  WPA_REPLAY_COUNTER_LEN);			inc_byte_array(_tmp, WPA_REPLAY_COUNTER_LEN);			if (os_memcmp(_tmp, peerkey->replay_counter,				      WPA_REPLAY_COUNTER_LEN) != 0) {				wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,					"RSN: EAPOL-Key Replay "					"Counter did not match (STK) - "					"dropping packet");				goto out;			}		}	}	if (peerkey && peerkey->initiator && (key_info & WPA_KEY_INFO_ACK)) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"RSN: Ack bit in key_info from STK peer");		goto out;	}#endif /* CONFIG_PEERKEY */	if (!peerkey && sm->rx_replay_counter_set &&	    os_memcmp(key->replay_counter, sm->rx_replay_counter,		      WPA_REPLAY_COUNTER_LEN) <= 0) {		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,			"WPA: EAPOL-Key Replay Counter did not increase - "			"dropping packet");		goto out;	}	if (!(key_info & (WPA_KEY_INFO_ACK | WPA_KEY_INFO_SMK_MESSAGE))#ifdef CONFIG_PEERKEY	    && (peerkey == NULL || !peerkey->initiator)#endif /* CONFIG_PEERKEY */		) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: No Ack bit in key_info");		goto out;	}	if (key_info & WPA_KEY_INFO_REQUEST) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: EAPOL-Key with Request bit - dropped");		goto out;	}	if ((key_info & WPA_KEY_INFO_MIC) && !peerkey &&	    wpa_supplicant_verify_eapol_key_mic(sm, key192, ver, tmp, data_len))		goto out;#ifdef CONFIG_PEERKEY	if ((key_info & WPA_KEY_INFO_MIC) && peerkey &&	    peerkey_verify_eapol_key_mic(sm, peerkey, key192, ver, tmp,					 data_len))		goto out;#endif /* CONFIG_PEERKEY */	if ((sm->proto == WPA_PROTO_RSN || sm->proto == WPA_PROTO_OSEN) &&	    (key_info & WPA_KEY_INFO_ENCR_KEY_DATA)) {		/*		 * Only decrypt the Key Data field if the frame's authenticity		 * was verified. When using AES-SIV (FILS), the MIC flag is not		 * set, so this check should only be performed if mic_len != 0		 * which is the case in this code branch.		 */		if (!(key_info & WPA_KEY_INFO_MIC)) {			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"WPA: Ignore EAPOL-Key with encrypted but unauthenticated data");			goto out;		}		if (wpa_supplicant_decrypt_key_data(sm, key, ver, key_data,						    &key_data_len))			goto out;	}	if (key_info & WPA_KEY_INFO_KEY_TYPE) {		if (key_info & WPA_KEY_INFO_KEY_INDEX_MASK) {			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"WPA: Ignored EAPOL-Key (Pairwise) with "				"non-zero key index");			goto out;		}		if (peerkey) {			/* PeerKey 4-Way Handshake */			peerkey_rx_eapol_4way(sm, peerkey, key, key_info, ver,					      key_data, key_data_len);		} else if (key_info & WPA_KEY_INFO_MIC) {			/* 3/4 4-Way Handshake */			wpa_supplicant_process_3_of_4(sm, key, ver, key_data,						      key_data_len);		} else {			/* 1/4 4-Way Handshake */			wpa_supplicant_process_1_of_4(sm, src_addr, key,						      ver, key_data,						      key_data_len);		}	} else if (key_info & WPA_KEY_INFO_SMK_MESSAGE) {		/* PeerKey SMK Handshake */		peerkey_rx_eapol_smk(sm, src_addr, key, key_data_len, key_info,				     ver);	} else {		if (key_info & WPA_KEY_INFO_MIC) {			/* 1/2 Group Key Handshake */			wpa_supplicant_process_1_of_2(sm, src_addr, key,						      key_data, key_data_len,						      ver);		} else {			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"WPA: EAPOL-Key (Group) without Mic bit - "				"dropped");		}	}	ret = 1;out:	bin_clear_free(tmp, data_len);	return ret;}
+int
+wpa_sm_rx_eapol(struct wpa_sm *sm, const u8 *src_addr,		    const u8 *buf, size_t len)
+wpa_sm_rx_eapol
+struct wpa_sm *sm
+struct wpa_sm
+wpa_sm
+*sm
+*
+sm
+const u8 *src_addr
+const u8
+u8
+*src_addr
+*
+src_addr
+const u8 *buf
+const u8
+u8
+*buf
+*
+buf
+size_t len
+size_t
+size_t
+len
+len
+{	size_t plen, data_len, key_data_len;	const struct ieee802_1x_hdr *hdr;	struct wpa_eapol_key *key;	struct wpa_eapol_key_192 *key192;	u16 key_info, ver;	u8 *tmp = NULL;	int ret = -1;	struct wpa_peerkey *peerkey = NULL;	u8 *key_data;	size_t mic_len, keyhdrlen;#ifdef CONFIG_IEEE80211R	sm->ft_completed = 0;#endif /* CONFIG_IEEE80211R */	mic_len = wpa_mic_len(sm->key_mgmt);	keyhdrlen = mic_len == 24 ? sizeof(*key192) : sizeof(*key);	if (len < sizeof(*hdr) + keyhdrlen) {		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: EAPOL frame too short to be a WPA "			"EAPOL-Key (len %lu, expecting at least %lu)",			(unsigned long) len,			(unsigned long) sizeof(*hdr) + keyhdrlen);		return 0;	}	hdr = (const struct ieee802_1x_hdr *) buf;	plen = be_to_host16(hdr->length);	data_len = plen + sizeof(*hdr);	wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,		"IEEE 802.1X RX: version=%d type=%d length=%lu",		hdr->version, hdr->type, (unsigned long) plen);	if (hdr->version < EAPOL_VERSION) {		/* TODO: backwards compatibility */	}	if (hdr->type != IEEE802_1X_TYPE_EAPOL_KEY) {		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: EAPOL frame (type %u) discarded, "			"not a Key frame", hdr->type);		ret = 0;		goto out;	}	wpa_hexdump(MSG_MSGDUMP, "WPA: RX EAPOL-Key", buf, len);	if (plen > len - sizeof(*hdr) || plen < keyhdrlen) {		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: EAPOL frame payload size %lu "			"invalid (frame size %lu)",			(unsigned long) plen, (unsigned long) len);		ret = 0;		goto out;	}	if (data_len < len) {		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: ignoring %lu bytes after the IEEE 802.1X data",			(unsigned long) len - data_len);	}	/*	 * Make a copy of the frame since we need to modify the buffer during	 * MAC validation and Key Data decryption.	 */	tmp = os_malloc(data_len);	if (tmp == NULL)		goto out;	os_memcpy(tmp, buf, data_len);	key = (struct wpa_eapol_key *) (tmp + sizeof(struct ieee802_1x_hdr));	key192 = (struct wpa_eapol_key_192 *)		(tmp + sizeof(struct ieee802_1x_hdr));	if (mic_len == 24)		key_data = (u8 *) (key192 + 1);	else		key_data = (u8 *) (key + 1);	if (key->type != EAPOL_KEY_TYPE_WPA && key->type != EAPOL_KEY_TYPE_RSN)	{		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: EAPOL-Key type (%d) unknown, discarded",			key->type);		ret = 0;		goto out;	}	if (mic_len == 24)		key_data_len = WPA_GET_BE16(key192->key_data_length);	else		key_data_len = WPA_GET_BE16(key->key_data_length);	wpa_eapol_key_dump(sm, key, key_data_len, key192->key_mic, mic_len);	if (key_data_len > plen - keyhdrlen) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO, "WPA: Invalid EAPOL-Key "			"frame - key_data overflow (%u > %u)",			(unsigned int) key_data_len,			(unsigned int) (plen - keyhdrlen));		goto out;	}	eapol_sm_notify_lower_layer_success(sm->eapol, 0);	key_info = WPA_GET_BE16(key->key_info);	ver = key_info & WPA_KEY_INFO_TYPE_MASK;	if (ver != WPA_KEY_INFO_TYPE_HMAC_MD5_RC4 &&#if defined(CONFIG_IEEE80211R) || defined(CONFIG_IEEE80211W)	    ver != WPA_KEY_INFO_TYPE_AES_128_CMAC &&#endif /* CONFIG_IEEE80211R || CONFIG_IEEE80211W */	    ver != WPA_KEY_INFO_TYPE_HMAC_SHA1_AES &&	    !wpa_key_mgmt_suite_b(sm->key_mgmt) &&	    sm->key_mgmt != WPA_KEY_MGMT_OSEN) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: Unsupported EAPOL-Key descriptor version %d",			ver);		goto out;	}	if (sm->key_mgmt == WPA_KEY_MGMT_OSEN &&	    ver != WPA_KEY_INFO_TYPE_AKM_DEFINED) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"OSEN: Unsupported EAPOL-Key descriptor version %d",			ver);		goto out;	}	if (wpa_key_mgmt_suite_b(sm->key_mgmt) &&	    ver != WPA_KEY_INFO_TYPE_AKM_DEFINED) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"RSN: Unsupported EAPOL-Key descriptor version %d (expected AKM defined = 0)",			ver);		goto out;	}#ifdef CONFIG_IEEE80211R	if (wpa_key_mgmt_ft(sm->key_mgmt)) {		/* IEEE 802.11r uses a new key_info type (AES-128-CMAC). */		if (ver != WPA_KEY_INFO_TYPE_AES_128_CMAC) {			wpa_msg(sm->ctx->msg_ctx, MSG_INFO,				"FT: AP did not use AES-128-CMAC");			goto out;		}	} else#endif /* CONFIG_IEEE80211R */#ifdef CONFIG_IEEE80211W	if (wpa_key_mgmt_sha256(sm->key_mgmt)) {		if (ver != WPA_KEY_INFO_TYPE_AES_128_CMAC &&		    sm->key_mgmt != WPA_KEY_MGMT_OSEN &&		    !wpa_key_mgmt_suite_b(sm->key_mgmt)) {			wpa_msg(sm->ctx->msg_ctx, MSG_INFO,				"WPA: AP did not use the "				"negotiated AES-128-CMAC");			goto out;		}	} else#endif /* CONFIG_IEEE80211W */	if (sm->pairwise_cipher == WPA_CIPHER_CCMP &&	    !wpa_key_mgmt_suite_b(sm->key_mgmt) &&	    ver != WPA_KEY_INFO_TYPE_HMAC_SHA1_AES) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: CCMP is used, but EAPOL-Key "			"descriptor version (%d) is not 2", ver);		if (sm->group_cipher != WPA_CIPHER_CCMP &&		    !(key_info & WPA_KEY_INFO_KEY_TYPE)) {			/* Earlier versions of IEEE 802.11i did not explicitly			 * require version 2 descriptor for all EAPOL-Key			 * packets, so allow group keys to use version 1 if			 * CCMP is not used for them. */			wpa_msg(sm->ctx->msg_ctx, MSG_INFO,				"WPA: Backwards compatibility: allow invalid "				"version for non-CCMP group keys");		} else if (ver == WPA_KEY_INFO_TYPE_AES_128_CMAC) {			wpa_msg(sm->ctx->msg_ctx, MSG_INFO,				"WPA: Interoperability workaround: allow incorrect (should have been HMAC-SHA1), but stronger (is AES-128-CMAC), descriptor version to be used");		} else			goto out;	} else if (sm->pairwise_cipher == WPA_CIPHER_GCMP &&		   !wpa_key_mgmt_suite_b(sm->key_mgmt) &&		   ver != WPA_KEY_INFO_TYPE_HMAC_SHA1_AES) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: GCMP is used, but EAPOL-Key "			"descriptor version (%d) is not 2", ver);		goto out;	}#ifdef CONFIG_PEERKEY	for (peerkey = sm->peerkey; peerkey; peerkey = peerkey->next) {		if (os_memcmp(peerkey->addr, src_addr, ETH_ALEN) == 0)			break;	}	if (!(key_info & WPA_KEY_INFO_SMK_MESSAGE) && peerkey) {		if (!peerkey->initiator && peerkey->replay_counter_set &&		    os_memcmp(key->replay_counter, peerkey->replay_counter,			      WPA_REPLAY_COUNTER_LEN) <= 0) {			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"RSN: EAPOL-Key Replay Counter did not "				"increase (STK) - dropping packet");			goto out;		} else if (peerkey->initiator) {			u8 _tmp[WPA_REPLAY_COUNTER_LEN];			os_memcpy(_tmp, key->replay_counter,				  WPA_REPLAY_COUNTER_LEN);			inc_byte_array(_tmp, WPA_REPLAY_COUNTER_LEN);			if (os_memcmp(_tmp, peerkey->replay_counter,				      WPA_REPLAY_COUNTER_LEN) != 0) {				wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,					"RSN: EAPOL-Key Replay "					"Counter did not match (STK) - "					"dropping packet");				goto out;			}		}	}	if (peerkey && peerkey->initiator && (key_info & WPA_KEY_INFO_ACK)) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"RSN: Ack bit in key_info from STK peer");		goto out;	}#endif /* CONFIG_PEERKEY */	if (!peerkey && sm->rx_replay_counter_set &&	    os_memcmp(key->replay_counter, sm->rx_replay_counter,		      WPA_REPLAY_COUNTER_LEN) <= 0) {		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,			"WPA: EAPOL-Key Replay Counter did not increase - "			"dropping packet");		goto out;	}	if (!(key_info & (WPA_KEY_INFO_ACK | WPA_KEY_INFO_SMK_MESSAGE))#ifdef CONFIG_PEERKEY	    && (peerkey == NULL || !peerkey->initiator)#endif /* CONFIG_PEERKEY */		) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: No Ack bit in key_info");		goto out;	}	if (key_info & WPA_KEY_INFO_REQUEST) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: EAPOL-Key with Request bit - dropped");		goto out;	}	if ((key_info & WPA_KEY_INFO_MIC) && !peerkey &&	    wpa_supplicant_verify_eapol_key_mic(sm, key192, ver, tmp, data_len))		goto out;#ifdef CONFIG_PEERKEY	if ((key_info & WPA_KEY_INFO_MIC) && peerkey &&	    peerkey_verify_eapol_key_mic(sm, peerkey, key192, ver, tmp,					 data_len))		goto out;#endif /* CONFIG_PEERKEY */	if ((sm->proto == WPA_PROTO_RSN || sm->proto == WPA_PROTO_OSEN) &&	    (key_info & WPA_KEY_INFO_ENCR_KEY_DATA)) {		/*		 * Only decrypt the Key Data field if the frame's authenticity		 * was verified. When using AES-SIV (FILS), the MIC flag is not		 * set, so this check should only be performed if mic_len != 0		 * which is the case in this code branch.		 */		if (!(key_info & WPA_KEY_INFO_MIC)) {			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"WPA: Ignore EAPOL-Key with encrypted but unauthenticated data");			goto out;		}		if (wpa_supplicant_decrypt_key_data(sm, key, ver, key_data,						    &key_data_len))			goto out;	}	if (key_info & WPA_KEY_INFO_KEY_TYPE) {		if (key_info & WPA_KEY_INFO_KEY_INDEX_MASK) {			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"WPA: Ignored EAPOL-Key (Pairwise) with "				"non-zero key index");			goto out;		}		if (peerkey) {			/* PeerKey 4-Way Handshake */			peerkey_rx_eapol_4way(sm, peerkey, key, key_info, ver,					      key_data, key_data_len);		} else if (key_info & WPA_KEY_INFO_MIC) {			/* 3/4 4-Way Handshake */			wpa_supplicant_process_3_of_4(sm, key, ver, key_data,						      key_data_len);		} else {			/* 1/4 4-Way Handshake */			wpa_supplicant_process_1_of_4(sm, src_addr, key,						      ver, key_data,						      key_data_len);		}	} else if (key_info & WPA_KEY_INFO_SMK_MESSAGE) {		/* PeerKey SMK Handshake */		peerkey_rx_eapol_smk(sm, src_addr, key, key_data_len, key_info,				     ver);	} else {		if (key_info & WPA_KEY_INFO_MIC) {			/* 1/2 Group Key Handshake */			wpa_supplicant_process_1_of_2(sm, src_addr, key,						      key_data, key_data_len,						      ver);		} else {			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"WPA: EAPOL-Key (Group) without Mic bit - "				"dropped");		}	}	ret = 1;out:	bin_clear_free(tmp, data_len);	return ret;}
+size_t plen, data_len, key_data_len;
+size_t plen, data_len, key_data_len;
+size_t
+size_t
+plen
+plen
+data_len
+data_len
+key_data_len
+key_data_len
+const struct ieee802_1x_hdr *hdr;
+const struct ieee802_1x_hdr *hdr;
+const struct ieee802_1x_hdr
+ieee802_1x_hdr
+*hdr
+*
+hdr
+struct wpa_eapol_key *key;
+struct wpa_eapol_key *key;
+struct wpa_eapol_key
+wpa_eapol_key
+*key
+*
+key
+struct wpa_eapol_key_192 *key192;
+struct wpa_eapol_key_192 *key192;
+struct wpa_eapol_key_192
+wpa_eapol_key_192
+*key192
+*
+key192
+u16 key_info, ver;
+u16 key_info, ver;
+u16
+u16
+key_info
+key_info
+ver
+ver
+u8 *tmp = NULL;
+u8 *tmp = NULL;
+u8
+u8
+*tmp = NULL
+*
+tmp
+= NULL
+NULL
+NULL
+int ret = -1;
+int ret = -1;
+int
+ret = -1
+ret
+= -1
+-1
+1
+struct wpa_peerkey *peerkey = NULL;
+struct wpa_peerkey *peerkey = NULL;
+struct wpa_peerkey
+wpa_peerkey
+*peerkey = NULL
+*
+peerkey
+= NULL
+NULL
+NULL
+u8 *key_data;
+u8 *key_data;
+u8
+u8
+*key_data
+*
+key_data
+size_t mic_len, keyhdrlen;
+size_t mic_len, keyhdrlen;
+size_t
+size_t
+mic_len
+mic_len
+keyhdrlen
+keyhdrlen
+mic_len = wpa_mic_len(sm->key_mgmt);
+mic_len = wpa_mic_len(sm->key_mgmt)
+mic_len
+mic_len
+wpa_mic_len(sm->key_mgmt)
+wpa_mic_len
+wpa_mic_len
+sm->key_mgmt
+sm
+sm
+key_mgmt
+keyhdrlen = mic_len == 24 ? sizeof(*key192) : sizeof(*key);
+keyhdrlen = mic_len == 24 ? sizeof(*key192) : sizeof(*key)
+keyhdrlen
+keyhdrlen
+mic_len == 24 ? sizeof(*key192) : sizeof(*key)
+mic_len == 24
+mic_len
+mic_len
+24
+sizeof(*key192)
+(*key192)
+*key192
+key192
+key192
+sizeof(*key)
+(*key)
+*key
+key
+key
+if (len < sizeof(*hdr) + keyhdrlen) {		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: EAPOL frame too short to be a WPA "			"EAPOL-Key (len %lu, expecting at least %lu)",			(unsigned long) len,			(unsigned long) sizeof(*hdr) + keyhdrlen);		return 0;	}
+len < sizeof(*hdr) + keyhdrlen
+len
+len
+sizeof(*hdr) + keyhdrlen
+sizeof(*hdr)
+(*hdr)
+*hdr
+hdr
+hdr
+keyhdrlen
+keyhdrlen
+{		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: EAPOL frame too short to be a WPA "			"EAPOL-Key (len %lu, expecting at least %lu)",			(unsigned long) len,			(unsigned long) sizeof(*hdr) + keyhdrlen);		return 0;	}
+wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: EAPOL frame too short to be a WPA "			"EAPOL-Key (len %lu, expecting at least %lu)",			(unsigned long) len,			(unsigned long) sizeof(*hdr) + keyhdrlen);
+wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: EAPOL frame too short to be a WPA "			"EAPOL-Key (len %lu, expecting at least %lu)",			(unsigned long) len,			(unsigned long) sizeof(*hdr) + keyhdrlen)
+wpa_dbg
+wpa_dbg
+sm->ctx->msg_ctx
+sm->ctx
+sm
+sm
+ctx
+msg_ctx
+MSG_DEBUG
+MSG_DEBUG
+"WPA: EAPOL frame too short to be a WPA "			"EAPOL-Key (len %lu, expecting at least %lu)"
+(unsigned long) len
+unsigned long
+unsigned long
+
+len
+len
+(unsigned long) sizeof(*hdr) + keyhdrlen
+(unsigned long) sizeof(*hdr)
+unsigned long
+unsigned long
+
+sizeof(*hdr)
+(*hdr)
+*hdr
+hdr
+hdr
+keyhdrlen
+keyhdrlen
+return 0;
+0
+hdr = (const struct ieee802_1x_hdr *) buf;
+hdr = (const struct ieee802_1x_hdr *) buf
+hdr
+hdr
+(const struct ieee802_1x_hdr *) buf
+const struct ieee802_1x_hdr *
+const struct ieee802_1x_hdr
+ieee802_1x_hdr
+*
+*
+buf
+buf
+plen = be_to_host16(hdr->length);
+plen = be_to_host16(hdr->length)
+plen
+plen
+be_to_host16(hdr->length)
+be_to_host16
+be_to_host16
+hdr->length
+hdr
+hdr
+length
+data_len = plen + sizeof(*hdr);
+data_len = plen + sizeof(*hdr)
+data_len
+data_len
+plen + sizeof(*hdr)
+plen
+plen
+sizeof(*hdr)
+(*hdr)
+*hdr
+hdr
+hdr
+wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,		"IEEE 802.1X RX: version=%d type=%d length=%lu",		hdr->version, hdr->type, (unsigned long) plen);
+wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,		"IEEE 802.1X RX: version=%d type=%d length=%lu",		hdr->version, hdr->type, (unsigned long) plen)
+wpa_dbg
+wpa_dbg
+sm->ctx->msg_ctx
+sm->ctx
+sm
+sm
+ctx
+msg_ctx
+MSG_DEBUG
+MSG_DEBUG
+"IEEE 802.1X RX: version=%d type=%d length=%lu"
+hdr->version
+hdr
+hdr
+version
+hdr->type
+hdr
+hdr
+type
+(unsigned long) plen
+unsigned long
+unsigned long
+
+plen
+plen
+if (hdr->version < EAPOL_VERSION) {		/* TODO: backwards compatibility */	}
+hdr->version < EAPOL_VERSION
+hdr->version
+hdr
+hdr
+version
+EAPOL_VERSION
+EAPOL_VERSION
+{		/* TODO: backwards compatibility */	}
+if (hdr->type != IEEE802_1X_TYPE_EAPOL_KEY) {		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: EAPOL frame (type %u) discarded, "			"not a Key frame", hdr->type);		ret = 0;		goto out;	}
+hdr->type != IEEE802_1X_TYPE_EAPOL_KEY
+hdr->type
+hdr
+hdr
+type
+IEEE802_1X_TYPE_EAPOL_KEY
+IEEE802_1X_TYPE_EAPOL_KEY
+{		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: EAPOL frame (type %u) discarded, "			"not a Key frame", hdr->type);		ret = 0;		goto out;	}
+wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: EAPOL frame (type %u) discarded, "			"not a Key frame", hdr->type);
+wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: EAPOL frame (type %u) discarded, "			"not a Key frame", hdr->type)
+wpa_dbg
+wpa_dbg
+sm->ctx->msg_ctx
+sm->ctx
+sm
+sm
+ctx
+msg_ctx
+MSG_DEBUG
+MSG_DEBUG
+"WPA: EAPOL frame (type %u) discarded, "			"not a Key frame"
+hdr->type
+hdr
+hdr
+type
+ret = 0;
+ret = 0
+ret
+ret
+0
+goto out;
+out
+wpa_hexdump(MSG_MSGDUMP, "WPA: RX EAPOL-Key", buf, len);
+wpa_hexdump(MSG_MSGDUMP, "WPA: RX EAPOL-Key", buf, len)
+wpa_hexdump
+wpa_hexdump
+MSG_MSGDUMP
+MSG_MSGDUMP
+"WPA: RX EAPOL-Key"
+buf
+buf
+len
+len
+if (plen > len - sizeof(*hdr) || plen < keyhdrlen) {		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: EAPOL frame payload size %lu "			"invalid (frame size %lu)",			(unsigned long) plen, (unsigned long) len);		ret = 0;		goto out;	}
+plen > len - sizeof(*hdr) || plen < keyhdrlen
+plen > len - sizeof(*hdr)
+plen
+plen
+len - sizeof(*hdr)
+len
+len
+sizeof(*hdr)
+(*hdr)
+*hdr
+hdr
+hdr
+plen < keyhdrlen
+plen
+plen
+keyhdrlen
+keyhdrlen
+{		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: EAPOL frame payload size %lu "			"invalid (frame size %lu)",			(unsigned long) plen, (unsigned long) len);		ret = 0;		goto out;	}
+wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: EAPOL frame payload size %lu "			"invalid (frame size %lu)",			(unsigned long) plen, (unsigned long) len);
+wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: EAPOL frame payload size %lu "			"invalid (frame size %lu)",			(unsigned long) plen, (unsigned long) len)
+wpa_dbg
+wpa_dbg
+sm->ctx->msg_ctx
+sm->ctx
+sm
+sm
+ctx
+msg_ctx
+MSG_DEBUG
+MSG_DEBUG
+"WPA: EAPOL frame payload size %lu "			"invalid (frame size %lu)"
+(unsigned long) plen
+unsigned long
+unsigned long
+
+plen
+plen
+(unsigned long) len
+unsigned long
+unsigned long
+
+len
+len
+ret = 0;
+ret = 0
+ret
+ret
+0
+goto out;
+out
+if (data_len < len) {		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: ignoring %lu bytes after the IEEE 802.1X data",			(unsigned long) len - data_len);	}
+data_len < len
+data_len
+data_len
+len
+len
+{		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: ignoring %lu bytes after the IEEE 802.1X data",			(unsigned long) len - data_len);	}
+wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: ignoring %lu bytes after the IEEE 802.1X data",			(unsigned long) len - data_len);
+wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: ignoring %lu bytes after the IEEE 802.1X data",			(unsigned long) len - data_len)
+wpa_dbg
+wpa_dbg
+sm->ctx->msg_ctx
+sm->ctx
+sm
+sm
+ctx
+msg_ctx
+MSG_DEBUG
+MSG_DEBUG
+"WPA: ignoring %lu bytes after the IEEE 802.1X data"
+(unsigned long) len - data_len
+(unsigned long) len
+unsigned long
+unsigned long
+
+len
+len
+data_len
+data_len
+tmp = os_malloc(data_len);
+tmp = os_malloc(data_len)
+tmp
+tmp
+os_malloc(data_len)
+os_malloc
+os_malloc
+data_len
+data_len
+if (tmp == NULL)		goto out;
+tmp == NULL
+tmp
+tmp
+NULL
+NULL
+goto out;
+out
+os_memcpy(tmp, buf, data_len);
+os_memcpy(tmp, buf, data_len)
+os_memcpy
+os_memcpy
+tmp
+tmp
+buf
+buf
+data_len
+data_len
+key = (struct wpa_eapol_key *) (tmp + sizeof(struct ieee802_1x_hdr));
+key = (struct wpa_eapol_key *) (tmp + sizeof(struct ieee802_1x_hdr))
+key
+key
+(struct wpa_eapol_key *) (tmp + sizeof(struct ieee802_1x_hdr))
+struct wpa_eapol_key *
+struct wpa_eapol_key
+wpa_eapol_key
+*
+*
+(tmp + sizeof(struct ieee802_1x_hdr))
+tmp + sizeof(struct ieee802_1x_hdr)
+tmp
+tmp
+sizeof(struct ieee802_1x_hdr)
+struct ieee802_1x_hdr
+struct ieee802_1x_hdr
+ieee802_1x_hdr
+
+key192 = (struct wpa_eapol_key_192 *)		(tmp + sizeof(struct ieee802_1x_hdr));
+key192 = (struct wpa_eapol_key_192 *)		(tmp + sizeof(struct ieee802_1x_hdr))
+key192
+key192
+(struct wpa_eapol_key_192 *)		(tmp + sizeof(struct ieee802_1x_hdr))
+struct wpa_eapol_key_192 *
+struct wpa_eapol_key_192
+wpa_eapol_key_192
+*
+*
+(tmp + sizeof(struct ieee802_1x_hdr))
+tmp + sizeof(struct ieee802_1x_hdr)
+tmp
+tmp
+sizeof(struct ieee802_1x_hdr)
+struct ieee802_1x_hdr
+struct ieee802_1x_hdr
+ieee802_1x_hdr
+
+if (mic_len == 24)		key_data = (u8 *) (key192 + 1);	else		key_data = (u8 *) (key + 1);
+mic_len == 24
+mic_len
+mic_len
+24
+key_data = (u8 *) (key192 + 1);
+key_data = (u8 *) (key192 + 1)
+key_data
+key_data
+(u8 *) (key192 + 1)
+u8 *
+u8
+u8
+*
+*
+(key192 + 1)
+key192 + 1
+key192
+key192
+1
+key_data = (u8 *) (key + 1);
+key_data = (u8 *) (key + 1)
+key_data
+key_data
+(u8 *) (key + 1)
+u8 *
+u8
+u8
+*
+*
+(key + 1)
+key + 1
+key
+key
+1
+if (key->type != EAPOL_KEY_TYPE_WPA && key->type != EAPOL_KEY_TYPE_RSN)	{		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: EAPOL-Key type (%d) unknown, discarded",			key->type);		ret = 0;		goto out;	}
+key->type != EAPOL_KEY_TYPE_WPA && key->type != EAPOL_KEY_TYPE_RSN
+key->type != EAPOL_KEY_TYPE_WPA
+key->type
+key
+key
+type
+EAPOL_KEY_TYPE_WPA
+EAPOL_KEY_TYPE_WPA
+key->type != EAPOL_KEY_TYPE_RSN
+key->type
+key
+key
+type
+EAPOL_KEY_TYPE_RSN
+EAPOL_KEY_TYPE_RSN
+{		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: EAPOL-Key type (%d) unknown, discarded",			key->type);		ret = 0;		goto out;	}
+wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: EAPOL-Key type (%d) unknown, discarded",			key->type);
+wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,			"WPA: EAPOL-Key type (%d) unknown, discarded",			key->type)
+wpa_dbg
+wpa_dbg
+sm->ctx->msg_ctx
+sm->ctx
+sm
+sm
+ctx
+msg_ctx
+MSG_DEBUG
+MSG_DEBUG
+"WPA: EAPOL-Key type (%d) unknown, discarded"
+key->type
+key
+key
+type
+ret = 0;
+ret = 0
+ret
+ret
+0
+goto out;
+out
+if (mic_len == 24)		key_data_len = WPA_GET_BE16(key192->key_data_length);	else		key_data_len = WPA_GET_BE16(key->key_data_length);
+mic_len == 24
+mic_len
+mic_len
+24
+key_data_len = WPA_GET_BE16(key192->key_data_length);
+key_data_len = WPA_GET_BE16(key192->key_data_length)
+key_data_len
+key_data_len
+WPA_GET_BE16(key192->key_data_length)
+WPA_GET_BE16
+WPA_GET_BE16
+key192->key_data_length
+key192
+key192
+key_data_length
+key_data_len = WPA_GET_BE16(key->key_data_length);
+key_data_len = WPA_GET_BE16(key->key_data_length)
+key_data_len
+key_data_len
+WPA_GET_BE16(key->key_data_length)
+WPA_GET_BE16
+WPA_GET_BE16
+key->key_data_length
+key
+key
+key_data_length
+wpa_eapol_key_dump(sm, key, key_data_len, key192->key_mic, mic_len);
+wpa_eapol_key_dump(sm, key, key_data_len, key192->key_mic, mic_len)
+wpa_eapol_key_dump
+wpa_eapol_key_dump
+sm
+sm
+key
+key
+key_data_len
+key_data_len
+key192->key_mic
+key192
+key192
+key_mic
+mic_len
+mic_len
+if (key_data_len > plen - keyhdrlen) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO, "WPA: Invalid EAPOL-Key "			"frame - key_data overflow (%u > %u)",			(unsigned int) key_data_len,			(unsigned int) (plen - keyhdrlen));		goto out;	}
+key_data_len > plen - keyhdrlen
+key_data_len
+key_data_len
+plen - keyhdrlen
+plen
+plen
+keyhdrlen
+keyhdrlen
+{		wpa_msg(sm->ctx->msg_ctx, MSG_INFO, "WPA: Invalid EAPOL-Key "			"frame - key_data overflow (%u > %u)",			(unsigned int) key_data_len,			(unsigned int) (plen - keyhdrlen));		goto out;	}
+wpa_msg(sm->ctx->msg_ctx, MSG_INFO, "WPA: Invalid EAPOL-Key "			"frame - key_data overflow (%u > %u)",			(unsigned int) key_data_len,			(unsigned int) (plen - keyhdrlen));
+wpa_msg(sm->ctx->msg_ctx, MSG_INFO, "WPA: Invalid EAPOL-Key "			"frame - key_data overflow (%u > %u)",			(unsigned int) key_data_len,			(unsigned int) (plen - keyhdrlen))
+wpa_msg
+wpa_msg
+sm->ctx->msg_ctx
+sm->ctx
+sm
+sm
+ctx
+msg_ctx
+MSG_INFO
+MSG_INFO
+"WPA: Invalid EAPOL-Key "			"frame - key_data overflow (%u > %u)"
+(unsigned int) key_data_len
+unsigned int
+unsigned int
+
+key_data_len
+key_data_len
+(unsigned int) (plen - keyhdrlen)
+unsigned int
+unsigned int
+
+(plen - keyhdrlen)
+plen - keyhdrlen
+plen
+plen
+keyhdrlen
+keyhdrlen
+goto out;
+out
+eapol_sm_notify_lower_layer_success(sm->eapol, 0);
+eapol_sm_notify_lower_layer_success(sm->eapol, 0)
+eapol_sm_notify_lower_layer_success
+eapol_sm_notify_lower_layer_success
+sm->eapol
+sm
+sm
+eapol
+0
+key_info = WPA_GET_BE16(key->key_info);
+key_info = WPA_GET_BE16(key->key_info)
+key_info
+key_info
+WPA_GET_BE16(key->key_info)
+WPA_GET_BE16
+WPA_GET_BE16
+key->key_info
+key
+key
+key_info
+ver = key_info & WPA_KEY_INFO_TYPE_MASK;
+ver = key_info & WPA_KEY_INFO_TYPE_MASK
+ver
+ver
+key_info & WPA_KEY_INFO_TYPE_MASK
+key_info
+key_info
+WPA_KEY_INFO_TYPE_MASK
+WPA_KEY_INFO_TYPE_MASK
+if (ver != WPA_KEY_INFO_TYPE_HMAC_MD5_RC4 &&#if defined(CONFIG_IEEE80211R) || defined(CONFIG_IEEE80211W)	    ver != WPA_KEY_INFO_TYPE_AES_128_CMAC &&#endif /* CONFIG_IEEE80211R || CONFIG_IEEE80211W */	    ver != WPA_KEY_INFO_TYPE_HMAC_SHA1_AES &&	    !wpa_key_mgmt_suite_b(sm->key_mgmt) &&	    sm->key_mgmt != WPA_KEY_MGMT_OSEN) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: Unsupported EAPOL-Key descriptor version %d",			ver);		goto out;	}
+ver != WPA_KEY_INFO_TYPE_HMAC_MD5_RC4 &&#if defined(CONFIG_IEEE80211R) || defined(CONFIG_IEEE80211W)	    ver != WPA_KEY_INFO_TYPE_AES_128_CMAC &&#endif /* CONFIG_IEEE80211R || CONFIG_IEEE80211W */	    ver != WPA_KEY_INFO_TYPE_HMAC_SHA1_AES &&	    !wpa_key_mgmt_suite_b(sm->key_mgmt) &&	    sm->key_mgmt != WPA_KEY_MGMT_OSEN
+ver != WPA_KEY_INFO_TYPE_HMAC_MD5_RC4 &&#if defined(CONFIG_IEEE80211R) || defined(CONFIG_IEEE80211W)	    ver != WPA_KEY_INFO_TYPE_AES_128_CMAC &&#endif /* CONFIG_IEEE80211R || CONFIG_IEEE80211W */	    ver != WPA_KEY_INFO_TYPE_HMAC_SHA1_AES &&	    !wpa_key_mgmt_suite_b(sm->key_mgmt)
+ver != WPA_KEY_INFO_TYPE_HMAC_MD5_RC4 &&#if defined(CONFIG_IEEE80211R) || defined(CONFIG_IEEE80211W)	    ver != WPA_KEY_INFO_TYPE_AES_128_CMAC &&#endif /* CONFIG_IEEE80211R || CONFIG_IEEE80211W */	    ver != WPA_KEY_INFO_TYPE_HMAC_SHA1_AES
+ver != WPA_KEY_INFO_TYPE_HMAC_MD5_RC4
+ver
+ver
+WPA_KEY_INFO_TYPE_HMAC_MD5_RC4
+WPA_KEY_INFO_TYPE_HMAC_MD5_RC4
+ver != WPA_KEY_INFO_TYPE_HMAC_SHA1_AES
+ver
+ver
+WPA_KEY_INFO_TYPE_HMAC_SHA1_AES
+WPA_KEY_INFO_TYPE_HMAC_SHA1_AES
+!wpa_key_mgmt_suite_b(sm->key_mgmt)
+wpa_key_mgmt_suite_b(sm->key_mgmt)
+wpa_key_mgmt_suite_b
+wpa_key_mgmt_suite_b
+sm->key_mgmt
+sm
+sm
+key_mgmt
+sm->key_mgmt != WPA_KEY_MGMT_OSEN
+sm->key_mgmt
+sm
+sm
+key_mgmt
+WPA_KEY_MGMT_OSEN
+WPA_KEY_MGMT_OSEN
+{		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: Unsupported EAPOL-Key descriptor version %d",			ver);		goto out;	}
+wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: Unsupported EAPOL-Key descriptor version %d",			ver);
+wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: Unsupported EAPOL-Key descriptor version %d",			ver)
+wpa_msg
+wpa_msg
+sm->ctx->msg_ctx
+sm->ctx
+sm
+sm
+ctx
+msg_ctx
+MSG_INFO
+MSG_INFO
+"WPA: Unsupported EAPOL-Key descriptor version %d"
+ver
+ver
+goto out;
+out
+if (sm->key_mgmt == WPA_KEY_MGMT_OSEN &&	    ver != WPA_KEY_INFO_TYPE_AKM_DEFINED) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"OSEN: Unsupported EAPOL-Key descriptor version %d",			ver);		goto out;	}
+sm->key_mgmt == WPA_KEY_MGMT_OSEN &&	    ver != WPA_KEY_INFO_TYPE_AKM_DEFINED
+sm->key_mgmt == WPA_KEY_MGMT_OSEN
+sm->key_mgmt
+sm
+sm
+key_mgmt
+WPA_KEY_MGMT_OSEN
+WPA_KEY_MGMT_OSEN
+ver != WPA_KEY_INFO_TYPE_AKM_DEFINED
+ver
+ver
+WPA_KEY_INFO_TYPE_AKM_DEFINED
+WPA_KEY_INFO_TYPE_AKM_DEFINED
+{		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"OSEN: Unsupported EAPOL-Key descriptor version %d",			ver);		goto out;	}
+wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"OSEN: Unsupported EAPOL-Key descriptor version %d",			ver);
+wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"OSEN: Unsupported EAPOL-Key descriptor version %d",			ver)
+wpa_msg
+wpa_msg
+sm->ctx->msg_ctx
+sm->ctx
+sm
+sm
+ctx
+msg_ctx
+MSG_INFO
+MSG_INFO
+"OSEN: Unsupported EAPOL-Key descriptor version %d"
+ver
+ver
+goto out;
+out
+if (wpa_key_mgmt_suite_b(sm->key_mgmt) &&	    ver != WPA_KEY_INFO_TYPE_AKM_DEFINED) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"RSN: Unsupported EAPOL-Key descriptor version %d (expected AKM defined = 0)",			ver);		goto out;	}
+wpa_key_mgmt_suite_b(sm->key_mgmt) &&	    ver != WPA_KEY_INFO_TYPE_AKM_DEFINED
+wpa_key_mgmt_suite_b(sm->key_mgmt)
+wpa_key_mgmt_suite_b
+wpa_key_mgmt_suite_b
+sm->key_mgmt
+sm
+sm
+key_mgmt
+ver != WPA_KEY_INFO_TYPE_AKM_DEFINED
+ver
+ver
+WPA_KEY_INFO_TYPE_AKM_DEFINED
+WPA_KEY_INFO_TYPE_AKM_DEFINED
+{		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"RSN: Unsupported EAPOL-Key descriptor version %d (expected AKM defined = 0)",			ver);		goto out;	}
+wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"RSN: Unsupported EAPOL-Key descriptor version %d (expected AKM defined = 0)",			ver);
+wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"RSN: Unsupported EAPOL-Key descriptor version %d (expected AKM defined = 0)",			ver)
+wpa_msg
+wpa_msg
+sm->ctx->msg_ctx
+sm->ctx
+sm
+sm
+ctx
+msg_ctx
+MSG_INFO
+MSG_INFO
+"RSN: Unsupported EAPOL-Key descriptor version %d (expected AKM defined = 0)"
+ver
+ver
+goto out;
+out
+if (sm->pairwise_cipher == WPA_CIPHER_CCMP &&	    !wpa_key_mgmt_suite_b(sm->key_mgmt) &&	    ver != WPA_KEY_INFO_TYPE_HMAC_SHA1_AES) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: CCMP is used, but EAPOL-Key "			"descriptor version (%d) is not 2", ver);		if (sm->group_cipher != WPA_CIPHER_CCMP &&		    !(key_info & WPA_KEY_INFO_KEY_TYPE)) {			/* Earlier versions of IEEE 802.11i did not explicitly			 * require version 2 descriptor for all EAPOL-Key			 * packets, so allow group keys to use version 1 if			 * CCMP is not used for them. */			wpa_msg(sm->ctx->msg_ctx, MSG_INFO,				"WPA: Backwards compatibility: allow invalid "				"version for non-CCMP group keys");		} else if (ver == WPA_KEY_INFO_TYPE_AES_128_CMAC) {			wpa_msg(sm->ctx->msg_ctx, MSG_INFO,				"WPA: Interoperability workaround: allow incorrect (should have been HMAC-SHA1), but stronger (is AES-128-CMAC), descriptor version to be used");		} else			goto out;	} else if (sm->pairwise_cipher == WPA_CIPHER_GCMP &&		   !wpa_key_mgmt_suite_b(sm->key_mgmt) &&		   ver != WPA_KEY_INFO_TYPE_HMAC_SHA1_AES) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: GCMP is used, but EAPOL-Key "			"descriptor version (%d) is not 2", ver);		goto out;	}
+sm->pairwise_cipher == WPA_CIPHER_CCMP &&	    !wpa_key_mgmt_suite_b(sm->key_mgmt) &&	    ver != WPA_KEY_INFO_TYPE_HMAC_SHA1_AES
+sm->pairwise_cipher == WPA_CIPHER_CCMP &&	    !wpa_key_mgmt_suite_b(sm->key_mgmt)
+sm->pairwise_cipher == WPA_CIPHER_CCMP
+sm->pairwise_cipher
+sm
+sm
+pairwise_cipher
+WPA_CIPHER_CCMP
+WPA_CIPHER_CCMP
+!wpa_key_mgmt_suite_b(sm->key_mgmt)
+wpa_key_mgmt_suite_b(sm->key_mgmt)
+wpa_key_mgmt_suite_b
+wpa_key_mgmt_suite_b
+sm->key_mgmt
+sm
+sm
+key_mgmt
+ver != WPA_KEY_INFO_TYPE_HMAC_SHA1_AES
+ver
+ver
+WPA_KEY_INFO_TYPE_HMAC_SHA1_AES
+WPA_KEY_INFO_TYPE_HMAC_SHA1_AES
+{		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: CCMP is used, but EAPOL-Key "			"descriptor version (%d) is not 2", ver);		if (sm->group_cipher != WPA_CIPHER_CCMP &&		    !(key_info & WPA_KEY_INFO_KEY_TYPE)) {			/* Earlier versions of IEEE 802.11i did not explicitly			 * require version 2 descriptor for all EAPOL-Key			 * packets, so allow group keys to use version 1 if			 * CCMP is not used for them. */			wpa_msg(sm->ctx->msg_ctx, MSG_INFO,				"WPA: Backwards compatibility: allow invalid "				"version for non-CCMP group keys");		} else if (ver == WPA_KEY_INFO_TYPE_AES_128_CMAC) {			wpa_msg(sm->ctx->msg_ctx, MSG_INFO,				"WPA: Interoperability workaround: allow incorrect (should have been HMAC-SHA1), but stronger (is AES-128-CMAC), descriptor version to be used");		} else			goto out;	}
+wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: CCMP is used, but EAPOL-Key "			"descriptor version (%d) is not 2", ver);
+wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: CCMP is used, but EAPOL-Key "			"descriptor version (%d) is not 2", ver)
+wpa_msg
+wpa_msg
+sm->ctx->msg_ctx
+sm->ctx
+sm
+sm
+ctx
+msg_ctx
+MSG_INFO
+MSG_INFO
+"WPA: CCMP is used, but EAPOL-Key "			"descriptor version (%d) is not 2"
+ver
+ver
+if (sm->group_cipher != WPA_CIPHER_CCMP &&		    !(key_info & WPA_KEY_INFO_KEY_TYPE)) {			/* Earlier versions of IEEE 802.11i did not explicitly			 * require version 2 descriptor for all EAPOL-Key			 * packets, so allow group keys to use version 1 if			 * CCMP is not used for them. */			wpa_msg(sm->ctx->msg_ctx, MSG_INFO,				"WPA: Backwards compatibility: allow invalid "				"version for non-CCMP group keys");		} else if (ver == WPA_KEY_INFO_TYPE_AES_128_CMAC) {			wpa_msg(sm->ctx->msg_ctx, MSG_INFO,				"WPA: Interoperability workaround: allow incorrect (should have been HMAC-SHA1), but stronger (is AES-128-CMAC), descriptor version to be used");		} else			goto out;
+sm->group_cipher != WPA_CIPHER_CCMP &&		    !(key_info & WPA_KEY_INFO_KEY_TYPE)
+sm->group_cipher != WPA_CIPHER_CCMP
+sm->group_cipher
+sm
+sm
+group_cipher
+WPA_CIPHER_CCMP
+WPA_CIPHER_CCMP
+!(key_info & WPA_KEY_INFO_KEY_TYPE)
+(key_info & WPA_KEY_INFO_KEY_TYPE)
+key_info & WPA_KEY_INFO_KEY_TYPE
+key_info
+key_info
+WPA_KEY_INFO_KEY_TYPE
+WPA_KEY_INFO_KEY_TYPE
+{			/* Earlier versions of IEEE 802.11i did not explicitly			 * require version 2 descriptor for all EAPOL-Key			 * packets, so allow group keys to use version 1 if			 * CCMP is not used for them. */			wpa_msg(sm->ctx->msg_ctx, MSG_INFO,				"WPA: Backwards compatibility: allow invalid "				"version for non-CCMP group keys");		}
+wpa_msg(sm->ctx->msg_ctx, MSG_INFO,				"WPA: Backwards compatibility: allow invalid "				"version for non-CCMP group keys");
+wpa_msg(sm->ctx->msg_ctx, MSG_INFO,				"WPA: Backwards compatibility: allow invalid "				"version for non-CCMP group keys")
+wpa_msg
+wpa_msg
+sm->ctx->msg_ctx
+sm->ctx
+sm
+sm
+ctx
+msg_ctx
+MSG_INFO
+MSG_INFO
+"WPA: Backwards compatibility: allow invalid "				"version for non-CCMP group keys"
+if (ver == WPA_KEY_INFO_TYPE_AES_128_CMAC) {			wpa_msg(sm->ctx->msg_ctx, MSG_INFO,				"WPA: Interoperability workaround: allow incorrect (should have been HMAC-SHA1), but stronger (is AES-128-CMAC), descriptor version to be used");		} else			goto out;
+ver == WPA_KEY_INFO_TYPE_AES_128_CMAC
+ver
+ver
+WPA_KEY_INFO_TYPE_AES_128_CMAC
+WPA_KEY_INFO_TYPE_AES_128_CMAC
+{			wpa_msg(sm->ctx->msg_ctx, MSG_INFO,				"WPA: Interoperability workaround: allow incorrect (should have been HMAC-SHA1), but stronger (is AES-128-CMAC), descriptor version to be used");		}
+wpa_msg(sm->ctx->msg_ctx, MSG_INFO,				"WPA: Interoperability workaround: allow incorrect (should have been HMAC-SHA1), but stronger (is AES-128-CMAC), descriptor version to be used");
+wpa_msg(sm->ctx->msg_ctx, MSG_INFO,				"WPA: Interoperability workaround: allow incorrect (should have been HMAC-SHA1), but stronger (is AES-128-CMAC), descriptor version to be used")
+wpa_msg
+wpa_msg
+sm->ctx->msg_ctx
+sm->ctx
+sm
+sm
+ctx
+msg_ctx
+MSG_INFO
+MSG_INFO
+"WPA: Interoperability workaround: allow incorrect (should have been HMAC-SHA1), but stronger (is AES-128-CMAC), descriptor version to be used"
+goto out;
+out
+if (sm->pairwise_cipher == WPA_CIPHER_GCMP &&		   !wpa_key_mgmt_suite_b(sm->key_mgmt) &&		   ver != WPA_KEY_INFO_TYPE_HMAC_SHA1_AES) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: GCMP is used, but EAPOL-Key "			"descriptor version (%d) is not 2", ver);		goto out;	}
+sm->pairwise_cipher == WPA_CIPHER_GCMP &&		   !wpa_key_mgmt_suite_b(sm->key_mgmt) &&		   ver != WPA_KEY_INFO_TYPE_HMAC_SHA1_AES
+sm->pairwise_cipher == WPA_CIPHER_GCMP &&		   !wpa_key_mgmt_suite_b(sm->key_mgmt)
+sm->pairwise_cipher == WPA_CIPHER_GCMP
+sm->pairwise_cipher
+sm
+sm
+pairwise_cipher
+WPA_CIPHER_GCMP
+WPA_CIPHER_GCMP
+!wpa_key_mgmt_suite_b(sm->key_mgmt)
+wpa_key_mgmt_suite_b(sm->key_mgmt)
+wpa_key_mgmt_suite_b
+wpa_key_mgmt_suite_b
+sm->key_mgmt
+sm
+sm
+key_mgmt
+ver != WPA_KEY_INFO_TYPE_HMAC_SHA1_AES
+ver
+ver
+WPA_KEY_INFO_TYPE_HMAC_SHA1_AES
+WPA_KEY_INFO_TYPE_HMAC_SHA1_AES
+{		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: GCMP is used, but EAPOL-Key "			"descriptor version (%d) is not 2", ver);		goto out;	}
+wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: GCMP is used, but EAPOL-Key "			"descriptor version (%d) is not 2", ver);
+wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: GCMP is used, but EAPOL-Key "			"descriptor version (%d) is not 2", ver)
+wpa_msg
+wpa_msg
+sm->ctx->msg_ctx
+sm->ctx
+sm
+sm
+ctx
+msg_ctx
+MSG_INFO
+MSG_INFO
+"WPA: GCMP is used, but EAPOL-Key "			"descriptor version (%d) is not 2"
+ver
+ver
+goto out;
+out
+if (!peerkey && sm->rx_replay_counter_set &&	    os_memcmp(key->replay_counter, sm->rx_replay_counter,		      WPA_REPLAY_COUNTER_LEN) <= 0) {		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,			"WPA: EAPOL-Key Replay Counter did not increase - "			"dropping packet");		goto out;	}
+!peerkey && sm->rx_replay_counter_set &&	    os_memcmp(key->replay_counter, sm->rx_replay_counter,		      WPA_REPLAY_COUNTER_LEN) <= 0
+!peerkey && sm->rx_replay_counter_set
+!peerkey
+peerkey
+peerkey
+sm->rx_replay_counter_set
+sm
+sm
+rx_replay_counter_set
+os_memcmp(key->replay_counter, sm->rx_replay_counter,		      WPA_REPLAY_COUNTER_LEN) <= 0
+os_memcmp(key->replay_counter, sm->rx_replay_counter,		      WPA_REPLAY_COUNTER_LEN)
+os_memcmp
+os_memcmp
+key->replay_counter
+key
+key
+replay_counter
+sm->rx_replay_counter
+sm
+sm
+rx_replay_counter
+WPA_REPLAY_COUNTER_LEN
+WPA_REPLAY_COUNTER_LEN
+0
+{		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,			"WPA: EAPOL-Key Replay Counter did not increase - "			"dropping packet");		goto out;	}
+wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,			"WPA: EAPOL-Key Replay Counter did not increase - "			"dropping packet");
+wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,			"WPA: EAPOL-Key Replay Counter did not increase - "			"dropping packet")
+wpa_msg
+wpa_msg
+sm->ctx->msg_ctx
+sm->ctx
+sm
+sm
+ctx
+msg_ctx
+MSG_WARNING
+MSG_WARNING
+"WPA: EAPOL-Key Replay Counter did not increase - "			"dropping packet"
+goto out;
+out
+if (!(key_info & (WPA_KEY_INFO_ACK | WPA_KEY_INFO_SMK_MESSAGE))#ifdef CONFIG_PEERKEY	    && (peerkey == NULL || !peerkey->initiator)#endif /* CONFIG_PEERKEY */		) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: No Ack bit in key_info");		goto out;	}
+!(key_info & (WPA_KEY_INFO_ACK | WPA_KEY_INFO_SMK_MESSAGE))
+(key_info & (WPA_KEY_INFO_ACK | WPA_KEY_INFO_SMK_MESSAGE))
+key_info & (WPA_KEY_INFO_ACK | WPA_KEY_INFO_SMK_MESSAGE)
+key_info
+key_info
+(WPA_KEY_INFO_ACK | WPA_KEY_INFO_SMK_MESSAGE)
+WPA_KEY_INFO_ACK | WPA_KEY_INFO_SMK_MESSAGE
+WPA_KEY_INFO_ACK
+WPA_KEY_INFO_ACK
+WPA_KEY_INFO_SMK_MESSAGE
+WPA_KEY_INFO_SMK_MESSAGE
+{		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: No Ack bit in key_info");		goto out;	}
+wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: No Ack bit in key_info");
+wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: No Ack bit in key_info")
+wpa_msg
+wpa_msg
+sm->ctx->msg_ctx
+sm->ctx
+sm
+sm
+ctx
+msg_ctx
+MSG_INFO
+MSG_INFO
+"WPA: No Ack bit in key_info"
+goto out;
+out
+if (key_info & WPA_KEY_INFO_REQUEST) {		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: EAPOL-Key with Request bit - dropped");		goto out;	}
+key_info & WPA_KEY_INFO_REQUEST
+key_info
+key_info
+WPA_KEY_INFO_REQUEST
+WPA_KEY_INFO_REQUEST
+{		wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: EAPOL-Key with Request bit - dropped");		goto out;	}
+wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: EAPOL-Key with Request bit - dropped");
+wpa_msg(sm->ctx->msg_ctx, MSG_INFO,			"WPA: EAPOL-Key with Request bit - dropped")
+wpa_msg
+wpa_msg
+sm->ctx->msg_ctx
+sm->ctx
+sm
+sm
+ctx
+msg_ctx
+MSG_INFO
+MSG_INFO
+"WPA: EAPOL-Key with Request bit - dropped"
+goto out;
+out
+if ((key_info & WPA_KEY_INFO_MIC) && !peerkey &&	    wpa_supplicant_verify_eapol_key_mic(sm, key192, ver, tmp, data_len))		goto out;
+(key_info & WPA_KEY_INFO_MIC) && !peerkey &&	    wpa_supplicant_verify_eapol_key_mic(sm, key192, ver, tmp, data_len)
+(key_info & WPA_KEY_INFO_MIC) && !peerkey
+(key_info & WPA_KEY_INFO_MIC)
+key_info & WPA_KEY_INFO_MIC
+key_info
+key_info
+WPA_KEY_INFO_MIC
+WPA_KEY_INFO_MIC
+!peerkey
+peerkey
+peerkey
+wpa_supplicant_verify_eapol_key_mic(sm, key192, ver, tmp, data_len)
+wpa_supplicant_verify_eapol_key_mic
+wpa_supplicant_verify_eapol_key_mic
+sm
+sm
+key192
+key192
+ver
+ver
+tmp
+tmp
+data_len
+data_len
+goto out;
+out
+if ((sm->proto == WPA_PROTO_RSN || sm->proto == WPA_PROTO_OSEN) &&	    (key_info & WPA_KEY_INFO_ENCR_KEY_DATA)) {		/*		 * Only decrypt the Key Data field if the frame's authenticity		 * was verified. When using AES-SIV (FILS), the MIC flag is not		 * set, so this check should only be performed if mic_len != 0		 * which is the case in this code branch.		 */		if (!(key_info & WPA_KEY_INFO_MIC)) {			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"WPA: Ignore EAPOL-Key with encrypted but unauthenticated data");			goto out;		}		if (wpa_supplicant_decrypt_key_data(sm, key, ver, key_data,						    &key_data_len))			goto out;	}
+(sm->proto == WPA_PROTO_RSN || sm->proto == WPA_PROTO_OSEN) &&	    (key_info & WPA_KEY_INFO_ENCR_KEY_DATA)
+(sm->proto == WPA_PROTO_RSN || sm->proto == WPA_PROTO_OSEN)
+sm->proto == WPA_PROTO_RSN || sm->proto == WPA_PROTO_OSEN
+sm->proto == WPA_PROTO_RSN
+sm->proto
+sm
+sm
+proto
+WPA_PROTO_RSN
+WPA_PROTO_RSN
+sm->proto == WPA_PROTO_OSEN
+sm->proto
+sm
+sm
+proto
+WPA_PROTO_OSEN
+WPA_PROTO_OSEN
+(key_info & WPA_KEY_INFO_ENCR_KEY_DATA)
+key_info & WPA_KEY_INFO_ENCR_KEY_DATA
+key_info
+key_info
+WPA_KEY_INFO_ENCR_KEY_DATA
+WPA_KEY_INFO_ENCR_KEY_DATA
+{		/*		 * Only decrypt the Key Data field if the frame's authenticity		 * was verified. When using AES-SIV (FILS), the MIC flag is not		 * set, so this check should only be performed if mic_len != 0		 * which is the case in this code branch.		 */		if (!(key_info & WPA_KEY_INFO_MIC)) {			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"WPA: Ignore EAPOL-Key with encrypted but unauthenticated data");			goto out;		}		if (wpa_supplicant_decrypt_key_data(sm, key, ver, key_data,						    &key_data_len))			goto out;	}
+if (!(key_info & WPA_KEY_INFO_MIC)) {			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"WPA: Ignore EAPOL-Key with encrypted but unauthenticated data");			goto out;		}
+!(key_info & WPA_KEY_INFO_MIC)
+(key_info & WPA_KEY_INFO_MIC)
+key_info & WPA_KEY_INFO_MIC
+key_info
+key_info
+WPA_KEY_INFO_MIC
+WPA_KEY_INFO_MIC
+{			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"WPA: Ignore EAPOL-Key with encrypted but unauthenticated data");			goto out;		}
+wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"WPA: Ignore EAPOL-Key with encrypted but unauthenticated data");
+wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"WPA: Ignore EAPOL-Key with encrypted but unauthenticated data")
+wpa_msg
+wpa_msg
+sm->ctx->msg_ctx
+sm->ctx
+sm
+sm
+ctx
+msg_ctx
+MSG_WARNING
+MSG_WARNING
+"WPA: Ignore EAPOL-Key with encrypted but unauthenticated data"
+goto out;
+out
+if (wpa_supplicant_decrypt_key_data(sm, key, ver, key_data,						    &key_data_len))			goto out;
+wpa_supplicant_decrypt_key_data(sm, key, ver, key_data,						    &key_data_len)
+wpa_supplicant_decrypt_key_data
+wpa_supplicant_decrypt_key_data
+sm
+sm
+key
+key
+ver
+ver
+key_data
+key_data
+&key_data_len
+key_data_len
+key_data_len
+goto out;
+out
+if (key_info & WPA_KEY_INFO_KEY_TYPE) {		if (key_info & WPA_KEY_INFO_KEY_INDEX_MASK) {			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"WPA: Ignored EAPOL-Key (Pairwise) with "				"non-zero key index");			goto out;		}		if (peerkey) {			/* PeerKey 4-Way Handshake */			peerkey_rx_eapol_4way(sm, peerkey, key, key_info, ver,					      key_data, key_data_len);		} else if (key_info & WPA_KEY_INFO_MIC) {			/* 3/4 4-Way Handshake */			wpa_supplicant_process_3_of_4(sm, key, ver, key_data,						      key_data_len);		} else {			/* 1/4 4-Way Handshake */			wpa_supplicant_process_1_of_4(sm, src_addr, key,						      ver, key_data,						      key_data_len);		}	} else if (key_info & WPA_KEY_INFO_SMK_MESSAGE) {		/* PeerKey SMK Handshake */		peerkey_rx_eapol_smk(sm, src_addr, key, key_data_len, key_info,				     ver);	} else {		if (key_info & WPA_KEY_INFO_MIC) {			/* 1/2 Group Key Handshake */			wpa_supplicant_process_1_of_2(sm, src_addr, key,						      key_data, key_data_len,						      ver);		} else {			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"WPA: EAPOL-Key (Group) without Mic bit - "				"dropped");		}	}
+key_info & WPA_KEY_INFO_KEY_TYPE
+key_info
+key_info
+WPA_KEY_INFO_KEY_TYPE
+WPA_KEY_INFO_KEY_TYPE
+{		if (key_info & WPA_KEY_INFO_KEY_INDEX_MASK) {			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"WPA: Ignored EAPOL-Key (Pairwise) with "				"non-zero key index");			goto out;		}		if (peerkey) {			/* PeerKey 4-Way Handshake */			peerkey_rx_eapol_4way(sm, peerkey, key, key_info, ver,					      key_data, key_data_len);		} else if (key_info & WPA_KEY_INFO_MIC) {			/* 3/4 4-Way Handshake */			wpa_supplicant_process_3_of_4(sm, key, ver, key_data,						      key_data_len);		} else {			/* 1/4 4-Way Handshake */			wpa_supplicant_process_1_of_4(sm, src_addr, key,						      ver, key_data,						      key_data_len);		}	}
+if (key_info & WPA_KEY_INFO_KEY_INDEX_MASK) {			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"WPA: Ignored EAPOL-Key (Pairwise) with "				"non-zero key index");			goto out;		}
+key_info & WPA_KEY_INFO_KEY_INDEX_MASK
+key_info
+key_info
+WPA_KEY_INFO_KEY_INDEX_MASK
+WPA_KEY_INFO_KEY_INDEX_MASK
+{			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"WPA: Ignored EAPOL-Key (Pairwise) with "				"non-zero key index");			goto out;		}
+wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"WPA: Ignored EAPOL-Key (Pairwise) with "				"non-zero key index");
+wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"WPA: Ignored EAPOL-Key (Pairwise) with "				"non-zero key index")
+wpa_msg
+wpa_msg
+sm->ctx->msg_ctx
+sm->ctx
+sm
+sm
+ctx
+msg_ctx
+MSG_WARNING
+MSG_WARNING
+"WPA: Ignored EAPOL-Key (Pairwise) with "				"non-zero key index"
+goto out;
+out
+if (peerkey) {			/* PeerKey 4-Way Handshake */			peerkey_rx_eapol_4way(sm, peerkey, key, key_info, ver,					      key_data, key_data_len);		} else if (key_info & WPA_KEY_INFO_MIC) {			/* 3/4 4-Way Handshake */			wpa_supplicant_process_3_of_4(sm, key, ver, key_data,						      key_data_len);		} else {			/* 1/4 4-Way Handshake */			wpa_supplicant_process_1_of_4(sm, src_addr, key,						      ver, key_data,						      key_data_len);		}
+peerkey
+peerkey
+{			/* PeerKey 4-Way Handshake */			peerkey_rx_eapol_4way(sm, peerkey, key, key_info, ver,					      key_data, key_data_len);		}
+peerkey_rx_eapol_4way(sm, peerkey, key, key_info, ver,					      key_data, key_data_len);
+peerkey_rx_eapol_4way(sm, peerkey, key, key_info, ver,					      key_data, key_data_len)
+peerkey_rx_eapol_4way
+peerkey_rx_eapol_4way
+sm
+sm
+peerkey
+peerkey
+key
+key
+key_info
+key_info
+ver
+ver
+key_data
+key_data
+key_data_len
+key_data_len
+if (key_info & WPA_KEY_INFO_MIC) {			/* 3/4 4-Way Handshake */			wpa_supplicant_process_3_of_4(sm, key, ver, key_data,						      key_data_len);		} else {			/* 1/4 4-Way Handshake */			wpa_supplicant_process_1_of_4(sm, src_addr, key,						      ver, key_data,						      key_data_len);		}
+key_info & WPA_KEY_INFO_MIC
+key_info
+key_info
+WPA_KEY_INFO_MIC
+WPA_KEY_INFO_MIC
+{			/* 3/4 4-Way Handshake */			wpa_supplicant_process_3_of_4(sm, key, ver, key_data,						      key_data_len);		}
+wpa_supplicant_process_3_of_4(sm, key, ver, key_data,						      key_data_len);
+wpa_supplicant_process_3_of_4(sm, key, ver, key_data,						      key_data_len)
+wpa_supplicant_process_3_of_4
+wpa_supplicant_process_3_of_4
+sm
+sm
+key
+key
+ver
+ver
+key_data
+key_data
+key_data_len
+key_data_len
+{			/* 1/4 4-Way Handshake */			wpa_supplicant_process_1_of_4(sm, src_addr, key,						      ver, key_data,						      key_data_len);		}
+wpa_supplicant_process_1_of_4(sm, src_addr, key,						      ver, key_data,						      key_data_len);
+wpa_supplicant_process_1_of_4(sm, src_addr, key,						      ver, key_data,						      key_data_len)
+wpa_supplicant_process_1_of_4
+wpa_supplicant_process_1_of_4
+sm
+sm
+src_addr
+src_addr
+key
+key
+ver
+ver
+key_data
+key_data
+key_data_len
+key_data_len
+if (key_info & WPA_KEY_INFO_SMK_MESSAGE) {		/* PeerKey SMK Handshake */		peerkey_rx_eapol_smk(sm, src_addr, key, key_data_len, key_info,				     ver);	} else {		if (key_info & WPA_KEY_INFO_MIC) {			/* 1/2 Group Key Handshake */			wpa_supplicant_process_1_of_2(sm, src_addr, key,						      key_data, key_data_len,						      ver);		} else {			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"WPA: EAPOL-Key (Group) without Mic bit - "				"dropped");		}	}
+key_info & WPA_KEY_INFO_SMK_MESSAGE
+key_info
+key_info
+WPA_KEY_INFO_SMK_MESSAGE
+WPA_KEY_INFO_SMK_MESSAGE
+{		/* PeerKey SMK Handshake */		peerkey_rx_eapol_smk(sm, src_addr, key, key_data_len, key_info,				     ver);	}
+peerkey_rx_eapol_smk(sm, src_addr, key, key_data_len, key_info,				     ver);
+peerkey_rx_eapol_smk(sm, src_addr, key, key_data_len, key_info,				     ver)
+peerkey_rx_eapol_smk
+peerkey_rx_eapol_smk
+sm
+sm
+src_addr
+src_addr
+key
+key
+key_data_len
+key_data_len
+key_info
+key_info
+ver
+ver
+{		if (key_info & WPA_KEY_INFO_MIC) {			/* 1/2 Group Key Handshake */			wpa_supplicant_process_1_of_2(sm, src_addr, key,						      key_data, key_data_len,						      ver);		} else {			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"WPA: EAPOL-Key (Group) without Mic bit - "				"dropped");		}	}
+if (key_info & WPA_KEY_INFO_MIC) {			/* 1/2 Group Key Handshake */			wpa_supplicant_process_1_of_2(sm, src_addr, key,						      key_data, key_data_len,						      ver);		} else {			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"WPA: EAPOL-Key (Group) without Mic bit - "				"dropped");		}
+key_info & WPA_KEY_INFO_MIC
+key_info
+key_info
+WPA_KEY_INFO_MIC
+WPA_KEY_INFO_MIC
+{			/* 1/2 Group Key Handshake */			wpa_supplicant_process_1_of_2(sm, src_addr, key,						      key_data, key_data_len,						      ver);		}
+wpa_supplicant_process_1_of_2(sm, src_addr, key,						      key_data, key_data_len,						      ver);
+wpa_supplicant_process_1_of_2(sm, src_addr, key,						      key_data, key_data_len,						      ver)
+wpa_supplicant_process_1_of_2
+wpa_supplicant_process_1_of_2
+sm
+sm
+src_addr
+src_addr
+key
+key
+key_data
+key_data
+key_data_len
+key_data_len
+ver
+ver
+{			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"WPA: EAPOL-Key (Group) without Mic bit - "				"dropped");		}
+wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"WPA: EAPOL-Key (Group) without Mic bit - "				"dropped");
+wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,				"WPA: EAPOL-Key (Group) without Mic bit - "				"dropped")
+wpa_msg
+wpa_msg
+sm->ctx->msg_ctx
+sm->ctx
+sm
+sm
+ctx
+msg_ctx
+MSG_WARNING
+MSG_WARNING
+"WPA: EAPOL-Key (Group) without Mic bit - "				"dropped"
+ret = 1;
+ret = 1
+ret
+ret
+1
+out:	bin_clear_free(tmp, data_len);
+out
+bin_clear_free(tmp, data_len);
+bin_clear_free(tmp, data_len)
+bin_clear_free
+bin_clear_free
+tmp
+tmp
+data_len
+data_len
+return ret;
+ret
+ret
+-----joern-----
+(302,564,0)
+(295,576,0)
+(25,784,0)
+(342,832,0)
+(0,519,0)
+(175,176,0)
+(142,385,0)
+(557,203,0)
+(670,14,0)
+(675,260,0)
+(745,388,0)
+(264,392,0)
+(792,466,0)
+(290,187,0)
+(148,586,0)
+(523,196,0)
+(614,36,0)
+(245,83,0)
+(800,99,0)
+(313,385,0)
+(4,502,0)
+(665,478,0)
+(433,36,0)
+(801,803,0)
+(320,89,0)
+(813,812,0)
+(274,685,0)
+(482,561,0)
+(472,185,0)
+(796,564,0)
+(412,276,0)
+(468,385,0)
+(157,203,0)
+(179,99,0)
+(374,466,0)
+(478,665,0)
+(351,631,0)
+(106,260,0)
+(846,536,0)
+(608,224,0)
+(57,120,0)
+(9,416,0)
+(435,385,0)
+(386,843,0)
+(123,326,0)
+(835,36,0)
+(672,406,0)
+(433,494,0)
+(632,110,0)
+(356,36,0)
+(155,835,0)
+(564,796,0)
+(706,206,0)
+(813,801,0)
+(490,161,0)
+(100,385,0)
+(551,36,0)
+(518,374,0)
+(643,104,0)
+(372,465,0)
+(366,160,0)
+(263,347,0)
+(366,588,0)
+(174,385,0)
+(683,100,0)
+(714,339,0)
+(93,634,0)
+(306,510,0)
+(78,429,0)
+(717,638,0)
+(280,501,0)
+(246,523,0)
+(371,459,0)
+(182,478,0)
+(415,530,0)
+(624,503,0)
+(822,69,0)
+(502,4,0)
+(552,48,0)
+(480,154,0)
+(363,56,0)
+(596,104,0)
+(640,142,0)
+(120,26,0)
+(276,36,0)
+(843,710,0)
+(224,608,0)
+(297,391,0)
+(292,318,0)
+(134,809,0)
+(206,70,0)
+(520,591,0)
+(359,843,0)
+(179,131,0)
+(328,554,0)
+(478,182,0)
+(760,385,0)
+(381,134,0)
+(65,148,0)
+(337,168,0)
+(561,334,0)
+(557,158,0)
+(23,158,0)
+(752,812,0)
+(664,590,0)
+(478,48,0)
+(336,846,0)
+(1,168,0)
+(594,98,0)
+(4,758,0)
+(549,559,0)
+(604,355,0)
+(781,516,0)
+(689,340,0)
+(663,225,0)
+(673,574,0)
+(362,657,0)
+(244,796,0)
+(823,584,0)
+(542,778,0)
+(818,468,0)
+(225,663,0)
+(516,265,0)
+(394,801,0)
+(447,188,0)
+(848,222,0)
+(40,584,0)
+(292,385,0)
+(652,94,0)
+(776,109,0)
+(430,6,0)
+(217,135,0)
+(100,183,0)
+(354,30,0)
+(221,429,0)
+(326,456,0)
+(514,835,0)
+(70,702,0)
+(499,494,0)
+(219,833,0)
+(182,435,0)
+(828,131,0)
+(49,47,0)
+(545,36,0)
+(206,706,0)
+(141,196,0)
+(821,613,0)
+(528,815,0)
+(711,819,0)
+(295,385,0)
+(662,24,0)
+(179,496,0)
+(332,36,0)
+(484,179,0)
+(345,363,0)
+(703,42,0)
+(105,37,0)
+(235,36,0)
+(452,597,0)
+(815,287,0)
+(622,210,0)
+(568,385,0)
+(82,556,0)
+(772,246,0)
+(433,545,0)
+(38,107,0)
+(243,231,0)
+(349,424,0)
+(440,179,0)
+(27,385,0)
+(820,639,0)
+(421,610,0)
+(843,36,0)
+(102,221,0)
+(130,386,0)
+(503,624,0)
+(775,768,0)
+(282,36,0)
+(425,843,0)
+(295,396,0)
+(523,246,0)
+(526,331,0)
+(318,292,0)
+(405,347,0)
+(834,26,0)
+(768,399,0)
+(64,556,0)
+(169,437,0)
+(545,838,0)
+(757,787,0)
+(326,592,0)
+(575,599,0)
+(209,6,0)
+(148,65,0)
+(120,406,0)
+(309,378,0)
+(503,254,0)
+(386,47,0)
+(795,225,0)
+(199,535,0)
+(715,460,0)
+(299,832,0)
+(196,523,0)
+(54,100,0)
+(312,297,0)
+(78,825,0)
+(303,78,0)
+(297,340,0)
+(712,343,0)
+(71,703,0)
+(824,119,0)
+(572,717,0)
+(759,237,0)
+(667,820,0)
+(461,399,0)
+(743,556,0)
+(380,388,0)
+(434,45,0)
+(648,545,0)
+(429,36,0)
+(625,805,0)
+(624,669,0)
+(222,385,0)
+(579,347,0)
+(459,246,0)
+(211,547,0)
+(843,359,0)
+(82,385,0)
+(197,743,0)
+(325,131,0)
+(210,429,0)
+(34,406,0)
+(177,541,0)
+(438,206,0)
+(432,429,0)
+(213,510,0)
+(789,174,0)
+(66,122,0)
+(159,295,0)
+(537,514,0)
+(229,496,0)
+(561,424,0)
+(52,815,0)
+(593,778,0)
+(194,36,0)
+(459,584,0)
+(87,625,0)
+(227,783,0)
+(172,36,0)
+(258,236,0)
+(790,843,0)
+(702,760,0)
+(165,680,0)
+(450,424,0)
+(255,36,0)
+(407,535,0)
+(619,93,0)
+(144,753,0)
+(358,525,0)
+(424,36,0)
+(267,324,0)
+(491,585,0)
+(721,175,0)
+(618,78,0)
+(637,161,0)
+(319,530,0)
+(834,406,0)
+(829,26,0)
+(830,96,0)
+(844,435,0)
+(110,36,0)
+(497,260,0)
+(784,25,0)
+(227,99,0)
+(543,135,0)
+(788,69,0)
+(50,36,0)
+(147,806,0)
+(753,717,0)
+(260,418,0)
+(666,82,0)
+(534,151,0)
+(187,530,0)
+(814,836,0)
+(48,418,0)
+(547,211,0)
+(555,392,0)
+(678,745,0)
+(451,522,0)
+(189,349,0)
+(260,36,0)
+(121,453,0)
+(463,295,0)
+(341,27,0)
+(44,76,0)
+(825,78,0)
+(310,488,0)
+(223,525,0)
+(466,374,0)
+(616,481,0)
+(322,638,0)
+(112,177,0)
+(239,723,0)
+(93,619,0)
+(347,332,0)
+(523,545,0)
+(642,763,0)
+(825,714,0)
+(832,299,0)
+(508,36,0)
+(224,385,0)
+(724,695,0)
+(695,385,0)
+(85,196,0)
+(16,385,0)
+(438,835,0)
+(119,385,0)
+(246,305,0)
+(816,1,0)
+(103,510,0)
+(397,745,0)
+(28,519,0)
+(519,385,0)
+(109,101,0)
+(400,349,0)
+(727,304,0)
+(152,514,0)
+(246,459,0)
+(483,334,0)
+(417,36,0)
+(220,46,0)
+(73,568,0)
+(340,424,0)
+(360,304,0)
+(688,378,0)
+(462,561,0)
+(377,805,0)
+(321,541,0)
+(108,776,0)
+(518,385,0)
+(821,347,0)
+(218,297,0)
+(481,259,0)
+(136,313,0)
+(761,586,0)
+(588,366,0)
+(833,36,0)
+(84,243,0)
+(766,35,0)
+(101,109,0)
+(389,594,0)
+(231,243,0)
+(16,663,0)
+(134,381,0)
+(183,453,0)
+(511,665,0)
+(566,237,0)
+(98,414,0)
+(703,262,0)
+(205,36,0)
+(183,100,0)
+(741,758,0)
+(27,341,0)
+(646,768,0)
+(414,395,0)
+(104,17,0)
+(460,385,0)
+(563,48,0)
+(555,802,0)
+(249,292,0)
+(271,36,0)
+(251,109,0)
+(829,381,0)
+(345,110,0)
+(240,359,0)
+(108,647,0)
+(631,324,0)
+(184,171,0)
+(45,746,0)
+(583,518,0)
+(469,435,0)
+(47,386,0)
+(269,179,0)
+(568,65,0)
+(212,363,0)
+(685,325,0)
+(556,743,0)
+(168,1,0)
+(470,566,0)
+(58,36,0)
+(307,515,0)
+(643,385,0)
+(70,657,0)
+(468,576,0)
+(375,406,0)
+(845,757,0)
+(243,835,0)
+(574,36,0)
+(83,385,0)
+(784,261,0)
+(128,36,0)
+(461,406,0)
+(722,155,0)
+(590,429,0)
+(559,385,0)
+(691,225,0)
+(535,199,0)
+(266,36,0)
+(798,391,0)
+(557,36,0)
+(695,591,0)
+(177,404,0)
+(37,762,0)
+(461,26,0)
+(367,36,0)
+(368,42,0)
+(827,687,0)
+(534,387,0)
+(481,26,0)
+(381,804,0)
+(731,619,0)
+(444,152,0)
+(493,534,0)
+(655,251,0)
+(659,564,0)
+(324,236,0)
+(111,843,0)
+(476,805,0)
+(754,140,0)
+(441,138,0)
+(199,597,0)
+(326,424,0)
+(492,429,0)
+(20,782,0)
+(119,633,0)
+(277,34,0)
+(717,835,0)
+(408,340,0)
+(544,757,0)
+(186,36,0)
+(836,636,0)
+(416,96,0)
+(422,608,0)
+(383,554,0)
+(757,544,0)
+(838,545,0)
+(391,331,0)
+(465,541,0)
+(156,107,0)
+(812,813,0)
+(702,70,0)
+(382,4,0)
+(514,152,0)
+(610,471,0)
+(645,261,0)
+(562,313,0)
+(785,341,0)
+(129,292,0)
+(53,175,0)
+(184,704,0)
+(720,488,0)
+(109,251,0)
+(769,184,0)
+(585,152,0)
+(612,20,0)
+(143,663,0)
+(162,813,0)
+(705,295,0)
+(532,142,0)
+(468,671,0)
+(325,685,0)
+(739,406,0)
+(111,241,0)
+(170,678,0)
+(746,243,0)
+(344,685,0)
+(273,331,0)
+(577,669,0)
+(333,262,0)
+(820,846,0)
+(669,254,0)
+(841,503,0)
+(347,110,0)
+(286,345,0)
+(31,535,0)
+(378,688,0)
+(20,93,0)
+(506,547,0)
+(709,346,0)
+(826,203,0)
+(601,94,0)
+(401,27,0)
+(430,633,0)
+(602,231,0)
+(688,718,0)
+(39,36,0)
+(308,223,0)
+(262,431,0)
+(446,122,0)
+(270,107,0)
+(631,385,0)
+(662,385,0)
+(275,590,0)
+(411,516,0)
+(746,45,0)
+(296,246,0)
+(697,224,0)
+(214,751,0)
+(586,148,0)
+(34,164,0)
+(47,385,0)
+(660,66,0)
+(504,803,0)
+(514,414,0)
+(88,47,0)
+(521,135,0)
+(424,326,0)
+(203,681,0)
+(314,460,0)
+(158,343,0)
+(777,321,0)
+(91,262,0)
+(492,177,0)
+(399,461,0)
+(686,210,0)
+(489,236,0)
+(236,324,0)
+(297,94,0)
+(398,648,0)
+(29,760,0)
+(564,375,0)
+(261,784,0)
+(25,26,0)
+(621,38,0)
+(783,227,0)
+(744,547,0)
+(747,838,0)
+(453,11,0)
+(599,833,0)
+(839,108,0)
+(428,147,0)
+(833,318,0)
+(804,381,0)
+(718,688,0)
+(704,36,0)
+(515,529,0)
+(419,809,0)
+(335,647,0)
+(644,544,0)
+(43,120,0)
+(193,834,0)
+(835,717,0)
+(628,99,0)
+(113,265,0)
+(390,322,0)
+(470,406,0)
+(653,718,0)
+(202,147,0)
+(164,34,0)
+(42,385,0)
+(505,178,0)
+(762,37,0)
+(207,820,0)
+(257,652,0)
+(132,763,0)
+(24,152,0)
+(152,585,0)
+(426,321,0)
+(384,468,0)
+(126,36,0)
+(97,155,0)
+(62,739,0)
+(420,17,0)
+(104,643,0)
+(729,339,0)
+(815,424,0)
+(817,260,0)
+(779,140,0)
+(285,515,0)
+(102,76,0)
+(32,213,0)
+(609,739,0)
+(519,0,0)
+(558,643,0)
+(591,695,0)
+(684,387,0)
+(42,703,0)
+(56,363,0)
+(414,98,0)
+(836,385,0)
+(516,385,0)
+(196,141,0)
+(783,429,0)
+(488,792,0)
+(69,385,0)
+(369,681,0)
+(350,662,0)
+(291,461,0)
+(776,108,0)
+(315,588,0)
+(110,345,0)
+(547,385,0)
+(464,715,0)
+(838,779,0)
+(732,468,0)
+(99,227,0)
+(571,345,0)
+(733,613,0)
+(700,416,0)
+(809,139,0)
+(287,815,0)
+(402,492,0)
+(708,613,0)
+(381,829,0)
+(750,610,0)
+(391,297,0)
+(207,557,0)
+(573,644,0)
+(109,776,0)
+(636,836,0)
+(30,541,0)
+(620,36,0)
+(173,835,0)
+(842,69,0)
+(340,297,0)
+(429,492,0)
+(773,131,0)
+(760,702,0)
+(699,320,0)
+(324,631,0)
+(221,102,0)
+(557,127,0)
+(678,682,0)
+(850,298,0)
+(647,108,0)
+(320,385,0)
+(242,542,0)
+(774,404,0)
+(550,374,0)
+(81,586,0)
+(180,175,0)
+(188,26,0)
+(634,93,0)
+(171,142,0)
+(404,177,0)
+(393,26,0)
+(304,226,0)
+(163,687,0)
+(584,385,0)
+(591,6,0)
+(742,757,0)
+(191,188,0)
+(399,768,0)
+(485,11,0)
+(745,397,0)
+(627,366,0)
+(150,468,0)
+(626,233,0)
+(435,182,0)
+(41,36,0)
+(272,617,0)
+(544,644,0)
+(89,101,0)
+(651,438,0)
+(849,828,0)
+(682,36,0)
+(580,617,0)
+(115,174,0)
+(375,26,0)
+(470,26,0)
+(178,222,0)
+(672,385,0)
+(460,715,0)
+(650,184,0)
+(825,343,0)
+(548,24,0)
+(278,539,0)
+(363,36,0)
+(298,559,0)
+(321,36,0)
+(445,648,0)
+(135,392,0)
+(179,833,0)
+(299,355,0)
+(723,209,0)
+(293,718,0)
+(140,779,0)
+(541,30,0)
+(832,418,0)
+(838,254,0)
+(318,833,0)
+(517,515,0)
+(135,385,0)
+(392,135,0)
+(311,702,0)
+(600,36,0)
+(200,224,0)
+(10,836,0)
+(615,119,0)
+(15,460,0)
+(531,139,0)
+(238,431,0)
+(765,25,0)
+(736,829,0)
+(693,4,0)
+(536,36,0)
+(346,709,0)
+(801,813,0)
+(70,206,0)
+(829,406,0)
+(455,453,0)
+(168,590,0)
+(792,422,0)
+(559,298,0)
+(569,219,0)
+(86,433,0)
+(807,185,0)
+(22,502,0)
+(181,36,0)
+(404,774,0)
+(155,254,0)
+(809,834,0)
+(565,36,0)
+(395,414,0)
+(763,782,0)
+(570,135,0)
+(376,568,0)
+(284,349,0)
+(804,164,0)
+(12,16,0)
+(598,158,0)
+(540,37,0)
+(259,481,0)
+(406,672,0)
+(379,704,0)
+(611,672,0)
+(502,83,0)
+(753,833,0)
+(3,36,0)
+(289,432,0)
+(458,36,0)
+(341,785,0)
+(560,82,0)
+(102,851,0)
+(638,322,0)
+(216,452,0)
+(811,42,0)
+(763,385,0)
+(767,145,0)
+(409,784,0)
+(69,208,0)
+(792,488,0)
+(231,418,0)
+(188,406,0)
+(492,402,0)
+(236,680,0)
+(237,566,0)
+(338,665,0)
+(782,259,0)
+(449,4,0)
+(737,74,0)
+(453,183,0)
+(837,496,0)
+(438,254,0)
+(6,209,0)
+(751,65,0)
+(658,710,0)
+(301,406,0)
+(726,70,0)
+(387,232,0)
+(196,418,0)
+(443,536,0)
+(89,320,0)
+(585,418,0)
+(797,438,0)
+(524,468,0)
+(2,557,0)
+(707,321,0)
+(77,309,0)
+(735,559,0)
+(629,784,0)
+(152,639,0)
+(124,222,0)
+(17,253,0)
+(605,70,0)
+(210,816,0)
+(566,470,0)
+(496,682,0)
+(696,460,0)
+(31,385,0)
+(209,723,0)
+(331,391,0)
+(778,785,0)
+(648,418,0)
+(6,430,0)
+(120,399,0)
+(114,542,0)
+(734,568,0)
+(279,585,0)
+(254,36,0)
+(834,809,0)
+(145,588,0)
+(72,183,0)
+(713,819,0)
+(68,743,0)
+(127,154,0)
+(557,652,0)
+(7,251,0)
+(535,31,0)
+(423,828,0)
+(740,151,0)
+(329,468,0)
+(98,594,0)
+(479,171,0)
+(782,20,0)
+(317,134,0)
+(127,36,0)
+(204,647,0)
+(851,102,0)
+(164,804,0)
+(348,522,0)
+(154,127,0)
+(786,802,0)
+(663,16,0)
+(509,36,0)
+(608,422,0)
+(771,710,0)
+(595,429,0)
+(259,782,0)
+(378,309,0)
+(232,387,0)
+(816,210,0)
+(581,36,0)
+(630,634,0)
+(93,20,0)
+(107,385,0)
+(355,424,0)
+(819,298,0)
+(770,478,0)
+(414,514,0)
+(95,662,0)
+(743,46,0)
+(572,8,0)
+(840,568,0)
+(607,31,0)
+(268,783,0)
+(59,36,0)
+(831,534,0)
+(373,825,0)
+(55,139,0)
+(755,541,0)
+(557,276,0)
+(785,806,0)
+(525,541,0)
+(247,834,0)
+(806,785,0)
+(745,678,0)
+(496,179,0)
+(495,135,0)
+(739,26,0)
+(232,385,0)
+(304,178,0)
+(48,563,0)
+(730,69,0)
+(316,16,0)
+(432,56,0)
+(313,215,0)
+(533,819,0)
+(375,564,0)
+(442,515,0)
+(692,825,0)
+(339,714,0)
+(749,36,0)
+(137,36,0)
+(374,518,0)
+(679,515,0)
+(155,628,0)
+(843,111,0)
+(819,539,0)
+(802,555,0)
+(486,714,0)
+(66,265,0)
+(613,821,0)
+(638,717,0)
+(288,152,0)
+(198,313,0)
+(603,221,0)
+(339,385,0)
+(584,459,0)
+(564,576,0)
+(361,631,0)
+(717,572,0)
+(494,36,0)
+(625,36,0)
+(331,385,0)
+(725,31,0)
+(782,763,0)
+(61,34,0)
+(298,819,0)
+(410,176,0)
+(330,219,0)
+(467,313,0)
+(388,745,0)
+(149,753,0)
+(439,757,0)
+(806,147,0)
+(710,843,0)
+(510,213,0)
+(714,825,0)
+(828,70,0)
+(107,38,0)
+(178,304,0)
+(656,643,0)
+(613,385,0)
+(294,66,0)
+(582,787,0)
+(140,424,0)
+(606,544,0)
+(142,171,0)
+(515,385,0)
+(34,26,0)
+(174,721,0)
+(716,723,0)
+(635,179,0)
+(799,432,0)
+(812,385,0)
+(654,452,0)
+(300,494,0)
+(179,429,0)
+(8,572,0)
+(507,678,0)
+(748,487,0)
+(152,24,0)
+(321,592,0)
+(538,237,0)
+(83,502,0)
+(661,232,0)
+(828,423,0)
+(101,89,0)
+(456,326,0)
+(567,816,0)
+(762,211,0)
+(448,189,0)
+(211,762,0)
+(525,709,0)
+(321,545,0)
+(676,644,0)
+(195,672,0)
+(589,721,0)
+(805,625,0)
+(498,783,0)
+(75,812,0)
+(171,184,0)
+(192,232,0)
+(241,111,0)
+(179,36,0)
+(364,628,0)
+(669,832,0)
+(230,688,0)
+(223,308,0)
+(590,168,0)
+(26,739,0)
+(323,478,0)
+(756,69,0)
+(179,385,0)
+(365,27,0)
+(810,309,0)
+(13,295,0)
+(265,516,0)
+(541,36,0)
+(63,332,0)
+(764,320,0)
+(48,478,0)
+(167,433,0)
+(478,681,0)
+(201,760,0)
+(392,555,0)
+(709,525,0)
+(222,178,0)
+(427,846,0)
+(5,36,0)
+(139,809,0)
+(628,131,0)
+(287,254,0)
+(65,568,0)
+(6,591,0)
+(471,610,0)
+(698,359,0)
+(166,802,0)
+(641,36,0)
+(24,662,0)
+(118,366,0)
+(175,721,0)
+(597,199,0)
+(512,138,0)
+(18,375,0)
+(668,829,0)
+(694,295,0)
+(628,155,0)
+(355,299,0)
+(67,634,0)
+(794,501,0)
+(433,541,0)
+(513,135,0)
+(1,816,0)
+(352,695,0)
+(778,542,0)
+(553,83,0)
+(256,470,0)
+(791,182,0)
+(542,385,0)
+(213,530,0)
+(634,385,0)
+(808,682,0)
+(262,703,0)
+(674,652,0)
+(709,682,0)
+(80,295,0)
+(669,624,0)
+(133,36,0)
+(206,438,0)
+(131,325,0)
+(585,279,0)
+(578,339,0)
+(665,254,0)
+(785,778,0)
+(475,519,0)
+(780,821,0)
+(387,534,0)
+(633,430,0)
+(38,416,0)
+(79,801,0)
+(260,592,0)
+(587,221,0)
+(370,36,0)
+(349,189,0)
+(347,821,0)
+(248,93,0)
+(69,576,0)
+(416,38,0)
+(546,375,0)
+(116,487,0)
+(359,424,0)
+(436,313,0)
+(685,682,0)
+(117,313,0)
+(474,833,0)
+(254,287,0)
+(665,338,0)
+(481,406,0)
+(454,416,0)
+(644,385,0)
+(718,385,0)
+(234,51,0)
+(832,669,0)
+(403,341,0)
+(647,385,0)
+(422,792,0)
+(477,145,0)
+(556,82,0)
+(25,406,0)
+(473,254,0)
+(738,111,0)
+(30,545,0)
+(252,74,0)
+(17,104,0)
+(793,36,0)
+(779,838,0)
+(721,174,0)
+(597,452,0)
+(327,313,0)
+(146,545,0)
+(265,66,0)
+(719,213,0)
+(353,574,0)
+(125,69,0)
+(828,99,0)
+(525,223,0)
+(649,503,0)
+(633,119,0)
+(847,460,0)
+(588,145,0)
+(710,424,0)
+(809,134,0)
+(846,385,0)
+(228,25,0)
+(357,283,0)
+(177,492,0)
+(90,8,0)
+(281,518,0)
+(500,465,0)
+(623,127,0)
+(466,792,0)
+(243,746,0)
+(682,709,0)
+(843,386,0)
+(805,385,0)
+(70,828,0)
+(19,568,0)
+(56,432,0)
+(225,283,0)
+(190,17,0)
+(65,751,0)
+(334,561,0)
+(399,120,0)
+(457,619,0)
+(503,835,0)
+(145,385,0)
+(153,276,0)
+(111,254,0)
+(76,102,0)
+(701,523,0)
+(717,753,0)
+(92,599,0)
+(250,187,0)
+(776,108,1)
+(366,588,1)
+(629,25,1)
+(182,435,1)
+(459,584,1)
+(736,164,1)
+(590,275,1)
+(769,171,1)
+(815,424,1)
+(325,685,1)
+(729,1,1)
+(484,496,1)
+(188,26,1)
+(571,632,1)
+(719,510,1)
+(714,339,1)
+(739,406,1)
+(274,773,1)
+(261,784,1)
+(86,33,1)
+(785,778,1)
+(836,814,1)
+(263,579,1)
+(206,706,1)
+(525,223,1)
+(232,192,1)
+(702,311,1)
+(322,390,1)
+(451,636,1)
+(560,185,1)
+(646,775,1)
+(683,54,1)
+(457,763,1)
+(744,506,1)
+(285,307,1)
+(62,393,1)
+(762,37,1)
+(589,174,1)
+(214,586,1)
+(222,848,1)
+(800,599,1)
+(587,44,1)
+(502,22,1)
+(188,406,1)
+(721,174,1)
+(179,99,1)
+(632,363,1)
+(642,481,1)
+(688,230,1)
+(598,825,1)
+(210,622,1)
+(105,540,1)
+(99,227,1)
+(574,673,1)
+(468,385,1)
+(718,293,1)
+(339,578,1)
+(159,463,1)
+(196,85,1)
+(710,658,1)
+(573,676,1)
+(613,385,1)
+(259,782,1)
+(277,470,1)
+(404,774,1)
+(34,61,1)
+(327,198,1)
+(179,833,1)
+(147,428,1)
+(447,191,1)
+(763,132,1)
+(155,254,1)
+(597,452,1)
+(549,735,1)
+(37,105,1)
+(179,484,1)
+(467,413,1)
+(608,224,1)
+(199,597,1)
+(131,325,1)
+(61,277,1)
+(67,630,1)
+(544,644,1)
+(154,480,1)
+(557,276,1)
+(93,619,1)
+(762,211,1)
+(606,644,1)
+(552,665,1)
+(694,554,1)
+(784,629,1)
+(536,443,1)
+(570,521,1)
+(100,683,1)
+(178,505,1)
+(120,57,1)
+(771,359,1)
+(351,361,1)
+(69,822,1)
+(317,809,1)
+(245,776,1)
+(768,646,1)
+(297,340,1)
+(45,434,1)
+(414,98,1)
+(753,149,1)
+(386,130,1)
+(298,559,1)
+(238,262,1)
+(663,16,1)
+(663,143,1)
+(664,388,1)
+(846,427,1)
+(733,110,1)
+(435,844,1)
+(406,672,1)
+(341,403,1)
+(247,139,1)
+(336,574,1)
+(594,389,1)
+(716,239,1)
+(690,465,1)
+(227,783,1)
+(438,651,1)
+(689,218,1)
+(224,385,1)
+(86,60,1)
+(559,549,1)
+(612,93,1)
+(730,788,1)
+(686,168,1)
+(648,445,1)
+(217,543,1)
+(725,4,1)
+(179,131,1)
+(376,751,1)
+(146,254,1)
+(808,429,1)
+(401,365,1)
+(693,449,1)
+(117,436,1)
+(535,407,1)
+(145,767,1)
+(691,795,1)
+(295,576,1)
+(849,726,1)
+(421,806,1)
+(237,538,1)
+(715,464,1)
+(301,466,1)
+(330,682,1)
+(231,418,1)
+(321,541,1)
+(38,621,1)
+(477,554,1)
+(333,91,1)
+(183,72,1)
+(301,304,1)
+(392,264,1)
+(673,353,1)
+(654,216,1)
+(64,82,1)
+(829,668,1)
+(230,718,1)
+(340,408,1)
+(459,371,1)
+(318,292,1)
+(497,106,1)
+(778,542,1)
+(416,38,1)
+(436,327,1)
+(331,385,1)
+(66,265,1)
+(130,47,1)
+(170,507,1)
+(273,334,1)
+(352,724,1)
+(761,161,1)
+(672,611,1)
+(383,328,1)
+(430,633,1)
+(391,331,1)
+(373,714,1)
+(819,298,1)
+(260,817,1)
+(364,179,1)
+(519,475,1)
+(286,571,1)
+(150,384,1)
+(399,120,1)
+(740,534,1)
+(674,257,1)
+(466,792,1)
+(225,663,1)
+(153,295,1)
+(371,584,1)
+(782,763,1)
+(667,152,1)
+(420,104,1)
+(433,167,1)
+(844,469,1)
+(161,490,1)
+(711,713,1)
+(848,124,1)
+(486,339,1)
+(372,541,1)
+(815,52,1)
+(138,441,1)
+(514,414,1)
+(100,385,1)
+(98,594,1)
+(625,87,1)
+(198,136,1)
+(782,20,1)
+(86,220,1)
+(433,494,1)
+(12,316,1)
+(822,730,1)
+(585,279,1)
+(624,669,1)
+(132,642,1)
+(599,833,1)
+(49,545,1)
+(578,729,1)
+(232,385,1)
+(488,720,1)
+(301,522,1)
+(824,591,1)
+(662,385,1)
+(309,810,1)
+(218,312,1)
+(452,654,1)
+(348,451,1)
+(490,637,1)
+(315,145,1)
+(265,113,1)
+(757,544,1)
+(278,819,1)
+(441,512,1)
+(384,329,1)
+(449,502,1)
+(792,488,1)
+(425,386,1)
+(292,385,1)
+(772,459,1)
+(814,10,1)
+(658,771,1)
+(97,722,1)
+(212,625,1)
+(825,714,1)
+(825,78,1)
+(698,240,1)
+(732,150,1)
+(1,816,1)
+(93,248,1)
+(572,8,1)
+(321,426,1)
+(362,70,1)
+(358,808,1)
+(721,589,1)
+(108,647,1)
+(593,542,1)
+(378,309,1)
+(324,267,1)
+(153,515,1)
+(400,284,1)
+(184,171,1)
+(615,824,1)
+(0,519,1)
+(6,591,1)
+(481,616,1)
+(182,791,1)
+(26,739,1)
+(633,119,1)
+(342,577,1)
+(221,429,1)
+(68,197,1)
+(785,341,1)
+(114,242,1)
+(550,518,1)
+(84,746,1)
+(313,385,1)
+(559,385,1)
+(70,828,1)
+(568,840,1)
+(288,24,1)
+(717,753,1)
+(783,498,1)
+(259,481,1)
+(177,541,1)
+(180,721,1)
+(48,418,1)
+(482,462,1)
+(820,846,1)
+(546,18,1)
+(31,607,1)
+(627,118,1)
+(435,385,1)
+(818,524,1)
+(292,129,1)
+(32,188,1)
+(541,30,1)
+(93,634,1)
+(213,719,1)
+(86,165,1)
+(184,650,1)
+(805,377,1)
+(192,661,1)
+(625,805,1)
+(493,831,1)
+(518,385,1)
+(207,820,1)
+(85,296,1)
+(703,71,1)
+(168,590,1)
+(547,385,1)
+(268,800,1)
+(379,184,1)
+(168,337,1)
+(843,359,1)
+(323,770,1)
+(302,375,1)
+(755,246,1)
+(828,131,1)
+(139,531,1)
+(463,705,1)
+(31,385,1)
+(106,675,1)
+(341,27,1)
+(468,576,1)
+(750,421,1)
+(538,759,1)
+(63,347,1)
+(183,100,1)
+(101,89,1)
+(553,245,1)
+(701,196,1)
+(466,374,1)
+(258,324,1)
+(498,268,1)
+(801,813,1)
+(10,762,1)
+(86,63,1)
+(269,635,1)
+(262,703,1)
+(662,95,1)
+(86,278,1)
+(391,798,1)
+(665,338,1)
+(723,716,1)
+(344,274,1)
+(460,385,1)
+(83,385,1)
+(293,653,1)
+(201,628,1)
+(705,694,1)
+(798,331,1)
+(216,535,1)
+(567,210,1)
+(534,493,1)
+(90,753,1)
+(86,830,1)
+(692,373,1)
+(811,209,1)
+(505,222,1)
+(647,204,1)
+(86,582,1)
+(831,387,1)
+(832,418,1)
+(349,400,1)
+(86,238,1)
+(829,26,1)
+(469,624,1)
+(491,444,1)
+(734,19,1)
+(439,742,1)
+(155,97,1)
+(155,835,1)
+(717,638,1)
+(703,42,1)
+(503,254,1)
+(389,585,1)
+(585,418,1)
+(109,251,1)
+(461,406,1)
+(86,369,1)
+(619,731,1)
+(404,112,1)
+(537,414,1)
+(75,752,1)
+(357,225,1)
+(129,249,1)
+(386,47,1)
+(752,461,1)
+(328,487,1)
+(355,424,1)
+(557,158,1)
+(56,432,1)
+(242,341,1)
+(281,583,1)
+(307,442,1)
+(584,40,1)
+(392,135,1)
+(555,802,1)
+(648,418,1)
+(826,157,1)
+(265,516,1)
+(229,837,1)
+(324,631,1)
+(847,696,1)
+(347,110,1)
+(588,315,1)
+(2,433,1)
+(48,563,1)
+(71,42,1)
+(595,321,1)
+(210,429,1)
+(779,140,1)
+(414,395,1)
+(196,418,1)
+(650,769,1)
+(685,344,1)
+(659,302,1)
+(655,101,1)
+(557,2,1)
+(695,352,1)
+(652,674,1)
+(123,450,1)
+(86,504,1)
+(635,131,1)
+(838,254,1)
+(481,406,1)
+(47,88,1)
+(760,29,1)
+(25,406,1)
+(454,700,1)
+(675,334,1)
+(193,247,1)
+(432,429,1)
+(613,708,1)
+(34,26,1)
+(428,202,1)
+(260,418,1)
+(243,84,1)
+(778,593,1)
+(142,385,1)
+(152,514,1)
+(765,228,1)
+(492,177,1)
+(86,485,1)
+(558,656,1)
+(246,523,1)
+(326,123,1)
+(81,761,1)
+(175,721,1)
+(464,847,1)
+(261,645,1)
+(209,723,1)
+(534,387,1)
+(7,655,1)
+(548,662,1)
+(836,385,1)
+(516,385,1)
+(564,659,1)
+(735,378,1)
+(199,535,1)
+(720,310,1)
+(243,835,1)
+(764,108,1)
+(784,25,1)
+(313,562,1)
+(331,526,1)
+(479,142,1)
+(353,127,1)
+(359,424,1)
+(828,849,1)
+(786,148,1)
+(450,231,1)
+(668,736,1)
+(25,26,1)
+(432,799,1)
+(82,666,1)
+(254,287,1)
+(556,64,1)
+(236,324,1)
+(66,660,1)
+(555,392,1)
+(794,199,1)
+(804,381,1)
+(753,833,1)
+(28,636,1)
+(566,237,1)
+(514,537,1)
+(702,760,1)
+(70,702,1)
+(669,832,1)
+(252,737,1)
+(42,385,1)
+(777,707,1)
+(665,254,1)
+(526,273,1)
+(177,404,1)
+(43,291,1)
+(512,413,1)
+(797,828,1)
+(222,385,1)
+(685,682,1)
+(310,422,1)
+(144,173,1)
+(219,833,1)
+(544,606,1)
+(755,648,1)
+(630,619,1)
+(707,465,1)
+(4,382,1)
+(390,753,1)
+(465,541,1)
+(561,482,1)
+(171,479,1)
+(776,109,1)
+(631,385,1)
+(751,214,1)
+(202,785,1)
+(528,473,1)
+(419,834,1)
+(828,423,1)
+(628,131,1)
+(320,699,1)
+(742,845,1)
+(712,158,1)
+(53,180,1)
+(672,385,1)
+(88,49,1)
+(224,200,1)
+(496,229,1)
+(788,842,1)
+(349,424,1)
+(200,697,1)
+(86,276,1)
+(95,350,1)
+(173,833,1)
+(461,399,1)
+(153,468,1)
+(19,376,1)
+(496,682,1)
+(841,669,1)
+(398,624,1)
+(291,470,1)
+(575,1,1)
+(223,308,1)
+(760,385,1)
+(175,53,1)
+(148,586,1)
+(48,552,1)
+(748,74,1)
+(23,598,1)
+(503,835,1)
+(443,846,1)
+(731,457,1)
+(355,604,1)
+(40,823,1)
+(773,599,1)
+(204,335,1)
+(542,385,1)
+(86,410,1)
+(631,351,1)
+(568,385,1)
+(453,183,1)
+(561,424,1)
+(77,688,1)
+(244,564,1)
+(380,219,1)
+(523,545,1)
+(708,733,1)
+(72,100,1)
+(378,688,1)
+(16,385,1)
+(455,121,1)
+(494,300,1)
+(350,231,1)
+(640,532,1)
+(677,555,1)
+(228,409,1)
+(412,153,1)
+(70,206,1)
+(211,547,1)
+(828,99,1)
+(483,561,1)
+(231,243,1)
+(413,185,1)
+(145,385,1)
+(16,12,1)
+(480,623,1)
+(213,510,1)
+(821,613,1)
+(86,362,1)
+(757,439,1)
+(796,564,1)
+(354,755,1)
+(533,298,1)
+(602,835,1)
+(107,156,1)
+(394,79,1)
+(374,550,1)
+(30,354,1)
+(635,99,1)
+(156,270,1)
+(474,536,1)
+(306,32,1)
+(531,55,1)
+(470,256,1)
+(246,459,1)
+(416,9,1)
+(643,385,1)
+(111,254,1)
+(153,313,1)
+(399,768,1)
+(812,75,1)
+(38,107,1)
+(27,401,1)
+(609,62,1)
+(634,385,1)
+(55,829,1)
+(148,65,1)
+(628,155,1)
+(817,497,1)
+(393,796,1)
+(18,728,1)
+(562,117,1)
+(102,221,1)
+(838,779,1)
+(737,460,1)
+(564,375,1)
+(225,691,1)
+(47,385,1)
+(518,281,1)
+(843,386,1)
+(65,751,1)
+(461,291,1)
+(17,190,1)
+(291,261,1)
+(119,615,1)
+(638,322,1)
+(809,139,1)
+(795,663,1)
+(523,701,1)
+(513,217,1)
+(767,477,1)
+(781,411,1)
+(290,213,1)
+(251,7,1)
+(347,821,1)
+(554,383,1)
+(79,813,1)
+(312,391,1)
+(142,640,1)
+(189,349,1)
+(223,358,1)
+(320,385,1)
+(475,28,1)
+(60,148,1)
+(382,693,1)
+(813,162,1)
+(582,757,1)
+(295,13,1)
+(737,806,1)
+(411,259,1)
+(153,69,1)
+(517,138,1)
+(381,829,1)
+(86,740,1)
+(83,553,1)
+(747,146,1)
+(87,805,1)
+(507,380,1)
+(569,330,1)
+(478,665,1)
+(162,812,1)
+(115,789,1)
+(311,760,1)
+(669,254,1)
+(438,835,1)
+(839,647,1)
+(366,627,1)
+(478,48,1)
+(15,471,1)
+(256,566,1)
+(178,222,1)
+(381,134,1)
+(601,652,1)
+(27,385,1)
+(623,494,1)
+(125,756,1)
+(17,104,1)
+(610,750,1)
+(478,182,1)
+(21,796,1)
+(462,189,1)
+(604,342,1)
+(714,486,1)
+(718,385,1)
+(82,385,1)
+(525,541,1)
+(166,786,1)
+(745,397,1)
+(616,461,1)
+(743,556,1)
+(446,66,1)
+(470,26,1)
+(636,836,1)
+(78,303,1)
+(661,261,1)
+(76,102,1)
+(722,364,1)
+(408,689,1)
+(738,710,1)
+(80,159,1)
+(171,142,1)
+(645,784,1)
+(304,178,1)
+(833,318,1)
+(495,513,1)
+(545,838,1)
+(564,576,1)
+(25,765,1)
+(119,385,1)
+(799,289,1)
+(179,429,1)
+(440,269,1)
+(1,168,1)
+(624,503,1)
+(801,394,1)
+(759,21,1)
+(298,850,1)
+(127,154,1)
+(136,467,1)
+(120,406,1)
+(543,264,1)
+(506,378,1)
+(89,320,1)
+(812,385,1)
+(152,24,1)
+(468,732,1)
+(770,182,1)
+(516,781,1)
+(250,290,1)
+(52,528,1)
+(727,360,1)
+(843,111,1)
+(791,435,1)
+(427,336,1)
+(644,573,1)
+(153,366,1)
+(264,802,1)
+(422,608,1)
+(13,80,1)
+(728,26,1)
+(607,725,1)
+(86,712,1)
+(29,201,1)
+(236,489,1)
+(596,643,1)
+(140,424,1)
+(816,210,1)
+(167,86,1)
+(135,570,1)
+(850,559,1)
+(9,454,1)
+(157,478,1)
+(359,698,1)
+(823,648,1)
+(69,385,1)
+(74,252,1)
+(500,372,1)
+(262,333,1)
+(301,209,1)
+(388,745,1)
+(501,280,1)
+(113,516,1)
+(603,587,1)
+(697,374,1)
+(846,385,1)
+(739,26,1)
+(511,323,1)
+(174,115,1)
+(471,610,1)
+(790,425,1)
+(197,556,1)
+(102,851,1)
+(806,785,1)
+(585,491,1)
+(104,643,1)
+(583,776,1)
+(678,682,1)
+(103,306,1)
+(816,567,1)
+(547,744,1)
+(20,93,1)
+(763,385,1)
+(834,26,1)
+(579,405,1)
+(591,520,1)
+(644,385,1)
+(599,92,1)
+(746,45,1)
+(296,772,1)
+(360,178,1)
+(24,548,1)
+(429,492,1)
+(345,286,1)
+(584,385,1)
+(289,212,1)
+(453,455,1)
+(666,560,1)
+(780,613,1)
+(759,728,1)
+(756,138,1)
+(86,379,1)
+(303,618,1)
+(676,466,1)
+(520,695,1)
+(249,474,1)
+(179,385,1)
+(387,684,1)
+(699,764,1)
+(134,317,1)
+(820,667,1)
+(832,299,1)
+(524,487,1)
+(442,679,1)
+(203,826,1)
+(577,260,1)
+(792,422,1)
+(92,575,1)
+(618,692,1)
+(591,695,1)
+(796,244,1)
+(542,114,1)
+(110,345,1)
+(492,402,1)
+(57,43,1)
+(361,471,1)
+(622,686,1)
+(656,199,1)
+(112,595,1)
+(806,147,1)
+(4,502,1)
+(532,259,1)
+(535,31,1)
+(207,557,1)
+(829,406,1)
+(665,511,1)
+(461,26,1)
+(185,472,1)
+(556,82,1)
+(179,496,1)
+(502,83,1)
+(22,83,1)
+(287,815,1)
+(337,590,1)
+(195,301,1)
+(121,183,1)
+(460,715,1)
+(135,385,1)
+(375,26,1)
+(473,424,1)
+(405,821,1)
+(30,545,1)
+(743,68,1)
+(628,99,1)
+(481,26,1)
+(243,746,1)
+(191,804,1)
+(651,797,1)
+(104,596,1)
+(648,545,1)
+(42,368,1)
+(660,294,1)
+(164,34,1)
+(387,232,1)
+(804,164,1)
+(709,346,1)
+(54,161,1)
+(124,501,1)
+(523,196,1)
+(174,385,1)
+(334,483,1)
+(696,314,1)
+(267,631,1)
+(248,634,1)
+(108,839,1)
+(465,500,1)
+(134,809,1)
+(295,385,1)
+(611,195,1)
+(504,801,1)
+(91,703,1)
+(347,263,1)
+(34,406,1)
+(739,609,1)
+(664,76,1)
+(424,326,1)
+(321,545,1)
+(843,710,1)
+(821,780,1)
+(789,804,1)
+(220,743,1)
+(470,406,1)
+(783,429,1)
+(514,835,1)
+(605,702,1)
+(775,120,1)
+(489,258,1)
+(540,211,1)
+(515,285,1)
+(280,794,1)
+(109,101,1)
+(695,385,1)
+(375,546,1)
+(434,602,1)
+(647,385,1)
+(260,592,1)
+(403,27,1)
+(807,74,1)
+(291,188,1)
+(284,843,1)
+(834,406,1)
+(275,664,1)
+(448,349,1)
+(476,628,1)
+(590,429,1)
+(143,16,1)
+(527,501,1)
+(345,363,1)
+(240,790,1)
+(339,385,1)
+(521,495,1)
+(158,23,1)
+(503,649,1)
+(410,175,1)
+(326,456,1)
+(634,67,1)
+(805,385,1)
+(470,566,1)
+(189,448,1)
+(377,476,1)
+(209,6,1)
+(472,807,1)
+(810,77,1)
+(433,541,1)
+(557,127,1)
+(717,572,1)
+(152,585,1)
+(335,0,1)
+(586,81,1)
+(86,357,1)
+(86,527,1)
+(837,440,1)
+(326,592,1)
+(445,398,1)
+(86,601,1)
+(557,203,1)
+(700,38,1)
+(485,453,1)
+(221,603,1)
+(219,569,1)
+(304,727,1)
+(709,525,1)
+(809,419,1)
+(314,15,1)
+(6,430,1)
+(270,762,1)
+(679,517,1)
+(407,31,1)
+(809,834,1)
+(316,522,1)
+(433,545,1)
+(840,73,1)
+(78,429,1)
+(643,558,1)
+(239,0,1)
+(588,145,1)
+(369,203,1)
+(649,841,1)
+(24,662,1)
+(678,170,1)
+(299,355,1)
+(86,690,1)
+(86,677,1)
+(206,438,1)
+(8,90,1)
+(682,709,1)
+(116,748,1)
+(118,588,1)
+(409,187,1)
+(294,265,1)
+(745,678,1)
+(374,518,1)
+(375,406,1)
+(515,385,1)
+(368,811,1)
+(65,568,1)
+(276,412,1)
+(149,144,1)
+(813,812,1)
+(835,717,1)
+(44,219,1)
+(726,605,1)
+(120,26,1)
+(728,406,1)
+(557,652,1)
+(297,391,1)
+(73,734,1)
+(321,592,1)
+(522,348,1)
+(69,576,1)
+(33,460,1)
+(86,446,1)
+(845,544,1)
+(107,385,1)
+(713,533,1)
+(426,777,1)
+(724,723,1)
+(487,116,1)
+(519,385,1)
+(188,447,1)
+(754,747,1)
+(842,125,1)
+(340,424,1)
+(300,499,1)
+(111,738,1)
+(334,561,1)
+(165,236,1)
+(819,711,1)
+(196,141,1)
+(710,424,1)
+(834,193,1)
+(187,250,1)
+(329,818,1)
+(301,17,1)
+(802,166,1)
+(510,103,1)
+(438,254,1)
+(830,416,1)
+(20,612,1)
+(365,555,1)
+(684,232,1)
+(140,754,1)
+(257,297,1)
+(190,420,1)
+(688,718,1)
+(444,288,1)
+(111,241,1)
+(363,56,1)
+(621,107,1)
+(278,378,2)
+(221,429,2)
+(762,211,2)
+(177,404,2)
+(296,648,2)
+(85,648,2)
+(252,460,2)
+(445,624,2)
+(702,628,2)
+(98,231,2)
+(63,628,2)
+(711,378,2)
+(555,392,2)
+(496,682,2)
+(627,554,2)
+(694,554,2)
+(164,470,2)
+(236,471,2)
+(634,385,2)
+(218,334,2)
+(764,108,2)
+(374,518,2)
+(115,804,2)
+(813,461,2)
+(745,397,2)
+(826,624,2)
+(691,522,2)
+(678,219,2)
+(211,547,2)
+(188,406,2)
+(391,331,2)
+(484,1,2)
+(470,406,2)
+(748,74,2)
+(649,669,2)
+(288,231,2)
+(101,108,2)
+(557,158,2)
+(265,259,2)
+(420,199,2)
+(726,628,2)
+(371,648,2)
+(778,542,2)
+(250,188,2)
+(804,381,2)
+(564,375,2)
+(472,74,2)
+(179,99,2)
+(117,413,2)
+(401,555,2)
+(273,334,2)
+(783,429,2)
+(821,613,2)
+(134,809,2)
+(414,395,2)
+(269,1,2)
+(227,783,2)
+(334,231,2)
+(557,203,2)
+(709,346,2)
+(828,99,2)
+(784,25,2)
+(482,231,2)
+(765,188,2)
+(468,576,2)
+(759,209,2)
+(321,541,2)
+(585,279,2)
+(108,647,2)
+(347,821,2)
+(436,413,2)
+(199,535,2)
+(203,624,2)
+(179,429,2)
+(292,385,2)
+(461,470,2)
+(583,776,2)
+(628,99,2)
+(566,466,2)
+(125,138,2)
+(262,209,2)
+(828,423,2)
+(105,211,2)
+(408,334,2)
+(845,466,2)
+(326,456,2)
+(30,545,2)
+(817,334,2)
+(731,763,2)
+(295,385,2)
+(81,161,2)
+(728,522,2)
+(268,599,2)
+(325,685,2)
+(685,682,2)
+(470,466,2)
+(107,385,2)
+(478,182,2)
+(366,554,2)
+(795,522,2)
+(730,138,2)
+(806,785,2)
+(541,624,2)
+(761,161,2)
+(175,804,2)
+(70,628,2)
+(453,183,2)
+(695,385,2)
+(767,554,2)
+(635,1,2)
+(363,628,2)
+(246,459,2)
+(763,481,2)
+(660,259,2)
+(588,554,2)
+(69,385,2)
+(9,762,2)
+(572,8,2)
+(555,802,2)
+(814,762,2)
+(25,26,2)
+(78,1,2)
+(179,385,2)
+(566,209,2)
+(131,599,2)
+(101,89,2)
+(736,164,2)
+(816,168,2)
+(564,576,2)
+(571,628,2)
+(419,829,2)
+(324,631,2)
+(93,763,2)
+(517,138,2)
+(110,345,2)
+(118,554,2)
+(717,572,2)
+(837,1,2)
+(604,334,2)
+(461,26,2)
+(568,385,2)
+(299,355,2)
+(184,171,2)
+(728,199,2)
+(406,522,2)
+(798,334,2)
+(313,413,2)
+(839,0,2)
+(225,663,2)
+(478,665,2)
+(678,682,2)
+(473,231,2)
+(615,591,2)
+(113,259,2)
+(318,292,2)
+(30,624,2)
+(171,259,2)
+(375,26,2)
+(145,554,2)
+(663,16,2)
+(810,688,2)
+(204,0,2)
+(171,142,2)
+(354,624,2)
+(1,816,2)
+(12,522,2)
+(307,138,2)
+(429,492,2)
+(792,374,2)
+(377,628,2)
+(735,378,2)
+(487,74,2)
+(832,418,2)
+(246,648,2)
+(566,522,2)
+(510,188,2)
+(321,465,2)
+(42,385,2)
+(611,199,2)
+(477,554,2)
+(349,424,2)
+(451,636,2)
+(386,47,2)
+(345,363,2)
+(213,510,2)
+(514,231,2)
+(598,1,2)
+(579,628,2)
+(191,804,2)
+(93,619,2)
+(6,591,2)
+(459,648,2)
+(513,264,2)
+(672,199,2)
+(760,628,2)
+(790,231,2)
+(388,745,2)
+(461,406,2)
+(260,418,2)
+(316,522,2)
+(843,359,2)
+(674,334,2)
+(684,261,2)
+(259,461,2)
+(341,555,2)
+(349,231,2)
+(65,751,2)
+(547,378,2)
+(42,209,2)
+(152,514,2)
+(672,501,2)
+(677,555,2)
+(109,108,2)
+(43,291,2)
+(399,120,2)
+(825,1,2)
+(25,188,2)
+(836,762,2)
+(351,471,2)
+(471,610,2)
+(589,804,2)
+(463,554,2)
+(453,161,2)
+(676,466,2)
+(182,435,2)
+(239,0,2)
+(755,624,2)
+(426,465,2)
+(656,199,2)
+(547,385,2)
+(831,261,2)
+(240,231,2)
+(685,599,2)
+(317,829,2)
+(295,576,2)
+(290,188,2)
+(776,109,2)
+(99,599,2)
+(366,588,2)
+(537,231,2)
+(262,703,2)
+(120,291,2)
+(603,219,2)
+(838,779,2)
+(429,465,2)
+(392,802,2)
+(244,728,2)
+(784,188,2)
+(747,231,2)
+(414,231,2)
+(189,349,2)
+(174,804,2)
+(534,261,2)
+(440,1,2)
+(174,385,2)
+(664,465,2)
+(72,161,2)
+(424,326,2)
+(188,26,2)
+(612,763,2)
+(334,561,2)
+(447,804,2)
+(683,161,2)
+(112,465,2)
+(746,45,2)
+(348,636,2)
+(605,628,2)
+(360,501,2)
+(648,545,2)
+(198,413,2)
+(585,231,2)
+(155,835,2)
+(459,584,2)
+(150,487,2)
+(342,334,2)
+(717,638,2)
+(291,261,2)
+(16,385,2)
+(310,422,2)
+(295,554,2)
+(791,624,2)
+(107,762,2)
+(152,231,2)
+(813,812,2)
+(739,796,2)
+(566,501,2)
+(301,522,2)
+(206,438,2)
+(643,199,2)
+(135,264,2)
+(782,481,2)
+(314,471,2)
+(528,231,2)
+(698,231,2)
+(573,466,2)
+(362,628,2)
+(183,161,2)
+(759,522,2)
+(849,628,2)
+(744,378,2)
+(304,178,2)
+(374,776,2)
+(636,836,2)
+(501,199,2)
+(645,188,2)
+(164,34,2)
+(243,835,2)
+(237,199,2)
+(44,219,2)
+(796,728,2)
+(372,624,2)
+(152,24,2)
+(195,501,2)
+(535,31,2)
+(421,806,2)
+(98,594,2)
+(400,231,2)
+(723,0,2)
+(53,804,2)
+(156,762,2)
+(461,261,2)
+(586,161,2)
+(712,1,2)
+(120,406,2)
+(668,164,2)
+(486,1,2)
+(468,487,2)
+(505,501,2)
+(796,564,2)
+(70,828,2)
+(121,161,2)
+(25,406,2)
+(781,259,2)
+(518,776,2)
+(80,554,2)
+(201,628,2)
+(562,413,2)
+(83,776,2)
+(829,26,2)
+(608,374,2)
+(131,325,2)
+(320,108,2)
+(27,385,2)
+(70,702,2)
+(842,138,2)
+(95,231,2)
+(82,385,2)
+(294,259,2)
+(820,846,2)
+(398,624,2)
+(533,378,2)
+(210,429,2)
+(840,751,2)
+(523,545,2)
+(841,669,2)
+(843,386,2)
+(32,188,2)
+(428,785,2)
+(779,140,2)
+(491,231,2)
+(801,813,2)
+(298,378,2)
+(116,74,2)
+(285,138,2)
+(672,466,2)
+(460,471,2)
+(404,465,2)
+(483,231,2)
+(478,48,2)
+(22,776,2)
+(770,624,2)
+(807,74,2)
+(82,185,2)
+(344,599,2)
+(762,37,2)
+(185,74,2)
+(424,231,2)
+(259,782,2)
+(512,413,2)
+(373,1,2)
+(538,466,2)
+(696,471,2)
+(355,334,2)
+(267,471,2)
+(47,231,2)
+(114,341,2)
+(227,599,2)
+(567,168,2)
+(412,74,2)
+(465,541,2)
+(553,776,2)
+(557,276,2)
+(223,308,2)
+(597,452,2)
+(739,26,2)
+(662,231,2)
+(383,487,2)
+(760,385,2)
+(618,1,2)
+(737,460,2)
+(524,487,2)
+(167,231,2)
+(263,628,2)
+(665,624,2)
+(416,762,2)
+(18,728,2)
+(413,185,2)
+(24,662,2)
+(414,98,2)
+(794,199,2)
+(672,522,2)
+(326,231,2)
+(591,695,2)
+(783,599,2)
+(54,161,2)
+(669,334,2)
+(659,728,2)
+(466,776,2)
+(507,219,2)
+(804,164,2)
+(495,264,2)
+(584,385,2)
+(248,763,2)
+(521,264,2)
+(843,111,2)
+(136,413,2)
+(560,185,2)
+(578,1,2)
+(368,209,2)
+(74,806,2)
+(633,591,2)
+(157,624,2)
+(406,672,2)
+(339,385,2)
+(593,341,2)
+(184,259,2)
+(514,414,2)
+(594,231,2)
+(192,261,2)
+(168,590,2)
+(492,465,2)
+(812,385,2)
+(179,496,2)
+(102,851,2)
+(737,806,2)
+(214,586,2)
+(382,776,2)
+(387,232,2)
+(411,259,2)
+(822,138,2)
+(162,461,2)
+(222,501,2)
+(275,465,2)
+(83,385,2)
+(289,628,2)
+(611,522,2)
+(309,688,2)
+(775,120,2)
+(464,471,2)
+(708,628,2)
+(465,624,2)
+(448,231,2)
+(325,599,2)
+(134,829,2)
+(209,723,2)
+(76,219,2)
+(399,768,2)
+(93,634,2)
+(358,465,2)
+(261,784,2)
+(100,385,2)
+(672,209,2)
+(291,470,2)
+(287,231,2)
+(321,545,2)
+(470,566,2)
+(648,624,2)
+(287,815,2)
+(324,471,2)
+(705,554,2)
+(153,185,2)
+(669,254,2)
+(124,501,2)
+(825,78,2)
+(68,185,2)
+(642,481,2)
+(828,628,2)
+(315,554,2)
+(611,501,2)
+(638,322,2)
+(225,522,2)
+(832,334,2)
+(785,341,2)
+(823,648,2)
+(848,501,2)
+(229,1,2)
+(444,231,2)
+(834,406,2)
+(538,209,2)
+(148,65,2)
+(232,261,2)
+(577,334,2)
+(213,188,2)
+(26,796,2)
+(636,762,2)
+(66,265,2)
+(725,776,2)
+(728,501,2)
+(729,1,2)
+(142,259,2)
+(561,231,2)
+(100,161,2)
+(425,231,2)
+(802,148,2)
+(628,155,2)
+(682,465,2)
+(259,481,2)
+(844,624,2)
+(644,466,2)
+(759,501,2)
+(73,751,2)
+(416,38,2)
+(6,723,2)
+(433,545,2)
+(399,291,2)
+(17,104,2)
+(738,231,2)
+(297,334,2)
+(597,535,2)
+(534,387,2)
+(820,231,2)
+(179,131,2)
+(405,628,2)
+(455,161,2)
+(550,776,2)
+(331,334,2)
+(378,688,2)
+(675,334,2)
+(200,374,2)
+(773,599,2)
+(718,385,2)
+(740,261,2)
+(693,776,2)
+(433,541,2)
+(728,466,2)
+(388,219,2)
+(850,378,2)
+(555,148,2)
+(782,763,2)
+(69,138,2)
+(322,753,2)
+(31,776,2)
+(177,465,2)
+(6,430,2)
+(722,1,2)
+(662,385,2)
+(470,209,2)
+(672,385,2)
+(77,688,2)
+(224,374,2)
+(207,557,2)
+(29,628,2)
+(613,385,2)
+(468,385,2)
+(652,334,2)
+(634,763,2)
+(237,501,2)
+(497,334,2)
+(109,101,2)
+(245,776,2)
+(710,231,2)
+(106,334,2)
+(519,636,2)
+(260,592,2)
+(97,1,2)
+(804,470,2)
+(739,406,2)
+(207,820,2)
+(16,522,2)
+(202,785,2)
+(223,465,2)
+(187,188,2)
+(265,516,2)
+(644,385,2)
+(809,829,2)
+(651,628,2)
+(552,624,2)
+(556,82,2)
+(34,26,2)
+(732,487,2)
+(721,174,2)
+(776,0,2)
+(805,385,2)
+(103,188,2)
+(800,599,2)
+(833,318,2)
+(488,422,2)
+(37,211,2)
+(607,776,2)
+(654,535,2)
+(165,471,2)
+(470,501,2)
+(535,776,2)
+(387,261,2)
+(720,422,2)
+(47,385,2)
+(454,762,2)
+(585,418,2)
+(180,804,2)
+(75,461,2)
+(558,199,2)
+(138,413,2)
+(252,806,2)
+(527,501,2)
+(352,723,2)
+(38,762,2)
+(155,1,2)
+(48,563,2)
+(624,334,2)
+(62,796,2)
+(238,209,2)
+(515,385,2)
+(48,624,2)
+(665,254,2)
+(608,224,2)
+(808,465,2)
+(406,466,2)
+(595,465,2)
+(331,385,2)
+(330,465,2)
+(532,259,2)
+(34,470,2)
+(438,835,2)
+(481,461,2)
+(466,792,2)
+(231,418,2)
+(4,502,2)
+(313,385,2)
+(489,471,2)
+(669,832,2)
+(33,460,2)
+(237,466,2)
+(806,555,2)
+(554,487,2)
+(772,648,2)
+(376,751,2)
+(797,628,2)
+(71,209,2)
+(111,254,2)
+(88,231,2)
+(258,471,2)
+(153,74,2)
+(378,309,2)
+(284,231,2)
+(439,466,2)
+(703,42,2)
+(60,148,2)
+(836,385,2)
+(596,199,2)
+(625,628,2)
+(522,636,2)
+(410,804,2)
+(407,776,2)
+(333,209,2)
+(21,796,2)
+(650,259,2)
+(123,231,2)
+(771,231,2)
+(590,429,2)
+(819,378,2)
+(441,413,2)
+(65,586,2)
+(679,138,2)
+(611,466,2)
+(531,829,2)
+(762,378,2)
+(438,628,2)
+(492,402,2)
+(237,522,2)
+(130,231,2)
+(479,259,2)
+(359,424,2)
+(412,185,2)
+(49,231,2)
+(753,833,2)
+(640,259,2)
+(566,199,2)
+(733,628,2)
+(87,628,2)
+(834,829,2)
+(516,385,2)
+(361,471,2)
+(493,261,2)
+(120,26,2)
+(276,74,2)
+(56,432,2)
+(375,406,2)
+(719,188,2)
+(438,254,2)
+(261,188,2)
+(350,231,2)
+(819,298,2)
+(557,652,2)
+(183,100,2)
+(403,555,2)
+(8,753,2)
+(433,231,2)
+(76,102,2)
+(811,209,2)
+(628,131,2)
+(699,108,2)
+(792,488,2)
+(404,774,2)
+(66,259,2)
+(500,624,2)
+(538,522,2)
+(206,706,2)
+(1,465,2)
+(148,161,2)
+(613,628,2)
+(381,164,2)
+(102,219,2)
+(470,26,2)
+(721,804,2)
+(56,628,2)
+(422,608,2)
+(821,628,2)
+(291,188,2)
+(409,188,2)
+(89,108,2)
+(689,334,2)
+(481,406,2)
+(570,264,2)
+(199,597,2)
+(752,461,2)
+(606,466,2)
+(621,762,2)
+(242,341,2)
+(830,762,2)
+(630,763,2)
+(222,385,2)
+(549,378,2)
+(750,806,2)
+(7,101,2)
+(381,134,2)
+(542,385,2)
+(515,138,2)
+(228,188,2)
+(609,796,2)
+(610,806,2)
+(345,628,2)
+(757,466,2)
+(17,199,2)
+(502,776,2)
+(709,525,2)
+(485,161,2)
+(276,185,2)
+(148,586,2)
+(777,465,2)
+(178,501,2)
+(243,746,2)
+(743,185,2)
+(754,231,2)
+(86,231,2)
+(179,1,2)
+(355,424,2)
+(142,385,2)
+(523,648,2)
+(55,829,2)
+(281,776,2)
+(561,424,2)
+(544,644,2)
+(102,221,2)
+(526,334,2)
+(196,141,2)
+(175,721,2)
+(13,554,2)
+(714,339,2)
+(568,751,2)
+(297,340,2)
+(91,209,2)
+(217,264,2)
+(832,299,2)
+(847,471,2)
+(211,378,2)
+(329,487,2)
+(188,804,2)
+(179,833,2)
+(280,199,2)
+(838,254,2)
+(195,466,2)
+(457,763,2)
+(357,522,2)
+(206,628,2)
+(389,231,2)
+(666,185,2)
+(789,804,2)
+(236,324,2)
+(341,27,2)
+(359,231,2)
+(104,199,2)
+(199,776,2)
+(646,120,2)
+(270,762,2)
+(430,591,2)
+(177,541,2)
+(219,465,2)
+(111,241,2)
+(824,591,2)
+(111,231,2)
+(502,83,2)
+(843,710,2)
+(140,424,2)
+(132,481,2)
+(339,1,2)
+(20,93,2)
+(460,715,2)
+(469,624,2)
+(523,196,2)
+(406,501,2)
+(110,628,2)
+(312,334,2)
+(450,231,2)
+(311,628,2)
+(778,341,2)
+(4,776,2)
+(347,110,2)
+(433,494,2)
+(23,1,2)
+(619,763,2)
+(648,418,2)
+(759,199,2)
+(587,219,2)
+(616,461,2)
+(809,139,2)
+(611,209,2)
+(461,399,2)
+(386,231,2)
+(27,555,2)
+(135,385,2)
+(710,424,2)
+(655,101,2)
+(224,385,2)
+(506,378,2)
+(816,210,2)
+(751,586,2)
+(557,127,2)
+(391,334,2)
+(246,523,2)
+(104,643,2)
+(274,599,2)
+(728,796,2)
+(541,30,2)
+(572,753,2)
+(254,287,2)
+(209,0,2)
+(328,487,2)
+(481,26,2)
+(422,374,2)
+(757,544,2)
+(347,628,2)
+(692,1,2)
+(432,628,2)
+(815,424,2)
+(435,385,2)
+(79,461,2)
+(667,231,2)
+(658,231,2)
+(70,206,2)
+(768,120,2)
+(89,320,2)
+(78,429,2)
+(40,648,2)
+(363,56,2)
+(496,1,2)
+(193,829,2)
+(337,465,2)
+(195,199,2)
+(545,231,2)
+(715,471,2)
+(643,385,2)
+(703,209,2)
+(65,568,2)
+(476,628,2)
+(742,466,2)
+(195,209,2)
+(28,636,2)
+(686,168,2)
+(145,385,2)
+(470,522,2)
+(430,633,2)
+(189,231,2)
+(210,168,2)
+(327,413,2)
+(511,624,2)
+(452,535,2)
+(99,227,2)
+(632,628,2)
+(301,501,2)
+(247,829,2)
+(834,26,2)
+(323,624,2)
+(466,374,2)
+(139,829,2)
+(707,465,2)
+(745,678,2)
+(369,624,2)
+(647,0,2)
+(119,591,2)
+(492,177,2)
+(159,554,2)
+(700,762,2)
+(470,199,2)
+(254,231,2)
+(543,264,2)
+(582,466,2)
+(504,461,2)
+(631,471,2)
+(306,188,2)
+(631,385,2)
+(168,465,2)
+(647,385,2)
+(301,466,2)
+(364,1,2)
+(304,501,2)
+(546,728,2)
+(799,628,2)
+(303,1,2)
+(835,717,2)
+(182,624,2)
+(406,199,2)
+(196,648,2)
+(625,805,2)
+(805,628,2)
+(557,231,2)
+(475,636,2)
+(776,108,2)
+(57,291,2)
+(690,465,2)
+(780,628,2)
+(442,138,2)
+(538,501,2)
+(569,465,2)
+(575,1,2)
+(432,429,2)
+(231,243,2)
+(525,541,2)
+(26,739,2)
+(818,487,2)
+(829,406,2)
+(525,465,2)
+(127,154,2)
+(785,778,2)
+(166,148,2)
+(195,522,2)
+(599,1,2)
+(471,806,2)
+(601,334,2)
+(599,833,2)
+(828,131,2)
+(365,555,2)
+(734,751,2)
+(638,753,2)
+(713,378,2)
+(460,385,2)
+(559,385,2)
+(219,833,2)
+(380,219,2)
+(801,461,2)
+(548,231,2)
+(381,829,2)
+(815,231,2)
+(792,422,2)
+(340,424,2)
+(340,334,2)
+(10,762,2)
+(20,763,2)
+(152,585,2)
+(301,199,2)
+(302,728,2)
+(724,723,2)
+(74,460,2)
+(119,385,2)
+(788,138,2)
+(519,385,2)
+(566,237,2)
+(48,418,2)
+(390,753,2)
+(559,378,2)
+(34,406,2)
+(277,470,2)
+(564,728,2)
+(146,231,2)
+(825,714,2)
+(701,648,2)
+(545,838,2)
+(756,138,2)
+(846,385,2)
+(478,624,2)
+(624,669,2)
+(52,231,2)
+(24,231,2)
+(257,334,2)
+(158,1,2)
+(556,185,2)
+(498,599,2)
+(90,753,2)
+(2,231,2)
+(538,199,2)
+(838,231,2)
+(299,334,2)
+(393,796,2)
+(584,648,2)
+(321,592,2)
+(297,391,2)
+(697,374,2)
+(812,461,2)
+(629,188,2)
+(590,465,2)
+(728,209,2)
+(624,503,2)
+(15,471,2)
+(406,209,2)
+(769,259,2)
+(264,802,2)
+(0,519,2)
+(514,835,2)
+(1,168,2)
+(759,466,2)
+(591,723,2)
+(633,119,2)
+(209,6,2)
+(61,470,2)
+(520,723,2)
+(170,219,2)
+(147,785,2)
+(92,1,2)
+(19,751,2)
+(38,107,2)
+(64,185,2)
+(384,487,2)
+(786,148,2)
+(462,231,2)
+(661,261,2)
+(392,135,2)
+(525,223,2)
+(714,1,2)
+(682,709,2)
+(67,763,2)
+(503,669,2)
+(779,231,2)
+(190,199,2)
+(544,466,2)
+(326,592,2)
+(663,522,2)
+(743,556,2)
+(140,231,2)
+(843,231,2)
+(588,145,2)
+(461,188,2)
+(829,164,2)
+(178,222,2)
+(212,628,2)
+(256,566,2)
+(0,636,2)
+(435,624,2)
+(622,168,2)
+(709,465,2)
+(286,628,2)
+(69,576,2)
+(394,461,2)
+(467,413,2)
+(503,254,2)
+(702,760,2)
+(232,385,2)
+(379,259,2)
+(688,718,2)
+(503,835,2)
+(108,0,2)
+(516,259,2)
+(449,776,2)
+(143,522,2)
+(628,1,2)
+(109,251,2)
+(446,259,2)
+(260,334,2)
+(31,385,2)
+(540,211,2)
+(221,219,2)
+(745,219,2)
+(785,555,2)
+(717,753,2)
+(251,101,2)
+(375,728,2)
+(320,385,2)
+(298,559,2)
+(220,185,2)
+(695,723,2)
+(782,20,2)
+(665,338,2)
+(335,0,2)
+(197,185,2)
+(216,535,2)
+(237,209,2)
+(809,834,2)
+(518,385,2)
+(806,147,2)
+(763,385,2)
+(716,0,2)
+(727,501,2)
+(155,254,2)
+(196,418,2)
+(542,341,2)
+(301,209,2)
+-----------------------------------
+(0,wpa_key_mgmt_sha256(sm->key_mgmt)
+(1,key->type != EAPOL_KEY_TYPE_WPA && key->type != EAPOL_KEY_TYPE_RSN)
+(2,ret)
+(3,key_data_len)
+(4,wpa_msg(sm->ctx->msg_ctx, MSG_INFO,\n\\n\\t\\t\\t"WPA: CCMP is used, but EAPOL-Key "\n\\n\\t\\t\\t"descriptor version (%d)
+(5,if (key_info & WPA_KEY_INFO_KEY_TYPE)
+(6,sm->key_mgmt != WPA_KEY_MGMT_OSEN &&\n\\n\\t\\t    !wpa_key_mgmt_suite_b(sm->key_mgmt)
+(7,WPA_KEY_INFO_TYPE_HMAC_SHA1_AES)
+(8,*key)
+(9,ver)
+(10,sm)
+(11,)
+(12,ctx)
+(13,ver)
+(14,)
+(15,sm)
+(16,sm->ctx)
+(17,wpa_msg(sm->ctx->msg_ctx, MSG_INFO,\n\\n\\t\\t\\t\\t"WPA: Backwards compatibility: allow invalid "\n\\n\\t\\t\\t\\t"version for non-CCMP group keys")
+(18,peerkey)
+(19,key192)
+(20,os_memcmp(key->replay_counter, sm->rx_replay_counter,\n\\n\\t\\t      WPA_REPLAY_COUNTER_LEN)
+(21,break;)
+(22,msg_ctx)
+(23,0)
+(24,sm->ctx->msg_ctx)
+(25,peerkey->replay_counter)
+(26,peerkey = peerkey->next)
+(27,sm->proto)
+(28,sm)
+(29,ctx)
+(30,os_malloc(data_len)
+(31,sm->group_cipher)
+(32,_tmp)
+(33,goto out;)
+(34,peerkey->initiator)
+(35,)
+(36,)
+(37,ver != WPA_KEY_INFO_TYPE_AKM_DEFINED)
+(38,sm->ctx->msg_ctx)
+(39,if (wpa_key_mgmt_suite_b(sm->key_mgmt)
+(40,ctx)
+(41,keyhdrlen)
+(42,sm->ctx)
+(43,peerkey)
+(44,key_data)
+(45,*hdr)
+(46,)
+(47,sm->ctx)
+(48,(unsigned long)
+(49,sm)
+(50,if (!peerkey && sm->rx_replay_counter_set &&\n\\n\\t    os_memcmp(key->replay_counter, sm->rx_replay_counter,\n\\n\\t\\t      WPA_REPLAY_COUNTER_LEN)
+(51,)
+(52,length)
+(53,"RSN: EAPOL-Key Replay Counter did not "\n\\n\\t\\t\\t\\t"increase (STK)
+(54,sm)
+(55,key)
+(56,WPA_GET_BE16(key->key_info)
+(57,initiator)
+(58,if (sm->key_mgmt == WPA_KEY_MGMT_OSEN &&\n\\n\\t    ver != WPA_KEY_INFO_TYPE_AKM_DEFINED)
+(59,if (hdr->type != IEEE802_1X_TYPE_EAPOL_KEY)
+(60,goto out;)
+(61,initiator)
+(62,peerkey)
+(63,goto out;)
+(64,msg_ctx)
+(65,!peerkey &&\n\\n\\t    wpa_supplicant_verify_eapol_key_mic(sm, key192, ver, tmp, data_len)
+(66,wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,\n\\n\\t\\t\\t"WPA: EAPOL-Key Replay Counter did not increase - "\n\\n\\t\\t\\t"dropping packet")
+(67,rx_replay_counter)
+(68,"WPA: Ignored EAPOL-Key (Pairwise)
+(69,wpa_supplicant_process_1_of_4(sm, src_addr, key,\n\\n\\t\\t\\t\\t\\t\\t      ver, key_data,\n\\n\\t\\t\\t\\t\\t\\t      key_data_len)
+(70,wpa_msg(sm->ctx->msg_ctx, MSG_INFO, "WPA: Invalid EAPOL-Key "\n\\n\\t\\t\\t"frame - key_data overflow (%u > %u)
+(71,msg_ctx)
+(72,msg_ctx)
+(73,tmp)
+(74,key_info & WPA_KEY_INFO_KEY_TYPE)
+(75,ctx)
+(76,key_data = (u8 *)
+(77,ver)
+(78,key->type)
+(79,MSG_INFO)
+(80,key_data_len)
+(81,WPA_KEY_INFO_MIC)
+(82,sm->ctx)
+(83,sm->ctx)
+(84,keyhdrlen)
+(85,len)
+(86,tmp)
+(87,0)
+(88,ctx)
+(89,wpa_key_mgmt_suite_b(sm->key_mgmt)
+(90,key)
+(91,MSG_INFO)
+(92,24)
+(93,os_memcmp(key->replay_counter, sm->rx_replay_counter,\n\\n\\t\\t      WPA_REPLAY_COUNTER_LEN)
+(94,)
+(95,ctx)
+(96,)
+(97,keyhdrlen)
+(98,sizeof(*hdr)
+(99,key_data_len = WPA_GET_BE16(key->key_data_length)
+(100,sm->ctx)
+(101,!wpa_key_mgmt_suite_b(sm->key_mgmt)
+(102,(u8 *)
+(103,replay_counter)
+(104,sm->ctx->msg_ctx)
+(105,WPA_KEY_INFO_TYPE_AKM_DEFINED)
+(106,"WPA: RX EAPOL-Key")
+(107,sm->ctx)
+(108,sm->pairwise_cipher == WPA_CIPHER_CCMP)
+(109,!wpa_key_mgmt_suite_b(sm->key_mgmt)
+(110,ver = key_info & WPA_KEY_INFO_TYPE_MASK)
+(111,(unsigned long)
+(112,tmp)
+(113,msg_ctx)
+(114,proto)
+(115,ctx)
+(116,WPA_KEY_INFO_SMK_MESSAGE)
+(117,key_data)
+(118,MSG_WARNING)
+(119,sm->key_mgmt)
+(120,peerkey->initiator)
+(121,MSG_INFO)
+(122,)
+(123,buf)
+(124,sm)
+(125,src_addr)
+(126,if (wpa_key_mgmt_ft(sm->key_mgmt)
+(127,ret = -1)
+(128,key_info)
+(129,key_mgmt)
+(130,msg_ctx)
+(131,key_data_len = WPA_GET_BE16(key192->key_data_length)
+(132,rx_replay_counter_set)
+(133,key)
+(134,os_memcmp(key->replay_counter, peerkey->replay_counter,\n\\n\\t\\t\\t      WPA_REPLAY_COUNTER_LEN)
+(135,peerkey_verify_eapol_key_mic(sm, peerkey, key192, ver, tmp,\n\\n\\t\\t\\t\\t\\t data_len)
+(136,peerkey)
+(137,if (mic_len == 24)
+(138,key_info & WPA_KEY_INFO_MIC)
+(139,key->replay_counter)
+(140,*hdr)
+(141,unsigned long)
+(142,sm->ctx)
+(143,msg_ctx)
+(144,mic_len)
+(145,sm->ctx)
+(146,data_len)
+(147,key_info & WPA_KEY_INFO_ENCR_KEY_DATA)
+(148,(key_info & WPA_KEY_INFO_MIC)
+(149,24)
+(150,key_info)
+(151,)
+(152,wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,\n\\n\\t\\t\\t"WPA: EAPOL frame too short to be a WPA "\n\\n\\t\\t\\t"EAPOL-Key (len %lu, expecting at least %lu)
+(153,ret)
+(154,-1)
+(155,plen - keyhdrlen)
+(156,ctx)
+(157,ret)
+(158,ret = 0)
+(159,key_data)
+(160,)
+(161,key_info & WPA_KEY_INFO_REQUEST)
+(162,msg_ctx)
+(163,if (!(key_info & WPA_KEY_INFO_MIC)
+(164,!peerkey->initiator)
+(165,goto out;)
+(166,WPA_KEY_INFO_MIC)
+(167,data_len)
+(168,key->type != EAPOL_KEY_TYPE_WPA)
+(169,if (ver != WPA_KEY_INFO_TYPE_AES_128_CMAC &&\n\\n\\t\\t    sm->key_mgmt != WPA_KEY_MGMT_OSEN &&\n\\n\\t\\t    !wpa_key_mgmt_suite_b(sm->key_mgmt)
+(170,1)
+(171,sm->ctx->msg_ctx)
+(172,if (tmp == NULL)
+(173,keyhdrlen)
+(174,sm->ctx)
+(175,wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,\n\\n\\t\\t\\t\\t"RSN: EAPOL-Key Replay Counter did not "\n\\n\\t\\t\\t\\t"increase (STK)
+(176,)
+(177,tmp + sizeof(struct ieee802_1x_hdr)
+(178,sm->ctx->msg_ctx)
+(179,wpa_eapol_key_dump(sm, key, key_data_len, key192->key_mic, mic_len)
+(180,MSG_WARNING)
+(181,mic_len)
+(182,sm->ctx->msg_ctx)
+(183,sm->ctx->msg_ctx)
+(184,wpa_msg(sm->ctx->msg_ctx, MSG_INFO,\n\\n\\t\\t\\t"WPA: No Ack bit in key_info")
+(185,key_info & WPA_KEY_INFO_KEY_INDEX_MASK)
+(186,ver)
+(187,inc_byte_array(_tmp, WPA_REPLAY_COUNTER_LEN)
+(188,peerkey->initiator)
+(189,hdr->version < EAPOL_VERSION)
+(190,"WPA: Backwards compatibility: allow invalid "\n\\n\\t\\t\\t\\t"version for non-CCMP group keys")
+(191,peerkey)
+(192,ctx)
+(193,replay_counter)
+(194,tmp)
+(195,sm)
+(196,(unsigned long)
+(197,MSG_WARNING)
+(198,key)
+(199,sm->group_cipher != WPA_CIPHER_CCMP &&\n\\n\\t\\t    !(key_info & WPA_KEY_INFO_KEY_TYPE)
+(200,key_mgmt)
+(201,sm)
+(202,key_info)
+(203,ret = 0)
+(204,pairwise_cipher)
+(205,if (key_info & WPA_KEY_INFO_REQUEST)
+(206,(unsigned int)
+(207,RET)
+(208,)
+(209,ver != WPA_KEY_INFO_TYPE_AES_128_CMAC &&\n\\n\\t\\t    sm->key_mgmt != WPA_KEY_MGMT_OSEN &&\n\\n\\t\\t    !wpa_key_mgmt_suite_b(sm->key_mgmt)
+(210,key->type)
+(211,wpa_key_mgmt_suite_b(sm->key_mgmt)
+(212,key_info)
+(213,os_memcpy(_tmp, key->replay_counter,\n\\n\\t\\t\\t\\t  WPA_REPLAY_COUNTER_LEN)
+(214,peerkey)
+(215,)
+(216,key_info)
+(217,peerkey)
+(218,"WPA: EAPOL frame (type %u)
+(219,mic_len == 24)
+(220,goto out;)
+(221,key + 1)
+(222,sm->ctx)
+(223,sizeof(struct ieee802_1x_hdr)
+(224,sm->key_mgmt)
+(225,wpa_msg(sm->ctx->msg_ctx, MSG_INFO,\n\\n\\t\\t\\t\\t"FT: AP did not use AES-128-CMAC")
+(226,)
+(227,WPA_GET_BE16(key->key_data_length)
+(228,peerkey)
+(229,key_mic)
+(230,WPA_KEY_MGMT_OSEN)
+(231,len < sizeof(*hdr)
+(232,sm->ctx)
+(233,)
+(234,if (!peerkey->initiator && peerkey->replay_counter_set &&\n\\n\\t\\t    os_memcmp(key->replay_counter, peerkey->replay_counter,\n\\n\\t\\t\\t      WPA_REPLAY_COUNTER_LEN)
+(235,if ((key_info & WPA_KEY_INFO_MIC)
+(236,wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,\n\\n\\t\\t\\t\\t"WPA: Ignore EAPOL-Key with encrypted but unauthenticated data")
+(237,key_info & WPA_KEY_INFO_SMK_MESSAGE)
+(238,goto out;)
+(239,ver)
+(240,hdr)
+(241,unsigned long)
+(242,sm)
+(243,sizeof(*hdr)
+(244,0)
+(245,sm)
+(246,wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,\n\\n\\t\\t\\t"WPA: ignoring %lu bytes after the IEEE 802.1X data",\n\\n\\t\\t\\t(unsigned long)
+(247,peerkey)
+(248,WPA_REPLAY_COUNTER_LEN)
+(249,sm)
+(250,WPA_REPLAY_COUNTER_LEN)
+(251,ver != WPA_KEY_INFO_TYPE_HMAC_SHA1_AES)
+(252,WPA_KEY_INFO_KEY_TYPE)
+(253,)
+(254,plen = be_to_host16(hdr->length)
+(255,for (peerkey = sm->peerkey; peerkey; peerkey = peerkey->next)
+(256,peerkey)
+(257,ret)
+(258,MSG_WARNING)
+(259,!peerkey && sm->rx_replay_counter_set &&\n\\n\\t    os_memcmp(key->replay_counter, sm->rx_replay_counter,\n\\n\\t\\t      WPA_REPLAY_COUNTER_LEN)
+(260,wpa_hexdump(MSG_MSGDUMP, "WPA: RX EAPOL-Key", buf, len)
+(261,os_memcmp(_tmp, peerkey->replay_counter,\n\\n\\t\\t\\t\\t      WPA_REPLAY_COUNTER_LEN)
+(262,wpa_msg(sm->ctx->msg_ctx, MSG_INFO,\n\\n\\t\\t\\t\\t"WPA: AP did not use the "\n\\n\\t\\t\\t\\t"negotiated AES-128-CMAC")
+(263,ver)
+(264,peerkey)
+(265,sm->ctx->msg_ctx)
+(266,if (len < sizeof(*hdr)
+(267,msg_ctx)
+(268,key)
+(269,key)
+(270,sm)
+(271,if ((sm->proto == WPA_PROTO_RSN || sm->proto == WPA_PROTO_OSEN)
+(272,if (key_info & WPA_KEY_INFO_KEY_INDEX_MASK)
+(273,sm)
+(274,key192)
+(275,type)
+(276,ret = 1)
+(277,peerkey)
+(278,goto out;)
+(279,unsigned long)
+(280,WPA_KEY_INFO_TYPE_AES_128_CMAC)
+(281,pairwise_cipher)
+(282,peerkey)
+(283,)
+(284,hdr)
+(285,key_data_len)
+(286,WPA_KEY_INFO_TYPE_MASK)
+(287,be_to_host16(hdr->length)
+(288,MSG_DEBUG)
+(289,key)
+(290,_tmp)
+(291,peerkey)
+(292,sm->key_mgmt)
+(293,key_mgmt)
+(294,MSG_WARNING)
+(295,wpa_supplicant_process_1_of_2(sm, src_addr, key,\n\\n\\t\\t\\t\\t\\t\\t      key_data, key_data_len,\n\\n\\t\\t\\t\\t\\t\\t      ver)
+(296,"WPA: ignoring %lu bytes after the IEEE 802.1X data")
+(297,wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,\n\\n\\t\\t\\t"WPA: EAPOL frame (type %u)
+(298,sm->ctx->msg_ctx)
+(299,sizeof(*hdr)
+(300,NULL)
+(301,peerkey)
+(302,src_addr)
+(303,type)
+(304,wpa_msg(sm->ctx->msg_ctx, MSG_INFO,\n\\n\\t\\t\\t\\t"WPA: Interoperability workaround: allow incorrect (should have been HMAC-SHA1)
+(305,)
+(306,key)
+(307,key_data)
+(308,struct ieee802_1x_hdr)
+(309,ver != WPA_KEY_INFO_TYPE_AKM_DEFINED)
+(310,ver)
+(311,msg_ctx)
+(312,MSG_DEBUG)
+(313,peerkey_rx_eapol_4way(sm, peerkey, key, key_info, ver,\n\\n\\t\\t\\t\\t\\t      key_data, key_data_len)
+(314,key)
+(315,msg_ctx)
+(316,sm)
+(317,0)
+(318,wpa_mic_len(sm->key_mgmt)
+(319,_tmp)
+(320,sm->key_mgmt)
+(321,os_memcpy(tmp, buf, data_len)
+(322,*key192)
+(323,"WPA: EAPOL frame payload size %lu "\n\\n\\t\\t\\t"invalid (frame size %lu)
+(324,sm->ctx->msg_ctx)
+(325,WPA_GET_BE16(key192->key_data_length)
+(326,(const struct ieee802_1x_hdr *)
+(327,key_info)
+(328,key_info)
+(329,key)
+(330,mic_len)
+(331,sm->ctx)
+(332,)
+(333,"WPA: AP did not use the "\n\\n\\t\\t\\t\\t"negotiated AES-128-CMAC")
+(334,hdr->type != IEEE802_1X_TYPE_EAPOL_KEY)
+(335,sm)
+(336,sm)
+(337,EAPOL_KEY_TYPE_WPA)
+(338,unsigned long)
+(339,sm->ctx)
+(340,hdr->type)
+(341,sm->proto == WPA_PROTO_RSN)
+(342,len)
+(343,)
+(344,key_data_length)
+(345,key_info & WPA_KEY_INFO_TYPE_MASK)
+(346,struct wpa_eapol_key_192 *)
+(347,wpa_msg(sm->ctx->msg_ctx, MSG_INFO,\n\\n\\t\\t\\t"WPA: Unsupported EAPOL-Key descriptor version %d",\n\\n\\t\\t\\tver)
+(348,WPA_KEY_INFO_TYPE_AES_128_CMAC)
+(349,hdr->version)
+(350,sm)
+(351,ctx)
+(352,key_mgmt)
+(353,peerkey)
+(354,data_len)
+(355,*hdr)
+(356,if ((key_info & WPA_KEY_INFO_MIC)
+(357,goto out;)
+(358,tmp)
+(359,hdr->version)
+(360,MSG_INFO)
+(361,sm)
+(362,goto out;)
+(363,key_info = WPA_GET_BE16(key->key_info)
+(364,key_data_len)
+(365,sm)
+(366,wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,\n\\n\\t\\t\\t\\t"WPA: EAPOL-Key (Group)
+(367,if (plen > len - sizeof(*hdr)
+(368,ctx)
+(369,goto out;)
+(370,if (!(key_info & WPA_KEY_INFO_SMK_MESSAGE)
+(371,msg_ctx)
+(372,tmp)
+(373,MSG_DEBUG)
+(374,sm->pairwise_cipher == WPA_CIPHER_GCMP)
+(375,peerkey->addr)
+(376,sm)
+(377,eapol)
+(378,sm->key_mgmt == WPA_KEY_MGMT_OSEN &&\n\\n\\t    ver != WPA_KEY_INFO_TYPE_AKM_DEFINED)
+(379,goto out;)
+(380,key_data)
+(381,peerkey->replay_counter_set &&\n\\n\\t\\t    os_memcmp(key->replay_counter, peerkey->replay_counter,\n\\n\\t\\t\\t      WPA_REPLAY_COUNTER_LEN)
+(382,ver)
+(383,WPA_KEY_INFO_MIC)
+(384,key_data_len)
+(385,struct wpa_sm *sm)
+(386,sm->ctx->msg_ctx)
+(387,sm->ctx->msg_ctx)
+(388,key_data = (u8 *)
+(389,hdr)
+(390,key192)
+(391,sm->ctx->msg_ctx)
+(392,peerkey &&\n\\n\\t    peerkey_verify_eapol_key_mic(sm, peerkey, key192, ver, tmp,\n\\n\\t\\t\\t\\t\\t data_len)
+(393,peerkey)
+(394,"RSN: Ack bit in key_info from STK peer")
+(395,unsigned long)
+(396,)
+(397,u8 *)
+(398,data_len)
+(399,peerkey->initiator && (key_info & WPA_KEY_INFO_ACK)
+(400,version)
+(401,proto)
+(402,struct wpa_eapol_key *)
+(403,WPA_PROTO_RSN)
+(404,sizeof(struct ieee802_1x_hdr)
+(405,MSG_INFO)
+(406,peerkey = sm->peerkey)
+(407,WPA_CIPHER_CCMP)
+(408,type)
+(409,_tmp)
+(410,goto out;)
+(411,sm)
+(412,1)
+(413,peerkey)
+(414,(unsigned long)
+(415,if (os_memcmp(_tmp, peerkey->replay_counter,\n\\n\\t\\t\\t\\t      WPA_REPLAY_COUNTER_LEN)
+(416,wpa_msg(sm->ctx->msg_ctx, MSG_INFO,\n\\n\\t\\t\\t"RSN: Unsupported EAPOL-Key descriptor version %d (expected AKM defined = 0)
+(417,if (peerkey && peerkey->initiator && (key_info & WPA_KEY_INFO_ACK)
+(418,size_t len)
+(419,WPA_REPLAY_COUNTER_LEN)
+(420,MSG_INFO)
+(421,key_info)
+(422,!wpa_key_mgmt_suite_b(sm->key_mgmt)
+(423,unsigned int)
+(424,hdr = (const struct ieee802_1x_hdr *)
+(425,MSG_DEBUG)
+(426,data_len)
+(427,ft_completed)
+(428,WPA_KEY_INFO_ENCR_KEY_DATA)
+(429,key = (struct wpa_eapol_key *)
+(430,!wpa_key_mgmt_suite_b(sm->key_mgmt)
+(431,)
+(432,key->key_info)
+(433,bin_clear_free(tmp, data_len)
+(434,hdr)
+(435,sm->ctx)
+(436,ver)
+(437,)
+(438,plen - keyhdrlen)
+(439,ver)
+(440,key_data_len)
+(441,WPA_KEY_INFO_MIC)
+(442,ver)
+(443,0)
+(444,"WPA: EAPOL frame too short to be a WPA "\n\\n\\t\\t\\t"EAPOL-Key (len %lu, expecting at least %lu)
+(445,len)
+(446,goto out;)
+(447,initiator)
+(448,EAPOL_VERSION)
+(449,MSG_INFO)
+(450,hdr)
+(451,ver)
+(452,key_info & WPA_KEY_INFO_KEY_TYPE)
+(453,wpa_msg(sm->ctx->msg_ctx, MSG_INFO,\n\\n\\t\\t\\t"WPA: EAPOL-Key with Request bit - dropped")
+(454,"RSN: Unsupported EAPOL-Key descriptor version %d (expected AKM defined = 0)
+(455,"WPA: EAPOL-Key with Request bit - dropped")
+(456,const struct ieee802_1x_hdr *)
+(457,key)
+(458,if (key->type != EAPOL_KEY_TYPE_WPA && key->type != EAPOL_KEY_TYPE_RSN)
+(459,sm->ctx->msg_ctx)
+(460,wpa_supplicant_decrypt_key_data(sm, key, ver, key_data,\n\\n\\t\\t\\t\\t\\t\\t    &key_data_len)
+(461,peerkey && peerkey->initiator && (key_info & WPA_KEY_INFO_ACK)
+(462,hdr)
+(463,key)
+(464,key_data_len)
+(465,tmp == NULL)
+(466,sm->pairwise_cipher == WPA_CIPHER_GCMP &&\n\\n\\t\\t   !wpa_key_mgmt_suite_b(sm->key_mgmt)
+(467,sm)
+(468,peerkey_rx_eapol_smk(sm, src_addr, key, key_data_len, key_info,\n\\n\\t\\t\\t\\t     ver)
+(469,sm)
+(470,!(key_info & WPA_KEY_INFO_SMK_MESSAGE)
+(471,!(key_info & WPA_KEY_INFO_MIC)
+(472,WPA_KEY_INFO_KEY_INDEX_MASK)
+(473,plen)
+(474,mic_len)
+(475,key_mgmt)
+(476,sm)
+(477,sm)
+(478,wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,\n\\n\\t\\t\\t"WPA: EAPOL frame payload size %lu "\n\\n\\t\\t\\t"invalid (frame size %lu)
+(479,msg_ctx)
+(480,1)
+(481,!peerkey)
+(482,type)
+(483,IEEE802_1X_TYPE_EAPOL_KEY)
+(484,mic_len)
+(485,goto out;)
+(486,msg_ctx)
+(487,key_info & WPA_KEY_INFO_SMK_MESSAGE)
+(488,ver != WPA_KEY_INFO_TYPE_HMAC_SHA1_AES)
+(489,"WPA: Ignore EAPOL-Key with encrypted but unauthenticated data")
+(490,WPA_KEY_INFO_REQUEST)
+(491,len)
+(492,(struct wpa_eapol_key *)
+(493,"RSN: EAPOL-Key Replay "\n\\n\\t\\t\\t\\t\\t"Counter did not match (STK)
+(494,*tmp = NULL)
+(495,ver)
+(496,key192->key_mic)
+(497,buf)
+(498,key_data_length)
+(499,tmp)
+(500,NULL)
+(501,ver == WPA_KEY_INFO_TYPE_AES_128_CMAC)
+(502,sm->ctx->msg_ctx)
+(503,plen < keyhdrlen)
+(504,goto out;)
+(505,msg_ctx)
+(506,sm)
+(507,key192)
+(508,key192)
+(509,out:)
+(510,key->replay_counter)
+(511,plen)
+(512,key_info)
+(513,key192)
+(514,(unsigned long)
+(515,wpa_supplicant_process_3_of_4(sm, key, ver, key_data,\n\\n\\t\\t\\t\\t\\t\\t      key_data_len)
+(516,sm->ctx)
+(517,sm)
+(518,sm->pairwise_cipher)
+(519,sm->key_mgmt)
+(520,WPA_KEY_MGMT_OSEN)
+(521,tmp)
+(522,ver != WPA_KEY_INFO_TYPE_AES_128_CMAC)
+(523,(unsigned long)
+(524,sm)
+(525,tmp + sizeof(struct ieee802_1x_hdr)
+(526,ctx)
+(527,goto out;)
+(528,hdr)
+(529,)
+(530,)
+(531,replay_counter)
+(532,sm)
+(533,MSG_INFO)
+(534,wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,\n\\n\\t\\t\\t\\t\\t"RSN: EAPOL-Key Replay "\n\\n\\t\\t\\t\\t\\t"Counter did not match (STK)
+(535,sm->group_cipher != WPA_CIPHER_CCMP)
+(536,sm->ft_completed = 0)
+(537,keyhdrlen)
+(538,WPA_KEY_INFO_SMK_MESSAGE)
+(539,)
+(540,ver)
+(541,tmp = os_malloc(data_len)
+(542,sm->proto)
+(543,sm)
+(544,sm->ctx->msg_ctx)
+(545,data_len = plen + sizeof(*hdr)
+(546,addr)
+(547,sm->key_mgmt)
+(548,msg_ctx)
+(549,ctx)
+(550,WPA_CIPHER_GCMP)
+(551,key_data)
+(552,len)
+(553,ctx)
+(554,key_info & WPA_KEY_INFO_MIC)
+(555,(key_info & WPA_KEY_INFO_MIC)
+(556,sm->ctx->msg_ctx)
+(557,return ret;)
+(558,ctx)
+(559,sm->ctx)
+(560,sm)
+(561,hdr->type)
+(562,key_data_len)
+(563,unsigned long)
+(564,os_memcmp(peerkey->addr, src_addr, ETH_ALEN)
+(565,if (mic_len == 24)
+(566,!(key_info & WPA_KEY_INFO_SMK_MESSAGE)
+(567,EAPOL_KEY_TYPE_RSN)
+(568,wpa_supplicant_verify_eapol_key_mic(sm, key192, ver, tmp, data_len)
+(569,24)
+(570,data_len)
+(571,key_info)
+(572,sizeof(*key)
+(573,ctx)
+(574,*peerkey = NULL)
+(575,mic_len)
+(576,const u8 *src_addr)
+(577,plen)
+(578,ctx)
+(579,"WPA: Unsupported EAPOL-Key descriptor version %d")
+(580,if (peerkey)
+(581,hdr)
+(582,goto out;)
+(583,sm)
+(584,sm->ctx)
+(585,(unsigned long)
+(586,key_info & WPA_KEY_INFO_MIC)
+(587,key)
+(588,sm->ctx->msg_ctx)
+(589,msg_ctx)
+(590,key->type)
+(591,sm->key_mgmt != WPA_KEY_MGMT_OSEN)
+(592,const u8 *buf)
+(593,WPA_PROTO_OSEN)
+(594,*hdr)
+(595,key)
+(596,msg_ctx)
+(597,!(key_info & WPA_KEY_INFO_KEY_TYPE)
+(598,ret)
+(599,mic_len == 24)
+(600,plen)
+(601,goto out;)
+(602,len)
+(603,1)
+(604,hdr)
+(605,MSG_INFO)
+(606,msg_ctx)
+(607,group_cipher)
+(608,wpa_key_mgmt_suite_b(sm->key_mgmt)
+(609,next)
+(610,key_info & WPA_KEY_INFO_MIC)
+(611,peerkey)
+(612,0)
+(613,sm->ctx)
+(614,data_len)
+(615,key_mgmt)
+(616,peerkey)
+(617,)
+(618,key)
+(619,key->replay_counter)
+(620,if (key_data_len > plen - keyhdrlen)
+(621,msg_ctx)
+(622,type)
+(623,ret)
+(624,plen > len - sizeof(*hdr)
+(625,eapol_sm_notify_lower_layer_success(sm->eapol, 0)
+(626,if (key_info & WPA_KEY_INFO_MIC)
+(627,"WPA: EAPOL-Key (Group)
+(628,key_data_len > plen - keyhdrlen)
+(629,WPA_REPLAY_COUNTER_LEN)
+(630,sm)
+(631,sm->ctx)
+(632,ver)
+(633,wpa_key_mgmt_suite_b(sm->key_mgmt)
+(634,sm->rx_replay_counter)
+(635,sm)
+(636,wpa_key_mgmt_ft(sm->key_mgmt)
+(637,key_info)
+(638,sizeof(*key192)
+(639,)
+(640,ctx)
+(641,if (data_len < len)
+(642,sm)
+(643,sm->ctx)
+(644,sm->ctx)
+(645,0)
+(646,WPA_KEY_INFO_ACK)
+(647,sm->pairwise_cipher)
+(648,data_len < len)
+(649,keyhdrlen)
+(650,"WPA: No Ack bit in key_info")
+(651,keyhdrlen)
+(652,ret = 0)
+(653,sm)
+(654,WPA_KEY_INFO_KEY_TYPE)
+(655,ver)
+(656,sm)
+(657,)
+(658,type)
+(659,ETH_ALEN)
+(660,"WPA: EAPOL-Key Replay Counter did not increase - "\n\\n\\t\\t\\t"dropping packet")
+(661,sm)
+(662,sm->ctx)
+(663,sm->ctx->msg_ctx)
+(664,key)
+(665,(unsigned long)
+(666,ctx)
+(667,0)
+(668,replay_counter_set)
+(669,plen > len - sizeof(*hdr)
+(670,if (os_memcmp(peerkey->addr, src_addr, ETH_ALEN)
+(671,)
+(672,sm->peerkey)
+(673,NULL)
+(674,0)
+(675,MSG_MSGDUMP)
+(676,sm)
+(677,goto out;)
+(678,key192 + 1)
+(679,key)
+(680,)
+(681,)
+(682,key192 = (struct wpa_eapol_key_192 *)
+(683,ctx)
+(684,msg_ctx)
+(685,key192->key_data_length)
+(686,key)
+(687,)
+(688,sm->key_mgmt == WPA_KEY_MGMT_OSEN)
+(689,hdr)
+(690,goto out;)
+(691,"FT: AP did not use AES-128-CMAC")
+(692,"WPA: EAPOL-Key type (%d)
+(693,"WPA: CCMP is used, but EAPOL-Key "\n\\n\\t\\t\\t"descriptor version (%d)
+(694,sm)
+(695,sm->key_mgmt)
+(696,ver)
+(697,sm)
+(698,version)
+(699,key_mgmt)
+(700,MSG_INFO)
+(701,data_len)
+(702,sm->ctx->msg_ctx)
+(703,sm->ctx->msg_ctx)
+(704,)
+(705,src_addr)
+(706,unsigned int)
+(707,tmp)
+(708,ctx)
+(709,(struct wpa_eapol_key_192 *)
+(710,hdr->type)
+(711,ver)
+(712,goto out;)
+(713,"OSEN: Unsupported EAPOL-Key descriptor version %d")
+(714,sm->ctx->msg_ctx)
+(715,&key_data_len)
+(716,WPA_KEY_INFO_TYPE_AES_128_CMAC)
+(717,mic_len == 24 ? sizeof(*key192)
+(718,sm->key_mgmt)
+(719,WPA_REPLAY_COUNTER_LEN)
+(720,WPA_KEY_INFO_TYPE_HMAC_SHA1_AES)
+(721,sm->ctx->msg_ctx)
+(722,plen)
+(723,ver != WPA_KEY_INFO_TYPE_AES_128_CMAC)
+(724,sm)
+(725,sm)
+(726,"WPA: Invalid EAPOL-Key "\n\\n\\t\\t\\t"frame - key_data overflow (%u > %u)
+(727,"WPA: Interoperability workaround: allow incorrect (should have been HMAC-SHA1)
+(728,peerkey)
+(729,sm)
+(730,key_data)
+(731,replay_counter)
+(732,ver)
+(733,sm)
+(734,ver)
+(735,sm)
+(736,peerkey)
+(737,key_info)
+(738,plen)
+(739,peerkey->next)
+(740,goto out;)
+(741,if (sm->group_cipher != WPA_CIPHER_CCMP &&\n\\n\\t\\t    !(key_info & WPA_KEY_INFO_KEY_TYPE)
+(742,"WPA: GCMP is used, but EAPOL-Key "\n\\n\\t\\t\\t"descriptor version (%d)
+(743,wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,\n\\n\\t\\t\\t\\t"WPA: Ignored EAPOL-Key (Pairwise)
+(744,key_mgmt)
+(745,(u8 *)
+(746,sizeof(*hdr)
+(747,plen)
+(748,key_info)
+(749,ret)
+(750,WPA_KEY_INFO_MIC)
+(751,!peerkey)
+(752,sm)
+(753,mic_len == 24)
+(754,hdr)
+(755,tmp)
+(756,sm)
+(757,wpa_msg(sm->ctx->msg_ctx, MSG_INFO,\n\\n\\t\\t\\t"WPA: GCMP is used, but EAPOL-Key "\n\\n\\t\\t\\t"descriptor version (%d)
+(758,)
+(759,key_info)
+(760,sm->ctx)
+(761,key_info)
+(762,wpa_key_mgmt_suite_b(sm->key_mgmt)
+(763,sm->rx_replay_counter_set)
+(764,sm)
+(765,replay_counter)
+(766,if (ver != WPA_KEY_INFO_TYPE_AES_128_CMAC)
+(767,ctx)
+(768,key_info & WPA_KEY_INFO_ACK)
+(769,MSG_INFO)
+(770,MSG_DEBUG)
+(771,hdr)
+(772,MSG_DEBUG)
+(773,key_data_len)
+(774,struct ieee802_1x_hdr)
+(775,key_info)
+(776,sm->pairwise_cipher == WPA_CIPHER_CCMP &&\n\\n\\t    !wpa_key_mgmt_suite_b(sm->key_mgmt)
+(777,buf)
+(778,sm->proto == WPA_PROTO_OSEN)
+(779,sizeof(*hdr)
+(780,msg_ctx)
+(781,ctx)
+(782,sm->rx_replay_counter_set &&\n\\n\\t    os_memcmp(key->replay_counter, sm->rx_replay_counter,\n\\n\\t\\t      WPA_REPLAY_COUNTER_LEN)
+(783,key->key_data_length)
+(784,os_memcmp(_tmp, peerkey->replay_counter,\n\\n\\t\\t\\t\\t      WPA_REPLAY_COUNTER_LEN)
+(785,sm->proto == WPA_PROTO_RSN || sm->proto == WPA_PROTO_OSEN)
+(786,key_info)
+(787,)
+(788,ver)
+(789,sm)
+(790,"IEEE 802.1X RX: version=%d type=%d length=%lu")
+(791,msg_ctx)
+(792,!wpa_key_mgmt_suite_b(sm->key_mgmt)
+(793,if (hdr->version < EAPOL_VERSION)
+(794,ver)
+(795,MSG_INFO)
+(796,os_memcmp(peerkey->addr, src_addr, ETH_ALEN)
+(797,plen)
+(798,msg_ctx)
+(799,key_info)
+(800,key_data_len)
+(801,wpa_msg(sm->ctx->msg_ctx, MSG_INFO,\n\\n\\t\\t\\t"RSN: Ack bit in key_info from STK peer")
+(802,key_info & WPA_KEY_INFO_MIC)
+(803,)
+(804,!peerkey->initiator && peerkey->replay_counter_set &&\n\\n\\t\\t    os_memcmp(key->replay_counter, peerkey->replay_counter,\n\\n\\t\\t\\t      WPA_REPLAY_COUNTER_LEN)
+(805,sm->eapol)
+(806,(sm->proto == WPA_PROTO_RSN || sm->proto == WPA_PROTO_OSEN)
+(807,key_info)
+(808,key192)
+(809,os_memcmp(key->replay_counter, peerkey->replay_counter,\n\\n\\t\\t\\t      WPA_REPLAY_COUNTER_LEN)
+(810,WPA_KEY_INFO_TYPE_AKM_DEFINED)
+(811,sm)
+(812,sm->ctx)
+(813,sm->ctx->msg_ctx)
+(814,key_mgmt)
+(815,hdr->length)
+(816,key->type != EAPOL_KEY_TYPE_RSN)
+(817,len)
+(818,src_addr)
+(819,wpa_msg(sm->ctx->msg_ctx, MSG_INFO,\n\\n\\t\\t\\t"OSEN: Unsupported EAPOL-Key descriptor version %d",\n\\n\\t\\t\\tver)
+(820,return 0;)
+(821,sm->ctx->msg_ctx)
+(822,key_data_len)
+(823,sm)
+(824,sm)
+(825,wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,\n\\n\\t\\t\\t"WPA: EAPOL-Key type (%d)
+(826,0)
+(827,if (wpa_supplicant_decrypt_key_data(sm, key, ver, key_data,\n\\n\\t\\t\\t\\t\\t\\t    &key_data_len)
+(828,(unsigned int)
+(829,peerkey->replay_counter_set)
+(830,goto out;)
+(831,MSG_DEBUG)
+(832,len - sizeof(*hdr)
+(833,mic_len = wpa_mic_len(sm->key_mgmt)
+(834,peerkey->replay_counter)
+(835,keyhdrlen = mic_len == 24 ? sizeof(*key192)
+(836,sm->key_mgmt)
+(837,key192)
+(838,plen + sizeof(*hdr)
+(839,WPA_CIPHER_CCMP)
+(840,data_len)
+(841,plen)
+(842,key)
+(843,wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,\n\\n\\t\\t"IEEE 802.1X RX: version=%d type=%d length=%lu",\n\\n\\t\\thdr->version, hdr->type, (unsigned long)
+(844,ctx)
+(845,MSG_INFO)
+(846,sm->ft_completed)
+(847,key_data)
+(848,ctx)
+(849,key_data_len)
+(850,msg_ctx)
+(851,u8 *)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,1379 @@
+-----label-----
+1
+-----code-----
+void
+thread_lock_got_swap(const void *lock, enum thread_lock_kind kind,
+	const char *file, unsigned line, const void *plock, const void *element)
+{
+	struct thread_element *te = deconstify_pointer(element);
+	struct thread_lock_stack *tls;
+	struct thread_lock *l, *pl;
+
+	/*
+	 * This starts as thread_lock_got() would...
+	 */
+
+	if (NULL == te) {
+		te = thread_find(&te);
+	} else {
+		thread_element_check(te);
+	}
+
+	if G_UNLIKELY(NULL == te) {
+		/*
+		 * Cheaply check whether we are in the main thread, whilst it is
+		 * being created.
+		 */
+
+		if G_UNLIKELY(NULL == threads[0]) {
+			te = thread_get_main_if_first();
+			if (te != NULL)
+				goto found;
+		}
+		return;
+	}
+
+found:
+	if G_UNLIKELY(atomic_int_get(&thread_locks_disabled))
+		return;			/* We may not be recording locks in pass-through mode */
+
+	THREAD_STATS_INCX(locks_tracked);
+
+	tls = &te->locks;
+
+	if G_UNLIKELY(tls->capacity == tls->count) {
+		if (tls->overflow)
+			return;				/* Already signaled, we're crashing */
+		tls->overflow = TRUE;
+		s_rawwarn("%s overflowing its lock stack", thread_element_name(te));
+		thread_lock_dump(te);
+		s_error("too many locks grabbed simultaneously");
+	}
+
+	/*
+	 * No thread suspension is possible here contrary to thread_lock_got()
+	 * since we are already holding another lock.
+	 */
+
+	g_assert_log(tls->count != 0,
+		"%s(): expected at least 1 lock to be already held", G_STRFUNC);
+
+	pl = &tls->arena[tls->count - 1];
+
+	g_assert_log(plock == pl->lock,
+		"%s(): expected topmost lock to be %p, found %s %p",
+		G_STRFUNC, plock, thread_lock_kind_to_string(pl->kind), pl->lock);
+
+	/*
+	 * Record new lock before the previous lock so that the previous lock
+	 * can now be released without triggering any assertion failure.
+	 */
+
+	l = &tls->arena[tls->count++];
+	l->lock = pl->lock;			/* Previous lock becomes topmost lock */
+	l->file = pl->file;
+	l->line = pl->line;
+	l->kind = pl->kind;
+	pl->lock = lock;			/* New lock registered in place of previous */
+	pl->file = file;
+	pl->line = line;
+	pl->kind = kind;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+3,8
+3,9
+3,10
+5,6
+5,7
+7,8
+7,9
+10,11
+10,12
+11,12
+13,14
+15,16
+15,17
+17,18
+17,19
+20,21
+20,22
+22,23
+24,25
+24,26
+26,27
+26,28
+29,30
+29,31
+31,32
+31,33
+34,35
+34,36
+34,37
+34,38
+34,39
+34,40
+34,41
+34,42
+34,43
+34,44
+34,45
+34,46
+34,47
+34,48
+34,49
+34,50
+34,51
+34,52
+34,53
+34,54
+34,55
+35,36
+36,37
+36,38
+37,38
+39,40
+39,41
+39,42
+42,43
+43,44
+43,45
+44,45
+46,47
+48,49
+49,50
+49,51
+50,51
+52,53
+52,54
+55,56
+56,57
+56,58
+56,59
+57,58
+59,60
+59,61
+62,63
+62,64
+65,66
+65,67
+65,68
+66,67
+66,68
+67,68
+69,70
+71,72
+72,73
+73,74
+73,75
+74,75
+76,77
+76,78
+77,78
+79,80
+80,81
+82,83
+83,84
+84,85
+84,86
+85,86
+87,88
+89,90
+90,91
+91,92
+92,93
+92,94
+93,94
+95,96
+96,97
+98,99
+99,100
+99,101
+100,101
+102,103
+103,104
+103,105
+104,105
+107,108
+108,109
+109,110
+109,111
+109,112
+109,113
+110,111
+112,113
+112,114
+113,114
+113,115
+114,115
+119,120
+121,122
+122,123
+122,124
+123,124
+125,126
+126,127
+126,128
+127,128
+127,129
+128,129
+131,132
+131,133
+132,133
+132,134
+133,134
+137,138
+138,139
+138,140
+138,141
+138,142
+138,143
+138,144
+138,145
+139,140
+141,142
+141,143
+142,143
+144,145
+144,146
+145,146
+149,150
+151,152
+153,154
+153,155
+154,155
+156,157
+156,158
+157,158
+160,161
+160,162
+161,162
+164,165
+165,166
+165,167
+166,167
+168,169
+169,170
+169,171
+170,171
+170,172
+171,172
+174,175
+175,176
+175,177
+176,177
+179,180
+180,181
+180,182
+181,182
+181,183
+182,183
+185,186
+185,187
+186,187
+189,190
+190,191
+190,192
+191,192
+191,193
+192,193
+195,196
+195,197
+196,197
+199,200
+200,201
+200,202
+201,202
+201,203
+202,203
+205,206
+205,207
+206,207
+209,210
+210,211
+210,212
+211,212
+211,213
+212,213
+215,216
+215,217
+216,217
+219,220
+220,221
+220,222
+221,222
+221,223
+222,223
+225,226
+227,228
+228,229
+228,230
+229,230
+229,231
+230,231
+233,234
+235,236
+236,237
+236,238
+237,238
+237,239
+238,239
+241,242
+243,244
+244,245
+244,246
+245,246
+245,247
+246,247
+249,250
+-----nextToken-----
+2,4,6,8,9,12,14,16,18,19,21,23,25,27,28,30,32,33,38,40,41,45,47,51,53,54,58,60,61,63,64,68,70,75,78,81,86,88,94,97,101,105,106,111,115,116,117,118,120,124,129,130,134,135,136,140,143,146,147,148,150,152,155,158,159,162,163,167,172,173,177,178,183,184,187,188,193,194,197,198,203,204,207,208,213,214,217,218,223,224,226,231,232,234,239,240,242,247,248,250
+-----computeFrom-----
+66,67
+66,68
+73,74
+73,75
+99,100
+99,101
+112,113
+112,114
+122,123
+122,124
+131,132
+131,133
+141,142
+141,143
+165,166
+165,167
+180,181
+180,182
+190,191
+190,192
+200,201
+200,202
+210,211
+210,212
+220,221
+220,222
+228,229
+228,230
+236,237
+236,238
+244,245
+244,246
+-----guardedBy-----
+70,81
+-----guardedByNegation-----
+70,88
+-----lastLexicalUse-----
+70,88
+-----jump-----
+70,88
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;Declarator;Pointer;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ProblemStatement;ProblemStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ProblemStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;LiteralExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;
+-----ast_node-----
+voidthread_lock_got_swap(const void *lock, enum thread_lock_kind kind,	const char *file, unsigned line, const void *plock, const void *element){	struct thread_element *te = deconstify_pointer(element);	struct thread_lock_stack *tls;	struct thread_lock *l, *pl;	/*	 * This starts as thread_lock_got() would...	 */	if (NULL == te) {		te = thread_find(&te);	} else {		thread_element_check(te);	}	if G_UNLIKELY(NULL == te) {		/*		 * Cheaply check whether we are in the main thread, whilst it is		 * being created.		 */		if G_UNLIKELY(NULL == threads[0]) {			te = thread_get_main_if_first();			if (te != NULL)				goto found;		}		return;	}found:	if G_UNLIKELY(atomic_int_get(&thread_locks_disabled))		return;			/* We may not be recording locks in pass-through mode */	THREAD_STATS_INCX(locks_tracked);	tls = &te->locks;	if G_UNLIKELY(tls->capacity == tls->count) {		if (tls->overflow)			return;				/* Already signaled, we're crashing */		tls->overflow = TRUE;		s_rawwarn("%s overflowing its lock stack", thread_element_name(te));		thread_lock_dump(te);		s_error("too many locks grabbed simultaneously");	}	/*	 * No thread suspension is possible here contrary to thread_lock_got()	 * since we are already holding another lock.	 */	g_assert_log(tls->count != 0,		"%s(): expected at least 1 lock to be already held", G_STRFUNC);	pl = &tls->arena[tls->count - 1];	g_assert_log(plock == pl->lock,		"%s(): expected topmost lock to be %p, found %s %p",		G_STRFUNC, plock, thread_lock_kind_to_string(pl->kind), pl->lock);	/*	 * Record new lock before the previous lock so that the previous lock	 * can now be released without triggering any assertion failure.	 */	l = &tls->arena[tls->count++];	l->lock = pl->lock;			/* Previous lock becomes topmost lock */	l->file = pl->file;	l->line = pl->line;	l->kind = pl->kind;	pl->lock = lock;			/* New lock registered in place of previous */	pl->file = file;	pl->line = line;	pl->kind = kind;}
+void
+thread_lock_got_swap(const void *lock, enum thread_lock_kind kind,	const char *file, unsigned line, const void *plock, const void *element)
+thread_lock_got_swap
+const void *lock
+const void
+*lock
+*
+lock
+enum thread_lock_kind kind
+enum thread_lock_kind
+thread_lock_kind
+kind
+kind
+const char *file
+const char
+*file
+*
+file
+unsigned line
+unsigned
+line
+line
+const void *plock
+const void
+*plock
+*
+plock
+const void *element
+const void
+*element
+*
+element
+{	struct thread_element *te = deconstify_pointer(element);	struct thread_lock_stack *tls;	struct thread_lock *l, *pl;	/*	 * This starts as thread_lock_got() would...	 */	if (NULL == te) {		te = thread_find(&te);	} else {		thread_element_check(te);	}	if G_UNLIKELY(NULL == te) {		/*		 * Cheaply check whether we are in the main thread, whilst it is		 * being created.		 */		if G_UNLIKELY(NULL == threads[0]) {			te = thread_get_main_if_first();			if (te != NULL)				goto found;		}		return;	}found:	if G_UNLIKELY(atomic_int_get(&thread_locks_disabled))		return;			/* We may not be recording locks in pass-through mode */	THREAD_STATS_INCX(locks_tracked);	tls = &te->locks;	if G_UNLIKELY(tls->capacity == tls->count) {		if (tls->overflow)			return;				/* Already signaled, we're crashing */		tls->overflow = TRUE;		s_rawwarn("%s overflowing its lock stack", thread_element_name(te));		thread_lock_dump(te);		s_error("too many locks grabbed simultaneously");	}	/*	 * No thread suspension is possible here contrary to thread_lock_got()	 * since we are already holding another lock.	 */	g_assert_log(tls->count != 0,		"%s(): expected at least 1 lock to be already held", G_STRFUNC);	pl = &tls->arena[tls->count - 1];	g_assert_log(plock == pl->lock,		"%s(): expected topmost lock to be %p, found %s %p",		G_STRFUNC, plock, thread_lock_kind_to_string(pl->kind), pl->lock);	/*	 * Record new lock before the previous lock so that the previous lock	 * can now be released without triggering any assertion failure.	 */	l = &tls->arena[tls->count++];	l->lock = pl->lock;			/* Previous lock becomes topmost lock */	l->file = pl->file;	l->line = pl->line;	l->kind = pl->kind;	pl->lock = lock;			/* New lock registered in place of previous */	pl->file = file;	pl->line = line;	pl->kind = kind;}
+struct thread_element *te = deconstify_pointer(element);
+struct thread_element *te = deconstify_pointer(element);
+struct thread_element
+thread_element
+*te = deconstify_pointer(element)
+*
+te
+= deconstify_pointer(element)
+deconstify_pointer(element)
+deconstify_pointer
+deconstify_pointer
+element
+element
+struct thread_lock_stack *tls;
+struct thread_lock_stack *tls;
+struct thread_lock_stack
+thread_lock_stack
+*tls
+*
+tls
+struct thread_lock *l, *pl;
+struct thread_lock *l, *pl;
+struct thread_lock
+thread_lock
+*l
+*
+l
+*pl
+*
+pl
+if (NULL == te) {		te = thread_find(&te);	} else {		thread_element_check(te);	}
+NULL == te
+NULL
+NULL
+te
+te
+{		te = thread_find(&te);	}
+te = thread_find(&te);
+te = thread_find(&te)
+te
+te
+thread_find(&te)
+thread_find
+thread_find
+&te
+te
+te
+{		thread_element_check(te);	}
+thread_element_check(te);
+thread_element_check(te)
+thread_element_check
+thread_element_check
+te
+te
+if G_UNLIKELY(NULL == te) {		/*		 * Cheaply check whether we are in the main thread, whilst it is		 * being created.		 */		if G_UNLIKELY(NULL == threads[0]) {			te = thread_get_main_if_first();			if (te != NULL)				goto found;		}		return;	}
+found:	if G_UNLIKELY(atomic_int_get(&thread_locks_disabled))		return;
+THREAD_STATS_INCX(locks_tracked);
+THREAD_STATS_INCX(locks_tracked);
+THREAD_STATS_INCX
+THREAD_STATS_INCX
+(locks_tracked)
+locks_tracked
+locks_tracked
+tls = &te->locks;
+tls = &te->locks
+tls
+tls
+&te->locks
+te->locks
+te
+te
+locks
+if G_UNLIKELY(tls->capacity == tls->count) {		if (tls->overflow)			return;				/* Already signaled, we're crashing */		tls->overflow = TRUE;		s_rawwarn("%s overflowing its lock stack", thread_element_name(te));		thread_lock_dump(te);		s_error("too many locks grabbed simultaneously");	}
+g_assert_log(tls->count != 0,		"%s(): expected at least 1 lock to be already held", G_STRFUNC);
+g_assert_log(tls->count != 0,		"%s(): expected at least 1 lock to be already held", G_STRFUNC)
+g_assert_log
+g_assert_log
+tls->count != 0
+tls->count
+tls
+tls
+count
+0
+"%s(): expected at least 1 lock to be already held"
+G_STRFUNC
+G_STRFUNC
+pl = &tls->arena[tls->count - 1];
+pl = &tls->arena[tls->count - 1]
+pl
+pl
+&tls->arena[tls->count - 1]
+tls->arena[tls->count - 1]
+tls->arena
+tls
+tls
+arena
+tls->count - 1
+tls->count
+tls
+tls
+count
+1
+g_assert_log(plock == pl->lock,		"%s(): expected topmost lock to be %p, found %s %p",		G_STRFUNC, plock, thread_lock_kind_to_string(pl->kind), pl->lock);
+g_assert_log(plock == pl->lock,		"%s(): expected topmost lock to be %p, found %s %p",		G_STRFUNC, plock, thread_lock_kind_to_string(pl->kind), pl->lock)
+g_assert_log
+g_assert_log
+plock == pl->lock
+plock
+plock
+pl->lock
+pl
+pl
+lock
+"%s(): expected topmost lock to be %p, found %s %p"
+G_STRFUNC
+G_STRFUNC
+plock
+plock
+thread_lock_kind_to_string(pl->kind)
+thread_lock_kind_to_string
+thread_lock_kind_to_string
+pl->kind
+pl
+pl
+kind
+pl->lock
+pl
+pl
+lock
+l = &tls->arena[tls->count++];
+l = &tls->arena[tls->count++]
+l
+l
+&tls->arena[tls->count++]
+tls->arena[tls->count++]
+tls->arena
+tls
+tls
+arena
+tls->count++
+tls->count
+tls
+tls
+count
+l->lock = pl->lock;
+l->lock = pl->lock
+l->lock
+l
+l
+lock
+pl->lock
+pl
+pl
+lock
+l->file = pl->file;
+l->file = pl->file
+l->file
+l
+l
+file
+pl->file
+pl
+pl
+file
+l->line = pl->line;
+l->line = pl->line
+l->line
+l
+l
+line
+pl->line
+pl
+pl
+line
+l->kind = pl->kind;
+l->kind = pl->kind
+l->kind
+l
+l
+kind
+pl->kind
+pl
+pl
+kind
+pl->lock = lock;
+pl->lock = lock
+pl->lock
+pl
+pl
+lock
+lock
+lock
+pl->file = file;
+pl->file = file
+pl->file
+pl
+pl
+file
+file
+file
+pl->line = line;
+pl->line = line
+pl->line
+pl
+pl
+line
+line
+line
+pl->kind = kind;
+pl->kind = kind
+pl->kind
+pl
+pl
+kind
+kind
+kind
+-----joern-----
+(12,80,0)
+(60,103,0)
+(82,53,0)
+(47,111,0)
+(153,53,0)
+(75,123,0)
+(94,109,0)
+(14,46,0)
+(147,42,0)
+(72,42,0)
+(115,80,0)
+(141,54,0)
+(21,13,0)
+(148,104,0)
+(63,105,0)
+(83,142,0)
+(161,108,0)
+(38,125,0)
+(146,21,0)
+(55,80,0)
+(67,115,0)
+(66,144,0)
+(87,88,0)
+(53,80,0)
+(20,71,0)
+(117,107,0)
+(101,62,0)
+(134,137,0)
+(103,148,0)
+(50,35,0)
+(25,135,0)
+(29,80,0)
+(103,53,0)
+(128,43,0)
+(99,153,0)
+(43,80,0)
+(155,84,0)
+(88,87,0)
+(111,80,0)
+(151,125,0)
+(11,117,0)
+(77,80,0)
+(68,80,0)
+(114,112,0)
+(121,80,0)
+(124,31,0)
+(23,67,0)
+(105,111,0)
+(136,15,0)
+(159,84,0)
+(160,111,0)
+(138,37,0)
+(44,13,0)
+(145,72,0)
+(89,96,0)
+(116,111,0)
+(61,77,0)
+(91,12,0)
+(130,72,0)
+(91,111,0)
+(84,111,0)
+(40,118,0)
+(41,115,0)
+(122,145,0)
+(101,139,0)
+(93,101,0)
+(72,81,0)
+(118,71,0)
+(27,137,0)
+(142,83,0)
+(149,116,0)
+(139,77,0)
+(85,88,0)
+(109,125,0)
+(125,109,0)
+(8,122,0)
+(18,156,0)
+(34,111,0)
+(8,111,0)
+(160,107,0)
+(145,122,0)
+(145,144,0)
+(122,8,0)
+(107,160,0)
+(52,82,0)
+(50,111,0)
+(107,21,0)
+(112,114,0)
+(153,104,0)
+(16,106,0)
+(79,41,0)
+(56,91,0)
+(36,93,0)
+(13,21,0)
+(70,80,0)
+(4,145,0)
+(83,54,0)
+(22,80,0)
+(30,101,0)
+(137,156,0)
+(97,80,0)
+(154,88,0)
+(20,87,0)
+(59,112,0)
+(129,105,0)
+(41,71,0)
+(49,8,0)
+(10,42,0)
+(118,86,0)
+(109,29,0)
+(86,84,0)
+(100,19,0)
+(106,71,0)
+(71,162,0)
+(73,37,0)
+(92,145,0)
+(100,61,0)
+(104,148,0)
+(24,50,0)
+(111,160,0)
+(145,80,0)
+(162,104,0)
+(120,117,0)
+(57,29,0)
+(144,145,0)
+(107,117,0)
+(9,135,0)
+(126,124,0)
+(98,8,0)
+(76,144,0)
+(135,37,0)
+(143,34,0)
+(33,25,0)
+(105,108,0)
+(58,93,0)
+(117,53,0)
+(142,1,0)
+(69,20,0)
+(90,145,0)
+(140,53,0)
+(84,86,0)
+(113,116,0)
+(27,158,0)
+(125,53,0)
+(74,15,0)
+(2,103,0)
+(21,107,0)
+(144,111,0)
+(96,163,0)
+(131,20,0)
+(72,145,0)
+(37,80,0)
+(156,3,0)
+(42,111,0)
+(6,13,0)
+(102,41,0)
+(29,109,0)
+(34,124,0)
+(135,25,0)
+(15,137,0)
+(13,53,0)
+(106,35,0)
+(19,80,0)
+(12,48,0)
+(32,118,0)
+(0,82,0)
+(42,72,0)
+(54,137,0)
+(124,80,0)
+(115,67,0)
+(28,91,0)
+(82,46,0)
+(65,106,0)
+(71,80,0)
+(53,114,0)
+(150,34,0)
+(7,73,0)
+(104,153,0)
+(95,67,0)
+(152,71,0)
+(133,12,0)
+(67,111,0)
+(100,132,0)
+(145,81,0)
+(137,80,0)
+(116,96,0)
+(51,27,0)
+(64,29,0)
+(127,142,0)
+(88,111,0)
+(87,80,0)
+(156,137,0)
+(86,80,0)
+(108,119,0)
+(46,37,0)
+(108,80,0)
+(148,103,0)
+(35,50,0)
+(123,53,0)
+(114,53,0)
+(157,45,0)
+(39,153,0)
+(96,80,0)
+(104,162,0)
+(162,71,0)
+(62,101,0)
+(26,50,0)
+(78,112,0)
+(35,80,0)
+(45,37,0)
+(54,83,0)
+(17,123,0)
+(110,139,0)
+(26,24,1)
+(0,123,1)
+(79,102,1)
+(142,83,1)
+(62,30,1)
+(162,104,1)
+(54,137,1)
+(108,119,1)
+(63,96,1)
+(12,48,1)
+(137,156,1)
+(82,52,1)
+(82,53,1)
+(131,69,1)
+(24,106,1)
+(107,117,1)
+(96,89,1)
+(124,31,1)
+(106,71,1)
+(106,16,1)
+(84,111,1)
+(94,125,1)
+(14,82,1)
+(9,46,1)
+(56,28,1)
+(67,95,1)
+(19,5,1)
+(105,129,1)
+(8,98,1)
+(109,125,1)
+(161,105,1)
+(105,111,1)
+(145,144,1)
+(156,3,1)
+(13,44,1)
+(20,131,1)
+(60,2,1)
+(114,112,1)
+(127,15,1)
+(145,122,1)
+(125,151,1)
+(42,147,1)
+(147,10,1)
+(135,25,1)
+(40,87,1)
+(84,155,1)
+(85,154,1)
+(100,132,1)
+(50,26,1)
+(99,152,1)
+(109,94,1)
+(35,50,1)
+(25,33,1)
+(98,49,1)
+(49,90,1)
+(153,39,1)
+(29,57,1)
+(53,114,1)
+(156,18,1)
+(157,73,1)
+(27,137,1)
+(61,93,1)
+(45,157,1)
+(72,81,1)
+(117,53,1)
+(104,153,1)
+(58,101,1)
+(54,141,1)
+(38,45,1)
+(30,142,1)
+(87,88,1)
+(118,71,1)
+(152,145,1)
+(113,12,1)
+(160,107,1)
+(91,56,1)
+(5,93,1)
+(100,19,1)
+(67,111,1)
+(20,71,1)
+(115,67,1)
+(86,84,1)
+(108,161,1)
+(92,4,1)
+(28,124,1)
+(107,21,1)
+(100,108,1)
+(125,53,1)
+(75,53,1)
+(150,143,1)
+(117,120,1)
+(33,9,1)
+(116,111,1)
+(155,159,1)
+(50,111,1)
+(15,137,1)
+(11,47,1)
+(47,29,1)
+(153,53,1)
+(27,51,1)
+(146,13,1)
+(116,149,1)
+(69,71,1)
+(42,111,1)
+(118,32,1)
+(145,72,1)
+(89,116,1)
+(149,113,1)
+(52,0,1)
+(112,59,1)
+(57,64,1)
+(141,127,1)
+(104,148,1)
+(95,23,1)
+(130,111,1)
+(151,38,1)
+(144,111,1)
+(29,109,1)
+(17,75,1)
+(120,11,1)
+(88,85,1)
+(91,111,1)
+(132,123,1)
+(143,115,1)
+(46,14,1)
+(8,111,1)
+(140,43,1)
+(123,17,1)
+(64,109,1)
+(32,40,1)
+(88,111,1)
+(83,54,1)
+(71,162,1)
+(123,53,1)
+(6,117,1)
+(159,118,1)
+(129,63,1)
+(126,34,1)
+(96,163,1)
+(124,126,1)
+(34,111,1)
+(102,35,1)
+(13,53,1)
+(66,76,1)
+(93,36,1)
+(76,122,1)
+(73,7,1)
+(15,74,1)
+(148,103,1)
+(4,72,1)
+(74,136,1)
+(103,53,1)
+(44,6,1)
+(36,58,1)
+(90,92,1)
+(7,135,1)
+(23,41,1)
+(21,146,1)
+(34,150,1)
+(111,160,1)
+(103,60,1)
+(144,66,1)
+(78,140,1)
+(101,62,1)
+(10,130,1)
+(18,134,1)
+(122,8,1)
+(136,137,1)
+(2,153,1)
+(72,42,1)
+(154,20,1)
+(21,13,1)
+(93,101,1)
+(30,27,1)
+(145,81,1)
+(59,78,1)
+(65,86,1)
+(16,65,1)
+(41,71,1)
+(51,15,1)
+(100,61,1)
+(133,91,1)
+(12,133,1)
+(41,79,1)
+(39,99,1)
+(43,128,1)
+(32,123,2)
+(44,123,2)
+(54,137,2)
+(56,123,2)
+(67,123,2)
+(125,53,2)
+(82,123,2)
+(111,160,2)
+(12,48,2)
+(100,19,2)
+(14,123,2)
+(15,137,2)
+(34,123,2)
+(98,123,2)
+(66,123,2)
+(41,123,2)
+(72,123,2)
+(0,123,2)
+(105,123,2)
+(101,62,2)
+(159,123,2)
+(50,111,2)
+(86,84,2)
+(115,67,2)
+(45,123,2)
+(94,123,2)
+(29,123,2)
+(88,111,2)
+(79,123,2)
+(142,83,2)
+(153,53,2)
+(122,8,2)
+(145,81,2)
+(21,123,2)
+(135,25,2)
+(104,123,2)
+(149,123,2)
+(107,117,2)
+(21,13,2)
+(6,123,2)
+(20,71,2)
+(142,15,2)
+(102,123,2)
+(113,123,2)
+(111,123,2)
+(9,123,2)
+(124,31,2)
+(71,162,2)
+(60,123,2)
+(91,123,2)
+(117,53,2)
+(67,111,2)
+(148,103,2)
+(39,123,2)
+(53,114,2)
+(86,123,2)
+(120,123,2)
+(29,109,2)
+(93,101,2)
+(131,123,2)
+(83,54,2)
+(47,123,2)
+(87,123,2)
+(65,123,2)
+(96,123,2)
+(152,123,2)
+(52,123,2)
+(115,123,2)
+(141,15,2)
+(13,53,2)
+(83,15,2)
+(35,123,2)
+(72,81,2)
+(5,93,2)
+(96,163,2)
+(104,148,2)
+(107,21,2)
+(72,42,2)
+(4,123,2)
+(146,123,2)
+(34,111,2)
+(35,50,2)
+(160,123,2)
+(153,123,2)
+(84,123,2)
+(145,144,2)
+(64,123,2)
+(51,15,2)
+(117,123,2)
+(118,123,2)
+(23,123,2)
+(41,71,2)
+(73,123,2)
+(27,137,2)
+(42,111,2)
+(100,61,2)
+(151,123,2)
+(71,123,2)
+(88,123,2)
+(126,123,2)
+(145,72,2)
+(24,123,2)
+(161,123,2)
+(42,123,2)
+(148,123,2)
+(124,123,2)
+(150,123,2)
+(50,123,2)
+(145,122,2)
+(157,123,2)
+(69,123,2)
+(19,93,2)
+(109,123,2)
+(2,123,2)
+(144,123,2)
+(106,123,2)
+(123,53,2)
+(54,15,2)
+(122,123,2)
+(132,123,2)
+(162,123,2)
+(108,123,2)
+(145,123,2)
+(107,123,2)
+(90,123,2)
+(100,132,2)
+(116,123,2)
+(27,15,2)
+(135,123,2)
+(7,123,2)
+(130,123,2)
+(57,123,2)
+(89,123,2)
+(133,123,2)
+(33,123,2)
+(13,123,2)
+(84,111,2)
+(11,123,2)
+(104,153,2)
+(156,3,2)
+(8,123,2)
+(38,123,2)
+(125,123,2)
+(92,123,2)
+(147,123,2)
+(118,71,2)
+(76,123,2)
+(40,123,2)
+(20,123,2)
+(154,123,2)
+(144,111,2)
+(116,111,2)
+(108,119,2)
+(109,125,2)
+(87,88,2)
+(61,93,2)
+(8,111,2)
+(63,123,2)
+(103,123,2)
+(95,123,2)
+(137,156,2)
+(85,123,2)
+(114,112,2)
+(105,111,2)
+(99,123,2)
+(127,15,2)
+(46,123,2)
+(143,123,2)
+(155,123,2)
+(103,53,2)
+(25,123,2)
+(12,123,2)
+(106,71,2)
+(28,123,2)
+(10,123,2)
+(49,123,2)
+(16,123,2)
+(26,123,2)
+(160,107,2)
+(162,104,2)
+(82,53,2)
+(129,123,2)
+(91,111,2)
+-----------------------------------
+(0,tls)
+(1,)
+(2,tls)
+(3,const void *element)
+(4,"%s()
+(5,goto found;)
+(6,tls)
+(7,te)
+(8,pl->kind)
+(9,"%s overflowing its lock stack")
+(10,pl)
+(11,tls)
+(12,pl->file = file)
+(13,tls->count)
+(14,TRUE)
+(15,NULL == te)
+(16,line)
+(17,overflow)
+(18,element)
+(19,return;)
+(20,l->lock)
+(21,tls->count - 1)
+(22,if (NULL == te)
+(23,pl)
+(24,pl)
+(25,thread_element_name(te)
+(26,line)
+(27,thread_element_check(te)
+(28,pl)
+(29,g_assert_log(tls->count != 0,\n\\n\\t\\t"%s()
+(30,te)
+(31,const void *lock)
+(32,file)
+(33,te)
+(34,pl->lock)
+(35,l->line = pl->line)
+(36,NULL)
+(37,)
+(38,tls)
+(39,arena)
+(40,l)
+(41,l->kind)
+(42,pl->lock)
+(43,THREAD_STATS_INCX(locks_tracked)
+(44,count)
+(45,s_error("too many locks grabbed simultaneously")
+(46,tls->overflow = TRUE)
+(47,pl)
+(48,const char *file)
+(49,pl)
+(50,pl->line)
+(51,te)
+(52,overflow)
+(53,tls = &te->locks)
+(54,&te)
+(55,pl)
+(56,file)
+(57,G_STRFUNC)
+(58,te)
+(59,locks)
+(60,count)
+(61,return;)
+(62,thread_get_main_if_first()
+(63,pl)
+(64,"%s()
+(65,l)
+(66,lock)
+(67,pl->kind)
+(68,found:)
+(69,l)
+(70,l)
+(71,l = &tls->arena[tls->count++])
+(72,plock == pl->lock)
+(73,thread_lock_dump(te)
+(74,te)
+(75,tls)
+(76,pl)
+(77,)
+(78,te)
+(79,kind)
+(80,)
+(81,const void *plock)
+(82,tls->overflow)
+(83,thread_find(&te)
+(84,pl->file)
+(85,lock)
+(86,l->file = pl->file)
+(87,l->lock = pl->lock)
+(88,pl->lock)
+(89,line)
+(90,plock)
+(91,pl->file)
+(92,G_STRFUNC)
+(93,te != NULL)
+(94,0)
+(95,kind)
+(96,pl->line = line)
+(97,te)
+(98,kind)
+(99,tls)
+(100,RET)
+(101,te = thread_get_main_if_first()
+(102,l)
+(103,tls->count)
+(104,tls->arena[tls->count++])
+(105,pl->kind)
+(106,l->line)
+(107,tls->arena[tls->count - 1])
+(108,pl->kind = kind)
+(109,tls->count != 0)
+(110,if (te != NULL)
+(111,pl = &tls->arena[tls->count - 1])
+(112,te->locks)
+(113,pl)
+(114,&te->locks)
+(115,l->kind = pl->kind)
+(116,pl->line)
+(117,tls->arena)
+(118,l->file)
+(119,enum thread_lock_kind kind)
+(120,arena)
+(121,tls)
+(122,thread_lock_kind_to_string(pl->kind)
+(123,tls->overflow)
+(124,pl->lock = lock)
+(125,tls->count)
+(126,lock)
+(127,te)
+(128,locks_tracked)
+(129,kind)
+(130,plock)
+(131,lock)
+(132,return;)
+(133,file)
+(134,te)
+(135,s_rawwarn("%s overflowing its lock stack", thread_element_name(te)
+(136,NULL)
+(137,*te = deconstify_pointer(element)
+(138,if (tls->overflow)
+(139,)
+(140,tls)
+(141,te)
+(142,te = thread_find(&te)
+(143,pl)
+(144,pl->lock)
+(145,g_assert_log(plock == pl->lock,\n\\n\\t\\t"%s()
+(146,1)
+(147,lock)
+(148,tls->count++)
+(149,line)
+(150,lock)
+(151,count)
+(152,l)
+(153,tls->arena)
+(154,pl)
+(155,file)
+(156,deconstify_pointer(element)
+(157,"too many locks grabbed simultaneously")
+(158,)
+(159,pl)
+(160,&tls->arena[tls->count - 1])
+(161,kind)
+(162,&tls->arena[tls->count++])
+(163,unsigned line)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

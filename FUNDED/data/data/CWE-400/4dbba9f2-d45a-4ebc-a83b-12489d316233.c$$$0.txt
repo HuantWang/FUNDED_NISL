@@ -1,0 +1,1830 @@
+-----label-----
+1
+-----code-----
+struct irq_affinity_desc *
+irq_create_affinity_masks(unsigned int nvecs, struct irq_affinity *affd)
+{
+	unsigned int affvecs, curvec, usedvecs, i;
+	struct irq_affinity_desc *masks = NULL;
+
+	/*
+	 * Determine the number of vectors which need interrupt affinities
+	 * assigned. If the pre/post request exhausts the available vectors
+	 * then nothing to do here except for invoking the calc_sets()
+	 * callback so the device driver can adjust to the situation.
+	 */
+	if (nvecs > affd->pre_vectors + affd->post_vectors)
+		affvecs = nvecs - affd->pre_vectors - affd->post_vectors;
+	else
+		affvecs = 0;
+
+	/*
+	 * Simple invocations do not provide a calc_sets() callback. Install
+	 * the generic one.
+	 */
+	if (!affd->calc_sets)
+		affd->calc_sets = default_calc_sets;
+
+	/* Recalculate the sets */
+	affd->calc_sets(affd, affvecs);
+
+	if (WARN_ON_ONCE(affd->nr_sets > IRQ_AFFINITY_MAX_SETS))
+		return NULL;
+
+	/* Nothing to assign? */
+	if (!affvecs)
+		return NULL;
+
+	masks = kcalloc(nvecs, sizeof(*masks), GFP_KERNEL);
+	if (!masks)
+		return NULL;
+
+	/* Fill out vectors at the beginning that don't need affinity */
+	for (curvec = 0; curvec < affd->pre_vectors; curvec++)
+		cpumask_copy(&masks[curvec].mask, irq_default_affinity);
+
+	/*
+	 * Spread on present CPUs starting from affd->pre_vectors. If we
+	 * have multiple sets, build each sets affinity mask separately.
+	 */
+	for (i = 0, usedvecs = 0; i < affd->nr_sets; i++) {
+		unsigned int this_vecs = affd->set_size[i];
+		int ret;
+
+		ret = irq_build_affinity_masks(affd, curvec, this_vecs,
+					       curvec, masks);
+		if (ret) {
+			kfree(masks);
+			return NULL;
+		}
+		curvec += this_vecs;
+		usedvecs += this_vecs;
+	}
+
+	/* Fill out vectors at the end that don't need affinity */
+	if (usedvecs >= affvecs)
+		curvec = affd->pre_vectors + affvecs;
+	else
+		curvec = affd->pre_vectors + usedvecs;
+	for (; curvec < nvecs; curvec++)
+		cpumask_copy(&masks[curvec].mask, irq_default_affinity);
+
+	/* Mark the managed interrupts */
+	for (i = affd->pre_vectors; i < nvecs - affd->post_vectors; i++)
+		masks[i].is_managed = 1;
+
+	return masks;
+}
+-----children-----
+1,2
+1,3
+1,4
+2,3
+4,5
+4,6
+4,7
+4,8
+7,8
+7,9
+9,10
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+17,19
+17,20
+17,21
+17,22
+17,23
+17,24
+17,25
+17,26
+17,27
+17,28
+17,29
+17,30
+17,31
+17,32
+18,19
+19,20
+19,21
+19,22
+19,23
+19,24
+21,22
+23,24
+25,26
+27,28
+29,30
+30,31
+30,32
+31,32
+33,34
+33,35
+33,36
+36,37
+37,38
+39,40
+39,41
+39,42
+40,41
+40,42
+41,42
+43,44
+43,45
+44,45
+44,46
+45,46
+48,49
+48,50
+49,50
+52,53
+53,54
+53,55
+54,55
+56,57
+56,58
+57,58
+57,59
+58,59
+60,61
+60,62
+61,62
+64,65
+64,66
+65,66
+68,69
+69,70
+69,71
+70,71
+73,74
+73,75
+74,75
+75,76
+75,77
+76,77
+79,80
+80,81
+80,82
+81,82
+81,83
+82,83
+85,86
+87,88
+88,89
+88,90
+88,91
+89,90
+89,91
+90,91
+93,94
+95,96
+97,98
+97,99
+98,99
+98,100
+99,100
+101,102
+101,103
+102,103
+102,104
+103,104
+106,107
+108,109
+109,110
+111,112
+111,113
+112,113
+113,114
+115,116
+116,117
+118,119
+119,120
+119,121
+120,121
+122,123
+122,124
+122,125
+122,126
+123,124
+125,126
+127,128
+128,129
+129,130
+130,131
+132,133
+134,135
+134,136
+135,136
+136,137
+138,139
+139,140
+141,142
+141,143
+141,144
+141,145
+142,143
+143,144
+143,145
+144,145
+147,148
+147,149
+148,149
+150,151
+150,152
+151,152
+154,155
+155,156
+157,158
+158,159
+158,160
+158,161
+159,160
+161,162
+162,163
+162,164
+163,164
+163,165
+164,165
+166,167
+169,170
+171,172
+171,173
+171,174
+171,175
+172,173
+173,174
+173,175
+174,175
+174,176
+175,176
+178,179
+178,180
+179,180
+182,183
+182,184
+183,184
+185,186
+185,187
+186,187
+189,190
+190,191
+192,193
+192,194
+192,195
+192,196
+192,197
+192,198
+193,194
+194,195
+194,196
+196,197
+196,198
+198,199
+199,200
+199,201
+200,201
+200,202
+201,202
+204,205
+206,207
+207,208
+207,209
+209,210
+211,212
+212,213
+212,214
+213,214
+215,216
+215,217
+215,218
+215,219
+215,220
+215,221
+216,217
+218,219
+220,221
+222,223
+224,225
+226,227
+228,229
+228,230
+229,230
+231,232
+231,233
+232,233
+233,234
+233,235
+234,235
+236,237
+238,239
+239,240
+241,242
+242,243
+242,244
+243,244
+245,246
+247,248
+248,249
+248,250
+249,250
+251,252
+253,254
+253,255
+253,256
+254,255
+254,256
+255,256
+257,258
+259,260
+260,261
+260,262
+261,262
+263,264
+263,265
+264,265
+264,266
+265,266
+268,269
+270,271
+271,272
+271,273
+272,273
+274,275
+274,276
+275,276
+275,277
+276,277
+279,280
+281,282
+281,283
+281,284
+281,285
+283,284
+283,285
+284,285
+286,287
+288,289
+289,290
+291,292
+292,293
+292,294
+292,295
+293,294
+295,296
+296,297
+296,298
+297,298
+297,299
+298,299
+300,301
+303,304
+305,306
+305,307
+305,308
+305,309
+306,307
+307,308
+307,309
+308,309
+310,311
+310,312
+311,312
+314,315
+314,316
+315,316
+317,318
+317,319
+318,319
+320,321
+320,322
+321,322
+324,325
+325,326
+327,328
+328,329
+328,330
+329,330
+329,331
+330,331
+330,332
+331,332
+333,334
+337,338
+338,339
+-----nextToken-----
+3,5,6,8,10,13,15,16,20,22,24,26,28,32,34,35,38,42,46,47,50,51,55,59,62,63,66,67,71,72,77,78,83,84,86,91,92,94,96,100,104,105,107,110,114,117,121,124,126,131,133,137,140,145,146,149,152,153,156,160,165,167,168,170,176,177,180,181,184,187,188,191,195,197,202,203,205,208,210,214,217,219,221,223,225,227,230,235,237,240,244,246,250,252,256,258,262,266,267,269,273,277,278,280,282,285,287,290,294,299,301,302,304,309,312,313,316,319,322,323,326,332,334,335,336,339
+-----computeFrom-----
+40,41
+40,42
+43,44
+43,45
+53,54
+53,55
+56,57
+56,58
+57,58
+57,59
+69,70
+69,71
+80,81
+80,82
+101,102
+101,103
+119,120
+119,121
+143,144
+143,145
+147,148
+147,149
+174,175
+174,176
+178,179
+178,180
+182,183
+182,184
+212,213
+212,214
+242,243
+242,244
+248,249
+248,250
+254,255
+254,256
+260,261
+260,262
+263,264
+263,265
+271,272
+271,273
+274,275
+274,276
+283,284
+283,285
+307,308
+307,309
+314,315
+314,316
+317,318
+317,319
+328,329
+328,330
+-----guardedBy-----
+47,63
+51,67
+42,59
+50,66
+258,269
+-----guardedByNegation-----
+256,280
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;ElaboratedTypeSpecifier;Name;FunctionDeclarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;Declarator;Name;Declarator;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;IfStatement;UnaryExpression;IdExpression;Name;ReturnStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;UnaryExpression;UnaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;IdExpression;Name;ReturnStatement;IdExpression;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;IdExpression;Name;ForStatement;ExpressionStatement;ExpressionList;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ForStatement;NullStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;IdExpression;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;Name;LiteralExpression;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+struct irq_affinity_desc *irq_create_affinity_masks(unsigned int nvecs, struct irq_affinity *affd){	unsigned int affvecs, curvec, usedvecs, i;	struct irq_affinity_desc *masks = NULL;	/*	 * Determine the number of vectors which need interrupt affinities	 * assigned. If the pre/post request exhausts the available vectors	 * then nothing to do here except for invoking the calc_sets()	 * callback so the device driver can adjust to the situation.	 */	if (nvecs > affd->pre_vectors + affd->post_vectors)		affvecs = nvecs - affd->pre_vectors - affd->post_vectors;	else		affvecs = 0;	/*	 * Simple invocations do not provide a calc_sets() callback. Install	 * the generic one.	 */	if (!affd->calc_sets)		affd->calc_sets = default_calc_sets;	/* Recalculate the sets */	affd->calc_sets(affd, affvecs);	if (WARN_ON_ONCE(affd->nr_sets > IRQ_AFFINITY_MAX_SETS))		return NULL;	/* Nothing to assign? */	if (!affvecs)		return NULL;	masks = kcalloc(nvecs, sizeof(*masks), GFP_KERNEL);	if (!masks)		return NULL;	/* Fill out vectors at the beginning that don't need affinity */	for (curvec = 0; curvec < affd->pre_vectors; curvec++)		cpumask_copy(&masks[curvec].mask, irq_default_affinity);	/*	 * Spread on present CPUs starting from affd->pre_vectors. If we	 * have multiple sets, build each sets affinity mask separately.	 */	for (i = 0, usedvecs = 0; i < affd->nr_sets; i++) {		unsigned int this_vecs = affd->set_size[i];		int ret;		ret = irq_build_affinity_masks(affd, curvec, this_vecs,					       curvec, masks);		if (ret) {			kfree(masks);			return NULL;		}		curvec += this_vecs;		usedvecs += this_vecs;	}	/* Fill out vectors at the end that don't need affinity */	if (usedvecs >= affvecs)		curvec = affd->pre_vectors + affvecs;	else		curvec = affd->pre_vectors + usedvecs;	for (; curvec < nvecs; curvec++)		cpumask_copy(&masks[curvec].mask, irq_default_affinity);	/* Mark the managed interrupts */	for (i = affd->pre_vectors; i < nvecs - affd->post_vectors; i++)		masks[i].is_managed = 1;	return masks;}
+struct irq_affinity_desc
+irq_affinity_desc
+*irq_create_affinity_masks(unsigned int nvecs, struct irq_affinity *affd)
+*
+irq_create_affinity_masks
+unsigned int nvecs
+unsigned int
+nvecs
+nvecs
+struct irq_affinity *affd
+struct irq_affinity
+irq_affinity
+*affd
+*
+affd
+{	unsigned int affvecs, curvec, usedvecs, i;	struct irq_affinity_desc *masks = NULL;	/*	 * Determine the number of vectors which need interrupt affinities	 * assigned. If the pre/post request exhausts the available vectors	 * then nothing to do here except for invoking the calc_sets()	 * callback so the device driver can adjust to the situation.	 */	if (nvecs > affd->pre_vectors + affd->post_vectors)		affvecs = nvecs - affd->pre_vectors - affd->post_vectors;	else		affvecs = 0;	/*	 * Simple invocations do not provide a calc_sets() callback. Install	 * the generic one.	 */	if (!affd->calc_sets)		affd->calc_sets = default_calc_sets;	/* Recalculate the sets */	affd->calc_sets(affd, affvecs);	if (WARN_ON_ONCE(affd->nr_sets > IRQ_AFFINITY_MAX_SETS))		return NULL;	/* Nothing to assign? */	if (!affvecs)		return NULL;	masks = kcalloc(nvecs, sizeof(*masks), GFP_KERNEL);	if (!masks)		return NULL;	/* Fill out vectors at the beginning that don't need affinity */	for (curvec = 0; curvec < affd->pre_vectors; curvec++)		cpumask_copy(&masks[curvec].mask, irq_default_affinity);	/*	 * Spread on present CPUs starting from affd->pre_vectors. If we	 * have multiple sets, build each sets affinity mask separately.	 */	for (i = 0, usedvecs = 0; i < affd->nr_sets; i++) {		unsigned int this_vecs = affd->set_size[i];		int ret;		ret = irq_build_affinity_masks(affd, curvec, this_vecs,					       curvec, masks);		if (ret) {			kfree(masks);			return NULL;		}		curvec += this_vecs;		usedvecs += this_vecs;	}	/* Fill out vectors at the end that don't need affinity */	if (usedvecs >= affvecs)		curvec = affd->pre_vectors + affvecs;	else		curvec = affd->pre_vectors + usedvecs;	for (; curvec < nvecs; curvec++)		cpumask_copy(&masks[curvec].mask, irq_default_affinity);	/* Mark the managed interrupts */	for (i = affd->pre_vectors; i < nvecs - affd->post_vectors; i++)		masks[i].is_managed = 1;	return masks;}
+unsigned int affvecs, curvec, usedvecs, i;
+unsigned int affvecs, curvec, usedvecs, i;
+unsigned int
+affvecs
+affvecs
+curvec
+curvec
+usedvecs
+usedvecs
+i
+i
+struct irq_affinity_desc *masks = NULL;
+struct irq_affinity_desc *masks = NULL;
+struct irq_affinity_desc
+irq_affinity_desc
+*masks = NULL
+*
+masks
+= NULL
+NULL
+NULL
+if (nvecs > affd->pre_vectors + affd->post_vectors)		affvecs = nvecs - affd->pre_vectors - affd->post_vectors;	else		affvecs = 0;
+nvecs > affd->pre_vectors + affd->post_vectors
+nvecs
+nvecs
+affd->pre_vectors + affd->post_vectors
+affd->pre_vectors
+affd
+affd
+pre_vectors
+affd->post_vectors
+affd
+affd
+post_vectors
+affvecs = nvecs - affd->pre_vectors - affd->post_vectors;
+affvecs = nvecs - affd->pre_vectors - affd->post_vectors
+affvecs
+affvecs
+nvecs - affd->pre_vectors - affd->post_vectors
+nvecs - affd->pre_vectors
+nvecs
+nvecs
+affd->pre_vectors
+affd
+affd
+pre_vectors
+affd->post_vectors
+affd
+affd
+post_vectors
+affvecs = 0;
+affvecs = 0
+affvecs
+affvecs
+0
+if (!affd->calc_sets)		affd->calc_sets = default_calc_sets;
+!affd->calc_sets
+affd->calc_sets
+affd
+affd
+calc_sets
+affd->calc_sets = default_calc_sets;
+affd->calc_sets = default_calc_sets
+affd->calc_sets
+affd
+affd
+calc_sets
+default_calc_sets
+default_calc_sets
+affd->calc_sets(affd, affvecs);
+affd->calc_sets(affd, affvecs)
+affd->calc_sets
+affd
+affd
+calc_sets
+affd
+affd
+affvecs
+affvecs
+if (WARN_ON_ONCE(affd->nr_sets > IRQ_AFFINITY_MAX_SETS))		return NULL;
+WARN_ON_ONCE(affd->nr_sets > IRQ_AFFINITY_MAX_SETS)
+WARN_ON_ONCE
+WARN_ON_ONCE
+affd->nr_sets > IRQ_AFFINITY_MAX_SETS
+affd->nr_sets
+affd
+affd
+nr_sets
+IRQ_AFFINITY_MAX_SETS
+IRQ_AFFINITY_MAX_SETS
+return NULL;
+NULL
+NULL
+if (!affvecs)		return NULL;
+!affvecs
+affvecs
+affvecs
+return NULL;
+NULL
+NULL
+masks = kcalloc(nvecs, sizeof(*masks), GFP_KERNEL);
+masks = kcalloc(nvecs, sizeof(*masks), GFP_KERNEL)
+masks
+masks
+kcalloc(nvecs, sizeof(*masks), GFP_KERNEL)
+kcalloc
+kcalloc
+nvecs
+nvecs
+sizeof(*masks)
+(*masks)
+*masks
+masks
+masks
+GFP_KERNEL
+GFP_KERNEL
+if (!masks)		return NULL;
+!masks
+masks
+masks
+return NULL;
+NULL
+NULL
+for (curvec = 0; curvec < affd->pre_vectors; curvec++)		cpumask_copy(&masks[curvec].mask, irq_default_affinity);
+curvec = 0;
+curvec = 0
+curvec
+curvec
+0
+curvec < affd->pre_vectors
+curvec
+curvec
+affd->pre_vectors
+affd
+affd
+pre_vectors
+curvec++
+curvec
+curvec
+cpumask_copy(&masks[curvec].mask, irq_default_affinity);
+cpumask_copy(&masks[curvec].mask, irq_default_affinity)
+cpumask_copy
+cpumask_copy
+&masks[curvec].mask
+masks[curvec].mask
+masks[curvec]
+masks
+masks
+curvec
+curvec
+mask
+irq_default_affinity
+irq_default_affinity
+for (i = 0, usedvecs = 0; i < affd->nr_sets; i++) {		unsigned int this_vecs = affd->set_size[i];		int ret;		ret = irq_build_affinity_masks(affd, curvec, this_vecs,					       curvec, masks);		if (ret) {			kfree(masks);			return NULL;		}		curvec += this_vecs;		usedvecs += this_vecs;	}
+i = 0, usedvecs = 0;
+i = 0, usedvecs = 0
+i = 0
+i
+i
+0
+usedvecs = 0
+usedvecs
+usedvecs
+0
+i < affd->nr_sets
+i
+i
+affd->nr_sets
+affd
+affd
+nr_sets
+i++
+i
+i
+{		unsigned int this_vecs = affd->set_size[i];		int ret;		ret = irq_build_affinity_masks(affd, curvec, this_vecs,					       curvec, masks);		if (ret) {			kfree(masks);			return NULL;		}		curvec += this_vecs;		usedvecs += this_vecs;	}
+unsigned int this_vecs = affd->set_size[i];
+unsigned int this_vecs = affd->set_size[i];
+unsigned int
+this_vecs = affd->set_size[i]
+this_vecs
+= affd->set_size[i]
+affd->set_size[i]
+affd->set_size
+affd
+affd
+set_size
+i
+i
+int ret;
+int ret;
+int
+ret
+ret
+ret = irq_build_affinity_masks(affd, curvec, this_vecs,					       curvec, masks);
+ret = irq_build_affinity_masks(affd, curvec, this_vecs,					       curvec, masks)
+ret
+ret
+irq_build_affinity_masks(affd, curvec, this_vecs,					       curvec, masks)
+irq_build_affinity_masks
+irq_build_affinity_masks
+affd
+affd
+curvec
+curvec
+this_vecs
+this_vecs
+curvec
+curvec
+masks
+masks
+if (ret) {			kfree(masks);			return NULL;		}
+ret
+ret
+{			kfree(masks);			return NULL;		}
+kfree(masks);
+kfree(masks)
+kfree
+kfree
+masks
+masks
+return NULL;
+NULL
+NULL
+curvec += this_vecs;
+curvec += this_vecs
+curvec
+curvec
+this_vecs
+this_vecs
+usedvecs += this_vecs;
+usedvecs += this_vecs
+usedvecs
+usedvecs
+this_vecs
+this_vecs
+if (usedvecs >= affvecs)		curvec = affd->pre_vectors + affvecs;	else		curvec = affd->pre_vectors + usedvecs;
+usedvecs >= affvecs
+usedvecs
+usedvecs
+affvecs
+affvecs
+curvec = affd->pre_vectors + affvecs;
+curvec = affd->pre_vectors + affvecs
+curvec
+curvec
+affd->pre_vectors + affvecs
+affd->pre_vectors
+affd
+affd
+pre_vectors
+affvecs
+affvecs
+curvec = affd->pre_vectors + usedvecs;
+curvec = affd->pre_vectors + usedvecs
+curvec
+curvec
+affd->pre_vectors + usedvecs
+affd->pre_vectors
+affd
+affd
+pre_vectors
+usedvecs
+usedvecs
+for (; curvec < nvecs; curvec++)		cpumask_copy(&masks[curvec].mask, irq_default_affinity);
+;
+curvec < nvecs
+curvec
+curvec
+nvecs
+nvecs
+curvec++
+curvec
+curvec
+cpumask_copy(&masks[curvec].mask, irq_default_affinity);
+cpumask_copy(&masks[curvec].mask, irq_default_affinity)
+cpumask_copy
+cpumask_copy
+&masks[curvec].mask
+masks[curvec].mask
+masks[curvec]
+masks
+masks
+curvec
+curvec
+mask
+irq_default_affinity
+irq_default_affinity
+for (i = affd->pre_vectors; i < nvecs - affd->post_vectors; i++)		masks[i].is_managed = 1;
+i = affd->pre_vectors;
+i = affd->pre_vectors
+i
+i
+affd->pre_vectors
+affd
+affd
+pre_vectors
+i < nvecs - affd->post_vectors
+i
+i
+nvecs - affd->post_vectors
+nvecs
+nvecs
+affd->post_vectors
+affd
+affd
+post_vectors
+i++
+i
+i
+masks[i].is_managed = 1;
+masks[i].is_managed = 1
+masks[i].is_managed
+masks[i]
+masks
+masks
+i
+i
+is_managed
+1
+return masks;
+masks
+masks
+-----joern-----
+(112,42,0)
+(60,42,0)
+(61,60,0)
+(85,70,0)
+(77,41,0)
+(147,166,0)
+(33,0,0)
+(48,42,0)
+(136,178,0)
+(120,36,0)
+(26,153,0)
+(160,169,0)
+(165,83,0)
+(137,40,0)
+(163,84,0)
+(186,168,0)
+(63,190,0)
+(74,134,0)
+(156,144,0)
+(51,112,0)
+(189,93,0)
+(175,124,0)
+(76,89,0)
+(118,22,0)
+(84,97,0)
+(152,33,0)
+(93,162,0)
+(164,75,0)
+(8,177,0)
+(24,7,0)
+(91,182,0)
+(178,136,0)
+(44,169,0)
+(84,168,0)
+(187,42,0)
+(125,180,0)
+(110,75,0)
+(45,182,0)
+(27,136,0)
+(79,134,0)
+(167,184,0)
+(105,22,0)
+(92,4,0)
+(170,126,0)
+(175,89,0)
+(66,20,0)
+(181,175,0)
+(28,89,0)
+(121,32,0)
+(68,134,0)
+(191,191,0)
+(123,153,0)
+(41,100,0)
+(172,149,0)
+(2,60,0)
+(93,105,0)
+(70,119,0)
+(15,115,0)
+(33,184,0)
+(55,54,0)
+(21,172,0)
+(45,77,0)
+(162,93,0)
+(141,187,0)
+(170,62,0)
+(90,70,0)
+(122,89,0)
+(139,45,0)
+(164,54,0)
+(149,124,0)
+(79,47,0)
+(190,42,0)
+(134,134,0)
+(192,60,0)
+(29,97,0)
+(125,42,0)
+(60,35,0)
+(134,35,0)
+(115,89,0)
+(187,141,0)
+(91,89,0)
+(23,77,0)
+(64,4,0)
+(170,137,0)
+(4,92,0)
+(11,48,0)
+(190,178,0)
+(10,153,0)
+(161,22,0)
+(99,89,0)
+(21,22,0)
+(196,16,0)
+(67,32,0)
+(124,136,0)
+(105,172,0)
+(36,124,0)
+(31,172,0)
+(169,42,0)
+(107,161,0)
+(95,175,0)
+(101,89,0)
+(170,91,0)
+(48,79,0)
+(50,89,0)
+(146,171,0)
+(141,70,0)
+(106,165,0)
+(185,46,0)
+(58,36,0)
+(117,171,0)
+(161,172,0)
+(178,190,0)
+(52,17,0)
+(168,184,0)
+(3,0,0)
+(40,151,0)
+(175,42,0)
+(81,125,0)
+(60,16,0)
+(175,171,0)
+(188,86,0)
+(1,173,0)
+(86,42,0)
+(126,40,0)
+(34,135,0)
+(62,40,0)
+(72,135,0)
+(47,119,0)
+(164,112,0)
+(109,89,0)
+(146,124,0)
+(178,135,0)
+(79,48,0)
+(17,182,0)
+(57,89,0)
+(0,33,0)
+(65,144,0)
+(14,21,0)
+(134,47,0)
+(191,16,0)
+(39,105,0)
+(155,153,0)
+(87,171,0)
+(168,84,0)
+(36,47,0)
+(182,89,0)
+(96,89,0)
+(79,22,0)
+(184,86,0)
+(169,166,0)
+(94,146,0)
+(148,150,0)
+(32,182,0)
+(0,46,0)
+(20,111,0)
+(108,155,0)
+(157,71,0)
+(32,12,0)
+(83,165,0)
+(80,21,0)
+(71,16,0)
+(158,89,0)
+(49,124,0)
+(136,6,0)
+(131,40,0)
+(176,141,0)
+(145,112,0)
+(159,45,0)
+(30,9,0)
+(35,153,0)
+(36,134,0)
+(130,187,0)
+(128,47,0)
+(82,4,0)
+(77,45,0)
+(144,42,0)
+(182,32,0)
+(114,33,0)
+(194,79,0)
+(83,42,0)
+(166,169,0)
+(22,79,0)
+(135,178,0)
+(53,86,0)
+(4,64,0)
+(17,111,0)
+(191,153,0)
+(54,164,0)
+(19,35,0)
+(97,42,0)
+(37,16,0)
+(140,100,0)
+(113,64,0)
+(100,41,0)
+(9,182,0)
+(138,83,0)
+(73,191,0)
+(20,40,0)
+(136,124,0)
+(12,32,0)
+(13,89,0)
+(69,182,0)
+(180,125,0)
+(191,35,0)
+(149,144,0)
+(135,42,0)
+(25,47,0)
+(177,184,0)
+(165,70,0)
+(155,60,0)
+(38,62,0)
+(105,93,0)
+(104,48,0)
+(154,125,0)
+(41,77,0)
+(132,149,0)
+(97,84,0)
+(32,6,0)
+(183,191,0)
+(64,42,0)
+(116,60,0)
+(60,182,0)
+(193,137,0)
+(127,151,0)
+(149,172,0)
+(170,20,0)
+(21,6,0)
+(60,155,0)
+(12,7,0)
+(7,115,0)
+(78,190,0)
+(195,126,0)
+(173,162,0)
+(149,171,0)
+(36,171,0)
+(133,40,0)
+(59,75,0)
+(88,89,0)
+(60,191,0)
+(162,173,0)
+(166,16,0)
+(105,182,0)
+(143,89,0)
+(174,97,0)
+(144,149,0)
+(165,35,0)
+(75,42,0)
+(33,182,0)
+(84,6,0)
+(54,6,0)
+(5,60,0)
+(112,164,0)
+(40,42,0)
+(102,105,0)
+(45,16,0)
+(98,91,0)
+(56,89,0)
+(129,83,0)
+(179,89,0)
+(103,115,0)
+(7,12,0)
+(86,184,0)
+(142,187,0)
+(150,70,0)
+(75,164,0)
+(134,153,0)
+(18,64,0)
+(35,165,0)
+(135,72,1)
+(27,49,1)
+(85,166,1)
+(166,16,1)
+(3,33,1)
+(17,182,1)
+(183,73,1)
+(33,184,1)
+(12,7,1)
+(176,150,1)
+(20,40,1)
+(45,182,1)
+(31,36,1)
+(93,105,1)
+(138,19,1)
+(175,124,1)
+(126,195,1)
+(7,24,1)
+(174,29,1)
+(180,125,1)
+(170,20,1)
+(55,115,1)
+(150,148,1)
+(71,157,1)
+(81,124,1)
+(152,114,1)
+(48,11,1)
+(9,30,1)
+(36,47,1)
+(170,126,1)
+(86,188,1)
+(60,35,1)
+(9,182,1)
+(60,16,1)
+(71,16,1)
+(148,134,1)
+(2,5,1)
+(176,47,1)
+(196,37,1)
+(83,129,1)
+(187,142,1)
+(191,183,1)
+(140,41,1)
+(139,166,1)
+(177,8,1)
+(62,40,1)
+(170,91,1)
+(112,51,1)
+(195,92,1)
+(150,70,1)
+(108,35,1)
+(172,149,1)
+(144,156,1)
+(182,32,1)
+(30,182,1)
+(169,42,1)
+(64,18,1)
+(91,98,1)
+(185,0,1)
+(136,178,1)
+(20,66,1)
+(17,52,1)
+(100,140,1)
+(164,112,1)
+(45,159,1)
+(137,193,1)
+(25,128,1)
+(69,146,1)
+(33,182,1)
+(73,43,1)
+(46,185,1)
+(58,120,1)
+(70,90,1)
+(189,105,1)
+(36,58,1)
+(72,34,1)
+(52,43,1)
+(1,162,1)
+(117,87,1)
+(173,162,1)
+(187,42,1)
+(120,141,1)
+(173,1,1)
+(7,115,1)
+(134,68,1)
+(105,102,1)
+(149,144,1)
+(181,95,1)
+(54,164,1)
+(159,139,1)
+(79,194,1)
+(90,85,1)
+(128,70,1)
+(43,155,1)
+(23,45,1)
+(146,171,1)
+(188,53,1)
+(41,77,1)
+(161,172,1)
+(15,103,1)
+(32,12,1)
+(24,67,1)
+(77,45,1)
+(155,60,1)
+(87,54,1)
+(18,113,1)
+(77,23,1)
+(177,184,1)
+(161,107,1)
+(83,42,1)
+(37,9,1)
+(79,48,1)
+(97,42,1)
+(95,180,1)
+(91,182,1)
+(191,35,1)
+(115,15,1)
+(67,69,1)
+(32,121,1)
+(175,181,1)
+(133,180,1)
+(60,191,1)
+(160,147,1)
+(64,42,1)
+(105,22,1)
+(163,186,1)
+(104,118,1)
+(60,182,1)
+(110,59,1)
+(65,31,1)
+(0,33,1)
+(79,134,1)
+(162,93,1)
+(186,184,1)
+(45,16,1)
+(86,42,1)
+(40,42,1)
+(100,41,1)
+(36,124,1)
+(22,79,1)
+(74,191,1)
+(154,81,1)
+(146,94,1)
+(38,9,1)
+(105,182,1)
+(36,171,1)
+(129,138,1)
+(16,196,1)
+(165,83,1)
+(21,172,1)
+(134,47,1)
+(169,44,1)
+(61,2,1)
+(125,42,1)
+(14,161,1)
+(36,134,1)
+(98,168,1)
+(60,42,1)
+(4,64,1)
+(170,62,1)
+(121,12,1)
+(14,22,1)
+(105,172,1)
+(149,171,1)
+(156,65,1)
+(149,132,1)
+(79,47,1)
+(68,74,1)
+(8,46,1)
+(124,136,1)
+(193,146,1)
+(142,130,1)
+(4,82,1)
+(151,127,1)
+(93,189,1)
+(84,6,1)
+(106,83,1)
+(29,163,1)
+(125,154,1)
+(134,35,1)
+(92,4,1)
+(186,177,1)
+(171,117,1)
+(34,190,1)
+(59,55,1)
+(82,64,1)
+(167,21,1)
+(127,40,1)
+(21,6,1)
+(146,124,1)
+(53,167,1)
+(116,192,1)
+(147,16,1)
+(39,21,1)
+(164,75,1)
+(166,169,1)
+(126,40,1)
+(44,160,1)
+(191,191,1)
+(112,42,1)
+(118,36,1)
+(135,42,1)
+(94,92,1)
+(49,54,1)
+(165,106,1)
+(21,80,1)
+(40,131,1)
+(95,151,1)
+(141,70,1)
+(14,172,1)
+(66,17,1)
+(5,108,1)
+(54,6,1)
+(165,70,1)
+(161,22,1)
+(190,42,1)
+(97,174,1)
+(47,25,1)
+(191,16,1)
+(168,84,1)
+(157,100,1)
+(192,61,1)
+(60,116,1)
+(75,42,1)
+(130,176,1)
+(190,78,1)
+(168,184,1)
+(170,137,1)
+(131,133,1)
+(32,6,1)
+(35,165,1)
+(184,86,1)
+(0,3,1)
+(134,134,1)
+(102,39,1)
+(113,175,1)
+(48,42,1)
+(84,97,1)
+(80,14,1)
+(194,48,1)
+(107,173,1)
+(178,135,1)
+(136,6,1)
+(141,187,1)
+(144,42,1)
+(75,110,1)
+(81,171,1)
+(137,40,1)
+(51,145,1)
+(19,141,1)
+(145,75,1)
+(114,168,1)
+(11,104,1)
+(178,190,1)
+(147,71,1)
+(78,63,1)
+(21,22,1)
+(63,27,1)
+(33,152,1)
+(175,42,1)
+(62,38,1)
+(132,144,1)
+(149,124,1)
+(175,171,1)
+(20,43,2)
+(85,9,2)
+(79,47,2)
+(186,168,2)
+(105,22,2)
+(80,21,2)
+(184,141,2)
+(195,92,2)
+(139,166,2)
+(152,168,2)
+(166,169,2)
+(97,42,2)
+(187,43,2)
+(169,9,2)
+(62,9,2)
+(138,141,2)
+(131,180,2)
+(3,168,2)
+(75,42,2)
+(132,36,2)
+(60,141,2)
+(169,42,2)
+(133,180,2)
+(61,141,2)
+(112,42,2)
+(176,43,2)
+(163,168,2)
+(97,141,2)
+(31,36,2)
+(41,166,2)
+(40,42,2)
+(124,54,2)
+(27,54,2)
+(174,168,2)
+(169,166,2)
+(60,35,2)
+(36,47,2)
+(45,16,2)
+(149,124,2)
+(135,42,2)
+(64,42,2)
+(14,141,2)
+(182,146,2)
+(182,32,2)
+(191,16,2)
+(144,42,2)
+(177,168,2)
+(187,42,2)
+(29,141,2)
+(126,40,2)
+(45,182,2)
+(175,124,2)
+(97,168,2)
+(160,9,2)
+(142,9,2)
+(21,6,2)
+(78,54,2)
+(53,141,2)
+(155,60,2)
+(194,36,2)
+(178,54,2)
+(165,83,2)
+(107,21,2)
+(22,79,2)
+(80,141,2)
+(126,92,2)
+(86,141,2)
+(32,6,2)
+(178,190,2)
+(136,178,2)
+(192,141,2)
+(93,105,2)
+(60,16,2)
+(105,182,2)
+(141,43,2)
+(17,182,2)
+(83,42,2)
+(11,36,2)
+(54,6,2)
+(146,92,2)
+(150,43,2)
+(44,166,2)
+(137,146,2)
+(165,141,2)
+(49,54,2)
+(184,86,2)
+(104,36,2)
+(147,9,2)
+(172,36,2)
+(93,21,2)
+(151,180,2)
+(128,9,2)
+(185,168,2)
+(129,141,2)
+(84,168,2)
+(161,22,2)
+(127,180,2)
+(38,9,2)
+(170,126,2)
+(60,182,2)
+(5,141,2)
+(2,141,2)
+(25,9,2)
+(105,21,2)
+(178,135,2)
+(67,146,2)
+(36,171,2)
+(102,21,2)
+(39,21,2)
+(168,168,2)
+(141,9,2)
+(92,4,2)
+(174,141,2)
+(157,166,2)
+(24,146,2)
+(77,45,2)
+(134,35,2)
+(12,7,2)
+(66,43,2)
+(30,146,2)
+(62,40,2)
+(135,54,2)
+(173,21,2)
+(72,54,2)
+(65,36,2)
+(54,164,2)
+(34,54,2)
+(166,166,2)
+(144,36,2)
+(191,43,2)
+(84,97,2)
+(58,141,2)
+(188,141,2)
+(189,21,2)
+(167,141,2)
+(170,91,2)
+(134,134,2)
+(172,149,2)
+(166,16,2)
+(141,70,2)
+(9,146,2)
+(79,48,2)
+(193,146,2)
+(187,9,2)
+(98,141,2)
+(177,184,2)
+(36,141,2)
+(160,166,2)
+(190,54,2)
+(162,21,2)
+(191,35,2)
+(106,141,2)
+(21,141,2)
+(21,22,2)
+(45,166,2)
+(17,43,2)
+(147,166,2)
+(170,20,2)
+(124,136,2)
+(159,166,2)
+(14,21,2)
+(23,166,2)
+(7,146,2)
+(137,40,2)
+(44,9,2)
+(47,9,2)
+(164,75,2)
+(84,6,2)
+(105,172,2)
+(168,184,2)
+(176,9,2)
+(60,191,2)
+(33,184,2)
+(168,84,2)
+(140,166,2)
+(52,43,2)
+(86,42,2)
+(121,146,2)
+(116,141,2)
+(19,141,2)
+(71,16,2)
+(146,171,2)
+(136,6,2)
+(35,165,2)
+(155,141,2)
+(73,43,2)
+(190,42,2)
+(196,9,2)
+(22,36,2)
+(168,141,2)
+(183,43,2)
+(84,141,2)
+(156,36,2)
+(0,33,2)
+(130,43,2)
+(46,168,2)
+(175,171,2)
+(186,141,2)
+(134,47,2)
+(120,141,2)
+(8,168,2)
+(100,41,2)
+(166,9,2)
+(41,77,2)
+(125,42,2)
+(70,9,2)
+(4,64,2)
+(33,168,2)
+(1,21,2)
+(114,168,2)
+(146,124,2)
+(48,36,2)
+(43,141,2)
+(32,12,2)
+(33,182,2)
+(162,93,2)
+(21,21,2)
+(87,54,2)
+(149,144,2)
+(32,146,2)
+(175,42,2)
+(74,43,2)
+(134,43,2)
+(77,166,2)
+(9,182,2)
+(94,92,2)
+(100,166,2)
+(161,21,2)
+(12,146,2)
+(161,172,2)
+(173,162,2)
+(170,62,2)
+(71,166,2)
+(165,70,2)
+(118,36,2)
+(90,9,2)
+(40,180,2)
+(63,54,2)
+(21,172,2)
+(37,9,2)
+(36,134,2)
+(35,141,2)
+(150,70,2)
+(69,146,2)
+(7,115,2)
+(170,137,2)
+(60,42,2)
+(108,141,2)
+(141,187,2)
+(16,9,2)
+(149,171,2)
+(130,9,2)
+(36,124,2)
+(79,134,2)
+(149,36,2)
+(180,125,2)
+(48,42,2)
+(83,141,2)
+(164,112,2)
+(191,191,2)
+(117,54,2)
+(29,168,2)
+(148,43,2)
+(0,168,2)
+(91,141,2)
+(91,182,2)
+(20,40,2)
+(142,43,2)
+(163,141,2)
+(68,43,2)
+(136,54,2)
+(79,36,2)
+(171,54,2)
+-----------------------------------
+(0,masks[i].is_managed)
+(1,irq_default_affinity)
+(2,curvec)
+(3,is_managed)
+(4,affd->nr_sets > IRQ_AFFINITY_MAX_SETS)
+(5,affd)
+(6,unsigned int nvecs)
+(7,*masks)
+(8,i)
+(9,!masks)
+(10,if (ret)
+(11,pre_vectors)
+(12,sizeof(*masks)
+(13,affvecs)
+(14,curvec)
+(15,NULL)
+(16,curvec = 0)
+(17,kfree(masks)
+(18,nr_sets)
+(19,this_vecs)
+(20,return NULL;)
+(21,curvec < nvecs)
+(22,curvec = affd->pre_vectors + usedvecs)
+(23,mask)
+(24,masks)
+(25,0)
+(26,this_vecs)
+(27,nvecs)
+(28,curvec)
+(29,affd)
+(30,masks)
+(31,curvec)
+(32,kcalloc(nvecs, sizeof(*masks)
+(33,masks[i])
+(34,affd)
+(35,this_vecs = affd->set_size[i])
+(36,usedvecs >= affvecs)
+(37,curvec)
+(38,NULL)
+(39,masks)
+(40,affd->calc_sets)
+(41,&masks[curvec].mask)
+(42,struct irq_affinity *affd)
+(43,ret)
+(44,pre_vectors)
+(45,masks[curvec])
+(46,masks[i].is_managed = 1)
+(47,usedvecs = 0)
+(48,affd->pre_vectors)
+(49,affvecs)
+(50,masks)
+(51,post_vectors)
+(52,masks)
+(53,affd)
+(54,nvecs > affd->pre_vectors + affd->post_vectors)
+(55,nvecs)
+(56,for (i = 0, usedvecs = 0; i < affd->nr_sets; i++)
+(57,usedvecs)
+(58,affvecs)
+(59,affd)
+(60,irq_build_affinity_masks(affd, curvec, this_vecs,\n\\n\\t\\t\\t\\t\\t       curvec, masks)
+(61,this_vecs)
+(62,return NULL;)
+(63,affd)
+(64,affd->nr_sets)
+(65,affd)
+(66,NULL)
+(67,nvecs)
+(68,this_vecs)
+(69,masks)
+(70,i = 0)
+(71,curvec++)
+(72,post_vectors)
+(73,curvec)
+(74,usedvecs)
+(75,affd->pre_vectors)
+(76,for (i = affd->pre_vectors; i < nvecs - affd->post_vectors; i++)
+(77,masks[curvec].mask)
+(78,pre_vectors)
+(79,affd->pre_vectors + usedvecs)
+(80,nvecs)
+(81,affd)
+(82,IRQ_AFFINITY_MAX_SETS)
+(83,affd->set_size)
+(84,nvecs - affd->post_vectors)
+(85,i)
+(86,affd->pre_vectors)
+(87,affvecs)
+(88,i)
+(89,)
+(90,0)
+(91,return masks;)
+(92,WARN_ON_ONCE(affd->nr_sets > IRQ_AFFINITY_MAX_SETS)
+(93,masks[curvec].mask)
+(94,affvecs)
+(95,affd)
+(96,if (!affvecs)
+(97,affd->post_vectors)
+(98,masks)
+(99,if (nvecs > affd->pre_vectors + affd->post_vectors)
+(100,cpumask_copy(&masks[curvec].mask, irq_default_affinity)
+(101,if (usedvecs >= affvecs)
+(102,curvec)
+(103,masks)
+(104,affd)
+(105,masks[curvec])
+(106,i)
+(107,curvec)
+(108,ret)
+(109,if (!masks)
+(110,pre_vectors)
+(111,)
+(112,affd->post_vectors)
+(113,affd)
+(114,masks)
+(115,*masks = NULL)
+(116,masks)
+(117,0)
+(118,curvec)
+(119,)
+(120,usedvecs)
+(121,GFP_KERNEL)
+(122,if (!affd->calc_sets)
+(123,ret)
+(124,affvecs = nvecs - affd->pre_vectors - affd->post_vectors)
+(125,affd->calc_sets)
+(126,return NULL;)
+(127,default_calc_sets)
+(128,usedvecs)
+(129,set_size)
+(130,affd)
+(131,calc_sets)
+(132,affvecs)
+(133,affd)
+(134,usedvecs += this_vecs)
+(135,affd->post_vectors)
+(136,nvecs - affd->pre_vectors - affd->post_vectors)
+(137,return NULL;)
+(138,affd)
+(139,masks)
+(140,irq_default_affinity)
+(141,i < affd->nr_sets)
+(142,nr_sets)
+(143,for (curvec = 0; curvec < affd->pre_vectors; curvec++)
+(144,affd->pre_vectors)
+(145,affd)
+(146,!affvecs)
+(147,curvec)
+(148,i)
+(149,affd->pre_vectors + affvecs)
+(150,i++)
+(151,affd->calc_sets = default_calc_sets)
+(152,i)
+(153,)
+(154,calc_sets)
+(155,ret = irq_build_affinity_masks(affd, curvec, this_vecs,\n\\n\\t\\t\\t\\t\\t       curvec, masks)
+(156,pre_vectors)
+(157,curvec)
+(158,if (WARN_ON_ONCE(affd->nr_sets > IRQ_AFFINITY_MAX_SETS)
+(159,curvec)
+(160,affd)
+(161,curvec++)
+(162,&masks[curvec].mask)
+(163,nvecs)
+(164,affd->pre_vectors + affd->post_vectors)
+(165,affd->set_size[i])
+(166,curvec < affd->pre_vectors)
+(167,i)
+(168,i < nvecs - affd->post_vectors)
+(169,affd->pre_vectors)
+(170,RET)
+(171,affvecs = 0)
+(172,curvec = affd->pre_vectors + affvecs)
+(173,cpumask_copy(&masks[curvec].mask, irq_default_affinity)
+(174,post_vectors)
+(175,affd->calc_sets(affd, affvecs)
+(176,i)
+(177,i++)
+(178,affd->pre_vectors - affd->post_vectors)
+(179,for (; curvec < nvecs; curvec++)
+(180,!affd->calc_sets)
+(181,affvecs)
+(182,masks = kcalloc(nvecs, sizeof(*masks)
+(183,this_vecs)
+(184,i = affd->pre_vectors)
+(185,1)
+(186,i)
+(187,affd->nr_sets)
+(188,pre_vectors)
+(189,mask)
+(190,affd->pre_vectors)
+(191,curvec += this_vecs)
+(192,curvec)
+(193,NULL)
+(194,usedvecs)
+(195,NULL)
+(196,0)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

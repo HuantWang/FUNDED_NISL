@@ -1,0 +1,2558 @@
+-----label-----
+0
+-----code-----
+static int sftppam_driver_open(sftp_kbdint_driver_t *driver, const char *user) {
+  int res;
+  config_rec *c;
+
+  /* XXX Should we pay attention to AuthOrder here?  I.e. if AuthOrder
+   * does not include mod_sftp_pam or mod_auth_pam, should we fail to
+   * open this driver, since the AuthOrder indicates that no PAM check is
+   * desired?  For this to work, AuthOrder needs to have been processed
+   * prior to this callback being invoked...
+   */
+
+  /* Figure out our default return style: whether or not PAM should allow
+   * other auth modules a shot at this user or not is controlled by adding
+   * '*' to a module name in the AuthOrder directive.  By default, auth
+   * modules are not authoritative, and allow other auth modules a chance at
+   * authenticating the user.  This is not the most secure configuration, but
+   * it allows things like AuthUserFile to work "out of the box".
+   */
+  if (sftppam_authtab[0].auth_flags & PR_AUTH_FL_REQUIRED) {
+    sftppam_authoritative = TRUE;
+  }
+
+  sftppam_userlen = strlen(user) + 1;
+  if (sftppam_userlen > (PAM_MAX_MSG_SIZE + 1)) {
+    sftppam_userlen = PAM_MAX_MSG_SIZE + 1;
+  }
+
+#ifdef MAXLOGNAME
+  /* Some platforms' PAM libraries do not handle login strings that exceed
+   * this length.
+   */
+  if (sftppam_userlen > MAXLOGNAME) {
+    pr_log_pri(PR_LOG_NOTICE,
+      "PAM(%s): Name exceeds maximum login length (%u)", user, MAXLOGNAME);
+    pr_trace_msg(trace_channel, 1,
+      "user name '%s' exceeds maximum login length %u, declining", user,
+      MAXLOGNAME);
+    errno = EPERM;
+    return -1;
+  }
+#endif
+
+  sftppam_user = malloc(sftppam_userlen);
+  if (sftppam_user == NULL) {
+    pr_log_pri(PR_LOG_ALERT, MOD_SFTP_PAM_VERSION ": Out of memory!");
+    exit(1);
+  }
+
+  memset(sftppam_user, '\0', sftppam_userlen);
+  sstrncpy(sftppam_user, user, sftppam_userlen);
+
+  c = find_config(main_server->conf, CONF_PARAM, "SFTPPAMOptions", FALSE);
+  while (c != NULL) {
+    unsigned long opts;
+
+    pr_signals_handle();
+
+    opts = *((unsigned long *) c->argv[0]);
+    sftppam_opts |= opts;
+
+    c = find_config_next(c, c->next, CONF_PARAM, "SFTPPAMOptions", FALSE);
+  }
+ 
+#ifdef SOLARIS2
+  /* For Solaris environments, the TTY environment will always be set,
+   * in order to workaround a bug (Solaris Bug ID 4250887) where
+   * pam_open_session() will crash unless both PAM_RHOST and PAM_TTY are
+   * set, and the PAM_TTY setting is at least greater than the length of
+   * the string "/dev/".
+   */
+  sftppam_opts &= ~SFTP_PAM_OPT_NO_TTY;
+#endif /* SOLARIS2 */
+ 
+  pr_signals_block();
+  PRIVS_ROOT
+
+  res = pam_start(sftppam_service, sftppam_user, &sftppam_conv, &sftppam_pamh);
+  if (res != PAM_SUCCESS) {
+    free(sftppam_user);
+    sftppam_user = NULL;
+    sftppam_userlen = 0;
+
+    PRIVS_RELINQUISH
+    pr_signals_unblock();
+
+    switch (res) {
+      case PAM_SYSTEM_ERR:
+        (void) pr_log_writefile(sftp_logfd, MOD_SFTP_PAM_VERSION,
+          "error starting PAM service: %s", strerror(errno));
+        break;
+
+      case PAM_BUF_ERR:
+        (void) pr_log_writefile(sftp_logfd, MOD_SFTP_PAM_VERSION,
+          "error starting PAM service: Memory buffer error");
+        break;
+    }
+
+    return -1;
+  }
+
+  pam_set_item(sftppam_pamh, PAM_RUSER, sftppam_user);
+  pam_set_item(sftppam_pamh, PAM_RHOST, session.c->remote_name);
+
+  if (!(sftppam_opts & SFTP_PAM_OPT_NO_TTY)) {
+    memset(sftppam_tty, '\0', sizeof(sftppam_tty));
+    snprintf(sftppam_tty, sizeof(sftppam_tty), "/dev/ftpd%02lu",
+      (unsigned long) (session.pid ? session.pid : getpid()));
+    sftppam_tty[sizeof(sftppam_tty)-1] = '\0';
+
+    pr_trace_msg(trace_channel, 9, "setting PAM_TTY to '%s'", sftppam_tty);
+    pam_set_item(sftppam_pamh, PAM_TTY, sftppam_tty);
+  }
+
+  PRIVS_RELINQUISH
+  pr_signals_unblock();
+
+  /* We need to disable mod_auth_pam, since both mod_auth_pam and us want
+   * to talk to the PAM API, just in different fashions.
+   */
+
+  c = add_config_param_set(&(main_server->conf), "AuthPAM", 1, NULL);
+  c->argv[0] = palloc(c->pool, sizeof(unsigned char));
+  *((unsigned char *) c->argv[0]) = FALSE;
+
+  if (pr_auth_remove_auth_only_module("mod_auth_pam.c") < 0) {
+    if (errno != ENOENT) {
+      pr_log_pri(PR_LOG_NOTICE, MOD_SFTP_PAM_VERSION
+        ": error removing 'mod_auth_pam.c' from the auth-only module list: %s",
+        strerror(errno));
+    }
+  }
+
+  if (pr_auth_add_auth_only_module("mod_sftp_pam.c") < 0) {
+    pr_log_pri(PR_LOG_NOTICE, MOD_SFTP_PAM_VERSION
+      ": error adding 'mod_sftp_pam.c' to the auth-only module list: %s",
+      strerror(errno));
+  }
+
+  sftppam_handle_auth = TRUE;
+
+  driver->driver_pool = make_sub_pool(permanent_pool);
+  pr_pool_tag(driver->driver_pool, "PAM keyboard-interactive driver pool");
+
+  return 0;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+13,14
+13,15
+16,17
+16,18
+16,19
+16,20
+16,21
+16,22
+16,23
+16,24
+16,25
+16,26
+16,27
+16,28
+16,29
+16,30
+16,31
+16,32
+16,33
+16,34
+16,35
+16,36
+16,37
+16,38
+16,39
+16,40
+16,41
+16,42
+16,43
+17,18
+18,19
+18,20
+20,21
+22,23
+23,24
+23,25
+24,25
+26,27
+26,28
+29,30
+29,31
+30,31
+30,32
+31,32
+31,33
+32,33
+32,34
+33,34
+37,38
+39,40
+40,41
+41,42
+41,43
+42,43
+44,45
+46,47
+47,48
+47,49
+48,49
+50,51
+50,52
+51,52
+51,53
+52,53
+54,55
+57,58
+57,59
+58,59
+58,60
+59,60
+61,62
+62,63
+62,64
+63,64
+66,67
+67,68
+68,69
+68,70
+69,70
+71,72
+71,73
+72,73
+75,76
+76,77
+76,78
+77,78
+79,80
+79,81
+80,81
+82,83
+84,85
+84,86
+85,86
+85,87
+86,87
+88,89
+90,91
+90,92
+91,92
+92,93
+93,94
+93,95
+94,95
+97,98
+98,99
+98,100
+98,101
+98,102
+99,100
+101,102
+104,105
+106,107
+107,108
+107,109
+107,110
+107,111
+108,109
+110,111
+112,113
+114,115
+116,117
+117,118
+117,119
+118,119
+120,121
+120,122
+120,123
+120,124
+120,125
+121,122
+123,124
+123,125
+124,125
+127,128
+130,131
+132,133
+132,134
+133,134
+133,135
+134,135
+136,137
+138,139
+138,140
+138,141
+138,142
+138,143
+139,140
+140,141
+140,142
+142,143
+144,145
+145,146
+146,147
+148,149
+149,150
+149,151
+150,151
+152,153
+153,154
+154,155
+154,156
+155,156
+155,157
+157,158
+159,160
+159,161
+160,161
+160,162
+161,162
+165,166
+166,167
+166,168
+167,168
+169,170
+171,172
+172,173
+172,174
+173,174
+175,176
+175,177
+175,178
+175,179
+175,180
+175,181
+176,177
+178,179
+180,181
+180,182
+181,182
+184,185
+187,188
+189,190
+190,191
+191,192
+193,194
+194,195
+194,196
+195,196
+197,198
+197,199
+199,200
+200,201
+200,202
+200,203
+200,204
+200,205
+201,202
+203,204
+205,206
+207,208
+208,209
+210,211
+211,212
+213,214
+213,215
+214,215
+214,216
+215,216
+217,218
+219,220
+219,221
+219,222
+219,223
+219,224
+219,225
+220,221
+221,222
+221,223
+222,223
+224,225
+225,226
+227,228
+228,229
+228,230
+229,230
+231,232
+233,234
+234,235
+234,236
+235,236
+238,239
+239,240
+239,241
+240,241
+242,243
+244,245
+244,246
+245,246
+247,248
+247,249
+247,250
+247,251
+247,252
+247,253
+248,249
+249,250
+251,252
+252,253
+252,254
+253,254
+253,255
+256,257
+256,258
+256,259
+256,260
+256,261
+257,258
+259,260
+261,262
+264,265
+264,266
+265,266
+267,268
+270,271
+271,272
+273,274
+274,275
+274,276
+275,276
+275,277
+278,279
+278,280
+278,281
+278,282
+279,280
+281,282
+283,284
+287,288
+288,289
+290,291
+291,292
+291,293
+291,294
+291,295
+292,293
+294,295
+296,297
+298,299
+300,301
+301,302
+301,303
+301,304
+301,305
+302,303
+304,305
+306,307
+308,309
+308,310
+309,310
+309,311
+310,311
+314,315
+314,316
+315,316
+316,317
+317,318
+317,319
+318,319
+320,321
+322,323
+322,324
+322,325
+322,326
+322,327
+323,324
+324,325
+324,326
+324,327
+324,328
+325,326
+327,328
+330,331
+331,332
+331,333
+332,333
+335,336
+336,337
+336,338
+336,339
+336,340
+336,341
+337,338
+339,340
+341,342
+342,343
+342,344
+343,344
+347,348
+347,349
+348,349
+348,350
+351,352
+352,353
+352,354
+352,355
+353,354
+353,355
+354,355
+357,358
+357,359
+358,359
+361,362
+362,363
+364,365
+365,366
+365,367
+366,367
+366,368
+367,368
+369,370
+369,371
+370,371
+371,372
+371,373
+372,373
+377,378
+378,379
+378,380
+378,381
+378,382
+378,383
+379,380
+381,382
+385,386
+387,388
+388,389
+388,390
+388,391
+388,392
+389,390
+391,392
+393,394
+395,396
+397,398
+398,399
+398,400
+399,400
+401,402
+403,404
+404,405
+404,406
+405,406
+407,408
+407,409
+407,410
+407,411
+407,412
+408,409
+410,411
+411,412
+412,413
+412,414
+413,414
+418,419
+420,421
+421,422
+421,423
+422,423
+422,424
+423,424
+423,425
+424,425
+428,429
+428,430
+428,431
+429,430
+431,432
+431,433
+432,433
+435,436
+436,437
+436,438
+439,440
+440,441
+440,442
+441,442
+442,443
+443,444
+443,445
+444,445
+444,446
+446,447
+448,449
+448,450
+449,450
+449,451
+450,451
+454,455
+456,457
+456,458
+457,458
+457,459
+458,459
+458,460
+459,460
+463,464
+464,465
+464,466
+465,466
+465,467
+466,467
+468,469
+470,471
+471,472
+472,473
+472,474
+473,474
+473,475
+474,475
+474,476
+475,476
+479,480
+480,481
+481,482
+482,483
+482,484
+483,484
+485,486
+487,488
+488,489
+488,490
+489,490
+489,491
+490,491
+493,494
+493,495
+494,495
+496,497
+498,499
+499,500
+499,501
+499,502
+500,501
+502,503
+502,504
+503,504
+507,508
+-----nextToken-----
+2,4,7,9,10,12,14,15,19,21,25,27,28,34,35,36,38,43,45,49,53,55,56,60,64,65,70,73,74,78,81,83,87,89,95,96,100,102,103,105,109,111,113,115,119,122,125,126,128,129,131,135,137,141,143,147,151,156,158,162,163,164,168,170,174,177,179,182,183,185,186,188,192,196,198,202,204,206,209,212,216,218,223,226,230,232,236,237,241,243,246,250,254,255,258,260,262,263,266,268,269,272,276,277,280,282,284,285,286,289,293,295,297,299,303,305,307,311,312,313,319,321,326,328,329,333,334,338,340,344,345,346,349,350,355,356,359,360,363,368,373,374,375,376,380,382,383,384,386,390,392,394,396,400,402,406,409,414,415,416,417,419,425,426,427,430,433,434,437,438,445,447,451,452,453,455,460,461,462,467,469,476,477,478,484,486,491,492,495,497,501,504,505,506,508
+-----computeFrom-----
+30,31
+30,32
+41,42
+41,43
+47,48
+47,49
+50,51
+50,52
+58,59
+58,60
+62,63
+62,64
+68,69
+68,70
+71,72
+71,73
+76,77
+76,78
+85,86
+85,87
+117,118
+117,119
+133,134
+133,135
+149,150
+149,151
+166,167
+166,168
+172,173
+172,174
+214,215
+214,216
+228,229
+228,230
+234,235
+234,236
+317,318
+317,319
+365,366
+365,367
+369,370
+369,371
+404,405
+404,406
+421,422
+421,423
+440,441
+440,442
+457,458
+457,459
+465,466
+465,467
+473,474
+473,475
+482,483
+482,484
+488,489
+488,490
+-----guardedBy-----
+64,73
+60,70
+216,246
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;IfStatement;BinaryExpression;FieldReference;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ProblemStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;WhileStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;UnaryExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;FunctionDeclarator;Name;SwitchStatement;IdExpression;Name;CompoundStatement;CaseStatement;IdExpression;Name;ExpressionStatement;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BreakStatement;CaseStatement;IdExpression;Name;ExpressionStatement;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;BreakStatement;ReturnStatement;UnaryExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;TypeIdExpression;TypeId;NamedTypeSpecifier;Name;Declarator;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;TypeIdExpression;TypeId;NamedTypeSpecifier;Name;Declarator;LiteralExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;UnaryExpression;ConditionalExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;BinaryExpression;TypeIdExpression;TypeId;NamedTypeSpecifier;Name;Declarator;LiteralExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;LiteralExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;FunctionDeclarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;UnaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;LiteralExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;TypeIdExpression;TypeId;SimpleDeclSpecifier;Declarator;ExpressionStatement;BinaryExpression;UnaryExpression;UnaryExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;IdExpression;Name;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;LiteralExpression;LiteralExpression;CompoundStatement;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ProblemStatement;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;LiteralExpression;LiteralExpression;CompoundStatement;ProblemStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;ReturnStatement;LiteralExpression;
+-----ast_node-----
+static int sftppam_driver_open(sftp_kbdint_driver_t *driver, const char *user) {  int res;  config_rec *c;  /* XXX Should we pay attention to AuthOrder here?  I.e. if AuthOrder   * does not include mod_sftp_pam or mod_auth_pam, should we fail to   * open this driver, since the AuthOrder indicates that no PAM check is   * desired?  For this to work, AuthOrder needs to have been processed   * prior to this callback being invoked...   */  /* Figure out our default return style: whether or not PAM should allow   * other auth modules a shot at this user or not is controlled by adding   * '*' to a module name in the AuthOrder directive.  By default, auth   * modules are not authoritative, and allow other auth modules a chance at   * authenticating the user.  This is not the most secure configuration, but   * it allows things like AuthUserFile to work "out of the box".   */  if (sftppam_authtab[0].auth_flags & PR_AUTH_FL_REQUIRED) {    sftppam_authoritative = TRUE;  }  sftppam_userlen = strlen(user) + 1;  if (sftppam_userlen > (PAM_MAX_MSG_SIZE + 1)) {    sftppam_userlen = PAM_MAX_MSG_SIZE + 1;  }#ifdef MAXLOGNAME  /* Some platforms' PAM libraries do not handle login strings that exceed   * this length.   */  if (sftppam_userlen > MAXLOGNAME) {    pr_log_pri(PR_LOG_NOTICE,      "PAM(%s): Name exceeds maximum login length (%u)", user, MAXLOGNAME);    pr_trace_msg(trace_channel, 1,      "user name '%s' exceeds maximum login length %u, declining", user,      MAXLOGNAME);    errno = EPERM;    return -1;  }#endif  sftppam_user = malloc(sftppam_userlen);  if (sftppam_user == NULL) {    pr_log_pri(PR_LOG_ALERT, MOD_SFTP_PAM_VERSION ": Out of memory!");    exit(1);  }  memset(sftppam_user, '\0', sftppam_userlen);  sstrncpy(sftppam_user, user, sftppam_userlen);  c = find_config(main_server->conf, CONF_PARAM, "SFTPPAMOptions", FALSE);  while (c != NULL) {    unsigned long opts;    pr_signals_handle();    opts = *((unsigned long *) c->argv[0]);    sftppam_opts |= opts;    c = find_config_next(c, c->next, CONF_PARAM, "SFTPPAMOptions", FALSE);  } #ifdef SOLARIS2  /* For Solaris environments, the TTY environment will always be set,   * in order to workaround a bug (Solaris Bug ID 4250887) where   * pam_open_session() will crash unless both PAM_RHOST and PAM_TTY are   * set, and the PAM_TTY setting is at least greater than the length of   * the string "/dev/".   */  sftppam_opts &= ~SFTP_PAM_OPT_NO_TTY;#endif /* SOLARIS2 */   pr_signals_block();  PRIVS_ROOT  res = pam_start(sftppam_service, sftppam_user, &sftppam_conv, &sftppam_pamh);  if (res != PAM_SUCCESS) {    free(sftppam_user);    sftppam_user = NULL;    sftppam_userlen = 0;    PRIVS_RELINQUISH    pr_signals_unblock();    switch (res) {      case PAM_SYSTEM_ERR:        (void) pr_log_writefile(sftp_logfd, MOD_SFTP_PAM_VERSION,          "error starting PAM service: %s", strerror(errno));        break;      case PAM_BUF_ERR:        (void) pr_log_writefile(sftp_logfd, MOD_SFTP_PAM_VERSION,          "error starting PAM service: Memory buffer error");        break;    }    return -1;  }  pam_set_item(sftppam_pamh, PAM_RUSER, sftppam_user);  pam_set_item(sftppam_pamh, PAM_RHOST, session.c->remote_name);  if (!(sftppam_opts & SFTP_PAM_OPT_NO_TTY)) {    memset(sftppam_tty, '\0', sizeof(sftppam_tty));    snprintf(sftppam_tty, sizeof(sftppam_tty), "/dev/ftpd%02lu",      (unsigned long) (session.pid ? session.pid : getpid()));    sftppam_tty[sizeof(sftppam_tty)-1] = '\0';    pr_trace_msg(trace_channel, 9, "setting PAM_TTY to '%s'", sftppam_tty);    pam_set_item(sftppam_pamh, PAM_TTY, sftppam_tty);  }  PRIVS_RELINQUISH  pr_signals_unblock();  /* We need to disable mod_auth_pam, since both mod_auth_pam and us want   * to talk to the PAM API, just in different fashions.   */  c = add_config_param_set(&(main_server->conf), "AuthPAM", 1, NULL);  c->argv[0] = palloc(c->pool, sizeof(unsigned char));  *((unsigned char *) c->argv[0]) = FALSE;  if (pr_auth_remove_auth_only_module("mod_auth_pam.c") < 0) {    if (errno != ENOENT) {      pr_log_pri(PR_LOG_NOTICE, MOD_SFTP_PAM_VERSION        ": error removing 'mod_auth_pam.c' from the auth-only module list: %s",        strerror(errno));    }  }  if (pr_auth_add_auth_only_module("mod_sftp_pam.c") < 0) {    pr_log_pri(PR_LOG_NOTICE, MOD_SFTP_PAM_VERSION      ": error adding 'mod_sftp_pam.c' to the auth-only module list: %s",      strerror(errno));  }  sftppam_handle_auth = TRUE;  driver->driver_pool = make_sub_pool(permanent_pool);  pr_pool_tag(driver->driver_pool, "PAM keyboard-interactive driver pool");  return 0;}
+static int
+sftppam_driver_open(sftp_kbdint_driver_t *driver, const char *user)
+sftppam_driver_open
+sftp_kbdint_driver_t *driver
+sftp_kbdint_driver_t
+sftp_kbdint_driver_t
+*driver
+*
+driver
+const char *user
+const char
+*user
+*
+user
+{  int res;  config_rec *c;  /* XXX Should we pay attention to AuthOrder here?  I.e. if AuthOrder   * does not include mod_sftp_pam or mod_auth_pam, should we fail to   * open this driver, since the AuthOrder indicates that no PAM check is   * desired?  For this to work, AuthOrder needs to have been processed   * prior to this callback being invoked...   */  /* Figure out our default return style: whether or not PAM should allow   * other auth modules a shot at this user or not is controlled by adding   * '*' to a module name in the AuthOrder directive.  By default, auth   * modules are not authoritative, and allow other auth modules a chance at   * authenticating the user.  This is not the most secure configuration, but   * it allows things like AuthUserFile to work "out of the box".   */  if (sftppam_authtab[0].auth_flags & PR_AUTH_FL_REQUIRED) {    sftppam_authoritative = TRUE;  }  sftppam_userlen = strlen(user) + 1;  if (sftppam_userlen > (PAM_MAX_MSG_SIZE + 1)) {    sftppam_userlen = PAM_MAX_MSG_SIZE + 1;  }#ifdef MAXLOGNAME  /* Some platforms' PAM libraries do not handle login strings that exceed   * this length.   */  if (sftppam_userlen > MAXLOGNAME) {    pr_log_pri(PR_LOG_NOTICE,      "PAM(%s): Name exceeds maximum login length (%u)", user, MAXLOGNAME);    pr_trace_msg(trace_channel, 1,      "user name '%s' exceeds maximum login length %u, declining", user,      MAXLOGNAME);    errno = EPERM;    return -1;  }#endif  sftppam_user = malloc(sftppam_userlen);  if (sftppam_user == NULL) {    pr_log_pri(PR_LOG_ALERT, MOD_SFTP_PAM_VERSION ": Out of memory!");    exit(1);  }  memset(sftppam_user, '\0', sftppam_userlen);  sstrncpy(sftppam_user, user, sftppam_userlen);  c = find_config(main_server->conf, CONF_PARAM, "SFTPPAMOptions", FALSE);  while (c != NULL) {    unsigned long opts;    pr_signals_handle();    opts = *((unsigned long *) c->argv[0]);    sftppam_opts |= opts;    c = find_config_next(c, c->next, CONF_PARAM, "SFTPPAMOptions", FALSE);  } #ifdef SOLARIS2  /* For Solaris environments, the TTY environment will always be set,   * in order to workaround a bug (Solaris Bug ID 4250887) where   * pam_open_session() will crash unless both PAM_RHOST and PAM_TTY are   * set, and the PAM_TTY setting is at least greater than the length of   * the string "/dev/".   */  sftppam_opts &= ~SFTP_PAM_OPT_NO_TTY;#endif /* SOLARIS2 */   pr_signals_block();  PRIVS_ROOT  res = pam_start(sftppam_service, sftppam_user, &sftppam_conv, &sftppam_pamh);  if (res != PAM_SUCCESS) {    free(sftppam_user);    sftppam_user = NULL;    sftppam_userlen = 0;    PRIVS_RELINQUISH    pr_signals_unblock();    switch (res) {      case PAM_SYSTEM_ERR:        (void) pr_log_writefile(sftp_logfd, MOD_SFTP_PAM_VERSION,          "error starting PAM service: %s", strerror(errno));        break;      case PAM_BUF_ERR:        (void) pr_log_writefile(sftp_logfd, MOD_SFTP_PAM_VERSION,          "error starting PAM service: Memory buffer error");        break;    }    return -1;  }  pam_set_item(sftppam_pamh, PAM_RUSER, sftppam_user);  pam_set_item(sftppam_pamh, PAM_RHOST, session.c->remote_name);  if (!(sftppam_opts & SFTP_PAM_OPT_NO_TTY)) {    memset(sftppam_tty, '\0', sizeof(sftppam_tty));    snprintf(sftppam_tty, sizeof(sftppam_tty), "/dev/ftpd%02lu",      (unsigned long) (session.pid ? session.pid : getpid()));    sftppam_tty[sizeof(sftppam_tty)-1] = '\0';    pr_trace_msg(trace_channel, 9, "setting PAM_TTY to '%s'", sftppam_tty);    pam_set_item(sftppam_pamh, PAM_TTY, sftppam_tty);  }  PRIVS_RELINQUISH  pr_signals_unblock();  /* We need to disable mod_auth_pam, since both mod_auth_pam and us want   * to talk to the PAM API, just in different fashions.   */  c = add_config_param_set(&(main_server->conf), "AuthPAM", 1, NULL);  c->argv[0] = palloc(c->pool, sizeof(unsigned char));  *((unsigned char *) c->argv[0]) = FALSE;  if (pr_auth_remove_auth_only_module("mod_auth_pam.c") < 0) {    if (errno != ENOENT) {      pr_log_pri(PR_LOG_NOTICE, MOD_SFTP_PAM_VERSION        ": error removing 'mod_auth_pam.c' from the auth-only module list: %s",        strerror(errno));    }  }  if (pr_auth_add_auth_only_module("mod_sftp_pam.c") < 0) {    pr_log_pri(PR_LOG_NOTICE, MOD_SFTP_PAM_VERSION      ": error adding 'mod_sftp_pam.c' to the auth-only module list: %s",      strerror(errno));  }  sftppam_handle_auth = TRUE;  driver->driver_pool = make_sub_pool(permanent_pool);  pr_pool_tag(driver->driver_pool, "PAM keyboard-interactive driver pool");  return 0;}
+int res;
+int res;
+int
+res
+res
+config_rec *c;
+config_rec *c;
+config_rec
+config_rec
+*c
+*
+c
+if (sftppam_authtab[0].auth_flags & PR_AUTH_FL_REQUIRED) {    sftppam_authoritative = TRUE;  }
+sftppam_authtab[0].auth_flags & PR_AUTH_FL_REQUIRED
+sftppam_authtab[0].auth_flags
+sftppam_authtab[0]
+sftppam_authtab
+sftppam_authtab
+0
+auth_flags
+PR_AUTH_FL_REQUIRED
+PR_AUTH_FL_REQUIRED
+{    sftppam_authoritative = TRUE;  }
+sftppam_authoritative = TRUE;
+sftppam_authoritative = TRUE
+sftppam_authoritative
+sftppam_authoritative
+TRUE
+TRUE
+sftppam_userlen = strlen(user) + 1;
+sftppam_userlen = strlen(user) + 1
+sftppam_userlen
+sftppam_userlen
+strlen(user) + 1
+strlen(user)
+strlen
+strlen
+user
+user
+1
+if (sftppam_userlen > (PAM_MAX_MSG_SIZE + 1)) {    sftppam_userlen = PAM_MAX_MSG_SIZE + 1;  }
+sftppam_userlen > (PAM_MAX_MSG_SIZE + 1)
+sftppam_userlen
+sftppam_userlen
+(PAM_MAX_MSG_SIZE + 1)
+PAM_MAX_MSG_SIZE + 1
+PAM_MAX_MSG_SIZE
+PAM_MAX_MSG_SIZE
+1
+{    sftppam_userlen = PAM_MAX_MSG_SIZE + 1;  }
+sftppam_userlen = PAM_MAX_MSG_SIZE + 1;
+sftppam_userlen = PAM_MAX_MSG_SIZE + 1
+sftppam_userlen
+sftppam_userlen
+PAM_MAX_MSG_SIZE + 1
+PAM_MAX_MSG_SIZE
+PAM_MAX_MSG_SIZE
+1
+sftppam_user = malloc(sftppam_userlen);
+sftppam_user = malloc(sftppam_userlen)
+sftppam_user
+sftppam_user
+malloc(sftppam_userlen)
+malloc
+malloc
+sftppam_userlen
+sftppam_userlen
+if (sftppam_user == NULL) {    pr_log_pri(PR_LOG_ALERT, MOD_SFTP_PAM_VERSION ": Out of memory!");    exit(1);  }
+sftppam_user == NULL
+sftppam_user
+sftppam_user
+NULL
+NULL
+{    pr_log_pri(PR_LOG_ALERT, MOD_SFTP_PAM_VERSION ": Out of memory!");    exit(1);  }
+pr_log_pri(PR_LOG_ALERT, MOD_SFTP_PAM_VERSION ": Out of memory!");
+exit(1);
+exit(1)
+exit
+exit
+1
+memset(sftppam_user, '\0', sftppam_userlen);
+memset(sftppam_user, '\0', sftppam_userlen)
+memset
+memset
+sftppam_user
+sftppam_user
+'\0'
+sftppam_userlen
+sftppam_userlen
+sstrncpy(sftppam_user, user, sftppam_userlen);
+sstrncpy(sftppam_user, user, sftppam_userlen)
+sstrncpy
+sstrncpy
+sftppam_user
+sftppam_user
+user
+user
+sftppam_userlen
+sftppam_userlen
+c = find_config(main_server->conf, CONF_PARAM, "SFTPPAMOptions", FALSE);
+c = find_config(main_server->conf, CONF_PARAM, "SFTPPAMOptions", FALSE)
+c
+c
+find_config(main_server->conf, CONF_PARAM, "SFTPPAMOptions", FALSE)
+find_config
+find_config
+main_server->conf
+main_server
+main_server
+conf
+CONF_PARAM
+CONF_PARAM
+"SFTPPAMOptions"
+FALSE
+FALSE
+while (c != NULL) {    unsigned long opts;    pr_signals_handle();    opts = *((unsigned long *) c->argv[0]);    sftppam_opts |= opts;    c = find_config_next(c, c->next, CONF_PARAM, "SFTPPAMOptions", FALSE);  }
+c != NULL
+c
+c
+NULL
+NULL
+{    unsigned long opts;    pr_signals_handle();    opts = *((unsigned long *) c->argv[0]);    sftppam_opts |= opts;    c = find_config_next(c, c->next, CONF_PARAM, "SFTPPAMOptions", FALSE);  }
+unsigned long opts;
+unsigned long opts;
+unsigned long
+opts
+opts
+pr_signals_handle();
+pr_signals_handle()
+pr_signals_handle
+pr_signals_handle
+opts = *((unsigned long *) c->argv[0]);
+opts = *((unsigned long *) c->argv[0])
+opts
+opts
+*((unsigned long *) c->argv[0])
+((unsigned long *) c->argv[0])
+(unsigned long *) c->argv[0]
+unsigned long *
+unsigned long
+*
+*
+c->argv[0]
+c->argv
+c
+c
+argv
+0
+sftppam_opts |= opts;
+sftppam_opts |= opts
+sftppam_opts
+sftppam_opts
+opts
+opts
+c = find_config_next(c, c->next, CONF_PARAM, "SFTPPAMOptions", FALSE);
+c = find_config_next(c, c->next, CONF_PARAM, "SFTPPAMOptions", FALSE)
+c
+c
+find_config_next(c, c->next, CONF_PARAM, "SFTPPAMOptions", FALSE)
+find_config_next
+find_config_next
+c
+c
+c->next
+c
+c
+next
+CONF_PARAM
+CONF_PARAM
+"SFTPPAMOptions"
+FALSE
+FALSE
+pr_signals_block();
+pr_signals_block()
+pr_signals_block
+pr_signals_block
+PRIVS_ROOT  res = pam_start(sftppam_service, sftppam_user, &sftppam_conv, &sftppam_pamh);
+PRIVS_ROOT  res = pam_start(sftppam_service, sftppam_user, &sftppam_conv, &sftppam_pamh);
+PRIVS_ROOT
+PRIVS_ROOT
+res = pam_start(sftppam_service, sftppam_user, &sftppam_conv, &sftppam_pamh)
+res
+= pam_start(sftppam_service, sftppam_user, &sftppam_conv, &sftppam_pamh)
+pam_start(sftppam_service, sftppam_user, &sftppam_conv, &sftppam_pamh)
+pam_start
+pam_start
+sftppam_service
+sftppam_service
+sftppam_user
+sftppam_user
+&sftppam_conv
+sftppam_conv
+sftppam_conv
+&sftppam_pamh
+sftppam_pamh
+sftppam_pamh
+if (res != PAM_SUCCESS) {    free(sftppam_user);    sftppam_user = NULL;    sftppam_userlen = 0;    PRIVS_RELINQUISH    pr_signals_unblock();    switch (res) {      case PAM_SYSTEM_ERR:        (void) pr_log_writefile(sftp_logfd, MOD_SFTP_PAM_VERSION,          "error starting PAM service: %s", strerror(errno));        break;      case PAM_BUF_ERR:        (void) pr_log_writefile(sftp_logfd, MOD_SFTP_PAM_VERSION,          "error starting PAM service: Memory buffer error");        break;    }    return -1;  }
+res != PAM_SUCCESS
+res
+res
+PAM_SUCCESS
+PAM_SUCCESS
+{    free(sftppam_user);    sftppam_user = NULL;    sftppam_userlen = 0;    PRIVS_RELINQUISH    pr_signals_unblock();    switch (res) {      case PAM_SYSTEM_ERR:        (void) pr_log_writefile(sftp_logfd, MOD_SFTP_PAM_VERSION,          "error starting PAM service: %s", strerror(errno));        break;      case PAM_BUF_ERR:        (void) pr_log_writefile(sftp_logfd, MOD_SFTP_PAM_VERSION,          "error starting PAM service: Memory buffer error");        break;    }    return -1;  }
+free(sftppam_user);
+free(sftppam_user);
+free
+free
+(sftppam_user)
+sftppam_user
+sftppam_user
+sftppam_user = NULL;
+sftppam_user = NULL
+sftppam_user
+sftppam_user
+NULL
+NULL
+sftppam_userlen = 0;
+sftppam_userlen = 0
+sftppam_userlen
+sftppam_userlen
+0
+PRIVS_RELINQUISH    pr_signals_unblock();
+PRIVS_RELINQUISH    pr_signals_unblock();
+PRIVS_RELINQUISH
+PRIVS_RELINQUISH
+pr_signals_unblock()
+pr_signals_unblock
+switch (res) {      case PAM_SYSTEM_ERR:        (void) pr_log_writefile(sftp_logfd, MOD_SFTP_PAM_VERSION,          "error starting PAM service: %s", strerror(errno));        break;      case PAM_BUF_ERR:        (void) pr_log_writefile(sftp_logfd, MOD_SFTP_PAM_VERSION,          "error starting PAM service: Memory buffer error");        break;    }
+res
+res
+{      case PAM_SYSTEM_ERR:        (void) pr_log_writefile(sftp_logfd, MOD_SFTP_PAM_VERSION,          "error starting PAM service: %s", strerror(errno));        break;      case PAM_BUF_ERR:        (void) pr_log_writefile(sftp_logfd, MOD_SFTP_PAM_VERSION,          "error starting PAM service: Memory buffer error");        break;    }
+case PAM_SYSTEM_ERR:
+PAM_SYSTEM_ERR
+PAM_SYSTEM_ERR
+(void) pr_log_writefile(sftp_logfd, MOD_SFTP_PAM_VERSION,          "error starting PAM service: %s", strerror(errno));
+(void) pr_log_writefile(sftp_logfd, MOD_SFTP_PAM_VERSION,          "error starting PAM service: %s", strerror(errno))
+void
+void
+
+pr_log_writefile(sftp_logfd, MOD_SFTP_PAM_VERSION,          "error starting PAM service: %s", strerror(errno))
+pr_log_writefile
+pr_log_writefile
+sftp_logfd
+sftp_logfd
+MOD_SFTP_PAM_VERSION
+MOD_SFTP_PAM_VERSION
+"error starting PAM service: %s"
+strerror(errno)
+strerror
+strerror
+errno
+errno
+break;
+case PAM_BUF_ERR:
+PAM_BUF_ERR
+PAM_BUF_ERR
+(void) pr_log_writefile(sftp_logfd, MOD_SFTP_PAM_VERSION,          "error starting PAM service: Memory buffer error");
+(void) pr_log_writefile(sftp_logfd, MOD_SFTP_PAM_VERSION,          "error starting PAM service: Memory buffer error")
+void
+void
+
+pr_log_writefile(sftp_logfd, MOD_SFTP_PAM_VERSION,          "error starting PAM service: Memory buffer error")
+pr_log_writefile
+pr_log_writefile
+sftp_logfd
+sftp_logfd
+MOD_SFTP_PAM_VERSION
+MOD_SFTP_PAM_VERSION
+"error starting PAM service: Memory buffer error"
+break;
+return -1;
+-1
+1
+pam_set_item(sftppam_pamh, PAM_RUSER, sftppam_user);
+pam_set_item(sftppam_pamh, PAM_RUSER, sftppam_user)
+pam_set_item
+pam_set_item
+sftppam_pamh
+sftppam_pamh
+PAM_RUSER
+PAM_RUSER
+sftppam_user
+sftppam_user
+pam_set_item(sftppam_pamh, PAM_RHOST, session.c->remote_name);
+pam_set_item(sftppam_pamh, PAM_RHOST, session.c->remote_name)
+pam_set_item
+pam_set_item
+sftppam_pamh
+sftppam_pamh
+PAM_RHOST
+PAM_RHOST
+session.c->remote_name
+session.c
+session
+session
+c
+remote_name
+if (!(sftppam_opts & SFTP_PAM_OPT_NO_TTY)) {    memset(sftppam_tty, '\0', sizeof(sftppam_tty));    snprintf(sftppam_tty, sizeof(sftppam_tty), "/dev/ftpd%02lu",      (unsigned long) (session.pid ? session.pid : getpid()));    sftppam_tty[sizeof(sftppam_tty)-1] = '\0';    pr_trace_msg(trace_channel, 9, "setting PAM_TTY to '%s'", sftppam_tty);    pam_set_item(sftppam_pamh, PAM_TTY, sftppam_tty);  }
+!(sftppam_opts & SFTP_PAM_OPT_NO_TTY)
+(sftppam_opts & SFTP_PAM_OPT_NO_TTY)
+sftppam_opts & SFTP_PAM_OPT_NO_TTY
+sftppam_opts
+sftppam_opts
+SFTP_PAM_OPT_NO_TTY
+SFTP_PAM_OPT_NO_TTY
+{    memset(sftppam_tty, '\0', sizeof(sftppam_tty));    snprintf(sftppam_tty, sizeof(sftppam_tty), "/dev/ftpd%02lu",      (unsigned long) (session.pid ? session.pid : getpid()));    sftppam_tty[sizeof(sftppam_tty)-1] = '\0';    pr_trace_msg(trace_channel, 9, "setting PAM_TTY to '%s'", sftppam_tty);    pam_set_item(sftppam_pamh, PAM_TTY, sftppam_tty);  }
+memset(sftppam_tty, '\0', sizeof(sftppam_tty));
+memset(sftppam_tty, '\0', sizeof(sftppam_tty))
+memset
+memset
+sftppam_tty
+sftppam_tty
+'\0'
+sizeof(sftppam_tty)
+sftppam_tty
+sftppam_tty
+sftppam_tty
+
+snprintf(sftppam_tty, sizeof(sftppam_tty), "/dev/ftpd%02lu",      (unsigned long) (session.pid ? session.pid : getpid()));
+snprintf(sftppam_tty, sizeof(sftppam_tty), "/dev/ftpd%02lu",      (unsigned long) (session.pid ? session.pid : getpid()))
+snprintf
+snprintf
+sftppam_tty
+sftppam_tty
+sizeof(sftppam_tty)
+sftppam_tty
+sftppam_tty
+sftppam_tty
+
+"/dev/ftpd%02lu"
+(unsigned long) (session.pid ? session.pid : getpid())
+unsigned long
+unsigned long
+
+(session.pid ? session.pid : getpid())
+session.pid ? session.pid : getpid()
+session.pid
+session
+session
+pid
+session.pid
+session
+session
+pid
+getpid()
+getpid
+getpid
+sftppam_tty[sizeof(sftppam_tty)-1] = '\0';
+sftppam_tty[sizeof(sftppam_tty)-1] = '\0'
+sftppam_tty[sizeof(sftppam_tty)-1]
+sftppam_tty
+sftppam_tty
+sizeof(sftppam_tty)-1
+sizeof(sftppam_tty)
+sftppam_tty
+sftppam_tty
+sftppam_tty
+
+1
+'\0'
+pr_trace_msg(trace_channel, 9, "setting PAM_TTY to '%s'", sftppam_tty);
+pr_trace_msg(trace_channel, 9, "setting PAM_TTY to '%s'", sftppam_tty)
+pr_trace_msg
+pr_trace_msg
+trace_channel
+trace_channel
+9
+"setting PAM_TTY to '%s'"
+sftppam_tty
+sftppam_tty
+pam_set_item(sftppam_pamh, PAM_TTY, sftppam_tty);
+pam_set_item(sftppam_pamh, PAM_TTY, sftppam_tty)
+pam_set_item
+pam_set_item
+sftppam_pamh
+sftppam_pamh
+PAM_TTY
+PAM_TTY
+sftppam_tty
+sftppam_tty
+PRIVS_RELINQUISH  pr_signals_unblock();
+PRIVS_RELINQUISH  pr_signals_unblock();
+PRIVS_RELINQUISH
+PRIVS_RELINQUISH
+pr_signals_unblock()
+pr_signals_unblock
+c = add_config_param_set(&(main_server->conf), "AuthPAM", 1, NULL);
+c = add_config_param_set(&(main_server->conf), "AuthPAM", 1, NULL)
+c
+c
+add_config_param_set(&(main_server->conf), "AuthPAM", 1, NULL)
+add_config_param_set
+add_config_param_set
+&(main_server->conf)
+(main_server->conf)
+main_server->conf
+main_server
+main_server
+conf
+"AuthPAM"
+1
+NULL
+NULL
+c->argv[0] = palloc(c->pool, sizeof(unsigned char));
+c->argv[0] = palloc(c->pool, sizeof(unsigned char))
+c->argv[0]
+c->argv
+c
+c
+argv
+0
+palloc(c->pool, sizeof(unsigned char))
+palloc
+palloc
+c->pool
+c
+c
+pool
+sizeof(unsigned char)
+unsigned char
+unsigned char
+
+*((unsigned char *) c->argv[0]) = FALSE;
+*((unsigned char *) c->argv[0]) = FALSE
+*((unsigned char *) c->argv[0])
+((unsigned char *) c->argv[0])
+(unsigned char *) c->argv[0]
+unsigned char *
+unsigned char
+*
+*
+c->argv[0]
+c->argv
+c
+c
+argv
+0
+FALSE
+FALSE
+if (pr_auth_remove_auth_only_module("mod_auth_pam.c") < 0) {    if (errno != ENOENT) {      pr_log_pri(PR_LOG_NOTICE, MOD_SFTP_PAM_VERSION        ": error removing 'mod_auth_pam.c' from the auth-only module list: %s",        strerror(errno));    }  }
+pr_auth_remove_auth_only_module("mod_auth_pam.c") < 0
+pr_auth_remove_auth_only_module("mod_auth_pam.c")
+pr_auth_remove_auth_only_module
+pr_auth_remove_auth_only_module
+"mod_auth_pam.c"
+0
+{    if (errno != ENOENT) {      pr_log_pri(PR_LOG_NOTICE, MOD_SFTP_PAM_VERSION        ": error removing 'mod_auth_pam.c' from the auth-only module list: %s",        strerror(errno));    }  }
+if (errno != ENOENT) {      pr_log_pri(PR_LOG_NOTICE, MOD_SFTP_PAM_VERSION        ": error removing 'mod_auth_pam.c' from the auth-only module list: %s",        strerror(errno));    }
+errno != ENOENT
+errno
+errno
+ENOENT
+ENOENT
+{      pr_log_pri(PR_LOG_NOTICE, MOD_SFTP_PAM_VERSION        ": error removing 'mod_auth_pam.c' from the auth-only module list: %s",        strerror(errno));    }
+pr_log_pri(PR_LOG_NOTICE, MOD_SFTP_PAM_VERSION        ": error removing 'mod_auth_pam.c' from the auth-only module list: %s",        strerror(errno));
+if (pr_auth_add_auth_only_module("mod_sftp_pam.c") < 0) {    pr_log_pri(PR_LOG_NOTICE, MOD_SFTP_PAM_VERSION      ": error adding 'mod_sftp_pam.c' to the auth-only module list: %s",      strerror(errno));  }
+pr_auth_add_auth_only_module("mod_sftp_pam.c") < 0
+pr_auth_add_auth_only_module("mod_sftp_pam.c")
+pr_auth_add_auth_only_module
+pr_auth_add_auth_only_module
+"mod_sftp_pam.c"
+0
+{    pr_log_pri(PR_LOG_NOTICE, MOD_SFTP_PAM_VERSION      ": error adding 'mod_sftp_pam.c' to the auth-only module list: %s",      strerror(errno));  }
+pr_log_pri(PR_LOG_NOTICE, MOD_SFTP_PAM_VERSION      ": error adding 'mod_sftp_pam.c' to the auth-only module list: %s",      strerror(errno));
+sftppam_handle_auth = TRUE;
+sftppam_handle_auth = TRUE
+sftppam_handle_auth
+sftppam_handle_auth
+TRUE
+TRUE
+driver->driver_pool = make_sub_pool(permanent_pool);
+driver->driver_pool = make_sub_pool(permanent_pool)
+driver->driver_pool
+driver
+driver
+driver_pool
+make_sub_pool(permanent_pool)
+make_sub_pool
+make_sub_pool
+permanent_pool
+permanent_pool
+pr_pool_tag(driver->driver_pool, "PAM keyboard-interactive driver pool");
+pr_pool_tag(driver->driver_pool, "PAM keyboard-interactive driver pool")
+pr_pool_tag
+pr_pool_tag
+driver->driver_pool
+driver
+driver
+driver_pool
+"PAM keyboard-interactive driver pool"
+return 0;
+0
+-----joern-----
+(244,233,0)
+(121,190,0)
+(253,44,0)
+(71,38,0)
+(15,246,0)
+(80,169,0)
+(258,165,0)
+(202,249,0)
+(148,233,0)
+(10,205,0)
+(126,200,0)
+(156,128,0)
+(99,251,0)
+(228,253,0)
+(220,238,0)
+(84,112,0)
+(214,218,0)
+(99,210,0)
+(284,209,0)
+(92,107,0)
+(150,7,0)
+(75,82,0)
+(247,272,0)
+(205,17,0)
+(256,122,0)
+(238,96,0)
+(263,100,0)
+(58,188,0)
+(100,43,0)
+(240,80,0)
+(132,187,0)
+(70,112,0)
+(4,251,0)
+(198,285,0)
+(260,242,0)
+(16,254,0)
+(192,144,0)
+(229,16,0)
+(99,100,0)
+(136,112,0)
+(188,108,0)
+(219,108,0)
+(215,160,0)
+(126,127,0)
+(143,226,0)
+(41,56,0)
+(82,149,0)
+(111,86,0)
+(42,12,0)
+(270,17,0)
+(245,84,0)
+(60,63,0)
+(117,171,0)
+(200,103,0)
+(20,258,0)
+(275,186,0)
+(246,59,0)
+(66,138,0)
+(210,99,0)
+(57,99,0)
+(281,281,0)
+(128,110,0)
+(173,149,0)
+(273,190,0)
+(213,51,0)
+(255,108,0)
+(175,80,0)
+(185,150,0)
+(160,281,0)
+(63,34,0)
+(106,205,0)
+(283,144,0)
+(160,138,0)
+(47,128,0)
+(27,236,0)
+(282,108,0)
+(50,89,0)
+(53,108,0)
+(44,253,0)
+(166,108,0)
+(183,65,0)
+(61,197,0)
+(165,197,0)
+(13,157,0)
+(249,112,0)
+(27,226,0)
+(103,200,0)
+(11,103,0)
+(253,218,0)
+(27,126,0)
+(160,188,0)
+(139,30,0)
+(179,46,0)
+(227,148,0)
+(94,122,0)
+(32,108,0)
+(165,37,0)
+(203,222,0)
+(205,285,0)
+(18,55,0)
+(161,215,0)
+(27,132,0)
+(34,141,0)
+(90,100,0)
+(32,13,0)
+(236,129,0)
+(241,177,0)
+(159,195,0)
+(267,191,0)
+(281,236,0)
+(265,28,0)
+(183,263,0)
+(123,27,0)
+(150,185,0)
+(182,55,0)
+(208,91,0)
+(27,30,0)
+(204,43,0)
+(81,132,0)
+(65,171,0)
+(232,108,0)
+(280,226,0)
+(248,253,0)
+(203,200,0)
+(278,157,0)
+(31,110,0)
+(149,251,0)
+(221,249,0)
+(242,260,0)
+(225,136,0)
+(96,238,0)
+(149,82,0)
+(169,181,0)
+(138,33,0)
+(104,210,0)
+(279,12,0)
+(141,34,0)
+(6,58,0)
+(271,203,0)
+(277,197,0)
+(261,272,0)
+(257,198,0)
+(40,8,0)
+(210,100,0)
+(170,108,0)
+(113,43,0)
+(65,83,0)
+(217,263,0)
+(27,188,0)
+(285,198,0)
+(35,34,0)
+(56,44,0)
+(124,108,0)
+(79,38,0)
+(77,46,0)
+(13,209,0)
+(222,108,0)
+(91,189,0)
+(193,89,0)
+(153,108,0)
+(259,210,0)
+(117,43,0)
+(134,70,0)
+(269,44,0)
+(281,7,0)
+(62,249,0)
+(180,253,0)
+(264,16,0)
+(87,281,0)
+(19,125,0)
+(160,199,0)
+(280,130,0)
+(222,203,0)
+(7,150,0)
+(30,108,0)
+(190,273,0)
+(210,251,0)
+(164,117,0)
+(105,244,0)
+(44,108,0)
+(188,58,0)
+(162,231,0)
+(98,136,0)
+(262,187,0)
+(138,66,0)
+(8,40,0)
+(12,42,0)
+(42,238,0)
+(115,16,0)
+(272,247,0)
+(223,4,0)
+(187,17,0)
+(88,185,0)
+(251,149,0)
+(168,181,0)
+(1,281,0)
+(39,38,0)
+(209,13,0)
+(131,99,0)
+(165,258,0)
+(133,205,0)
+(196,4,0)
+(2,273,0)
+(216,91,0)
+(237,282,0)
+(13,32,0)
+(25,280,0)
+(28,177,0)
+(74,8,0)
+(29,126,0)
+(171,117,0)
+(27,138,0)
+(132,32,0)
+(281,43,0)
+(46,254,0)
+(190,242,0)
+(22,150,0)
+(151,125,0)
+(172,46,0)
+(73,137,0)
+(55,18,0)
+(95,210,0)
+(147,38,0)
+(116,177,0)
+(49,108,0)
+(93,197,0)
+(157,13,0)
+(234,84,0)
+(48,222,0)
+(266,231,0)
+(67,188,0)
+(253,248,0)
+(243,92,0)
+(203,127,0)
+(42,235,0)
+(242,197,0)
+(21,236,0)
+(191,148,0)
+(212,66,0)
+(144,42,0)
+(89,108,0)
+(109,244,0)
+(55,182,0)
+(83,65,0)
+(107,92,0)
+(238,42,0)
+(7,108,0)
+(17,108,0)
+(154,141,0)
+(28,32,0)
+(263,183,0)
+(38,254,0)
+(51,108,0)
+(177,28,0)
+(148,236,0)
+(285,205,0)
+(135,251,0)
+(171,65,0)
+(169,80,0)
+(207,130,0)
+(227,160,0)
+(199,110,0)
+(17,205,0)
+(211,125,0)
+(167,195,0)
+(37,165,0)
+(185,254,0)
+(181,169,0)
+(114,12,0)
+(206,258,0)
+(239,56,0)
+(157,278,0)
+(142,38,0)
+(23,282,0)
+(177,17,0)
+(4,100,0)
+(72,149,0)
+(27,108,0)
+(3,263,0)
+(101,108,0)
+(194,141,0)
+(46,233,0)
+(16,108,0)
+(0,209,0)
+(45,82,0)
+(160,236,0)
+(136,186,0)
+(158,108,0)
+(130,280,0)
+(34,63,0)
+(148,138,0)
+(209,17,0)
+(148,244,0)
+(100,210,0)
+(119,199,0)
+(24,8,0)
+(160,110,0)
+(224,126,0)
+(186,136,0)
+(252,89,0)
+(102,7,0)
+(200,108,0)
+(286,199,0)
+(268,203,0)
+(152,198,0)
+(250,190,0)
+(281,188,0)
+(68,247,0)
+(160,128,0)
+(65,183,0)
+(52,169,0)
+(54,210,0)
+(155,236,0)
+(148,7,0)
+(146,108,0)
+(96,176,0)
+(184,181,0)
+(163,183,0)
+(76,197,0)
+(140,190,0)
+(97,187,0)
+(281,117,0)
+(9,30,0)
+(201,46,0)
+(227,27,0)
+(274,84,0)
+(281,138,0)
+(178,107,0)
+(230,258,0)
+(226,280,0)
+(78,96,0)
+(238,220,0)
+(26,108,0)
+(251,108,0)
+(27,18,0)
+(28,55,0)
+(14,96,0)
+(160,7,0)
+(187,132,0)
+(120,248,0)
+(18,51,0)
+(226,70,0)
+(218,253,0)
+(263,251,0)
+(86,110,0)
+(55,28,0)
+(5,149,0)
+(27,281,0)
+(242,190,0)
+(38,233,0)
+(145,138,0)
+(69,110,0)
+(42,144,0)
+(118,176,0)
+(181,108,0)
+(174,108,0)
+(189,91,0)
+(276,249,0)
+(235,42,0)
+(125,108,0)
+(27,7,0)
+(64,66,0)
+(176,96,0)
+(96,112,0)
+(36,40,0)
+(133,10,1)
+(263,100,1)
+(22,185,1)
+(28,265,1)
+(202,221,1)
+(77,179,1)
+(160,7,1)
+(253,248,1)
+(203,200,1)
+(270,189,1)
+(65,183,1)
+(41,44,1)
+(111,56,1)
+(227,148,1)
+(115,229,1)
+(238,42,1)
+(55,182,1)
+(203,268,1)
+(224,30,1)
+(208,181,1)
+(225,189,1)
+(21,63,1)
+(139,9,1)
+(34,141,1)
+(118,14,1)
+(105,38,1)
+(211,151,1)
+(122,256,1)
+(104,95,1)
+(23,4,1)
+(156,47,1)
+(30,139,1)
+(188,58,1)
+(272,261,1)
+(279,114,1)
+(24,74,1)
+(88,102,1)
+(150,185,1)
+(154,194,1)
+(130,207,1)
+(280,130,1)
+(5,82,1)
+(81,187,1)
+(132,81,1)
+(172,195,1)
+(148,7,1)
+(261,122,1)
+(29,224,1)
+(229,264,1)
+(152,257,1)
+(141,154,1)
+(92,243,1)
+(86,111,1)
+(214,248,1)
+(257,270,1)
+(102,236,1)
+(248,120,1)
+(200,103,1)
+(54,90,1)
+(241,116,1)
+(256,94,1)
+(134,226,1)
+(99,57,1)
+(87,1,1)
+(28,32,1)
+(12,279,1)
+(109,105,1)
+(283,192,1)
+(281,138,1)
+(74,36,1)
+(144,283,1)
+(213,18,1)
+(35,141,1)
+(148,138,1)
+(75,45,1)
+(187,17,1)
+(263,251,1)
+(103,11,1)
+(218,214,1)
+(181,169,1)
+(230,20,1)
+(284,132,1)
+(165,258,1)
+(223,196,1)
+(234,249,1)
+(32,13,1)
+(67,195,1)
+(186,275,1)
+(180,269,1)
+(89,50,1)
+(157,278,1)
+(204,4,1)
+(27,226,1)
+(210,251,1)
+(163,263,1)
+(85,199,1)
+(196,251,1)
+(266,188,1)
+(52,80,1)
+(210,99,1)
+(177,17,1)
+(149,72,1)
+(209,0,1)
+(3,164,1)
+(282,237,1)
+(286,128,1)
+(271,200,1)
+(160,236,1)
+(27,30,1)
+(143,96,1)
+(261,107,1)
+(245,234,1)
+(262,97,1)
+(56,44,1)
+(131,54,1)
+(239,41,1)
+(222,203,1)
+(210,259,1)
+(84,274,1)
+(44,253,1)
+(58,6,1)
+(45,135,1)
+(82,75,1)
+(123,222,1)
+(160,199,1)
+(242,260,1)
+(79,142,1)
+(119,286,1)
+(259,104,1)
+(161,85,1)
+(171,65,1)
+(66,64,1)
+(185,254,1)
+(99,100,1)
+(11,126,1)
+(145,40,1)
+(46,77,1)
+(4,100,1)
+(90,281,1)
+(61,242,1)
+(6,67,1)
+(91,216,1)
+(93,165,1)
+(165,37,1)
+(39,79,1)
+(226,280,1)
+(160,188,1)
+(96,238,1)
+(140,250,1)
+(275,98,1)
+(107,178,1)
+(209,17,1)
+(56,239,1)
+(251,149,1)
+(161,61,1)
+(25,130,1)
+(183,263,1)
+(187,262,1)
+(276,62,1)
+(264,125,1)
+(281,236,1)
+(147,71,1)
+(98,225,1)
+(62,70,1)
+(173,5,1)
+(116,32,1)
+(212,145,1)
+(150,22,1)
+(27,188,1)
+(10,106,1)
+(28,177,1)
+(184,89,1)
+(221,276,1)
+(175,168,1)
+(228,180,1)
+(96,176,1)
+(217,3,1)
+(246,15,1)
+(192,12,1)
+(281,281,1)
+(142,46,1)
+(125,211,1)
+(205,133,1)
+(18,55,1)
+(102,63,1)
+(78,176,1)
+(4,223,1)
+(176,118,1)
+(0,284,1)
+(47,86,1)
+(128,156,1)
+(285,198,1)
+(263,217,1)
+(249,202,1)
+(174,282,1)
+(178,92,1)
+(179,201,1)
+(247,272,1)
+(185,88,1)
+(169,52,1)
+(148,244,1)
+(281,188,1)
+(42,235,1)
+(148,236,1)
+(281,7,1)
+(222,48,1)
+(268,271,1)
+(27,281,1)
+(68,272,1)
+(167,40,1)
+(136,186,1)
+(126,127,1)
+(203,127,1)
+(95,99,1)
+(13,209,1)
+(199,119,1)
+(273,2,1)
+(151,19,1)
+(19,246,1)
+(60,34,1)
+(269,174,1)
+(164,204,1)
+(114,78,1)
+(162,266,1)
+(42,144,1)
+(191,267,1)
+(160,281,1)
+(38,254,1)
+(265,177,1)
+(57,131,1)
+(250,85,1)
+(132,187,1)
+(27,236,1)
+(15,231,1)
+(27,138,1)
+(169,80,1)
+(55,28,1)
+(46,254,1)
+(19,231,1)
+(270,84,1)
+(72,173,1)
+(94,107,1)
+(168,184,1)
+(190,273,1)
+(34,35,1)
+(38,147,1)
+(157,209,1)
+(210,100,1)
+(42,12,1)
+(27,7,1)
+(237,23,1)
+(99,251,1)
+(107,92,1)
+(16,254,1)
+(27,18,1)
+(167,138,1)
+(64,212,1)
+(201,172,1)
+(97,17,1)
+(238,220,1)
+(267,244,1)
+(80,240,1)
+(126,29,1)
+(193,252,1)
+(138,66,1)
+(227,27,1)
+(70,134,1)
+(240,175,1)
+(281,87,1)
+(195,159,1)
+(7,150,1)
+(27,126,1)
+(243,51,1)
+(189,91,1)
+(177,241,1)
+(51,213,1)
+(155,21,1)
+(27,123,1)
+(40,8,1)
+(4,251,1)
+(27,132,1)
+(253,218,1)
+(17,205,1)
+(242,190,1)
+(16,115,1)
+(100,210,1)
+(117,171,1)
+(48,203,1)
+(106,285,1)
+(215,161,1)
+(160,128,1)
+(235,12,1)
+(120,228,1)
+(161,93,1)
+(135,16,1)
+(216,208,1)
+(9,247,1)
+(196,100,1)
+(149,82,1)
+(247,68,1)
+(252,56,1)
+(148,191,1)
+(63,60,1)
+(207,143,1)
+(36,7,1)
+(231,162,1)
+(14,136,1)
+(2,121,1)
+(281,117,1)
+(65,83,1)
+(227,160,1)
+(50,193,1)
+(121,140,1)
+(258,206,1)
+(205,285,1)
+(198,152,1)
+(274,245,1)
+(159,167,1)
+(63,34,1)
+(1,117,1)
+(20,85,1)
+(8,24,1)
+(71,39,1)
+(160,138,1)
+(13,157,1)
+(206,230,1)
+(236,155,1)
+(183,163,1)
+(244,109,1)
+(280,25,1)
+(160,215,1)
+(30,56,2)
+(150,185,2)
+(263,100,2)
+(143,189,2)
+(61,85,2)
+(126,56,2)
+(44,195,2)
+(163,4,2)
+(78,189,2)
+(38,195,2)
+(97,56,2)
+(160,128,2)
+(183,4,2)
+(192,12,2)
+(4,100,2)
+(281,7,2)
+(210,99,2)
+(280,189,2)
+(279,189,2)
+(77,195,2)
+(165,85,2)
+(39,195,2)
+(284,56,2)
+(244,195,2)
+(50,56,2)
+(119,56,2)
+(106,56,2)
+(181,56,2)
+(211,195,2)
+(52,56,2)
+(221,189,2)
+(42,189,2)
+(132,56,2)
+(183,263,2)
+(162,195,2)
+(174,195,2)
+(9,56,2)
+(247,272,2)
+(16,195,2)
+(48,56,2)
+(27,188,2)
+(149,195,2)
+(238,42,2)
+(176,189,2)
+(209,56,2)
+(205,56,2)
+(253,218,2)
+(177,17,2)
+(46,254,2)
+(34,141,2)
+(161,56,2)
+(40,8,2)
+(155,63,2)
+(250,85,2)
+(267,195,2)
+(191,195,2)
+(226,280,2)
+(224,56,2)
+(96,176,2)
+(23,195,2)
+(126,127,2)
+(109,195,2)
+(27,56,2)
+(84,189,2)
+(171,4,2)
+(210,100,2)
+(111,56,2)
+(94,107,2)
+(55,56,2)
+(58,195,2)
+(214,195,2)
+(189,91,2)
+(202,189,2)
+(28,56,2)
+(280,130,2)
+(99,251,2)
+(4,251,2)
+(181,169,2)
+(27,18,2)
+(118,189,2)
+(175,56,2)
+(225,189,2)
+(165,258,2)
+(237,195,2)
+(79,195,2)
+(210,251,2)
+(0,56,2)
+(285,198,2)
+(190,273,2)
+(13,157,2)
+(139,56,2)
+(18,55,2)
+(172,195,2)
+(148,236,2)
+(193,56,2)
+(281,4,2)
+(107,92,2)
+(138,66,2)
+(283,12,2)
+(148,7,2)
+(169,80,2)
+(114,189,2)
+(134,189,2)
+(160,56,2)
+(100,4,2)
+(245,189,2)
+(215,56,2)
+(168,56,2)
+(55,182,2)
+(243,56,2)
+(212,40,2)
+(200,56,2)
+(117,171,2)
+(198,56,2)
+(66,40,2)
+(45,195,2)
+(201,195,2)
+(235,12,2)
+(222,203,2)
+(65,4,2)
+(281,188,2)
+(133,56,2)
+(216,56,2)
+(27,281,2)
+(91,56,2)
+(256,107,2)
+(123,56,2)
+(261,56,2)
+(185,254,2)
+(257,56,2)
+(27,30,2)
+(51,56,2)
+(227,27,2)
+(81,56,2)
+(27,236,2)
+(147,195,2)
+(169,56,2)
+(148,195,2)
+(29,56,2)
+(263,4,2)
+(122,107,2)
+(2,85,2)
+(12,189,2)
+(107,56,2)
+(17,56,2)
+(173,195,2)
+(227,160,2)
+(239,195,2)
+(242,260,2)
+(28,32,2)
+(208,56,2)
+(75,195,2)
+(132,187,2)
+(196,4,2)
+(27,138,2)
+(209,17,2)
+(180,195,2)
+(285,56,2)
+(281,236,2)
+(67,195,2)
+(238,220,2)
+(152,56,2)
+(199,56,2)
+(99,4,2)
+(270,56,2)
+(121,85,2)
+(56,195,2)
+(105,195,2)
+(253,195,2)
+(16,254,2)
+(264,195,2)
+(160,138,2)
+(82,195,2)
+(249,189,2)
+(218,195,2)
+(223,195,2)
+(240,56,2)
+(7,150,2)
+(64,40,2)
+(282,195,2)
+(271,56,2)
+(90,4,2)
+(179,195,2)
+(151,195,2)
+(144,12,2)
+(27,132,2)
+(13,56,2)
+(93,85,2)
+(210,4,2)
+(19,195,2)
+(275,189,2)
+(165,37,2)
+(128,56,2)
+(203,200,2)
+(104,4,2)
+(203,127,2)
+(72,195,2)
+(200,103,2)
+(116,56,2)
+(231,195,2)
+(229,195,2)
+(160,7,2)
+(136,189,2)
+(156,56,2)
+(4,4,2)
+(187,56,2)
+(186,189,2)
+(157,278,2)
+(42,235,2)
+(13,209,2)
+(63,34,2)
+(99,100,2)
+(18,56,2)
+(86,56,2)
+(160,236,2)
+(273,85,2)
+(281,281,2)
+(213,56,2)
+(28,177,2)
+(286,56,2)
+(265,56,2)
+(136,186,2)
+(160,199,2)
+(160,281,2)
+(96,189,2)
+(236,63,2)
+(234,189,2)
+(157,56,2)
+(6,195,2)
+(281,117,2)
+(4,195,2)
+(130,189,2)
+(246,231,2)
+(241,56,2)
+(32,13,2)
+(281,138,2)
+(268,56,2)
+(27,226,2)
+(27,126,2)
+(115,195,2)
+(46,195,2)
+(42,144,2)
+(222,56,2)
+(190,85,2)
+(252,56,2)
+(96,238,2)
+(188,195,2)
+(70,189,2)
+(149,82,2)
+(228,195,2)
+(85,56,2)
+(138,40,2)
+(117,4,2)
+(177,56,2)
+(227,148,2)
+(188,58,2)
+(226,189,2)
+(65,83,2)
+(187,17,2)
+(203,56,2)
+(258,85,2)
+(164,4,2)
+(269,195,2)
+(207,189,2)
+(251,149,2)
+(263,251,2)
+(3,4,2)
+(1,4,2)
+(131,4,2)
+(253,248,2)
+(92,56,2)
+(103,56,2)
+(230,85,2)
+(125,195,2)
+(80,56,2)
+(205,285,2)
+(262,56,2)
+(206,85,2)
+(217,4,2)
+(148,138,2)
+(62,189,2)
+(47,56,2)
+(184,56,2)
+(89,56,2)
+(10,56,2)
+(44,253,2)
+(272,56,2)
+(95,4,2)
+(71,195,2)
+(204,4,2)
+(15,231,2)
+(56,44,2)
+(135,195,2)
+(100,210,2)
+(17,205,2)
+(65,183,2)
+(120,195,2)
+(11,56,2)
+(142,195,2)
+(148,244,2)
+(171,65,2)
+(276,189,2)
+(55,28,2)
+(32,56,2)
+(160,188,2)
+(259,4,2)
+(274,189,2)
+(196,195,2)
+(87,4,2)
+(242,190,2)
+(54,4,2)
+(14,189,2)
+(57,4,2)
+(68,56,2)
+(20,85,2)
+(251,195,2)
+(238,189,2)
+(189,56,2)
+(178,56,2)
+(27,7,2)
+(223,4,2)
+(5,195,2)
+(38,254,2)
+(42,12,2)
+(21,63,2)
+(140,85,2)
+(248,195,2)
+(25,189,2)
+(242,85,2)
+(41,195,2)
+(247,56,2)
+(145,40,2)
+(98,189,2)
+(266,195,2)
+-----------------------------------
+(0,pool)
+(1,sftppam_opts)
+(2,errno)
+(3,c)
+(4,c != NULL)
+(5,CONF_PARAM)
+(6,sftppam_userlen)
+(7,sftppam_userlen = strlen(user)
+(8,PAM_MAX_MSG_SIZE + 1)
+(9,sftppam_handle_auth)
+(10,1)
+(11,permanent_pool)
+(12,session.pid)
+(13,palloc(c->pool, sizeof(unsigned char)
+(14,sftppam_tty)
+(15,1)
+(16,sstrncpy(sftppam_user, user, sftppam_userlen)
+(17,c = add_config_param_set(&(main_server->conf)
+(18,*((unsigned char *)
+(19,sftppam_user)
+(20,sftp_logfd)
+(21,sftppam_authoritative)
+(22,1)
+(23,sftppam_opts)
+(24,1)
+(25,1)
+(26,while (c != NULL)
+(27,return 0;)
+(28,c->argv[0])
+(29,driver_pool)
+(30,sftppam_handle_auth = TRUE)
+(31,switch (res)
+(32,c->argv[0] = palloc(c->pool, sizeof(unsigned char)
+(33,)
+(34,sftppam_authtab[0].auth_flags)
+(35,auth_flags)
+(36,sftppam_userlen)
+(37,void)
+(38,pr_trace_msg(trace_channel, 1,\n\\n      "user name \'%s\' exceeds maximum login length %u, declining", user,\n\\n      MAXLOGNAME)
+(39,"user name \'%s\' exceeds maximum login length %u, declining")
+(40,sftppam_userlen > (PAM_MAX_MSG_SIZE + 1)
+(41,res)
+(42,session.pid ? session.pid : getpid()
+(43,)
+(44,res = pam_start(sftppam_service, sftppam_user, &sftppam_conv, &sftppam_pamh)
+(45,main_server)
+(46,pr_log_pri(PR_LOG_NOTICE,\n\\n      "PAM(%s)
+(47,sftppam_user)
+(48,"PAM keyboard-interactive driver pool")
+(49,if (sftppam_authtab[0].auth_flags & PR_AUTH_FL_REQUIRED)
+(50,sftppam_user)
+(51,*((unsigned char *)
+(52,remote_name)
+(53,res)
+(54,c)
+(55,(unsigned char *)
+(56,res != PAM_SUCCESS)
+(57,next)
+(58,malloc(sftppam_userlen)
+(59,)
+(60,PR_AUTH_FL_REQUIRED)
+(61,break;)
+(62,trace_channel)
+(63,sftppam_authtab[0].auth_flags & PR_AUTH_FL_REQUIRED)
+(64,1)
+(65,(unsigned long *)
+(66,PAM_MAX_MSG_SIZE + 1)
+(67,sftppam_user)
+(68,0)
+(69,pr_signals_unblock)
+(70,sftppam_tty[sizeof(sftppam_tty)
+(71,user)
+(72,FALSE)
+(73,if (errno != ENOENT)
+(74,PAM_MAX_MSG_SIZE)
+(75,conf)
+(76,case PAM_SYSTEM_ERR:)
+(77,MAXLOGNAME)
+(78,"/dev/ftpd%02lu")
+(79,1)
+(80,session.c)
+(81,0)
+(82,main_server->conf)
+(83,unsigned long *)
+(84,pam_set_item(sftppam_pamh, PAM_TTY, sftppam_tty)
+(85,res)
+(86,free(sftppam_user)
+(87,opts)
+(88,user)
+(89,pam_set_item(sftppam_pamh, PAM_RUSER, sftppam_user)
+(90,c)
+(91,sftppam_opts & SFTP_PAM_OPT_NO_TTY)
+(92,pr_auth_remove_auth_only_module("mod_auth_pam.c")
+(93,break;)
+(94,errno)
+(95,CONF_PARAM)
+(96,snprintf(sftppam_tty, sizeof(sftppam_tty)
+(97,c)
+(98,\'\\0\')
+(99,c->next)
+(100,c = find_config_next(c, c->next, CONF_PARAM, "SFTPPAMOptions", FALSE)
+(101,if (res != PAM_SUCCESS)
+(102,sftppam_userlen)
+(103,make_sub_pool(permanent_pool)
+(104,"SFTPPAMOptions")
+(105,errno)
+(106,"AuthPAM")
+(107,pr_auth_remove_auth_only_module("mod_auth_pam.c")
+(108,)
+(109,EPERM)
+(110,)
+(111,sftppam_user)
+(112,)
+(113,opts)
+(114,session)
+(115,sftppam_userlen)
+(116,c)
+(117,opts = *((unsigned long *)
+(118,sftppam_tty)
+(119,0)
+(120,sftppam_conv)
+(121,"error starting PAM service: %s")
+(122,errno != ENOENT)
+(123,0)
+(124,if (!(sftppam_opts & SFTP_PAM_OPT_NO_TTY)
+(125,memset(sftppam_user, \'\\0\', sftppam_userlen)
+(126,driver->driver_pool)
+(127,sftp_kbdint_driver_t *driver)
+(128,sftppam_user = NULL)
+(129,)
+(130,sizeof(sftppam_tty)
+(131,c)
+(132,c->argv[0])
+(133,NULL)
+(134,\'\\0\')
+(135,c)
+(136,memset(sftppam_tty, \'\\0\', sizeof(sftppam_tty)
+(137,)
+(138,sftppam_userlen = PAM_MAX_MSG_SIZE + 1)
+(139,TRUE)
+(140,MOD_SFTP_PAM_VERSION)
+(141,sftppam_authtab[0])
+(142,trace_channel)
+(143,sftppam_tty)
+(144,session.pid)
+(145,sftppam_userlen)
+(146,pr_signals_unblock)
+(147,MAXLOGNAME)
+(148,return -1;)
+(149,find_config(main_server->conf, CONF_PARAM, "SFTPPAMOptions", FALSE)
+(150,strlen(user)
+(151,\'\\0\')
+(152,conf)
+(153,if (pr_auth_add_auth_only_module("mod_sftp_pam.c")
+(154,0)
+(155,TRUE)
+(156,NULL)
+(157,sizeof(unsigned char)
+(158,if (sftppam_userlen > MAXLOGNAME)
+(159,MAXLOGNAME)
+(160,return -1;)
+(161,1)
+(162,NULL)
+(163,0)
+(164,opts)
+(165,(void)
+(166,if (pr_auth_remove_auth_only_module("mod_auth_pam.c")
+(167,sftppam_userlen)
+(168,PAM_RHOST)
+(169,session.c->remote_name)
+(170,c)
+(171,*((unsigned long *)
+(172,PR_LOG_NOTICE)
+(173,"SFTPPAMOptions")
+(174,pr_signals_block()
+(175,session)
+(176,sizeof(sftppam_tty)
+(177,c->argv)
+(178,0)
+(179,user)
+(180,sftppam_service)
+(181,pam_set_item(sftppam_pamh, PAM_RHOST, session.c->remote_name)
+(182,unsigned char *)
+(183,c->argv[0])
+(184,sftppam_pamh)
+(185,strlen(user)
+(186,sizeof(sftppam_tty)
+(187,c->argv)
+(188,sftppam_user = malloc(sftppam_userlen)
+(189,!(sftppam_opts & SFTP_PAM_OPT_NO_TTY)
+(190,pr_log_writefile(sftp_logfd, MOD_SFTP_PAM_VERSION,\n\\n          "error starting PAM service: %s", strerror(errno)
+(191,-1)
+(192,session)
+(193,PAM_RUSER)
+(194,sftppam_authtab)
+(195,sftppam_userlen > MAXLOGNAME)
+(196,c)
+(197,)
+(198,main_server->conf)
+(199,sftppam_userlen = 0)
+(200,driver->driver_pool = make_sub_pool(permanent_pool)
+(201,"PAM(%s)
+(202,sftppam_tty)
+(203,driver->driver_pool)
+(204,pr_signals_handle()
+(205,add_config_param_set(&(main_server->conf)
+(206,"error starting PAM service: Memory buffer error")
+(207,sftppam_tty)
+(208,sftppam_opts)
+(209,c->pool)
+(210,find_config_next(c, c->next, CONF_PARAM, "SFTPPAMOptions", FALSE)
+(211,sftppam_userlen)
+(212,PAM_MAX_MSG_SIZE)
+(213,FALSE)
+(214,sftppam_pamh)
+(215,-1)
+(216,SFTP_PAM_OPT_NO_TTY)
+(217,argv)
+(218,&sftppam_pamh)
+(219,if (sftppam_userlen > (PAM_MAX_MSG_SIZE + 1)
+(220,unsigned long)
+(221,"setting PAM_TTY to \'%s\'")
+(222,pr_pool_tag(driver->driver_pool, "PAM keyboard-interactive driver pool")
+(223,NULL)
+(224,driver)
+(225,sftppam_tty)
+(226,sftppam_tty[sizeof(sftppam_tty)
+(227,RET)
+(228,sftppam_user)
+(229,user)
+(230,MOD_SFTP_PAM_VERSION)
+(231,sftppam_user == NULL)
+(232,if (sftppam_user == NULL)
+(233,)
+(234,sftppam_pamh)
+(235,getpid()
+(236,sftppam_authoritative = TRUE)
+(237,~SFTP_PAM_OPT_NO_TTY)
+(238,(unsigned long)
+(239,PAM_SUCCESS)
+(240,c)
+(241,argv)
+(242,(void)
+(243,"mod_auth_pam.c")
+(244,errno = EPERM)
+(245,PAM_TTY)
+(246,exit(1)
+(247,pr_auth_add_auth_only_module("mod_sftp_pam.c")
+(248,&sftppam_conv)
+(249,pr_trace_msg(trace_channel, 9, "setting PAM_TTY to \'%s\'", sftppam_tty)
+(250,sftp_logfd)
+(251,c = find_config(main_server->conf, CONF_PARAM, "SFTPPAMOptions", FALSE)
+(252,sftppam_pamh)
+(253,pam_start(sftppam_service, sftppam_user, &sftppam_conv, &sftppam_pamh)
+(254,const char *user)
+(255,res)
+(256,ENOENT)
+(257,main_server)
+(258,pr_log_writefile(sftp_logfd, MOD_SFTP_PAM_VERSION,\n\\n          "error starting PAM service: Memory buffer error")
+(259,FALSE)
+(260,void)
+(261,"mod_sftp_pam.c")
+(262,argv)
+(263,c->argv)
+(264,sftppam_user)
+(265,0)
+(266,sftppam_user)
+(267,1)
+(268,driver_pool)
+(269,res)
+(270,c)
+(271,driver)
+(272,pr_auth_add_auth_only_module("mod_sftp_pam.c")
+(273,strerror(errno)
+(274,sftppam_tty)
+(275,sftppam_tty)
+(276,9)
+(277,case PAM_BUF_ERR:)
+(278,unsigned char)
+(279,pid)
+(280,sizeof(sftppam_tty)
+(281,sftppam_opts |= opts)
+(282,sftppam_opts &= ~SFTP_PAM_OPT_NO_TTY)
+(283,pid)
+(284,c)
+(285,&(main_server->conf)
+(286,sftppam_userlen)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

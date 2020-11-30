@@ -1,0 +1,1726 @@
+-----label-----
+0
+-----code-----
+static void leave_queue(struct queue_ent *qe)
+{
+	struct call_queue *q;
+	struct queue_ent *current, *prev = NULL;
+	struct penalty_rule *pr_iter;
+	int pos = 0;
+
+	if (!(q = qe->parent)) {
+		return;
+	}
+	queue_t_ref(q, "Copy queue pointer from queue entry");
+	ao2_lock(q);
+
+	prev = NULL;
+	for (current = q->head; current; current = current->next) {
+		if (current == qe) {
+			char posstr[20];
+			q->count--;
+			if (!q->count) {
+				ast_devstate_changed(AST_DEVICE_NOT_INUSE, AST_DEVSTATE_CACHABLE, "Queue:%s", q->name);
+			}
+
+			/* Take us out of the queue */
+			/*** DOCUMENTATION
+			<managerEventInstance>
+				<synopsis>Raised when a channel leaves a Queue.</synopsis>
+				<syntax>
+					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />
+					<xi:include xpointer="xpointer(/docs/managerEvent[@name='Join']/managerEventInstance/syntax/parameter[@name='Count'])" />
+					<xi:include xpointer="xpointer(/docs/managerEvent[@name='Join']/managerEventInstance/syntax/parameter[@name='Position'])" />
+				</syntax>
+				<see-also>
+					<ref type="managerEvent">Join</ref>
+				</see-also>
+			</managerEventInstance>
+			***/
+			ast_manager_event(qe->chan, EVENT_FLAG_CALL, "Leave",
+				"Channel: %s\r\nQueue: %s\r\nCount: %d\r\nPosition: %d\r\nUniqueid: %s\r\n",
+				ast_channel_name(qe->chan), q->name,  q->count, qe->pos, ast_channel_uniqueid(qe->chan));
+			ast_debug(1, "Queue '%s' Leave, Channel '%s'\n", q->name, ast_channel_name(qe->chan));
+			/* Take us out of the queue */
+			if (prev) {
+				prev->next = current->next;
+			} else {
+				q->head = current->next;
+			}
+			/* Free penalty rules */
+			while ((pr_iter = AST_LIST_REMOVE_HEAD(&qe->qe_rules, list))) {
+				ast_free(pr_iter);
+			}
+			snprintf(posstr, sizeof(posstr), "%d", qe->pos);
+			pbx_builtin_setvar_helper(qe->chan, "QUEUEPOSITION", posstr);
+		} else {
+			/* Renumber the people after us in the queue based on a new count */
+			current->pos = ++pos;
+			prev = current;
+		}
+	}
+	ao2_unlock(q);
+
+	/*If the queue is a realtime queue, check to see if it's still defined in real time*/
+	if (q->realtime) {
+		struct ast_variable *var;
+		if (!(var = ast_load_realtime("queues", "name", q->name, SENTINEL))) {
+			q->dead = 1;
+		} else {
+			ast_variables_destroy(var);
+		}
+	}
+
+	if (q->dead) {
+		/* It's dead and nobody is in it, so kill it */
+		queues_t_unlink(queues, q, "Queue is now dead; remove it from the container");
+	}
+	/* unref the explicit ref earlier in the function */
+	queue_t_unref(q, "Expire copied reference");
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+11,14
+11,15
+11,16
+11,17
+11,18
+11,19
+11,20
+11,21
+11,22
+11,23
+11,24
+12,13
+13,14
+13,15
+14,15
+16,17
+16,18
+19,20
+20,21
+20,22
+20,23
+21,22
+23,24
+23,25
+26,27
+26,28
+26,29
+29,30
+30,31
+32,33
+33,34
+33,35
+34,35
+36,37
+36,38
+39,40
+40,41
+40,42
+42,43
+42,44
+44,45
+46,47
+46,48
+47,48
+48,49
+49,50
+49,51
+50,51
+52,53
+52,54
+53,54
+56,57
+58,59
+59,60
+59,61
+59,62
+60,61
+62,63
+65,66
+66,67
+66,68
+67,68
+69,70
+71,72
+72,73
+72,74
+73,74
+75,76
+77,78
+77,79
+77,80
+77,81
+78,79
+79,80
+79,81
+80,81
+82,83
+82,84
+83,84
+86,87
+88,89
+88,90
+89,90
+91,92
+91,93
+92,93
+95,96
+96,97
+96,98
+96,99
+97,98
+97,99
+98,99
+100,101
+102,103
+102,104
+102,105
+102,106
+102,107
+102,108
+102,109
+102,110
+102,111
+103,104
+104,105
+104,106
+106,107
+106,108
+108,109
+110,111
+111,112
+112,113
+112,114
+113,114
+116,117
+116,118
+117,118
+118,119
+118,120
+119,120
+122,123
+123,124
+124,125
+124,126
+124,127
+124,128
+124,129
+125,126
+127,128
+129,130
+132,133
+132,134
+133,134
+136,137
+137,138
+137,139
+137,140
+137,141
+137,142
+137,143
+137,144
+137,145
+137,146
+137,147
+138,139
+140,141
+140,142
+141,142
+144,145
+148,149
+148,150
+149,150
+151,152
+151,153
+152,153
+155,156
+155,157
+156,157
+159,160
+159,161
+160,161
+163,164
+163,165
+164,165
+167,168
+167,169
+168,169
+170,171
+170,172
+171,172
+174,175
+175,176
+175,177
+175,178
+175,179
+175,180
+176,177
+180,181
+180,182
+181,182
+184,185
+184,186
+185,186
+187,188
+187,189
+188,189
+191,192
+191,193
+191,194
+192,193
+194,195
+195,196
+196,197
+196,198
+197,198
+197,199
+198,199
+201,202
+201,203
+202,203
+205,206
+206,207
+207,208
+207,209
+208,209
+208,210
+209,210
+212,213
+212,214
+213,214
+216,217
+216,218
+217,218
+218,219
+218,220
+219,220
+221,222
+221,223
+221,224
+222,223
+224,225
+225,226
+225,227
+226,227
+229,230
+231,232
+232,233
+233,234
+233,235
+234,235
+236,237
+238,239
+239,240
+239,241
+239,242
+239,243
+239,244
+240,241
+242,243
+244,245
+245,246
+246,247
+249,250
+249,251
+250,251
+253,254
+254,255
+254,256
+254,257
+254,258
+255,256
+257,258
+257,259
+258,259
+262,263
+264,265
+264,266
+265,266
+266,267
+266,268
+267,268
+267,269
+268,269
+271,272
+272,273
+274,275
+275,276
+275,277
+276,277
+278,279
+280,281
+281,282
+281,283
+282,283
+284,285
+286,287
+286,288
+287,288
+287,289
+288,289
+291,292
+291,293
+292,293
+293,294
+293,295
+294,295
+296,297
+296,298
+299,300
+299,301
+299,302
+300,301
+301,302
+302,303
+302,304
+303,304
+305,306
+305,307
+305,308
+305,309
+305,310
+306,307
+310,311
+310,312
+311,312
+314,315
+316,317
+317,318
+318,319
+318,320
+319,320
+319,321
+320,321
+324,325
+325,326
+326,327
+326,328
+327,328
+329,330
+331,332
+331,333
+332,333
+332,334
+333,334
+336,337
+337,338
+338,339
+338,340
+338,341
+338,342
+339,340
+341,342
+343,344
+346,347
+347,348
+347,349
+347,350
+348,349
+350,351
+-----nextToken-----
+2,4,7,9,10,15,17,18,22,24,25,27,28,31,35,37,38,41,43,45,51,54,55,57,61,63,64,68,70,74,76,81,84,85,87,90,93,94,99,101,105,107,109,114,115,120,121,126,128,130,131,134,135,139,142,143,145,146,147,150,153,154,157,158,161,162,165,166,169,172,173,177,178,179,182,183,186,189,190,193,199,200,203,204,210,211,214,215,220,223,227,228,230,235,237,241,243,247,248,251,252,256,259,260,261,263,269,270,273,277,279,283,285,289,290,295,297,298,304,307,308,309,312,313,315,321,322,323,328,330,334,335,340,342,344,345,349,351,352
+-----computeFrom-----
+49,50
+49,51
+72,73
+72,74
+79,80
+79,81
+88,89
+88,90
+97,98
+97,99
+196,197
+196,198
+207,208
+207,209
+218,219
+218,220
+266,267
+266,268
+275,276
+275,277
+302,303
+302,304
+318,319
+318,320
+-----guardedBy-----
+99,214
+101,259
+-----guardedByNegation-----
+99,279
+-----lastLexicalUse-----
+99,279
+-----jump-----
+99,279
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;EqualsInitializer;LiteralExpression;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ReturnStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;ArrayDeclarator;Name;ArrayModifier;LiteralExpression;ExpressionStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;IfStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;LiteralExpression;LiteralExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;LiteralExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;WhileStatement;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;UnaryExpression;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;FieldReference;IdExpression;Name;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;LiteralExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;
+-----ast_node-----
+static void leave_queue(struct queue_ent *qe){	struct call_queue *q;	struct queue_ent *current, *prev = NULL;	struct penalty_rule *pr_iter;	int pos = 0;	if (!(q = qe->parent)) {		return;	}	queue_t_ref(q, "Copy queue pointer from queue entry");	ao2_lock(q);	prev = NULL;	for (current = q->head; current; current = current->next) {		if (current == qe) {			char posstr[20];			q->count--;			if (!q->count) {				ast_devstate_changed(AST_DEVICE_NOT_INUSE, AST_DEVSTATE_CACHABLE, "Queue:%s", q->name);			}			/* Take us out of the queue */			/*** DOCUMENTATION			<managerEventInstance>				<synopsis>Raised when a channel leaves a Queue.</synopsis>				<syntax>					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='Join']/managerEventInstance/syntax/parameter[@name='Count'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='Join']/managerEventInstance/syntax/parameter[@name='Position'])" />				</syntax>				<see-also>					<ref type="managerEvent">Join</ref>				</see-also>			</managerEventInstance>			***/			ast_manager_event(qe->chan, EVENT_FLAG_CALL, "Leave",				"Channel: %s\r\nQueue: %s\r\nCount: %d\r\nPosition: %d\r\nUniqueid: %s\r\n",				ast_channel_name(qe->chan), q->name,  q->count, qe->pos, ast_channel_uniqueid(qe->chan));			ast_debug(1, "Queue '%s' Leave, Channel '%s'\n", q->name, ast_channel_name(qe->chan));			/* Take us out of the queue */			if (prev) {				prev->next = current->next;			} else {				q->head = current->next;			}			/* Free penalty rules */			while ((pr_iter = AST_LIST_REMOVE_HEAD(&qe->qe_rules, list))) {				ast_free(pr_iter);			}			snprintf(posstr, sizeof(posstr), "%d", qe->pos);			pbx_builtin_setvar_helper(qe->chan, "QUEUEPOSITION", posstr);		} else {			/* Renumber the people after us in the queue based on a new count */			current->pos = ++pos;			prev = current;		}	}	ao2_unlock(q);	/*If the queue is a realtime queue, check to see if it's still defined in real time*/	if (q->realtime) {		struct ast_variable *var;		if (!(var = ast_load_realtime("queues", "name", q->name, SENTINEL))) {			q->dead = 1;		} else {			ast_variables_destroy(var);		}	}	if (q->dead) {		/* It's dead and nobody is in it, so kill it */		queues_t_unlink(queues, q, "Queue is now dead; remove it from the container");	}	/* unref the explicit ref earlier in the function */	queue_t_unref(q, "Expire copied reference");}
+static void
+leave_queue(struct queue_ent *qe)
+leave_queue
+struct queue_ent *qe
+struct queue_ent
+queue_ent
+*qe
+*
+qe
+{	struct call_queue *q;	struct queue_ent *current, *prev = NULL;	struct penalty_rule *pr_iter;	int pos = 0;	if (!(q = qe->parent)) {		return;	}	queue_t_ref(q, "Copy queue pointer from queue entry");	ao2_lock(q);	prev = NULL;	for (current = q->head; current; current = current->next) {		if (current == qe) {			char posstr[20];			q->count--;			if (!q->count) {				ast_devstate_changed(AST_DEVICE_NOT_INUSE, AST_DEVSTATE_CACHABLE, "Queue:%s", q->name);			}			/* Take us out of the queue */			/*** DOCUMENTATION			<managerEventInstance>				<synopsis>Raised when a channel leaves a Queue.</synopsis>				<syntax>					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='Join']/managerEventInstance/syntax/parameter[@name='Count'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='Join']/managerEventInstance/syntax/parameter[@name='Position'])" />				</syntax>				<see-also>					<ref type="managerEvent">Join</ref>				</see-also>			</managerEventInstance>			***/			ast_manager_event(qe->chan, EVENT_FLAG_CALL, "Leave",				"Channel: %s\r\nQueue: %s\r\nCount: %d\r\nPosition: %d\r\nUniqueid: %s\r\n",				ast_channel_name(qe->chan), q->name,  q->count, qe->pos, ast_channel_uniqueid(qe->chan));			ast_debug(1, "Queue '%s' Leave, Channel '%s'\n", q->name, ast_channel_name(qe->chan));			/* Take us out of the queue */			if (prev) {				prev->next = current->next;			} else {				q->head = current->next;			}			/* Free penalty rules */			while ((pr_iter = AST_LIST_REMOVE_HEAD(&qe->qe_rules, list))) {				ast_free(pr_iter);			}			snprintf(posstr, sizeof(posstr), "%d", qe->pos);			pbx_builtin_setvar_helper(qe->chan, "QUEUEPOSITION", posstr);		} else {			/* Renumber the people after us in the queue based on a new count */			current->pos = ++pos;			prev = current;		}	}	ao2_unlock(q);	/*If the queue is a realtime queue, check to see if it's still defined in real time*/	if (q->realtime) {		struct ast_variable *var;		if (!(var = ast_load_realtime("queues", "name", q->name, SENTINEL))) {			q->dead = 1;		} else {			ast_variables_destroy(var);		}	}	if (q->dead) {		/* It's dead and nobody is in it, so kill it */		queues_t_unlink(queues, q, "Queue is now dead; remove it from the container");	}	/* unref the explicit ref earlier in the function */	queue_t_unref(q, "Expire copied reference");}
+struct call_queue *q;
+struct call_queue *q;
+struct call_queue
+call_queue
+*q
+*
+q
+struct queue_ent *current, *prev = NULL;
+struct queue_ent *current, *prev = NULL;
+struct queue_ent
+queue_ent
+*current
+*
+current
+*prev = NULL
+*
+prev
+= NULL
+NULL
+NULL
+struct penalty_rule *pr_iter;
+struct penalty_rule *pr_iter;
+struct penalty_rule
+penalty_rule
+*pr_iter
+*
+pr_iter
+int pos = 0;
+int pos = 0;
+int
+pos = 0
+pos
+= 0
+0
+if (!(q = qe->parent)) {		return;	}
+!(q = qe->parent)
+(q = qe->parent)
+q = qe->parent
+q
+q
+qe->parent
+qe
+qe
+parent
+{		return;	}
+return;
+queue_t_ref(q, "Copy queue pointer from queue entry");
+queue_t_ref(q, "Copy queue pointer from queue entry")
+queue_t_ref
+queue_t_ref
+q
+q
+"Copy queue pointer from queue entry"
+ao2_lock(q);
+ao2_lock(q)
+ao2_lock
+ao2_lock
+q
+q
+prev = NULL;
+prev = NULL
+prev
+prev
+NULL
+NULL
+for (current = q->head; current; current = current->next) {		if (current == qe) {			char posstr[20];			q->count--;			if (!q->count) {				ast_devstate_changed(AST_DEVICE_NOT_INUSE, AST_DEVSTATE_CACHABLE, "Queue:%s", q->name);			}			/* Take us out of the queue */			/*** DOCUMENTATION			<managerEventInstance>				<synopsis>Raised when a channel leaves a Queue.</synopsis>				<syntax>					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='Join']/managerEventInstance/syntax/parameter[@name='Count'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='Join']/managerEventInstance/syntax/parameter[@name='Position'])" />				</syntax>				<see-also>					<ref type="managerEvent">Join</ref>				</see-also>			</managerEventInstance>			***/			ast_manager_event(qe->chan, EVENT_FLAG_CALL, "Leave",				"Channel: %s\r\nQueue: %s\r\nCount: %d\r\nPosition: %d\r\nUniqueid: %s\r\n",				ast_channel_name(qe->chan), q->name,  q->count, qe->pos, ast_channel_uniqueid(qe->chan));			ast_debug(1, "Queue '%s' Leave, Channel '%s'\n", q->name, ast_channel_name(qe->chan));			/* Take us out of the queue */			if (prev) {				prev->next = current->next;			} else {				q->head = current->next;			}			/* Free penalty rules */			while ((pr_iter = AST_LIST_REMOVE_HEAD(&qe->qe_rules, list))) {				ast_free(pr_iter);			}			snprintf(posstr, sizeof(posstr), "%d", qe->pos);			pbx_builtin_setvar_helper(qe->chan, "QUEUEPOSITION", posstr);		} else {			/* Renumber the people after us in the queue based on a new count */			current->pos = ++pos;			prev = current;		}	}
+current = q->head;
+current = q->head
+current
+current
+q->head
+q
+q
+head
+current
+current
+current = current->next
+current
+current
+current->next
+current
+current
+next
+{		if (current == qe) {			char posstr[20];			q->count--;			if (!q->count) {				ast_devstate_changed(AST_DEVICE_NOT_INUSE, AST_DEVSTATE_CACHABLE, "Queue:%s", q->name);			}			/* Take us out of the queue */			/*** DOCUMENTATION			<managerEventInstance>				<synopsis>Raised when a channel leaves a Queue.</synopsis>				<syntax>					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='Join']/managerEventInstance/syntax/parameter[@name='Count'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='Join']/managerEventInstance/syntax/parameter[@name='Position'])" />				</syntax>				<see-also>					<ref type="managerEvent">Join</ref>				</see-also>			</managerEventInstance>			***/			ast_manager_event(qe->chan, EVENT_FLAG_CALL, "Leave",				"Channel: %s\r\nQueue: %s\r\nCount: %d\r\nPosition: %d\r\nUniqueid: %s\r\n",				ast_channel_name(qe->chan), q->name,  q->count, qe->pos, ast_channel_uniqueid(qe->chan));			ast_debug(1, "Queue '%s' Leave, Channel '%s'\n", q->name, ast_channel_name(qe->chan));			/* Take us out of the queue */			if (prev) {				prev->next = current->next;			} else {				q->head = current->next;			}			/* Free penalty rules */			while ((pr_iter = AST_LIST_REMOVE_HEAD(&qe->qe_rules, list))) {				ast_free(pr_iter);			}			snprintf(posstr, sizeof(posstr), "%d", qe->pos);			pbx_builtin_setvar_helper(qe->chan, "QUEUEPOSITION", posstr);		} else {			/* Renumber the people after us in the queue based on a new count */			current->pos = ++pos;			prev = current;		}	}
+if (current == qe) {			char posstr[20];			q->count--;			if (!q->count) {				ast_devstate_changed(AST_DEVICE_NOT_INUSE, AST_DEVSTATE_CACHABLE, "Queue:%s", q->name);			}			/* Take us out of the queue */			/*** DOCUMENTATION			<managerEventInstance>				<synopsis>Raised when a channel leaves a Queue.</synopsis>				<syntax>					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='Join']/managerEventInstance/syntax/parameter[@name='Count'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='Join']/managerEventInstance/syntax/parameter[@name='Position'])" />				</syntax>				<see-also>					<ref type="managerEvent">Join</ref>				</see-also>			</managerEventInstance>			***/			ast_manager_event(qe->chan, EVENT_FLAG_CALL, "Leave",				"Channel: %s\r\nQueue: %s\r\nCount: %d\r\nPosition: %d\r\nUniqueid: %s\r\n",				ast_channel_name(qe->chan), q->name,  q->count, qe->pos, ast_channel_uniqueid(qe->chan));			ast_debug(1, "Queue '%s' Leave, Channel '%s'\n", q->name, ast_channel_name(qe->chan));			/* Take us out of the queue */			if (prev) {				prev->next = current->next;			} else {				q->head = current->next;			}			/* Free penalty rules */			while ((pr_iter = AST_LIST_REMOVE_HEAD(&qe->qe_rules, list))) {				ast_free(pr_iter);			}			snprintf(posstr, sizeof(posstr), "%d", qe->pos);			pbx_builtin_setvar_helper(qe->chan, "QUEUEPOSITION", posstr);		} else {			/* Renumber the people after us in the queue based on a new count */			current->pos = ++pos;			prev = current;		}
+current == qe
+current
+current
+qe
+qe
+{			char posstr[20];			q->count--;			if (!q->count) {				ast_devstate_changed(AST_DEVICE_NOT_INUSE, AST_DEVSTATE_CACHABLE, "Queue:%s", q->name);			}			/* Take us out of the queue */			/*** DOCUMENTATION			<managerEventInstance>				<synopsis>Raised when a channel leaves a Queue.</synopsis>				<syntax>					<xi:include xpointer="xpointer(/docs/managerEvent[@name='QueueMemberStatus']/managerEventInstance/syntax/parameter[@name='Queue'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='Join']/managerEventInstance/syntax/parameter[@name='Count'])" />					<xi:include xpointer="xpointer(/docs/managerEvent[@name='Join']/managerEventInstance/syntax/parameter[@name='Position'])" />				</syntax>				<see-also>					<ref type="managerEvent">Join</ref>				</see-also>			</managerEventInstance>			***/			ast_manager_event(qe->chan, EVENT_FLAG_CALL, "Leave",				"Channel: %s\r\nQueue: %s\r\nCount: %d\r\nPosition: %d\r\nUniqueid: %s\r\n",				ast_channel_name(qe->chan), q->name,  q->count, qe->pos, ast_channel_uniqueid(qe->chan));			ast_debug(1, "Queue '%s' Leave, Channel '%s'\n", q->name, ast_channel_name(qe->chan));			/* Take us out of the queue */			if (prev) {				prev->next = current->next;			} else {				q->head = current->next;			}			/* Free penalty rules */			while ((pr_iter = AST_LIST_REMOVE_HEAD(&qe->qe_rules, list))) {				ast_free(pr_iter);			}			snprintf(posstr, sizeof(posstr), "%d", qe->pos);			pbx_builtin_setvar_helper(qe->chan, "QUEUEPOSITION", posstr);		}
+char posstr[20];
+char posstr[20];
+char
+posstr[20]
+posstr
+[20]
+20
+q->count--;
+q->count--
+q->count
+q
+q
+count
+if (!q->count) {				ast_devstate_changed(AST_DEVICE_NOT_INUSE, AST_DEVSTATE_CACHABLE, "Queue:%s", q->name);			}
+!q->count
+q->count
+q
+q
+count
+{				ast_devstate_changed(AST_DEVICE_NOT_INUSE, AST_DEVSTATE_CACHABLE, "Queue:%s", q->name);			}
+ast_devstate_changed(AST_DEVICE_NOT_INUSE, AST_DEVSTATE_CACHABLE, "Queue:%s", q->name);
+ast_devstate_changed(AST_DEVICE_NOT_INUSE, AST_DEVSTATE_CACHABLE, "Queue:%s", q->name)
+ast_devstate_changed
+ast_devstate_changed
+AST_DEVICE_NOT_INUSE
+AST_DEVICE_NOT_INUSE
+AST_DEVSTATE_CACHABLE
+AST_DEVSTATE_CACHABLE
+"Queue:%s"
+q->name
+q
+q
+name
+ast_manager_event(qe->chan, EVENT_FLAG_CALL, "Leave",				"Channel: %s\r\nQueue: %s\r\nCount: %d\r\nPosition: %d\r\nUniqueid: %s\r\n",				ast_channel_name(qe->chan), q->name,  q->count, qe->pos, ast_channel_uniqueid(qe->chan));
+ast_manager_event(qe->chan, EVENT_FLAG_CALL, "Leave",				"Channel: %s\r\nQueue: %s\r\nCount: %d\r\nPosition: %d\r\nUniqueid: %s\r\n",				ast_channel_name(qe->chan), q->name,  q->count, qe->pos, ast_channel_uniqueid(qe->chan))
+ast_manager_event
+ast_manager_event
+qe->chan
+qe
+qe
+chan
+EVENT_FLAG_CALL
+EVENT_FLAG_CALL
+"Leave"
+"Channel: %s\r\nQueue: %s\r\nCount: %d\r\nPosition: %d\r\nUniqueid: %s\r\n"
+ast_channel_name(qe->chan)
+ast_channel_name
+ast_channel_name
+qe->chan
+qe
+qe
+chan
+q->name
+q
+q
+name
+q->count
+q
+q
+count
+qe->pos
+qe
+qe
+pos
+ast_channel_uniqueid(qe->chan)
+ast_channel_uniqueid
+ast_channel_uniqueid
+qe->chan
+qe
+qe
+chan
+ast_debug(1, "Queue '%s' Leave, Channel '%s'\n", q->name, ast_channel_name(qe->chan));
+ast_debug(1, "Queue '%s' Leave, Channel '%s'\n", q->name, ast_channel_name(qe->chan))
+ast_debug
+ast_debug
+1
+"Queue '%s' Leave, Channel '%s'\n"
+q->name
+q
+q
+name
+ast_channel_name(qe->chan)
+ast_channel_name
+ast_channel_name
+qe->chan
+qe
+qe
+chan
+if (prev) {				prev->next = current->next;			} else {				q->head = current->next;			}
+prev
+prev
+{				prev->next = current->next;			}
+prev->next = current->next;
+prev->next = current->next
+prev->next
+prev
+prev
+next
+current->next
+current
+current
+next
+{				q->head = current->next;			}
+q->head = current->next;
+q->head = current->next
+q->head
+q
+q
+head
+current->next
+current
+current
+next
+while ((pr_iter = AST_LIST_REMOVE_HEAD(&qe->qe_rules, list))) {				ast_free(pr_iter);			}
+(pr_iter = AST_LIST_REMOVE_HEAD(&qe->qe_rules, list))
+pr_iter = AST_LIST_REMOVE_HEAD(&qe->qe_rules, list)
+pr_iter
+pr_iter
+AST_LIST_REMOVE_HEAD(&qe->qe_rules, list)
+AST_LIST_REMOVE_HEAD
+AST_LIST_REMOVE_HEAD
+&qe->qe_rules
+qe->qe_rules
+qe
+qe
+qe_rules
+list
+list
+{				ast_free(pr_iter);			}
+ast_free(pr_iter);
+ast_free(pr_iter)
+ast_free
+ast_free
+pr_iter
+pr_iter
+snprintf(posstr, sizeof(posstr), "%d", qe->pos);
+snprintf(posstr, sizeof(posstr), "%d", qe->pos)
+snprintf
+snprintf
+posstr
+posstr
+sizeof(posstr)
+(posstr)
+posstr
+posstr
+"%d"
+qe->pos
+qe
+qe
+pos
+pbx_builtin_setvar_helper(qe->chan, "QUEUEPOSITION", posstr);
+pbx_builtin_setvar_helper(qe->chan, "QUEUEPOSITION", posstr)
+pbx_builtin_setvar_helper
+pbx_builtin_setvar_helper
+qe->chan
+qe
+qe
+chan
+"QUEUEPOSITION"
+posstr
+posstr
+{			/* Renumber the people after us in the queue based on a new count */			current->pos = ++pos;			prev = current;		}
+current->pos = ++pos;
+current->pos = ++pos
+current->pos
+current
+current
+pos
+++pos
+pos
+pos
+prev = current;
+prev = current
+prev
+prev
+current
+current
+ao2_unlock(q);
+ao2_unlock(q)
+ao2_unlock
+ao2_unlock
+q
+q
+if (q->realtime) {		struct ast_variable *var;		if (!(var = ast_load_realtime("queues", "name", q->name, SENTINEL))) {			q->dead = 1;		} else {			ast_variables_destroy(var);		}	}
+q->realtime
+q
+q
+realtime
+{		struct ast_variable *var;		if (!(var = ast_load_realtime("queues", "name", q->name, SENTINEL))) {			q->dead = 1;		} else {			ast_variables_destroy(var);		}	}
+struct ast_variable *var;
+struct ast_variable *var;
+struct ast_variable
+ast_variable
+*var
+*
+var
+if (!(var = ast_load_realtime("queues", "name", q->name, SENTINEL))) {			q->dead = 1;		} else {			ast_variables_destroy(var);		}
+!(var = ast_load_realtime("queues", "name", q->name, SENTINEL))
+(var = ast_load_realtime("queues", "name", q->name, SENTINEL))
+var = ast_load_realtime("queues", "name", q->name, SENTINEL)
+var
+var
+ast_load_realtime("queues", "name", q->name, SENTINEL)
+ast_load_realtime
+ast_load_realtime
+"queues"
+"name"
+q->name
+q
+q
+name
+SENTINEL
+SENTINEL
+{			q->dead = 1;		}
+q->dead = 1;
+q->dead = 1
+q->dead
+q
+q
+dead
+1
+{			ast_variables_destroy(var);		}
+ast_variables_destroy(var);
+ast_variables_destroy(var)
+ast_variables_destroy
+ast_variables_destroy
+var
+var
+if (q->dead) {		/* It's dead and nobody is in it, so kill it */		queues_t_unlink(queues, q, "Queue is now dead; remove it from the container");	}
+q->dead
+q
+q
+dead
+{		/* It's dead and nobody is in it, so kill it */		queues_t_unlink(queues, q, "Queue is now dead; remove it from the container");	}
+queues_t_unlink(queues, q, "Queue is now dead; remove it from the container");
+queues_t_unlink(queues, q, "Queue is now dead; remove it from the container")
+queues_t_unlink
+queues_t_unlink
+queues
+queues
+q
+q
+"Queue is now dead; remove it from the container"
+queue_t_unref(q, "Expire copied reference");
+queue_t_unref(q, "Expire copied reference")
+queue_t_unref
+queue_t_unref
+q
+q
+"Expire copied reference"
+-----joern-----
+(28,26,0)
+(59,140,0)
+(68,176,0)
+(165,128,0)
+(149,86,0)
+(189,62,0)
+(168,128,0)
+(40,184,0)
+(152,128,0)
+(180,147,0)
+(36,103,0)
+(94,22,0)
+(95,90,0)
+(42,45,0)
+(191,127,0)
+(83,26,0)
+(127,84,0)
+(1,25,0)
+(185,47,0)
+(98,73,0)
+(41,22,0)
+(6,164,0)
+(168,22,0)
+(70,108,0)
+(177,28,0)
+(44,46,0)
+(57,129,0)
+(39,128,0)
+(141,73,0)
+(175,136,0)
+(26,39,0)
+(194,10,0)
+(156,139,0)
+(44,7,0)
+(92,54,0)
+(58,95,0)
+(128,126,0)
+(139,111,0)
+(53,126,0)
+(54,173,0)
+(182,22,0)
+(56,108,0)
+(130,156,0)
+(174,164,0)
+(97,39,0)
+(154,184,0)
+(124,164,0)
+(73,141,0)
+(6,115,0)
+(111,16,0)
+(80,10,0)
+(131,22,0)
+(8,26,0)
+(87,141,0)
+(47,160,0)
+(192,126,0)
+(35,191,0)
+(43,78,0)
+(136,64,0)
+(147,64,0)
+(3,128,0)
+(66,136,0)
+(89,142,0)
+(29,128,0)
+(105,72,0)
+(138,64,0)
+(132,134,0)
+(16,111,0)
+(25,159,0)
+(175,45,0)
+(144,54,0)
+(91,37,0)
+(95,174,0)
+(113,152,0)
+(24,25,0)
+(134,116,0)
+(46,22,0)
+(176,116,0)
+(181,174,0)
+(163,152,0)
+(109,22,0)
+(23,28,0)
+(31,128,0)
+(159,129,0)
+(8,116,0)
+(117,124,0)
+(157,121,0)
+(9,129,0)
+(118,127,0)
+(141,158,0)
+(54,81,0)
+(191,128,0)
+(150,64,0)
+(155,88,0)
+(122,81,0)
+(136,175,0)
+(83,164,0)
+(51,176,0)
+(101,114,0)
+(101,156,0)
+(176,51,0)
+(108,128,0)
+(193,62,0)
+(82,152,0)
+(17,73,0)
+(2,45,0)
+(79,8,0)
+(93,162,0)
+(107,164,0)
+(152,82,0)
+(88,188,0)
+(170,81,0)
+(73,162,0)
+(147,142,0)
+(45,175,0)
+(82,64,0)
+(179,0,0)
+(145,44,0)
+(190,26,0)
+(81,54,0)
+(119,10,0)
+(78,22,0)
+(67,72,0)
+(0,128,0)
+(104,32,0)
+(12,182,0)
+(77,22,0)
+(136,108,0)
+(183,22,0)
+(38,22,0)
+(81,128,0)
+(10,194,0)
+(161,58,0)
+(103,78,0)
+(133,191,0)
+(169,46,0)
+(11,9,0)
+(60,16,0)
+(178,9,0)
+(49,29,0)
+(172,124,0)
+(136,194,0)
+(6,26,0)
+(151,64,0)
+(142,147,0)
+(28,164,0)
+(125,37,0)
+(142,116,0)
+(15,136,0)
+(128,165,0)
+(83,19,0)
+(34,142,0)
+(32,22,0)
+(136,121,0)
+(166,31,0)
+(103,115,0)
+(147,140,0)
+(0,136,0)
+(99,83,0)
+(65,0,0)
+(164,124,0)
+(32,128,0)
+(121,136,0)
+(123,174,0)
+(47,128,0)
+(44,83,0)
+(111,139,0)
+(37,128,0)
+(186,141,0)
+(62,128,0)
+(31,22,0)
+(162,73,0)
+(174,26,0)
+(8,164,0)
+(28,7,0)
+(184,22,0)
+(129,64,0)
+(39,26,0)
+(136,0,0)
+(136,134,0)
+(108,136,0)
+(7,110,0)
+(162,128,0)
+(29,49,0)
+(187,121,0)
+(27,22,0)
+(52,64,0)
+(51,64,0)
+(30,6,0)
+(25,116,0)
+(139,156,0)
+(129,9,0)
+(18,29,0)
+(55,6,0)
+(63,39,0)
+(5,16,0)
+(58,128,0)
+(126,128,0)
+(76,147,0)
+(13,134,0)
+(9,128,0)
+(45,116,0)
+(20,46,0)
+(153,22,0)
+(75,176,0)
+(174,95,0)
+(167,47,0)
+(134,136,0)
+(69,51,0)
+(115,103,0)
+(14,58,0)
+(106,136,0)
+(120,44,0)
+(16,116,0)
+(61,29,0)
+(194,136,0)
+(50,168,0)
+(182,128,0)
+(4,47,0)
+(159,25,0)
+(74,54,0)
+(96,87,0)
+(140,147,0)
+(21,162,0)
+(10,116,0)
+(158,141,0)
+(115,19,0)
+(100,73,0)
+(148,139,0)
+(102,101,0)
+(85,31,0)
+(7,28,0)
+(33,8,0)
+(126,116,0)
+(137,83,0)
+(171,182,0)
+(143,78,0)
+(48,51,0)
+(124,26,0)
+(129,159,0)
+(146,129,0)
+(87,135,0)
+(121,116,0)
+(16,116,1)
+(157,54,1)
+(139,148,1)
+(7,28,1)
+(134,132,1)
+(71,164,1)
+(178,11,1)
+(162,128,1)
+(146,57,1)
+(177,44,1)
+(182,128,1)
+(155,31,1)
+(31,128,1)
+(193,32,1)
+(155,88,1)
+(91,127,1)
+(142,89,1)
+(78,43,1)
+(147,142,1)
+(169,20,1)
+(39,97,1)
+(98,17,1)
+(189,193,1)
+(136,194,1)
+(170,92,1)
+(12,171,1)
+(63,190,1)
+(95,174,1)
+(161,14,1)
+(9,128,1)
+(148,111,1)
+(23,177,1)
+(48,176,1)
+(92,74,1)
+(13,0,1)
+(124,172,1)
+(136,121,1)
+(122,170,1)
+(20,168,1)
+(14,112,1)
+(25,1,1)
+(142,116,1)
+(8,33,1)
+(28,26,1)
+(8,116,1)
+(50,182,1)
+(126,116,1)
+(70,56,1)
+(87,96,1)
+(184,40,1)
+(174,123,1)
+(134,116,1)
+(168,50,1)
+(79,71,1)
+(83,164,1)
+(182,12,1)
+(83,26,1)
+(59,76,1)
+(89,34,1)
+(61,18,1)
+(152,163,1)
+(54,81,1)
+(56,175,1)
+(99,137,1)
+(85,166,1)
+(18,82,1)
+(15,121,1)
+(58,128,1)
+(28,164,1)
+(136,134,1)
+(192,53,1)
+(191,35,1)
+(172,117,1)
+(75,68,1)
+(179,65,1)
+(129,9,1)
+(17,186,1)
+(103,36,1)
+(42,2,1)
+(176,116,1)
+(121,116,1)
+(16,5,1)
+(87,141,1)
+(43,143,1)
+(103,78,1)
+(165,128,1)
+(0,179,1)
+(91,87,1)
+(30,8,1)
+(51,176,1)
+(133,158,1)
+(37,125,1)
+(6,26,1)
+(129,159,1)
+(158,141,1)
+(47,167,1)
+(159,25,1)
+(73,100,1)
+(136,108,1)
+(39,128,1)
+(97,63,1)
+(100,162,1)
+(51,69,1)
+(8,164,1)
+(152,128,1)
+(93,98,1)
+(107,83,1)
+(0,128,1)
+(34,180,1)
+(44,83,1)
+(101,156,1)
+(194,10,1)
+(26,39,1)
+(80,119,1)
+(108,128,1)
+(35,133,1)
+(108,70,1)
+(96,158,1)
+(60,130,1)
+(32,128,1)
+(76,156,1)
+(130,95,1)
+(68,147,1)
+(187,157,1)
+(127,118,1)
+(45,42,1)
+(130,7,1)
+(58,161,1)
+(81,122,1)
+(2,106,1)
+(112,129,1)
+(123,181,1)
+(31,85,1)
+(44,46,1)
+(139,111,1)
+(29,61,1)
+(126,192,1)
+(65,108,1)
+(130,101,1)
+(166,37,1)
+(69,48,1)
+(73,162,1)
+(25,116,1)
+(174,164,1)
+(106,66,1)
+(186,62,1)
+(44,120,1)
+(24,9,1)
+(120,145,1)
+(46,169,1)
+(145,112,1)
+(57,136,1)
+(124,26,1)
+(125,91,1)
+(21,93,1)
+(136,0,1)
+(143,184,1)
+(66,15,1)
+(104,71,1)
+(168,128,1)
+(141,73,1)
+(115,103,1)
+(6,164,1)
+(47,128,1)
+(10,80,1)
+(6,55,1)
+(176,75,1)
+(81,128,1)
+(190,46,1)
+(180,140,1)
+(117,107,1)
+(121,187,1)
+(74,144,1)
+(140,59,1)
+(132,13,1)
+(175,45,1)
+(137,115,1)
+(53,3,1)
+(107,51,1)
+(167,185,1)
+(181,58,1)
+(157,49,1)
+(185,4,1)
+(10,116,1)
+(71,26,1)
+(102,156,1)
+(49,29,1)
+(29,128,1)
+(101,102,1)
+(162,21,1)
+(82,152,1)
+(11,146,1)
+(144,49,1)
+(8,26,1)
+(3,78,1)
+(174,26,1)
+(37,128,1)
+(124,164,1)
+(91,62,1)
+(88,165,1)
+(55,30,1)
+(28,23,1)
+(171,165,1)
+(62,189,1)
+(118,191,1)
+(45,116,1)
+(83,99,1)
+(166,47,1)
+(32,104,1)
+(5,60,1)
+(128,126,1)
+(191,128,1)
+(9,178,1)
+(113,8,1)
+(4,37,1)
+(119,134,1)
+(1,24,1)
+(147,140,1)
+(36,6,1)
+(156,139,1)
+(33,79,1)
+(164,124,1)
+(40,154,1)
+(111,16,1)
+(62,128,1)
+(163,113,1)
+(136,175,1)
+(111,16,2)
+(50,165,2)
+(37,128,2)
+(115,103,2)
+(28,26,2)
+(174,164,2)
+(13,8,2)
+(74,49,2)
+(42,8,2)
+(142,116,2)
+(29,128,2)
+(71,165,2)
+(54,49,2)
+(57,8,2)
+(16,156,2)
+(142,8,2)
+(6,8,2)
+(189,165,2)
+(99,8,2)
+(17,62,2)
+(132,8,2)
+(194,10,2)
+(169,165,2)
+(136,175,2)
+(87,158,2)
+(7,28,2)
+(83,164,2)
+(187,8,2)
+(71,71,2)
+(156,139,2)
+(15,8,2)
+(32,165,2)
+(85,165,2)
+(51,8,2)
+(164,71,2)
+(126,116,2)
+(7,112,2)
+(70,8,2)
+(26,165,2)
+(174,26,2)
+(129,8,2)
+(39,165,2)
+(34,8,2)
+(89,8,2)
+(65,8,2)
+(161,112,2)
+(26,39,2)
+(32,128,2)
+(73,162,2)
+(48,8,2)
+(56,8,2)
+(62,128,2)
+(49,8,2)
+(46,165,2)
+(157,8,2)
+(58,112,2)
+(33,71,2)
+(134,8,2)
+(10,8,2)
+(129,159,2)
+(76,8,2)
+(164,124,2)
+(36,8,2)
+(147,8,2)
+(163,8,2)
+(16,8,2)
+(103,78,2)
+(193,165,2)
+(108,8,2)
+(104,165,2)
+(136,121,2)
+(124,164,2)
+(128,126,2)
+(9,8,2)
+(124,71,2)
+(159,8,2)
+(168,128,2)
+(112,8,2)
+(144,49,2)
+(124,26,2)
+(73,62,2)
+(61,8,2)
+(176,8,2)
+(20,165,2)
+(8,116,2)
+(146,8,2)
+(82,152,2)
+(185,37,2)
+(29,8,2)
+(166,165,2)
+(39,128,2)
+(98,62,2)
+(47,37,2)
+(167,37,2)
+(8,71,2)
+(54,81,2)
+(162,128,2)
+(156,156,2)
+(69,8,2)
+(4,37,2)
+(130,8,2)
+(136,134,2)
+(2,8,2)
+(127,158,2)
+(136,108,2)
+(174,112,2)
+(68,8,2)
+(44,46,2)
+(140,8,2)
+(88,165,2)
+(44,112,2)
+(148,156,2)
+(152,8,2)
+(118,158,2)
+(6,26,2)
+(103,8,2)
+(129,9,2)
+(133,158,2)
+(115,8,2)
+(170,49,2)
+(165,128,2)
+(58,128,2)
+(66,8,2)
+(82,8,2)
+(136,0,2)
+(137,8,2)
+(194,8,2)
+(6,164,2)
+(180,8,2)
+(108,128,2)
+(49,29,2)
+(95,174,2)
+(80,8,2)
+(35,158,2)
+(119,8,2)
+(175,45,2)
+(25,8,2)
+(8,26,2)
+(45,8,2)
+(162,62,2)
+(75,8,2)
+(100,62,2)
+(60,8,2)
+(25,116,2)
+(139,8,2)
+(175,8,2)
+(186,62,2)
+(191,128,2)
+(1,8,2)
+(182,128,2)
+(125,165,2)
+(121,116,2)
+(113,8,2)
+(12,165,2)
+(31,165,2)
+(81,49,2)
+(102,156,2)
+(18,8,2)
+(121,8,2)
+(92,49,2)
+(28,112,2)
+(181,112,2)
+(123,112,2)
+(158,62,2)
+(172,71,2)
+(152,128,2)
+(59,8,2)
+(147,142,2)
+(156,8,2)
+(141,73,2)
+(21,62,2)
+(111,156,2)
+(148,8,2)
+(11,8,2)
+(0,8,2)
+(136,8,2)
+(97,165,2)
+(8,164,2)
+(47,128,2)
+(178,8,2)
+(111,8,2)
+(60,156,2)
+(168,165,2)
+(81,128,2)
+(141,62,2)
+(37,165,2)
+(158,141,2)
+(14,112,2)
+(159,25,2)
+(45,116,2)
+(0,128,2)
+(83,26,2)
+(87,141,2)
+(101,156,2)
+(155,88,2)
+(9,128,2)
+(44,83,2)
+(96,158,2)
+(62,165,2)
+(5,8,2)
+(191,158,2)
+(139,156,2)
+(176,116,2)
+(190,165,2)
+(177,112,2)
+(120,112,2)
+(31,128,2)
+(91,165,2)
+(95,112,2)
+(93,62,2)
+(30,8,2)
+(171,165,2)
+(145,112,2)
+(117,71,2)
+(179,8,2)
+(182,165,2)
+(55,8,2)
+(139,111,2)
+(24,8,2)
+(147,140,2)
+(5,156,2)
+(10,116,2)
+(130,156,2)
+(28,164,2)
+(122,49,2)
+(51,176,2)
+(136,194,2)
+(134,116,2)
+(23,112,2)
+(16,116,2)
+(107,71,2)
+(106,8,2)
+(83,8,2)
+(79,71,2)
+(63,165,2)
+-----------------------------------
+(0,q->count)
+(1,chan)
+(2,qe)
+(3,q)
+(4,queues)
+(5,qe_rules)
+(6,current->pos)
+(7,prev->next = current->next)
+(8,current == qe)
+(9,q->name)
+(10,qe->chan)
+(11,q)
+(12,"Copy queue pointer from queue entry")
+(13,qe)
+(14,q)
+(15,EVENT_FLAG_CALL)
+(16,qe->qe_rules)
+(17,"queues")
+(18,q)
+(19,)
+(20,prev)
+(21,name)
+(22,)
+(23,next)
+(24,qe)
+(25,qe->chan)
+(26,current = q->head)
+(27,if (q->realtime)
+(28,current->next)
+(29,q->count)
+(30,current)
+(31,queue_t_unref(q, "Expire copied reference")
+(32,ao2_unlock(q)
+(33,qe)
+(34,qe)
+(35,dead)
+(36,pos)
+(37,q->dead)
+(38,current)
+(39,q->head)
+(40,NULL)
+(41,pr_iter)
+(42,chan)
+(43,0)
+(44,prev->next)
+(45,qe->chan)
+(46,prev = NULL)
+(47,queues_t_unlink(queues, q, "Queue is now dead; remove it from the container")
+(48,"QUEUEPOSITION")
+(49,!q->count)
+(50,q)
+(51,pbx_builtin_setvar_helper(qe->chan, "QUEUEPOSITION", posstr)
+(52,if (prev)
+(53,qe)
+(54,ast_devstate_changed(AST_DEVICE_NOT_INUSE, AST_DEVSTATE_CACHABLE, "Queue:%s", q->name)
+(55,pos)
+(56,q)
+(57,1)
+(58,q->head)
+(59,posstr)
+(60,qe)
+(61,count)
+(62,q->realtime)
+(63,q)
+(64,)
+(65,q)
+(66,"Leave")
+(67,var)
+(68,qe)
+(69,posstr)
+(70,name)
+(71,current)
+(72,)
+(73,ast_load_realtime("queues", "name", q->name, SENTINEL)
+(74,AST_DEVSTATE_CACHABLE)
+(75,chan)
+(76,posstr)
+(77,q)
+(78,pos = 0)
+(79,current)
+(80,chan)
+(81,q->name)
+(82,q->count--)
+(83,prev = current)
+(84,)
+(85,"Expire copied reference")
+(86,)
+(87,ast_variables_destroy(var)
+(88,return;)
+(89,pos)
+(90,)
+(91,q)
+(92,"Queue:%s")
+(93,q)
+(94,prev)
+(95,q->head = current->next)
+(96,var)
+(97,head)
+(98,"name")
+(99,current)
+(100,SENTINEL)
+(101,ast_free(pr_iter)
+(102,pr_iter)
+(103,++pos)
+(104,q)
+(105,if (!(var = ast_load_realtime("queues", "name", q->name, SENTINEL)
+(106,"Channel: %s\\r\\nQueue: %s\\r\\nCount: %d\\r\\nPosition: %d\\r\\nUniqueid: %s\\r\\n")
+(107,current)
+(108,q->name)
+(109,pos)
+(110,)
+(111,&qe->qe_rules)
+(112,prev)
+(113,q)
+(114,)
+(115,current->pos = ++pos)
+(116,struct queue_ent *qe)
+(117,current)
+(118,1)
+(119,qe)
+(120,next)
+(121,qe->chan)
+(122,name)
+(123,next)
+(124,current->next)
+(125,dead)
+(126,qe->parent)
+(127,q->dead = 1)
+(128,q = qe->parent)
+(129,ast_debug(1, "Queue \'%s\' Leave, Channel \'%s\'\\n", q->name, ast_channel_name(qe->chan)
+(130,pr_iter)
+(131,if (!(q = qe->parent)
+(132,pos)
+(133,q)
+(134,qe->pos)
+(135,)
+(136,ast_manager_event(qe->chan, EVENT_FLAG_CALL, "Leave",\n\\n\\t\\t\\t\\t"Channel: %s\\r\\nQueue: %s\\r\\nCount: %d\\r\\nPosition: %d\\r\\nUniqueid: %s\\r\\n",\n\\n\\t\\t\\t\\tast_channel_name(qe->chan)
+(137,prev)
+(138,if (!q->count)
+(139,AST_LIST_REMOVE_HEAD(&qe->qe_rules, list)
+(140,sizeof(posstr)
+(141,var = ast_load_realtime("queues", "name", q->name, SENTINEL)
+(142,qe->pos)
+(143,pos)
+(144,AST_DEVICE_NOT_INUSE)
+(145,prev)
+(146,"Queue \'%s\' Leave, Channel \'%s\'\\n")
+(147,snprintf(posstr, sizeof(posstr)
+(148,list)
+(149,if (current == qe)
+(150,posstr)
+(151,while ((pr_iter = AST_LIST_REMOVE_HEAD(&qe->qe_rules, list)
+(152,q->count)
+(153,if (q->dead)
+(154,prev)
+(155,RET)
+(156,pr_iter = AST_LIST_REMOVE_HEAD(&qe->qe_rules, list)
+(157,qe)
+(158,!(var = ast_load_realtime("queues", "name", q->name, SENTINEL)
+(159,ast_channel_name(qe->chan)
+(160,)
+(161,head)
+(162,q->name)
+(163,count)
+(164,current = current->next)
+(165,!(q = qe->parent)
+(166,q)
+(167,"Queue is now dead; remove it from the container")
+(168,ao2_lock(q)
+(169,NULL)
+(170,q)
+(171,q)
+(172,next)
+(173,)
+(174,current->next)
+(175,ast_channel_name(qe->chan)
+(176,qe->chan)
+(177,current)
+(178,name)
+(179,count)
+(180,"%d")
+(181,current)
+(182,queue_t_ref(q, "Copy queue pointer from queue entry")
+(183,for (current = q->head; current; current = current->next)
+(184,*prev = NULL)
+(185,q)
+(186,var)
+(187,chan)
+(188,)
+(189,realtime)
+(190,current)
+(191,q->dead)
+(192,parent)
+(193,q)
+(194,ast_channel_uniqueid(qe->chan)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

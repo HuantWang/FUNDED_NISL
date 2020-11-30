@@ -1,0 +1,1632 @@
+-----label-----
+1
+-----code-----
+static int set_cipher_iv(struct sftp_cipher *cipher, const EVP_MD *hash,
+    const unsigned char *k, uint32_t klen, const char *h, uint32_t hlen,
+    char *letter, const unsigned char *id, uint32_t id_len) {
+
+  EVP_MD_CTX ctx;
+  unsigned char *iv = NULL;
+  size_t cipher_iv_len, iv_sz;
+  uint32_t iv_len = 0;
+
+  /* Some ciphers do not use IVs; handle this case. */
+  cipher_iv_len = EVP_CIPHER_iv_length(cipher->cipher);
+  if (cipher_iv_len != 0) {
+    iv_sz = sftp_crypto_get_size(cipher_iv_len, EVP_MD_size(hash));
+
+  } else {
+    iv_sz = EVP_MD_size(hash);
+  }
+
+  if (iv_sz == 0) {
+    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,
+      "unable to determine IV length for cipher '%s'", cipher->algo);
+    errno = EINVAL;
+    return -1;
+  }
+
+  iv = malloc(iv_sz);
+  if (iv == NULL) {
+    pr_log_pri(PR_LOG_ALERT, MOD_SFTP_VERSION ": Out of memory!");
+    _exit(1);
+  }
+
+  EVP_DigestInit(&ctx, hash);
+  if (sftp_interop_supports_feature(SFTP_SSH2_FEAT_CIPHER_USE_K)) {
+    EVP_DigestUpdate(&ctx, k, klen);
+  }
+  EVP_DigestUpdate(&ctx, h, hlen);
+  EVP_DigestUpdate(&ctx, letter, sizeof(char));
+  EVP_DigestUpdate(&ctx, (char *) id, id_len);
+  EVP_DigestFinal(&ctx, iv, &iv_len);
+
+  /* If we need more, keep hashing, as per RFC, until we have enough
+   * material.
+   */
+  while (iv_sz > iv_len) {
+    uint32_t len = iv_len;
+
+    pr_signals_handle();
+
+    EVP_DigestInit(&ctx, hash);
+    if (sftp_interop_supports_feature(SFTP_SSH2_FEAT_CIPHER_USE_K)) {
+      EVP_DigestUpdate(&ctx, k, klen);
+    }
+    EVP_DigestUpdate(&ctx, h, hlen);
+    EVP_DigestUpdate(&ctx, iv, len);
+    EVP_DigestFinal(&ctx, iv + len, &len);
+
+    iv_len += len;
+  }
+
+  cipher->iv = iv;
+  cipher->iv_len = iv_len;
+
+  return 0;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+3,8
+3,9
+3,10
+3,11
+3,12
+3,13
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+17,19
+19,20
+19,21
+22,23
+22,24
+23,24
+25,26
+27,28
+27,29
+29,30
+29,31
+32,33
+32,34
+33,34
+35,36
+37,38
+37,39
+39,40
+39,41
+42,43
+42,44
+44,45
+44,46
+47,48
+47,49
+48,49
+50,51
+52,53
+52,54
+52,55
+52,56
+52,57
+52,58
+52,59
+52,60
+52,61
+52,62
+52,63
+52,64
+52,65
+52,66
+52,67
+52,68
+52,69
+52,70
+52,71
+53,54
+54,55
+54,56
+55,56
+57,58
+59,60
+60,61
+60,62
+62,63
+62,64
+62,65
+65,66
+66,67
+68,69
+69,70
+69,71
+69,72
+70,71
+72,73
+74,75
+76,77
+77,78
+77,79
+78,79
+80,81
+80,82
+82,83
+84,85
+85,86
+85,87
+86,87
+88,89
+88,90
+89,90
+91,92
+91,93
+92,93
+95,96
+95,97
+95,98
+96,97
+96,98
+97,98
+100,101
+101,102
+102,103
+102,104
+103,104
+105,106
+105,107
+105,108
+106,107
+108,109
+110,111
+110,112
+111,112
+113,114
+115,116
+116,117
+117,118
+117,119
+118,119
+120,121
+120,122
+121,122
+123,124
+125,126
+125,127
+126,127
+126,128
+127,128
+130,131
+130,132
+130,133
+131,132
+132,133
+132,134
+133,134
+133,135
+136,137
+136,138
+136,139
+136,140
+136,141
+137,138
+139,140
+141,142
+144,145
+144,146
+145,146
+148,149
+149,150
+149,151
+150,151
+152,153
+154,155
+155,156
+157,158
+158,159
+158,160
+159,160
+161,162
+161,163
+162,163
+164,165
+166,167
+166,168
+167,168
+167,169
+168,169
+170,171
+172,173
+172,174
+173,174
+174,175
+175,176
+175,177
+176,177
+179,180
+180,181
+180,182
+180,183
+181,182
+183,184
+184,185
+186,187
+188,189
+188,190
+189,190
+189,191
+190,191
+192,193
+193,194
+195,196
+196,197
+197,198
+197,199
+197,200
+197,201
+198,199
+200,201
+201,202
+203,204
+205,206
+207,208
+208,209
+208,210
+208,211
+208,212
+209,210
+211,212
+212,213
+214,215
+216,217
+218,219
+219,220
+219,221
+219,222
+219,223
+220,221
+222,223
+223,224
+225,226
+227,228
+228,229
+228,230
+231,232
+232,233
+232,234
+232,235
+232,236
+233,234
+235,236
+236,237
+238,239
+238,240
+239,240
+239,241
+241,242
+243,244
+245,246
+247,248
+248,249
+248,250
+248,251
+248,252
+249,250
+251,252
+252,253
+254,255
+256,257
+257,258
+259,260
+259,261
+260,261
+260,262
+261,262
+263,264
+265,266
+265,267
+265,268
+265,269
+265,270
+265,271
+265,272
+265,273
+266,267
+267,268
+267,269
+268,269
+270,271
+270,272
+272,273
+273,274
+275,276
+276,277
+277,278
+279,280
+280,281
+280,282
+280,283
+281,282
+283,284
+284,285
+286,287
+288,289
+288,290
+289,290
+289,291
+290,291
+292,293
+293,294
+295,296
+296,297
+297,298
+297,299
+297,300
+297,301
+298,299
+300,301
+301,302
+303,304
+305,306
+307,308
+308,309
+308,310
+308,311
+308,312
+309,310
+311,312
+312,313
+314,315
+316,317
+318,319
+319,320
+319,321
+319,322
+319,323
+320,321
+322,323
+323,324
+325,326
+327,328
+329,330
+330,331
+330,332
+330,333
+330,334
+331,332
+333,334
+334,335
+336,337
+336,338
+337,338
+339,340
+341,342
+342,343
+344,345
+345,346
+345,347
+346,347
+348,349
+350,351
+351,352
+351,353
+352,353
+352,354
+353,354
+356,357
+358,359
+359,360
+359,361
+360,361
+360,362
+361,362
+364,365
+366,367
+-----nextToken-----
+2,4,7,9,10,13,15,16,18,20,21,24,26,28,30,31,34,36,38,40,41,43,45,46,49,51,56,58,61,63,64,67,71,73,75,79,81,83,87,90,93,94,98,99,104,107,109,112,114,119,122,124,128,129,134,135,138,140,142,143,146,147,151,153,156,160,163,165,169,171,177,178,182,185,187,191,194,199,202,204,206,210,213,215,217,221,224,226,229,230,234,237,240,242,244,246,250,253,255,258,262,264,269,271,274,278,282,285,287,291,294,299,302,304,306,310,313,315,317,321,324,326,328,332,335,338,340,343,347,349,354,355,357,362,363,365,367
+-----computeFrom-----
+85,86
+85,87
+96,97
+96,98
+102,103
+102,104
+117,118
+117,119
+126,127
+126,128
+149,150
+149,151
+158,159
+158,160
+167,168
+167,169
+260,261
+260,262
+336,337
+336,338
+345,346
+345,347
+351,352
+351,353
+359,360
+359,361
+-----guardedBy-----
+98,109
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;ElaboratedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;EqualsInitializer;IdExpression;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;UnaryExpression;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ProblemStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;TypeIdExpression;TypeId;SimpleDeclSpecifier;Declarator;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;Pointer;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;WhileStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;EqualsInitializer;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Declarator;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ReturnStatement;LiteralExpression;
+-----ast_node-----
+static int set_cipher_iv(struct sftp_cipher *cipher, const EVP_MD *hash,    const unsigned char *k, uint32_t klen, const char *h, uint32_t hlen,    char *letter, const unsigned char *id, uint32_t id_len) {  EVP_MD_CTX ctx;  unsigned char *iv = NULL;  size_t cipher_iv_len, iv_sz;  uint32_t iv_len = 0;  /* Some ciphers do not use IVs; handle this case. */  cipher_iv_len = EVP_CIPHER_iv_length(cipher->cipher);  if (cipher_iv_len != 0) {    iv_sz = sftp_crypto_get_size(cipher_iv_len, EVP_MD_size(hash));  } else {    iv_sz = EVP_MD_size(hash);  }  if (iv_sz == 0) {    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "unable to determine IV length for cipher '%s'", cipher->algo);    errno = EINVAL;    return -1;  }  iv = malloc(iv_sz);  if (iv == NULL) {    pr_log_pri(PR_LOG_ALERT, MOD_SFTP_VERSION ": Out of memory!");    _exit(1);  }  EVP_DigestInit(&ctx, hash);  if (sftp_interop_supports_feature(SFTP_SSH2_FEAT_CIPHER_USE_K)) {    EVP_DigestUpdate(&ctx, k, klen);  }  EVP_DigestUpdate(&ctx, h, hlen);  EVP_DigestUpdate(&ctx, letter, sizeof(char));  EVP_DigestUpdate(&ctx, (char *) id, id_len);  EVP_DigestFinal(&ctx, iv, &iv_len);  /* If we need more, keep hashing, as per RFC, until we have enough   * material.   */  while (iv_sz > iv_len) {    uint32_t len = iv_len;    pr_signals_handle();    EVP_DigestInit(&ctx, hash);    if (sftp_interop_supports_feature(SFTP_SSH2_FEAT_CIPHER_USE_K)) {      EVP_DigestUpdate(&ctx, k, klen);    }    EVP_DigestUpdate(&ctx, h, hlen);    EVP_DigestUpdate(&ctx, iv, len);    EVP_DigestFinal(&ctx, iv + len, &len);    iv_len += len;  }  cipher->iv = iv;  cipher->iv_len = iv_len;  return 0;}
+static int
+set_cipher_iv(struct sftp_cipher *cipher, const EVP_MD *hash,    const unsigned char *k, uint32_t klen, const char *h, uint32_t hlen,    char *letter, const unsigned char *id, uint32_t id_len)
+set_cipher_iv
+struct sftp_cipher *cipher
+struct sftp_cipher
+sftp_cipher
+*cipher
+*
+cipher
+const EVP_MD *hash
+const EVP_MD
+EVP_MD
+*hash
+*
+hash
+const unsigned char *k
+const unsigned char
+*k
+*
+k
+uint32_t klen
+uint32_t
+uint32_t
+klen
+klen
+const char *h
+const char
+*h
+*
+h
+uint32_t hlen
+uint32_t
+uint32_t
+hlen
+hlen
+char *letter
+char
+*letter
+*
+letter
+const unsigned char *id
+const unsigned char
+*id
+*
+id
+uint32_t id_len
+uint32_t
+uint32_t
+id_len
+id_len
+{  EVP_MD_CTX ctx;  unsigned char *iv = NULL;  size_t cipher_iv_len, iv_sz;  uint32_t iv_len = 0;  /* Some ciphers do not use IVs; handle this case. */  cipher_iv_len = EVP_CIPHER_iv_length(cipher->cipher);  if (cipher_iv_len != 0) {    iv_sz = sftp_crypto_get_size(cipher_iv_len, EVP_MD_size(hash));  } else {    iv_sz = EVP_MD_size(hash);  }  if (iv_sz == 0) {    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "unable to determine IV length for cipher '%s'", cipher->algo);    errno = EINVAL;    return -1;  }  iv = malloc(iv_sz);  if (iv == NULL) {    pr_log_pri(PR_LOG_ALERT, MOD_SFTP_VERSION ": Out of memory!");    _exit(1);  }  EVP_DigestInit(&ctx, hash);  if (sftp_interop_supports_feature(SFTP_SSH2_FEAT_CIPHER_USE_K)) {    EVP_DigestUpdate(&ctx, k, klen);  }  EVP_DigestUpdate(&ctx, h, hlen);  EVP_DigestUpdate(&ctx, letter, sizeof(char));  EVP_DigestUpdate(&ctx, (char *) id, id_len);  EVP_DigestFinal(&ctx, iv, &iv_len);  /* If we need more, keep hashing, as per RFC, until we have enough   * material.   */  while (iv_sz > iv_len) {    uint32_t len = iv_len;    pr_signals_handle();    EVP_DigestInit(&ctx, hash);    if (sftp_interop_supports_feature(SFTP_SSH2_FEAT_CIPHER_USE_K)) {      EVP_DigestUpdate(&ctx, k, klen);    }    EVP_DigestUpdate(&ctx, h, hlen);    EVP_DigestUpdate(&ctx, iv, len);    EVP_DigestFinal(&ctx, iv + len, &len);    iv_len += len;  }  cipher->iv = iv;  cipher->iv_len = iv_len;  return 0;}
+EVP_MD_CTX ctx;
+EVP_MD_CTX ctx;
+EVP_MD_CTX
+EVP_MD_CTX
+ctx
+ctx
+unsigned char *iv = NULL;
+unsigned char *iv = NULL;
+unsigned char
+*iv = NULL
+*
+iv
+= NULL
+NULL
+NULL
+size_t cipher_iv_len, iv_sz;
+size_t cipher_iv_len, iv_sz;
+size_t
+size_t
+cipher_iv_len
+cipher_iv_len
+iv_sz
+iv_sz
+uint32_t iv_len = 0;
+uint32_t iv_len = 0;
+uint32_t
+uint32_t
+iv_len = 0
+iv_len
+= 0
+0
+cipher_iv_len = EVP_CIPHER_iv_length(cipher->cipher);
+cipher_iv_len = EVP_CIPHER_iv_length(cipher->cipher)
+cipher_iv_len
+cipher_iv_len
+EVP_CIPHER_iv_length(cipher->cipher)
+EVP_CIPHER_iv_length
+EVP_CIPHER_iv_length
+cipher->cipher
+cipher
+cipher
+cipher
+if (cipher_iv_len != 0) {    iv_sz = sftp_crypto_get_size(cipher_iv_len, EVP_MD_size(hash));  } else {    iv_sz = EVP_MD_size(hash);  }
+cipher_iv_len != 0
+cipher_iv_len
+cipher_iv_len
+0
+{    iv_sz = sftp_crypto_get_size(cipher_iv_len, EVP_MD_size(hash));  }
+iv_sz = sftp_crypto_get_size(cipher_iv_len, EVP_MD_size(hash));
+iv_sz = sftp_crypto_get_size(cipher_iv_len, EVP_MD_size(hash))
+iv_sz
+iv_sz
+sftp_crypto_get_size(cipher_iv_len, EVP_MD_size(hash))
+sftp_crypto_get_size
+sftp_crypto_get_size
+cipher_iv_len
+cipher_iv_len
+EVP_MD_size(hash)
+EVP_MD_size
+EVP_MD_size
+hash
+hash
+{    iv_sz = EVP_MD_size(hash);  }
+iv_sz = EVP_MD_size(hash);
+iv_sz = EVP_MD_size(hash)
+iv_sz
+iv_sz
+EVP_MD_size(hash)
+EVP_MD_size
+EVP_MD_size
+hash
+hash
+if (iv_sz == 0) {    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "unable to determine IV length for cipher '%s'", cipher->algo);    errno = EINVAL;    return -1;  }
+iv_sz == 0
+iv_sz
+iv_sz
+0
+{    (void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "unable to determine IV length for cipher '%s'", cipher->algo);    errno = EINVAL;    return -1;  }
+(void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "unable to determine IV length for cipher '%s'", cipher->algo);
+(void) pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "unable to determine IV length for cipher '%s'", cipher->algo)
+void
+void
+
+pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,      "unable to determine IV length for cipher '%s'", cipher->algo)
+pr_log_writefile
+pr_log_writefile
+sftp_logfd
+sftp_logfd
+MOD_SFTP_VERSION
+MOD_SFTP_VERSION
+"unable to determine IV length for cipher '%s'"
+cipher->algo
+cipher
+cipher
+algo
+errno = EINVAL;
+errno = EINVAL
+errno
+errno
+EINVAL
+EINVAL
+return -1;
+-1
+1
+iv = malloc(iv_sz);
+iv = malloc(iv_sz)
+iv
+iv
+malloc(iv_sz)
+malloc
+malloc
+iv_sz
+iv_sz
+if (iv == NULL) {    pr_log_pri(PR_LOG_ALERT, MOD_SFTP_VERSION ": Out of memory!");    _exit(1);  }
+iv == NULL
+iv
+iv
+NULL
+NULL
+{    pr_log_pri(PR_LOG_ALERT, MOD_SFTP_VERSION ": Out of memory!");    _exit(1);  }
+pr_log_pri(PR_LOG_ALERT, MOD_SFTP_VERSION ": Out of memory!");
+_exit(1);
+_exit(1)
+_exit
+_exit
+1
+EVP_DigestInit(&ctx, hash);
+EVP_DigestInit(&ctx, hash)
+EVP_DigestInit
+EVP_DigestInit
+&ctx
+ctx
+ctx
+hash
+hash
+if (sftp_interop_supports_feature(SFTP_SSH2_FEAT_CIPHER_USE_K)) {    EVP_DigestUpdate(&ctx, k, klen);  }
+sftp_interop_supports_feature(SFTP_SSH2_FEAT_CIPHER_USE_K)
+sftp_interop_supports_feature
+sftp_interop_supports_feature
+(SFTP_SSH2_FEAT_CIPHER_USE_K)
+SFTP_SSH2_FEAT_CIPHER_USE_K
+SFTP_SSH2_FEAT_CIPHER_USE_K
+{    EVP_DigestUpdate(&ctx, k, klen);  }
+EVP_DigestUpdate(&ctx, k, klen);
+EVP_DigestUpdate(&ctx, k, klen)
+EVP_DigestUpdate
+EVP_DigestUpdate
+&ctx
+ctx
+ctx
+k
+k
+klen
+klen
+EVP_DigestUpdate(&ctx, h, hlen);
+EVP_DigestUpdate(&ctx, h, hlen)
+EVP_DigestUpdate
+EVP_DigestUpdate
+&ctx
+ctx
+ctx
+h
+h
+hlen
+hlen
+EVP_DigestUpdate(&ctx, letter, sizeof(char));
+EVP_DigestUpdate(&ctx, letter, sizeof(char))
+EVP_DigestUpdate
+EVP_DigestUpdate
+&ctx
+ctx
+ctx
+letter
+letter
+sizeof(char)
+char
+char
+
+EVP_DigestUpdate(&ctx, (char *) id, id_len);
+EVP_DigestUpdate(&ctx, (char *) id, id_len)
+EVP_DigestUpdate
+EVP_DigestUpdate
+&ctx
+ctx
+ctx
+(char *) id
+char *
+char
+*
+*
+id
+id
+id_len
+id_len
+EVP_DigestFinal(&ctx, iv, &iv_len);
+EVP_DigestFinal(&ctx, iv, &iv_len)
+EVP_DigestFinal
+EVP_DigestFinal
+&ctx
+ctx
+ctx
+iv
+iv
+&iv_len
+iv_len
+iv_len
+while (iv_sz > iv_len) {    uint32_t len = iv_len;    pr_signals_handle();    EVP_DigestInit(&ctx, hash);    if (sftp_interop_supports_feature(SFTP_SSH2_FEAT_CIPHER_USE_K)) {      EVP_DigestUpdate(&ctx, k, klen);    }    EVP_DigestUpdate(&ctx, h, hlen);    EVP_DigestUpdate(&ctx, iv, len);    EVP_DigestFinal(&ctx, iv + len, &len);    iv_len += len;  }
+iv_sz > iv_len
+iv_sz
+iv_sz
+iv_len
+iv_len
+{    uint32_t len = iv_len;    pr_signals_handle();    EVP_DigestInit(&ctx, hash);    if (sftp_interop_supports_feature(SFTP_SSH2_FEAT_CIPHER_USE_K)) {      EVP_DigestUpdate(&ctx, k, klen);    }    EVP_DigestUpdate(&ctx, h, hlen);    EVP_DigestUpdate(&ctx, iv, len);    EVP_DigestFinal(&ctx, iv + len, &len);    iv_len += len;  }
+uint32_t len = iv_len;
+uint32_t len = iv_len;
+uint32_t
+uint32_t
+len = iv_len
+len
+= iv_len
+iv_len
+iv_len
+pr_signals_handle();
+pr_signals_handle()
+pr_signals_handle
+pr_signals_handle
+EVP_DigestInit(&ctx, hash);
+EVP_DigestInit(&ctx, hash)
+EVP_DigestInit
+EVP_DigestInit
+&ctx
+ctx
+ctx
+hash
+hash
+if (sftp_interop_supports_feature(SFTP_SSH2_FEAT_CIPHER_USE_K)) {      EVP_DigestUpdate(&ctx, k, klen);    }
+sftp_interop_supports_feature(SFTP_SSH2_FEAT_CIPHER_USE_K)
+sftp_interop_supports_feature
+sftp_interop_supports_feature
+(SFTP_SSH2_FEAT_CIPHER_USE_K)
+SFTP_SSH2_FEAT_CIPHER_USE_K
+SFTP_SSH2_FEAT_CIPHER_USE_K
+{      EVP_DigestUpdate(&ctx, k, klen);    }
+EVP_DigestUpdate(&ctx, k, klen);
+EVP_DigestUpdate(&ctx, k, klen)
+EVP_DigestUpdate
+EVP_DigestUpdate
+&ctx
+ctx
+ctx
+k
+k
+klen
+klen
+EVP_DigestUpdate(&ctx, h, hlen);
+EVP_DigestUpdate(&ctx, h, hlen)
+EVP_DigestUpdate
+EVP_DigestUpdate
+&ctx
+ctx
+ctx
+h
+h
+hlen
+hlen
+EVP_DigestUpdate(&ctx, iv, len);
+EVP_DigestUpdate(&ctx, iv, len)
+EVP_DigestUpdate
+EVP_DigestUpdate
+&ctx
+ctx
+ctx
+iv
+iv
+len
+len
+EVP_DigestFinal(&ctx, iv + len, &len);
+EVP_DigestFinal(&ctx, iv + len, &len)
+EVP_DigestFinal
+EVP_DigestFinal
+&ctx
+ctx
+ctx
+iv + len
+iv
+iv
+len
+len
+&len
+len
+len
+iv_len += len;
+iv_len += len
+iv_len
+iv_len
+len
+len
+cipher->iv = iv;
+cipher->iv = iv
+cipher->iv
+cipher
+cipher
+iv
+iv
+iv
+cipher->iv_len = iv_len;
+cipher->iv_len = iv_len
+cipher->iv_len
+cipher
+cipher
+iv_len
+iv_len
+iv_len
+return 0;
+0
+-----joern-----
+(121,42,0)
+(55,24,0)
+(134,6,0)
+(47,160,0)
+(107,50,0)
+(133,155,0)
+(78,59,0)
+(80,72,0)
+(152,8,0)
+(128,163,0)
+(61,110,0)
+(20,163,0)
+(26,51,0)
+(110,56,0)
+(18,42,0)
+(127,154,0)
+(63,42,0)
+(128,71,0)
+(129,89,0)
+(69,19,0)
+(122,64,0)
+(100,140,0)
+(31,64,0)
+(144,128,0)
+(0,153,0)
+(38,149,0)
+(6,0,0)
+(12,42,0)
+(75,98,0)
+(161,26,0)
+(119,42,0)
+(88,89,0)
+(112,128,0)
+(62,104,0)
+(156,38,0)
+(160,160,0)
+(129,0,0)
+(4,38,0)
+(123,149,0)
+(41,20,0)
+(151,104,0)
+(128,1,0)
+(118,116,0)
+(122,113,0)
+(11,151,0)
+(93,163,0)
+(120,77,0)
+(24,64,0)
+(79,110,0)
+(139,60,0)
+(115,113,0)
+(167,129,0)
+(101,59,0)
+(67,60,0)
+(44,80,0)
+(148,165,0)
+(154,152,0)
+(20,41,0)
+(141,42,0)
+(90,128,0)
+(16,132,0)
+(34,132,0)
+(117,2,0)
+(74,42,0)
+(59,78,0)
+(104,151,0)
+(14,42,0)
+(89,129,0)
+(65,137,0)
+(19,42,0)
+(162,54,0)
+(149,38,0)
+(92,19,0)
+(116,122,0)
+(32,30,0)
+(113,30,0)
+(95,147,0)
+(9,153,0)
+(80,160,0)
+(150,41,0)
+(152,98,0)
+(109,37,0)
+(38,21,0)
+(160,30,0)
+(93,30,0)
+(45,154,0)
+(25,31,0)
+(73,42,0)
+(59,43,0)
+(125,31,0)
+(80,30,0)
+(85,54,0)
+(136,147,0)
+(99,151,0)
+(113,160,0)
+(93,160,0)
+(87,163,0)
+(165,19,0)
+(151,42,0)
+(19,49,0)
+(20,106,0)
+(13,74,0)
+(103,122,0)
+(65,42,0)
+(50,0,0)
+(158,30,0)
+(147,42,0)
+(29,164,0)
+(129,93,0)
+(36,59,0)
+(37,106,0)
+(159,147,0)
+(5,137,0)
+(160,163,0)
+(67,131,0)
+(118,67,0)
+(77,133,0)
+(51,26,0)
+(142,69,0)
+(147,136,0)
+(37,69,0)
+(15,70,0)
+(59,10,0)
+(145,108,0)
+(65,46,0)
+(49,31,0)
+(80,56,0)
+(46,65,0)
+(72,140,0)
+(129,163,0)
+(153,56,0)
+(135,42,0)
+(140,106,0)
+(102,93,0)
+(86,6,0)
+(82,136,0)
+(65,0,0)
+(155,133,0)
+(3,46,0)
+(84,24,0)
+(22,11,0)
+(72,114,0)
+(98,152,0)
+(69,56,0)
+(76,112,0)
+(128,112,0)
+(35,139,0)
+(130,78,0)
+(153,72,0)
+(166,72,0)
+(48,155,0)
+(152,42,0)
+(151,39,0)
+(2,67,0)
+(49,19,0)
+(28,122,0)
+(138,129,0)
+(69,37,0)
+(154,58,0)
+(133,163,0)
+(0,42,0)
+(6,133,0)
+(68,163,0)
+(94,42,0)
+(56,33,0)
+(164,0,0)
+(151,11,0)
+(116,24,0)
+(38,57,0)
+(105,152,0)
+(133,77,0)
+(133,6,0)
+(52,163,0)
+(46,30,0)
+(54,139,0)
+(83,80,0)
+(17,65,0)
+(140,72,0)
+(137,65,0)
+(31,49,0)
+(91,51,0)
+(152,154,0)
+(30,42,0)
+(146,74,0)
+(124,53,0)
+(143,20,0)
+(23,131,0)
+(153,0,0)
+(139,54,0)
+(7,54,0)
+(97,131,0)
+(40,56,0)
+(154,45,0)
+(56,69,0)
+(96,164,0)
+(77,93,0)
+(66,160,0)
+(59,21,0)
+(27,165,0)
+(147,71,0)
+(81,124,0)
+(139,35,0)
+(54,132,0)
+(160,93,0)
+(147,1,0)
+(6,93,0)
+(113,42,0)
+(50,42,0)
+(132,64,0)
+(24,50,0)
+(26,106,0)
+(126,116,0)
+(116,42,0)
+(157,93,0)
+(111,0,0)
+(132,54,0)
+(131,60,0)
+(110,72,0)
+(26,42,0)
+(38,10,0)
+(136,82,1)
+(129,93,1)
+(113,160,1)
+(86,155,1)
+(153,9,1)
+(67,2,1)
+(65,0,1)
+(150,52,1)
+(77,93,1)
+(91,164,1)
+(152,98,1)
+(46,3,1)
+(5,152,1)
+(129,0,1)
+(110,79,1)
+(157,80,1)
+(152,105,1)
+(93,30,1)
+(46,30,1)
+(81,164,1)
+(6,0,1)
+(140,100,1)
+(22,147,1)
+(24,64,1)
+(137,5,1)
+(27,148,1)
+(59,101,1)
+(98,75,1)
+(91,124,1)
+(80,30,1)
+(131,97,1)
+(164,0,1)
+(11,22,1)
+(80,160,1)
+(65,137,1)
+(112,76,1)
+(78,130,1)
+(67,131,1)
+(48,129,1)
+(83,44,1)
+(3,17,1)
+(16,34,1)
+(29,96,1)
+(147,136,1)
+(118,116,1)
+(38,156,1)
+(110,56,1)
+(89,88,1)
+(41,150,1)
+(124,81,1)
+(108,145,1)
+(160,47,1)
+(154,127,1)
+(82,70,1)
+(37,109,1)
+(95,136,1)
+(132,16,1)
+(133,77,1)
+(20,41,1)
+(80,56,1)
+(6,93,1)
+(155,48,1)
+(79,61,1)
+(110,72,1)
+(167,138,1)
+(66,133,1)
+(80,72,1)
+(139,54,1)
+(77,120,1)
+(9,111,1)
+(70,15,1)
+(107,24,1)
+(36,78,1)
+(128,144,1)
+(4,149,1)
+(80,83,1)
+(34,7,1)
+(38,21,1)
+(120,6,1)
+(19,49,1)
+(84,55,1)
+(128,71,1)
+(92,30,1)
+(20,143,1)
+(54,132,1)
+(25,92,1)
+(151,11,1)
+(147,1,1)
+(74,146,1)
+(61,56,1)
+(117,131,1)
+(116,122,1)
+(99,11,1)
+(154,58,1)
+(23,139,1)
+(152,154,1)
+(156,4,1)
+(129,167,1)
+(37,106,1)
+(128,112,1)
+(28,50,1)
+(158,74,1)
+(147,71,1)
+(50,0,1)
+(101,36,1)
+(62,99,1)
+(152,8,1)
+(20,106,1)
+(153,56,1)
+(113,115,1)
+(26,161,1)
+(7,162,1)
+(160,160,1)
+(93,102,1)
+(100,166,1)
+(146,13,1)
+(153,72,1)
+(30,32,1)
+(38,10,1)
+(17,137,1)
+(59,78,1)
+(76,108,1)
+(139,35,1)
+(164,29,1)
+(118,67,1)
+(160,30,1)
+(160,93,1)
+(165,27,1)
+(132,64,1)
+(24,84,1)
+(111,110,1)
+(55,80,1)
+(75,151,1)
+(59,21,1)
+(47,66,1)
+(2,117,1)
+(102,157,1)
+(93,160,1)
+(6,134,1)
+(49,31,1)
+(82,38,1)
+(161,51,1)
+(44,65,1)
+(50,107,1)
+(151,104,1)
+(72,140,1)
+(104,62,1)
+(31,125,1)
+(133,155,1)
+(148,19,1)
+(26,51,1)
+(61,72,1)
+(96,0,1)
+(134,86,1)
+(126,113,1)
+(105,154,1)
+(147,159,1)
+(103,28,1)
+(165,19,1)
+(151,39,1)
+(166,165,1)
+(143,41,1)
+(116,24,1)
+(65,46,1)
+(149,123,1)
+(40,165,1)
+(51,91,1)
+(85,110,1)
+(142,40,1)
+(52,93,1)
+(90,112,1)
+(0,153,1)
+(116,126,1)
+(44,160,1)
+(162,85,1)
+(88,128,1)
+(109,142,1)
+(113,30,1)
+(32,158,1)
+(15,26,1)
+(122,103,1)
+(115,122,1)
+(138,89,1)
+(26,106,1)
+(130,108,1)
+(140,106,1)
+(145,20,1)
+(97,23,1)
+(59,10,1)
+(129,89,1)
+(31,64,1)
+(56,69,1)
+(133,6,1)
+(144,90,1)
+(154,45,1)
+(159,95,1)
+(38,149,1)
+(69,19,1)
+(69,37,1)
+(127,98,1)
+(125,25,1)
+(76,59,1)
+(123,70,1)
+(122,64,1)
+(128,1,1)
+(65,0,2)
+(133,80,2)
+(96,110,2)
+(107,110,2)
+(59,78,2)
+(66,80,2)
+(103,110,2)
+(28,110,2)
+(0,110,2)
+(129,93,2)
+(122,64,2)
+(110,72,2)
+(152,8,2)
+(129,89,2)
+(36,108,2)
+(151,104,2)
+(80,56,2)
+(133,155,2)
+(152,110,2)
+(132,110,2)
+(116,122,2)
+(147,71,2)
+(118,67,2)
+(116,24,2)
+(46,110,2)
+(93,160,2)
+(153,72,2)
+(72,140,2)
+(50,110,2)
+(154,58,2)
+(152,98,2)
+(160,80,2)
+(59,108,2)
+(150,80,2)
+(137,110,2)
+(128,80,2)
+(80,110,2)
+(118,116,2)
+(122,110,2)
+(3,110,2)
+(164,110,2)
+(59,21,2)
+(49,31,2)
+(153,110,2)
+(126,110,2)
+(99,110,2)
+(65,46,2)
+(0,153,2)
+(78,108,2)
+(144,80,2)
+(129,0,2)
+(85,110,2)
+(151,110,2)
+(134,80,2)
+(55,110,2)
+(51,110,2)
+(80,30,2)
+(80,160,2)
+(44,110,2)
+(46,30,2)
+(120,80,2)
+(130,108,2)
+(101,108,2)
+(67,131,2)
+(44,80,2)
+(50,0,2)
+(152,154,2)
+(147,110,2)
+(67,110,2)
+(38,149,2)
+(113,30,2)
+(111,110,2)
+(17,110,2)
+(139,54,2)
+(65,137,2)
+(56,165,2)
+(166,165,2)
+(91,110,2)
+(139,35,2)
+(48,80,2)
+(93,30,2)
+(41,80,2)
+(11,110,2)
+(113,160,2)
+(80,72,2)
+(147,1,2)
+(154,45,2)
+(6,0,2)
+(37,165,2)
+(97,110,2)
+(54,110,2)
+(47,80,2)
+(115,110,2)
+(105,110,2)
+(98,110,2)
+(104,110,2)
+(19,49,2)
+(140,106,2)
+(2,110,2)
+(116,110,2)
+(5,110,2)
+(72,165,2)
+(102,80,2)
+(52,80,2)
+(156,70,2)
+(117,110,2)
+(34,110,2)
+(160,160,2)
+(100,165,2)
+(81,164,2)
+(95,110,2)
+(131,110,2)
+(65,110,2)
+(20,106,2)
+(59,10,2)
+(86,80,2)
+(136,110,2)
+(83,110,2)
+(54,132,2)
+(89,80,2)
+(69,37,2)
+(38,10,2)
+(15,110,2)
+(22,110,2)
+(62,110,2)
+(77,93,2)
+(133,6,2)
+(155,80,2)
+(145,80,2)
+(108,80,2)
+(112,80,2)
+(24,110,2)
+(160,93,2)
+(26,51,2)
+(159,110,2)
+(83,80,2)
+(69,165,2)
+(162,110,2)
+(93,80,2)
+(109,165,2)
+(80,80,2)
+(69,19,2)
+(143,80,2)
+(38,70,2)
+(128,1,2)
+(6,93,2)
+(29,110,2)
+(151,39,2)
+(139,110,2)
+(6,80,2)
+(9,110,2)
+(151,11,2)
+(153,56,2)
+(129,80,2)
+(20,41,2)
+(157,80,2)
+(40,165,2)
+(20,80,2)
+(70,110,2)
+(88,80,2)
+(76,80,2)
+(56,69,2)
+(167,80,2)
+(124,164,2)
+(7,110,2)
+(37,106,2)
+(82,110,2)
+(110,56,2)
+(142,165,2)
+(160,30,2)
+(140,165,2)
+(77,80,2)
+(132,64,2)
+(128,71,2)
+(164,0,2)
+(138,80,2)
+(31,64,2)
+(16,110,2)
+(127,110,2)
+(84,110,2)
+(90,80,2)
+(4,70,2)
+(128,112,2)
+(161,110,2)
+(154,110,2)
+(23,110,2)
+(26,110,2)
+(165,19,2)
+(26,106,2)
+(147,136,2)
+(149,70,2)
+(75,110,2)
+(133,77,2)
+(113,110,2)
+(123,70,2)
+(24,64,2)
+(38,21,2)
+-----------------------------------
+(0,iv = malloc(iv_sz)
+(1,uint32_t hlen)
+(2,-1)
+(3,iv_len)
+(4,k)
+(5,ctx)
+(6,iv + len)
+(7,"unable to determine IV length for cipher \'%s\'")
+(8,uint32_t id_len)
+(9,iv_sz)
+(10,uint32_t klen)
+(11,&ctx)
+(12,iv_len)
+(13,iv)
+(14,iv)
+(15,SFTP_SSH2_FEAT_CIPHER_USE_K)
+(16,algo)
+(17,iv)
+(18,if (iv == NULL)
+(19,cipher_iv_len = EVP_CIPHER_iv_length(cipher->cipher)
+(20,EVP_DigestInit(&ctx, hash)
+(21,const unsigned char *k)
+(22,ctx)
+(23,errno)
+(24,cipher->iv)
+(25,cipher)
+(26,EVP_DigestInit(&ctx, hash)
+(27,0)
+(28,cipher)
+(29,NULL)
+(30,iv_len = 0)
+(31,cipher->cipher)
+(32,0)
+(33,)
+(34,cipher)
+(35,void)
+(36,k)
+(37,EVP_MD_size(hash)
+(38,EVP_DigestUpdate(&ctx, k, klen)
+(39,char *letter)
+(40,iv_sz)
+(41,&ctx)
+(42,)
+(43,)
+(44,iv_sz)
+(45,char *)
+(46,&iv_len)
+(47,len)
+(48,ctx)
+(49,EVP_CIPHER_iv_length(cipher->cipher)
+(50,cipher->iv = iv)
+(51,&ctx)
+(52,pr_signals_handle()
+(53,)
+(54,pr_log_writefile(sftp_logfd, MOD_SFTP_VERSION,\n\\n      "unable to determine IV length for cipher \'%s\'", cipher->algo)
+(55,cipher)
+(56,iv_sz = sftp_crypto_get_size(cipher_iv_len, EVP_MD_size(hash)
+(57,)
+(58,const unsigned char *id)
+(59,EVP_DigestUpdate(&ctx, k, klen)
+(60,)
+(61,iv_sz)
+(62,char)
+(63,if (cipher_iv_len != 0)
+(64,struct sftp_cipher *cipher)
+(65,EVP_DigestFinal(&ctx, iv, &iv_len)
+(66,iv_len)
+(67,return -1;)
+(68,len)
+(69,sftp_crypto_get_size(cipher_iv_len, EVP_MD_size(hash)
+(70,sftp_interop_supports_feature(SFTP_SSH2_FEAT_CIPHER_USE_K)
+(71,const char *h)
+(72,iv_sz = EVP_MD_size(hash)
+(73,iv_sz)
+(74,*iv = NULL)
+(75,ctx)
+(76,ctx)
+(77,&len)
+(78,&ctx)
+(79,0)
+(80,iv_sz > iv_len)
+(81,1)
+(82,ctx)
+(83,iv_len)
+(84,iv)
+(85,sftp_logfd)
+(86,iv)
+(87,if (sftp_interop_supports_feature(SFTP_SSH2_FEAT_CIPHER_USE_K)
+(88,ctx)
+(89,&ctx)
+(90,h)
+(91,ctx)
+(92,cipher_iv_len)
+(93,len = iv_len)
+(94,if (sftp_interop_supports_feature(SFTP_SSH2_FEAT_CIPHER_USE_K)
+(95,h)
+(96,iv)
+(97,EINVAL)
+(98,&ctx)
+(99,letter)
+(100,hash)
+(101,klen)
+(102,iv_len)
+(103,iv_len)
+(104,sizeof(char)
+(105,id_len)
+(106,const EVP_MD *hash)
+(107,iv)
+(108,sftp_interop_supports_feature(SFTP_SSH2_FEAT_CIPHER_USE_K)
+(109,hash)
+(110,iv_sz == 0)
+(111,iv)
+(112,&ctx)
+(113,cipher->iv_len = iv_len)
+(114,)
+(115,iv_len)
+(116,return 0;)
+(117,1)
+(118,RET)
+(119,ctx)
+(120,len)
+(121,if (iv_sz == 0)
+(122,cipher->iv_len)
+(123,ctx)
+(124,_exit(1)
+(125,cipher)
+(126,0)
+(127,id)
+(128,EVP_DigestUpdate(&ctx, h, hlen)
+(129,EVP_DigestUpdate(&ctx, iv, len)
+(130,ctx)
+(131,errno = EINVAL)
+(132,cipher->algo)
+(133,EVP_DigestFinal(&ctx, iv + len, &len)
+(134,len)
+(135,while (iv_sz > iv_len)
+(136,&ctx)
+(137,&ctx)
+(138,iv)
+(139,(void)
+(140,EVP_MD_size(hash)
+(141,cipher_iv_len)
+(142,cipher_iv_len)
+(143,hash)
+(144,hlen)
+(145,SFTP_SSH2_FEAT_CIPHER_USE_K)
+(146,NULL)
+(147,EVP_DigestUpdate(&ctx, h, hlen)
+(148,cipher_iv_len)
+(149,&ctx)
+(150,ctx)
+(151,EVP_DigestUpdate(&ctx, letter, sizeof(char)
+(152,EVP_DigestUpdate(&ctx, (char *)
+(153,malloc(iv_sz)
+(154,(char *)
+(155,&ctx)
+(156,klen)
+(157,len)
+(158,iv_len)
+(159,hlen)
+(160,iv_len += len)
+(161,hash)
+(162,MOD_SFTP_VERSION)
+(163,)
+(164,iv == NULL)
+(165,cipher_iv_len != 0)
+(166,iv_sz)
+(167,len)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
