@@ -4,7 +4,7 @@ Using graph neural networks and open-source repositories to detect code vulnerab
 
 [Huanting Wang](https://scholar.google.com.hk/citations?user=inrTk6cAAAAJ&hl=zh-CN&oi=sra), [Guixin Ye](https://dblp.uni-trier.de/pid/125/3245.html), [Zhanyong Tang](https://scholar.google.com.hk/citations?user=SgNEtJwAAAAJ&hl=zh-CN&oi=sra), [Shin Hwei Tan](https://scholar.google.com.hk/citations?user=1eFjFs8AAAAJ&hl=zh-CN&oi=ao), [Songfang Huang](https://dblp.uni-trier.de/pid/05/4919.html), [Dingyi Fang](https://dblp.uni-trier.de/pid/80/3909.html), [Yansong Feng](https://scholar.google.com.hk/citations?user=67qAw_wAAAAJ&hl=zh-CN), Lizhong Bian and [Zheng Wang](https://scholar.google.com.hk/citations?user=qJ7ZKG8AAAAJ&hl=zh-CN) "Combining Graph-based Learning with Automated Data Collection for Code Vulnerability Detection" [Preprint](https://www.nwu.edu.cn/)
 
-**November 2020** - The paper was accepted to IEEE TIFS!
+**November 2020** - The paper was accepted to [IEEE TIFS](https://ieeexplore.ieee.org/xpl/RecentIssue.jsp?punumber=10206)!
 
 Online demo and Dataset are available at [http://www.leogoat.site/](http://www.leogoat.site/).
 
