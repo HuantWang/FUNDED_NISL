@@ -6,7 +6,7 @@ Using graph neural networks and open-source repositories to detect code vulnerab
 
 **November 2020** - The paper was accepted to [IEEE TIFS](https://ieeexplore.ieee.org/xpl/RecentIssue.jsp?punumber=10206)!
 
-Online demo and Dataset are available at [http://www.leogoat.site/](http://www.leogoat.site/).
+**Online demo** and **Dataset** are available at [http://www.leogoat.site/](http://www.leogoat.site/).
 
 FUNDED is a novel learning framework for building vulnerability detection models, which leverages the advances in graph neural networks (GNNs) to develop a novel graph-based learning method to capture and reason about the program’s control, data, and call dependencies.
 
