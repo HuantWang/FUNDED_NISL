@@ -225,11 +225,11 @@ For example, under ```data/data/CWE-399``` and ```data/data/CWE-362``` are avail
 |399 | 8bcbb6c4-3f3f-471c-b2dc-ab9151bb22f8.c$$$2 |    1   | 2,7 2,9 2,3,7 (6,7,0)(1,5,1)(6,9,2) ... |
 |399 | 53ee12a1-ba49-41f2-a163-c2b662a4db27.c$$$0 |    0   | 4,5 7,8 3,6,8 (5,8,0)(3,6,1)(7,8,2) ... |
 |  | ...|    ...   | ... |
-|362 | 8388fdcf-40cf-4e59-9f11-17d9e320efd8.c$$$4 |    0   | 1,7 2,5 3,4,8 (4,7,0)(5,8,1)(2,9,2) ... |
-|362 | 91978dee-4ee4-428b-8576-ffb49e8dc12a.c$$$6 |    1   | 2,3 3,8 3,7,9 (3,6,0)(4,6,1)(2,8,2) ... |
-|362 | 113353a8-f804-4aff-a81a-15f20e638d4b.c$$$1 |    1   | 4,6 4,7 5,6,7 (3,7,0)(4,5,1)(8,9,2) ... |
-|362 | b7b5ae35-d478-4c51-96c2-8f107fc08fde.c$$$3 |    1   | 2,5 7,8 1,7,8 (5,8,0)(3,6,1)(2,8,2) ... |
-|362 | e831aff3-bd88-4ef7-a5b0-2d87e1b20fbe.c$$$0 |    0   | 6,8 2,8 4,6,9 (6,9,0)(1,5,1)(1,4,2) ... |
+|400 | 8388fdcf-40cf-4e59-9f11-17d9e320efd8.c$$$4 |    0   | 1,7 2,5 3,4,8 (4,7,0)(5,8,1)(2,9,2) ... |
+|400 | 91978dee-4ee4-428b-8576-ffb49e8dc12a.c$$$6 |    1   | 2,3 3,8 3,7,9 (3,6,0)(4,6,1)(2,8,2) ... |
+|400 | 113353a8-f804-4aff-a81a-15f20e638d4b.c$$$1 |    1   | 4,6 4,7 5,6,7 (3,7,0)(4,5,1)(8,9,2) ... |
+|400 | b7b5ae35-d478-4c51-96c2-8f107fc08fde.c$$$3 |    1   | 2,5 7,8 1,7,8 (5,8,0)(3,6,1)(2,8,2) ... |
+|400 | e831aff3-bd88-4ef7-a5b0-2d87e1b20fbe.c$$$0 |    0   | 6,8 2,8 4,6,9 (6,9,0)(1,5,1)(1,4,2) ... |
 |  | ...|    ...   | ... |
 
 ### Results
@@ -282,7 +282,7 @@ Model parameters: {
 Loading data from ../data/data/tem_CWE-400/ast.
 Loading data from ../data/data/tem_CWE-400/cdfg.
 Restoring best model state from trained_model/RGCN_GraphBinaryClassification__2020-11-30_10-41-23_best.pkl.
-CP_test  Accuracy = 0.915|precision = 0.846 | recall = 1.000 | f1 = 0.917 |TPR = 1.000 | FPR = 0.160 | TNR = 0.840 | FNR = 0.000 |
+NoneCP_test  Accuracy = 0.915|precision = 0.846 | recall = 1.000 | f1 = 0.917 |TPR = 1.000 | FPR = 0.160 | TNR = 0.840 | FNR = 0.000 |
 ```
 
 ```
@@ -290,7 +290,7 @@ CP_test  Accuracy = 0.915|precision = 0.846 | recall = 1.000 | f1 = 0.917 |TPR =
 Loading data from ../data/data/tem_CWE-400/new/ast.
 Loading data from ../data/data/tem_CWE-400/new/cdfg.
 Restoring best model state from trained_model/RGCN_GraphBinaryClassification__2020-11-30_10-44-23_best.pkl.
-NoneCP_test  Accuracy = 0.942|precision = 0.893 | recall = 1.000 | f1 = 0.943 |TPR = 1.000 | FPR = 0.111 | TNR = 0.889 | FNR = 0.000 |
+CP_test  Accuracy = 0.942|precision = 0.893 | recall = 1.000 | f1 = 0.943 |TPR = 1.000 | FPR = 0.111 | TNR = 0.889 | FNR = 0.000 |
 ```
 <br/><br/>
 ## Data collection module
