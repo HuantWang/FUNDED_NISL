@@ -320,7 +320,7 @@ python InputData_New.py
 
 ## Authors
 * **Huanting Wang**, **Guixin Ye**, **Zhanyong Tang**, **Songfang Huang**, **Dingyi Fang**, **Yansong Feng**, **Lizhong Bian**, **Zheng Wang**
-* *Initial work* - [IEEE TIFS](https://www.nwu.edu.cn/), [Datasets](http://www.leogoat.site/)
+* *Initial work* - [Paper](https://www.nwu.edu.cn/), [Datasets](http://www.leogoat.site/)
 
 ## License
 Distributed under the NISL License. See LICENSE for more information.
