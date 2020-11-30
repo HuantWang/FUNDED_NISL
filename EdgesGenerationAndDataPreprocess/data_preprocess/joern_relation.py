@@ -3,8 +3,8 @@ import re
 import numpy as np
 
 """
-c通过joern处理之后，用这个再处理
-0表示为AST,1表示CFG,2表示PDG
+After joern processes the c code, use this code;
+0 represents AST, 1 represents CFG, 2 represents PDG
 """
 
 def graphRelation(rootpath,pathdir,tag):
@@ -15,30 +15,29 @@ def graphRelation(rootpath,pathdir,tag):
         path = rootpath + '//' + file
         try:
             with open(path, 'r', encoding='utf-8') as f:
-                lines = str(f.readlines())
-                # for line in lines:
+                lines = str(f.read())
                 alllist = lines.split("),List(")
-                # 判断函数是不是空
+                # Determine whether the data is empty
                 node1 = []
                 node2 = []
                 relation = []
                 if (alllist[1] != ""):
                     filename = alllist[0].split("/")[-1]
-                    # 添加边
+                    # add edge
                     nodeRelation.append(alllist[1])
                     nodeRelation.append(alllist[3])
                     nodeRelation.append(alllist[5])
-                    # 添加顶点
+                    # add node
                     nodeInformation.append(alllist[2])
                     nodeInformation.append(alllist[4])
                     nodeInformation.append(alllist[6])
-                    # 正则处理
+                    # Regular processing
                     nodeRelation = re.findall(r"\(\d*,\d*,\d*\)", str(nodeRelation))
                     nodeInformation = re.findall(r"\(\d*,.*?\)", str(nodeInformation))
-                    # 去除重复的顶点
+                    # Remove duplicate nodes
                     nodeInformation = list(set(nodeInformation))
 
-                    # 提取每一列内容成list=>批量处理
+                    # Extract the contents of each column into list => batch processing
                     nodeRelation = ' '.join(nodeRelation)
                     b = re.findall('\d+', nodeRelation)
                     for i in range(0, len(b), 3):
@@ -56,7 +55,7 @@ def graphRelation(rootpath,pathdir,tag):
                         means.append(mean.group())
                     # feature_matrix = np.vstack([nodes,means]).T
 
-                    # 替换数字
+                    # Replace node numbers
                     new_node1 = []
                     new_node2 = []
                     new_nodes = list(range(0, len(nodes)))
@@ -73,12 +72,7 @@ def graphRelation(rootpath,pathdir,tag):
                                 new_node2.append(str(i))
                                 break
 
-                    # 拼接成矩阵
-                    relation_matrix = np.vstack([new_node1, new_node2, relation]).T
-                    # print(relation_matrix[0])
-                    feature_matrix = np.vstack([new_nodes, means]).T
-
-                    # 写入文件
+                    # write to file
                     if os.path.exists(pathdir) == False:
                         os.makedirs(pathdir)
                     with open(pathdir +"\\"+ filename + ".txt", 'w', encoding='utf-8') as f1:
@@ -104,19 +98,12 @@ def graphRelation(rootpath,pathdir,tag):
             print(path)
 
 if __name__ == '__main__':
-    # path = "raw_result/bad"
-    # tag = 'bad'
-    # path = r"D:\XRZ\Ubuntu\data\raw_result\CWE-465\bad"
-    cwe = ["20"]
-    gb = ["good","bad"]
-    for i in range(len(cwe)):
-        for j in range(len(gb)):
-            # print("CWE-" + cwe[i] + "/" + gb[j])
-            path = r"D:\jjj\x/" + "CWE-" + cwe[i] + "/" + gb[j]
-            pathdir = r"D:\jjj\s/" +  "CWE-" + cwe[i] + "/" + gb[j]
-            tag = gb[j]
-            graphRelation(path,pathdir,tag)
-            print("ooooooooooooooover")
+    dataPath = r"raw_result\bad"
+    outPath = r"result\bad"
+    # bad or good
+    dataTag = 'bad'
+    graphRelation(dataPath,outPath,dataTag)
+    print("ooooooooooooooover")
 
 
 
