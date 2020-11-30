@@ -2,7 +2,11 @@
 
 Using graph neural networks and open-source repositories to detect code vulnerabilities. This is an official implementation of the model described in:
 
-[Huanting Wang](https://scholar.google.com.hk/citations?user=inrTk6cAAAAJ&hl=zh-CN&oi=sra), [Guixin Ye](https://dblp.uni-trier.de/pid/125/3245.html), [Zhanyong Tang](https://scholar.google.com.hk/citations?user=SgNEtJwAAAAJ&hl=zh-CN&oi=sra), [Shin Hwei Tan](https://scholar.google.com.hk/citations?user=1eFjFs8AAAAJ&hl=zh-CN&oi=ao), [Songfang Huang](https://dblp.uni-trier.de/pid/05/4919.html), [Dingyi Fang](https://dblp.uni-trier.de/pid/80/3909.html), [Yansong Feng](https://scholar.google.com.hk/citations?user=67qAw_wAAAAJ&hl=zh-CN), [Lizhong Bian]() and [Zheng Wang](https://scholar.google.com.hk/citations?user=qJ7ZKG8AAAAJ&hl=zh-CN)"Combining Graph-based Learning with Automated Data Collection for Code Vulnerability Detection" [Preprint](https://www.nwu.edu.cn/)
+[Huanting Wang](https://scholar.google.com.hk/citations?user=inrTk6cAAAAJ&hl=zh-CN&oi=sra), [Guixin Ye](https://dblp.uni-trier.de/pid/125/3245.html), [Zhanyong Tang](https://scholar.google.com.hk/citations?user=SgNEtJwAAAAJ&hl=zh-CN&oi=sra), [Shin Hwei Tan](https://scholar.google.com.hk/citations?user=1eFjFs8AAAAJ&hl=zh-CN&oi=ao), [Songfang Huang](https://dblp.uni-trier.de/pid/05/4919.html), [Dingyi Fang](https://dblp.uni-trier.de/pid/80/3909.html), [Yansong Feng](https://scholar.google.com.hk/citations?user=67qAw_wAAAAJ&hl=zh-CN), Lizhong Bian and [Zheng Wang](https://scholar.google.com.hk/citations?user=qJ7ZKG8AAAAJ&hl=zh-CN)"Combining Graph-based Learning with Automated Data Collection for Code Vulnerability Detection" [Preprint](https://www.nwu.edu.cn/)
+
+**November 2020** - The paper was accepted to IEEE TIFS!
+
+Online demo and Dataset are available at [http://www.leogoat.site/](http://www.leogoat.site/).
 
 FUNDED is a novel learning framework for building vulnerability detection models, which leverages the advances in graph neural networks (GNNs) to develop a novel graph-based learning method to capture and reason about the program’s control, data, and call dependencies.
 
@@ -21,8 +25,8 @@ FUNDED is a novel learning framework for building vulnerability detection models
   * [Dataset](#dataset)
   * [Results](#results)
 * [Data collection module](#data-collection-module)
-  * [Structure1](#structure1)
-  * [Prepare data](#prepare-data)
+  * [Collection Structure](#structure1)
+  * [Data Preprocessing](#prepare-data)
   * [Train your own ensemble classifier](#train-your-own-ensemble-classifier)
 * [License](#license)
 * [Contact](#contact)
@@ -157,7 +161,7 @@ To construct the AST, we use Soot for Java, ANTLR for Swift, PHP and joern for C
 #### c/c++
 
 ---
-For c/c++,we download different CWE types' datasets from [SARD](https://samate.nist.gov/SARD/search.php).
+For c/c++,we download different CWE types' datasets from [SARD](https://samate.nist.gov/SARD/search.php), [CVE](https://cve.mitre.org/) and Github.
 
 Then we traverse all the source codes' AST nodes,which have been parsed by [cdt](http://www.eclipse.org/cdt/).While traversing, all nodes are numbered in sequence, and the relationship between different edges is obtained according to specific rules.
 
@@ -177,7 +181,7 @@ $ java concateJoern.java sourceFilePath savafilePath
 #### java 
 
 ---
-For java,We download data from [SARD](https://samate.nist.gov/SARD/search.php) as well.
+For java,We download data from [SARD](https://samate.nist.gov/SARD/search.php), [CVE](https://cve.mitre.org/) and Github.
 
 With the same idea like parsing c/c++ above,we construct all relationships in different edges using [soot](https://soot-oss.github.io/soot/) and [jdt](https://www.eclipse.org/jdt/).
 
@@ -190,7 +194,7 @@ $ java Main.java sourceFilePath savafilePath
 #### PHP and Swift
 
 ---
-For PHP and Swift,We collect datasets from github using our pre-trained "mixture of experts" model.
+For PHP and Swift,We collect datasets from [SARD](https://samate.nist.gov/SARD/search.php), [CVE](https://cve.mitre.org/) and Github.
 
 Then extracting edge nodes from AST constructed with [Antlr](https://github.com/antlr/antlr4).
 
@@ -206,10 +210,10 @@ $ java TestSwift3.java sourceFilePath savafilePath
 ### Dataset
 
 ---
-The datasets used are [HERE](http://10.15.14.199:10010/file/download/176).
+The datasets used are [HERE](http://www.leogoat.site/).
 <br/>
-The edges dataset contains 44 different types of C language CWE data, which are both from [SARD](https://samate.nist.gov/SARD/). Through script processing,we can get the final inputs.
-For example, under ```data/data/CWE-399``` and ```data/data/CWE-362``` are available the test datasets with the graphs consisting of ast、cfg and pdg.
+The edges dataset contains 44 different types of C language CWE data. Through script processing,we can get the final inputs.
+For example, under ```data/data/CWE-399``` and ```data/data/CWE-362``` are available the test datasets with the graphs consisting of ast, cfg and pdg.
 
 #### Fields
 
@@ -291,7 +295,7 @@ CP  | Accuracy = 0.857 | precision = 0.875 | recall = 0.875 | f1 = 0.875 |TPR = 
 <br/><br/>
 ## Data collection module
 
-### Structure1
+### Collection Structure
 
 ~~~
 ├── EnsembleLearning.py
@@ -316,7 +320,7 @@ python InputData_New.py
 
 ## Authors
 * **Huanting Wang**, **Guixin Ye**, **Zhanyong Tang**, **Songfang Huang**, **Dingyi Fang**, **Yansong Feng**, **Lizhong Bian**, **Zheng Wang**
-* *Initial work* - [TIFS Paper](https://www.nwu.edu.cn/), [Datasets](https://www.nwu.edu.cn/)
+* *Initial work* - [IEEE TIFS](https://www.nwu.edu.cn/), [Datasets](http://www.leogoat.site/)
 
 ## License
 Distributed under the NISL License. See LICENSE for more information.
@@ -324,7 +328,7 @@ Distributed under the NISL License. See LICENSE for more information.
 ## Contact
 
 Huanting Wang - wanghuanting@stumail.nwu.edu.cn
-## Acknowledgments
-Guidance and ideas for some parts from:
 
-* [LEARNING TO REPRESENT PROGRAMS WITH GRAPHS](https://arxiv.org/pdf/1711.00740.pdf)
+## Citation
+
+Combining Graph-based Learning with Automated Data Collection for Code Vulnerability Detection" [Preprint](https://www.nwu.edu.cn/)
