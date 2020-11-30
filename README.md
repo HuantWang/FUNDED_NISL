@@ -59,7 +59,7 @@ This section gives the steps, explanations and examples for getting the project 
 #### 1) Clone this repo
 
 ``` console
-$ git clone git@github.com:FrancisWangH/NISL_TIFS2021.git
+$ git clone git@github.com:HuantWang/FUNDED_NISL.git
 ```
 
 #### 2) Install Prerequisites
@@ -70,7 +70,7 @@ $ pip install -r requirements.txt
 #### 3) Run the testcase
 ``` console
 $ cd NISL_TIFS2021/FUNDED/cli
-$ CUDA_VISIBLE_DEVICES=2 python train.py RGIN GraphBinaryClassification ../data/data/CWE-399
+$ CUDA_VISIBLE_DEVICES=2 python train.py RGCN GraphBinaryClassification ../data/data/CWE-400
 ```
 <br/><br/>
 ## GNN Detection module
@@ -213,7 +213,7 @@ $ java TestSwift3.java sourceFilePath savafilePath
 The datasets used are [HERE](http://www.leogoat.site/).
 <br/>
 The edges dataset contains 44 different types of C language CWE data. Through script processing,we can get the final inputs.
-For example, under ```data/data/CWE-399``` and ```data/data/CWE-362``` are available the test datasets with the graphs consisting of ast, cfg and pdg.
+For example, under ```data/data/CWE-399``` and ```data/data/CWE-400``` are available the test datasets with the graphs consisting of ast, cfg and pdg.
 
 #### Fields
 
@@ -233,7 +233,7 @@ For example, under ```data/data/CWE-399``` and ```data/data/CWE-362``` are avail
 |  | ...|    ...   | ... |
 
 ### Results
-Example results of training  on the sample dataset CWE-399.
+Example results of training  on the sample dataset CWE-400.
 Saved Model checkpoint at 60 epochs.
 
 Dataset parameters: {
