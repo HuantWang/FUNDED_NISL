@@ -278,19 +278,19 @@ Model parameters: {
  }
 
 ```
-== Running on test dataset without cp
-Loading data from ../data/data/tem_CWE-399/ast.
-Loading data from ../data/data/tem_CWE-399/cdfg.
-Restoring best model state from trained_model/RGIN_GraphBinaryClassification__2020-10-21_15-08-32_best.pkl.
-NoneCP  | Accuracy = 0.786 | precision = 0.778 | recall = 0.875 | f1 = 0.824 |TPR = 0.875 | FPR = 0.333 | TNR = 0.667 | FNR = 0.125 | 0.26 graphs/s
+== Running on test dataset
+Loading data from ../data/data/tem_CWE-400/ast.
+Loading data from ../data/data/tem_CWE-400/cdfg.
+Restoring best model state from trained_model/RGCN_GraphBinaryClassification__2020-11-30_10-41-23_best.pkl.
+CP_test  Accuracy = 0.915|precision = 0.846 | recall = 1.000 | f1 = 0.917 |TPR = 1.000 | FPR = 0.160 | TNR = 0.840 | FNR = 0.000 |
 ```
 
 ```
-== Running on test dataset with cp
-Loading data from ../data/data/tem_CWE-399/new/ast.
-Loading data from ../data/data/tem_CWE-399/new/cdfg.
-Restoring best model state from trained_model/RGIN_GraphBinaryClassification__2020-10-21_15-08-32_best.pkl.
-CP  | Accuracy = 0.857 | precision = 0.875 | recall = 0.875 | f1 = 0.875 |TPR = 0.875 | FPR = 0.167 | TNR = 0.833 | FNR = 0.125 | 0.29 graphs/s
+== Running on test dataset
+Loading data from ../data/data/tem_CWE-400/new/ast.
+Loading data from ../data/data/tem_CWE-400/new/cdfg.
+Restoring best model state from trained_model/RGCN_GraphBinaryClassification__2020-11-30_10-44-23_best.pkl.
+NoneCP_test  Accuracy = 0.942|precision = 0.893 | recall = 1.000 | f1 = 0.943 |TPR = 1.000 | FPR = 0.111 | TNR = 0.889 | FNR = 0.000 |
 ```
 <br/><br/>
 ## Data collection module
