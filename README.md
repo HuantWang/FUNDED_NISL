@@ -84,8 +84,8 @@ This part contains GNN Detection model' relevant source code structure and parti
 ├── requirements.txt                <- The python environment for developers using this project.
 ├── FUNDED
 │   ├── cli     
-│   │   ├── train.py		    <- the entrance of training models	
-│   │   ├── test.py		     <- testing the specified model using data
+│   │   ├── train.py		    <- the entrance of training models.	
+│   │   ├── test.py		     <- testing the specified model using data.
 │   │   ├── __init__.py
 │   ├── cli_utils     
 │   │   ├── default_hypers	
