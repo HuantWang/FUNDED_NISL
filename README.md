@@ -305,16 +305,16 @@ CP_test  Accuracy = 0.942|precision = 0.893 | recall = 1.000 | f1 = 0.943 |TPR =
 
 ### Prepare data
 
-- extract features from commit,then 
+- Extract features from commits
 
 ### Train your own ensemble classifier
 
-- use ***InputData_New.py*** to train your own ensemble model
+- Use ***EnsembleLearning.py*** to train your own ensemble model
 
-> Warning: Replace the path with your own data
+> Warning: Replace the path with your own data path.
 
 ~~~
-python InputData_New.py 
+python EnsembleLearning.py 
 ~~~
 
 
