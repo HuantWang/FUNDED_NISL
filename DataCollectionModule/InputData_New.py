@@ -13,6 +13,7 @@ def isContainChinese(s):
         if ('\u4e00' <= c <= '\u9fa5'):
             return True
     return False
+
 def check(str):
     file_all=[]
     for fpathe, dirs, files in os.walk(str):
@@ -31,6 +32,7 @@ def check(str):
 
 
 def fla(arr):
+    """save same vector length"""
     b = np.zeros((1, 1000))
     arr = np.array(arr).flatten()
     arr = arr.reshape(1, arr.size)
@@ -38,16 +40,17 @@ def fla(arr):
     if arr.size >= 1000:
         arr = arr[:, 0:1000]
     return arr
+
 def feature_pre(str,model,num):
+    """data preprocess"""
     punctuation = '0-9’!"#$%&\'()*+,-./:;<=>?@，。?★、…【】《》？“”‘’！[\\]^_`{|}~#!@/,;:?"\''
-    # 停用词
+    # stopwords
     stopwords = []
     with open(r'E:\Pycharm\PyProject\6_4\6_4\stopwords.txt', 'r') as f:
         for line in f:
             stopwords.append(line.strip())
-        # 整行读取数据
     f.close()
-    # word2vec模型
+    # load pre-trained Word2vec model
     model = Word2Vec.load("./" + model + ".pkl")
 
     feature_all=[]
@@ -110,7 +113,7 @@ def feature_pre(str,model,num):
                         edit_feature_single.append(model[word_single])
                     except:
                         continue
-            #平铺并变成一维
+            #concat vector
             static_single_tmp=[]
             static_single=static_single.reshape(1,6)
 
@@ -121,10 +124,7 @@ def feature_pre(str,model,num):
             static_single = static_single.reshape(1, 6)
             log_feature_single=fla(log_feature_single)
             edit_feature_single=fla(edit_feature_single)
-            #合并特征
             feature_single=np.hstack((log_feature_single,edit_feature_single))
-            # feature_single=np.hstack((feature_single,static_single))
-
 
             if flag_feature == 0:
                 feature_tmp=feature_single
@@ -143,38 +143,19 @@ def feature_pre(str,model,num):
 
 def InputData(negstr,posstr,model):
     feature_all=[]
-    #检查数据
+    
+    #check
     check(negstr)
     check(posstr)
-    #获取特征
+    
+    #extract feature to vector
     neg_feature=feature_pre(negstr, model,0)
     pos_feature=feature_pre(posstr, model,1)
     feature=np.vstack((neg_feature[0],pos_feature[0]))
     url=np.vstack((neg_feature[1],pos_feature[1]))
     label=np.hstack((neg_feature[2],pos_feature[2]))
-    #特征选择
 
-    # X = feature
-    # Y = label
-    #
-    # sel = VarianceThreshold()  # 表示剔除特征的方差大于阈值的特征Removing features with low variance
-    # a=sel.fit_transform(X)
-    # sel = VarianceThreshold(np.sort(sel.variances_)[1005])  # 表示剔除特征的方差大于阈值的特征Removing features with low variance
-    # feature = sel.fit_transform(X)
     feature_all.append(feature)
     feature_all.append(url)
     feature_all.append(label)
     return feature_all
-
-
-
-
-
-# estimator = PCA(n_components=1)
-# log_feature_single = np.transpose(estimator.fit_transform(np.transpose(np.array(log_feature_single))))
-# edit_feature_single = np.transpose(estimator.fit_transform(np.transpose(np.array(edit_feature_single))))
-#     print("a")
-
-# InputData(r"F:\Github\CCS19\Curre\New_system\6_4\data_new\ours\neg",
-#                                   r"F:\Github\CCS19\Curre\New_system\6_4\data_new\ours\pos","w2v_model")
-# print("a")
