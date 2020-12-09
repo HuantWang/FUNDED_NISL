@@ -104,6 +104,8 @@ This part contains GNN Detection model' relevant source code structure and parti
 │   │   ├── graph_dataset.py	
 │   │   ├── jsonl_graph_dataset.py	
 │   │   ├── jsonl_graph_property_dataset.py	
+│   │   ├── ppi_dataset.py
+│   │   ├── qm9_dataset.py	
 │   │   ├── __init__.py	
 │   ├── layers                      
 │   │   ├── message_passing	
@@ -111,9 +113,6 @@ This part contains GNN Detection model' relevant source code structure and parti
 │   │   │   ├── gnn_edge_mlp.py
 │   │   │   ├── gnn_film.py
 │   │   │   ├── message_passing.py
-│   │   │   ├── rgat.py
-│   │   │   ├── rgcn.py
-│   │   │   ├── rgin.py
 │   │   │   ├── __init__.py
 │   │   ├── gnn.py
 │   │   ├── graph_global_exchange.py	
