@@ -90,14 +90,6 @@ This part contains GNN Detection model' relevant source code structure and parti
 │   ├── cli_utils     
 │   │   ├── default_hypers	
 │   │   │   ├── GraphBinaryClassification_RGIN.json
-│   │   │   ├── GraphRegression_GNN_Edge_MLP.json
-│   │   │   ├── PPI_GGNN.json
-│   │   │   ├── PPI_GNN_Edge_MLP.json
-│   │   │   ├── PPI_GNN_FiLM.json
-│   │   │   ├── PPI_RGAT.json
-│   │   │   ├── PPI_RGCN.json
-│   │   │   ├── PPI_RGIN.json
-│   │   │   ├── QM9_RGCN.json
 │   │   ├── dataset_utils.py	
 │   │   ├── model_utils.py	
 │   │   ├── param_helpers.py	
@@ -112,8 +104,6 @@ This part contains GNN Detection model' relevant source code structure and parti
 │   │   ├── graph_dataset.py	
 │   │   ├── jsonl_graph_dataset.py	
 │   │   ├── jsonl_graph_property_dataset.py	
-│   │   ├── ppi_dataset.py
-│   │   ├── qm9_dataset.py
 │   │   ├── __init__.py	
 │   ├── layers                      
 │   │   ├── message_passing	
@@ -135,18 +125,6 @@ This part contains GNN Detection model' relevant source code structure and parti
 │   │   ├── graph_task_model.py 
 │   │   ├── node_multiclass_task.py
 │   │   ├── __init__.py	
-│   ├── test   
-│   │   ├── data	
-│   │   │   ├── test_jsonl_graph_dataset.py
-│   │   ├── layers	
-│   │   │   ├── test_message_passing.py
-│   │   │   ├── test_RGAT.py
-│   │   │   ├── test_RGCN.py
-│   │   ├── models	
-│   │   │   ├── test_graph_regression_task.py
-│   │   ├── test_datasets
-│   │   │   ├── train.jsonl.gz
-│   │   │   ├── valid.jsonl.gz
 │   ├── utils                          
 │   │   ├── activation.py
 │   │   ├── constants.py
