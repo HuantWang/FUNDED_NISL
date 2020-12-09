@@ -70,7 +70,7 @@ $ pip install -r requirements.txt
 #### 3) Run the testcase
 ``` console
 $ cd NISL_TIFS2021/FUNDED/cli
-$ CUDA_VISIBLE_DEVICES=2 python train.py RGCN GraphBinaryClassification ../data/data/CWE-400
+$ CUDA_VISIBLE_DEVICES=2 python train.py GGNN GraphBinaryClassification ../data/data/CWE-400
 ```
 <br/><br/>
 ## GNN Detection module
@@ -259,7 +259,7 @@ Model parameters: {
 == Running on test dataset
 Loading data from ../data/data/tem_CWE-400/ast.
 Loading data from ../data/data/tem_CWE-400/cdfg.
-Restoring best model state from trained_model/RGCN_GraphBinaryClassification__2020-11-30_10-41-23_best.pkl.
+Restoring best model state from trained_model/GGNN_GraphBinaryClassification__2020-11-30_10-41-23_best.pkl.
 NoneCP_test  Accuracy = 0.915|precision = 0.846 | recall = 1.000 | f1 = 0.917 |TPR = 1.000 | FPR = 0.160 | TNR = 0.840 | FNR = 0.000 |
 ```
 
@@ -267,7 +267,7 @@ NoneCP_test  Accuracy = 0.915|precision = 0.846 | recall = 1.000 | f1 = 0.917 |T
 == Running on test dataset
 Loading data from ../data/data/tem_CWE-400/new/ast.
 Loading data from ../data/data/tem_CWE-400/new/cdfg.
-Restoring best model state from trained_model/RGCN_GraphBinaryClassification__2020-11-30_10-44-23_best.pkl.
+Restoring best model state from trained_model/GGNN_GraphBinaryClassification__2020-11-30_10-44-23_best.pkl.
 CP_test  Accuracy = 0.942|precision = 0.893 | recall = 1.000 | f1 = 0.943 |TPR = 1.000 | FPR = 0.111 | TNR = 0.889 | FNR = 0.000 |
 ```
 <br/><br/>
