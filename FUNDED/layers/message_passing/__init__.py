@@ -1,7 +1,4 @@
 from .message_passing import MessagePassing, MessagePassingInput, MESSAGE_PASSING_IMPLEMENTATIONS
-from .rgat import RGAT
-from .rgcn import RGCN
-from .rgin import RGIN
 from .ggnn import GGNN
 from .gnn_edge_mlp import GNN_Edge_MLP
 from .gnn_film import GNN_FiLM
