@@ -2,8 +2,6 @@ import os
 
 import tensorflow as tf
 from dpu_utils.utils import run_and_debug
-# import sys
-# sys.path.append('/home/wangzheng/nisl/xrz/CCS2/tf2-gnn-master/tf2-gnn-master')
 from tf2_gnn.cli_utils import get_train_cli_arg_parser, run_train_from_args
 
 gpus = tf.config.experimental.list_physical_devices(device_type='GPU')
