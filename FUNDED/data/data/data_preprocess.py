@@ -16,23 +16,14 @@ from sklearn import decomposition
 
 warnings.filterwarnings("ignore")
 
-# 存储边信息
-adj_zc = []
 
-# cdfg边信息
-adj_cdfg_a = []
-adj_cdfg_c = []
-adj_cdfg_p = []
-
-
-# 获得AST或CDFG的图信息，训练一个w2v的model
 def w2v(filename,cwetype):
     if os.path.exists(os.path.split(filename)[0]+"/" + "word2vec_" + str(cwetype) + ".pkl"):
         print("Word2Vec already !")
         return
     words = []
-    for root, dirs, files in os.walk(filename):  # os.walk()返回一个三元组,
-        # 随机打乱文件
+    for root, dirs, files in os.walk(filename):  
+      
         np.random.shuffle(files)
         for file in files:
             flag_vec = 0
@@ -43,22 +34,17 @@ def w2v(filename,cwetype):
                     if "-" * 20 in line:
                         flag_vec = 1
 
-                    if flag_vec == 1:  # 处理特征矩阵
+                    if flag_vec == 1:  
                         if "^" * 20 in line:
                             for i in word:
                                 words.append(i)
-                            # continue
+                           
                         if re.search('(?<=,).*', line):
-                            # print(a.group().split(')')[0])
-                            # 去除空的情况
-                            # if a.group().split(')')[0] != '':
+                           
                             word.append(re.search('(?<=,).*', line).group().split(')')[0].split(" "))  # 将token加入数组
     model = Word2Vec(words, min_count=1, size=100, sg=1, window=5,
                      negative=3, sample=0.001, hs=1, workers=4)
 
-    # a=model.wv.vocab
-    # for k in a:
-    #     print(k)
     model.save(os.path.split(filename)[0]+"/"+ "word2vec_" + str(cwetype) + ".pkl")
     print("Word2Vec ready")
 
@@ -66,14 +52,14 @@ def GetInfor(filename):
     import gzip
     random_use=np.random.rand(100)
     files_test = []
-    for root, dirs, files in os.walk(filename):  # os.walk()返回一个三元组,
+    for root, dirs, files in os.walk(filename): 
         np.random.shuffle(files)
         filenum = len(files)
         count = 0
         save = 0
         for fname in files:
             files_test.append(fname)
-            # ast边信息
+           
             adj_ast_total = []
             adj_child = []
             adj_com = []
@@ -81,11 +67,12 @@ def GetInfor(filename):
             adj_guared = []
             adj_lexical = []
             adj_jump = []
-            # cdfg边信息
+           
             adj_cdfg_a = []
             adj_cdfg_c = []
             adj_cdfg_p = []
-            # 针对每个文件的初始化
+            
+            # init
             label_label = False
             label_child = False  # child
             label_from = False  # compute_form
@@ -102,10 +89,9 @@ def GetInfor(filename):
             with open(root +'/'+ fname, "r") as f:
                 data = f.readlines()
                 for line in data:
-                    if (line.strip().find("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^") >= 0):  # 跳出文件处理
+                    if (line.strip().find("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^") >= 0): 
                         break
-                    # if (line.find("-----ast_node-----")>=0):  #此处不处理ast 源码内容
-                    #     break
+                    
                     nodes = line.split('\n')[0].split(',')
                     if (line.find("-----label-----") >= 0):
                         label_label = True
@@ -131,7 +117,7 @@ def GetInfor(filename):
                         if line.find("-----computeFrom-----") >= 0:
                             label_next = False
                         else:
-                            # nodes = line.split('\n')[0].split(',')
+                           
                             for i in range(len(nodes)):
                                 if i != len(nodes) - 1:
                                     adj_next.append((int(nodes[i]), int(nodes[i + 1])))
@@ -194,7 +180,7 @@ def GetInfor(filename):
                                     num.remove(x)
                             nodeNum = len(num)
                             label_adj = False
-                            # print(nodeNum)
+                           
                     if (line.find("-----joern-----") >= 0):
                         label_joern = True
                         continue
@@ -202,9 +188,7 @@ def GetInfor(filename):
                         if line.find("-----------------------------------") >= 0:
                             label_joern = False
                         else:
-                            threedot = line.strip().split("(")[1].split(")")[0].split(",")  # 分割成三元组
-                            # print(len(threedot))
-                            # print(line)
+                            threedot = line.strip().split("(")[1].split(")")[0].split(",") 
                             try:
                                 adj_single = (int(threedot[0]), int(threedot[1]))
 
@@ -218,7 +202,8 @@ def GetInfor(filename):
                                     adj_cdfg_c.append(adj_single)
                                     continue
                             except:
-                                continue  # 大于100直接跳过
+                                continue 
+                                
                     if line.find("-----------------------------------") >= 0:
                         label_joern_word = True
                         continue
@@ -227,7 +212,7 @@ def GetInfor(filename):
                             joern_word.append(re.search('(?<=,).*', line).group().split(')')[0])
 
 
-            # len(num) >= 各边节点。
+          
             i = 0
             while i < len(adj_child):
                 l1 = adj_child[i][0]
@@ -276,62 +261,30 @@ def GetInfor(filename):
                     adj_jump.remove((l1, l2))
                 i = i + 1
 
-            #feature
+          
             vectors_cdfg = []
-            #
-            # model = word2vec.Word2Vec.load(
-            #     os.path.split(filename)[0] + "/word2vec_" + str(os.path.split(filename)[1]) + '.pkl')
             model = word2vec.Word2Vec.load("/home/garyhu/gnn_web_cp/tf2-gnn-master/tf2_gnn/data/data/word2vec_CWE-399.pkl")
 
             for i in range(len(joern_word)):
 
                 word_single = joern_word[i].split(" ")
-                # for j in word_single:
+               
                 try:
                     vector = model.wv[word_single]  # 查词
                 except:
-                    # vector = model.wv['data']
                     vector = np.reshape(random_use, (1, 100))
-                    # print(word_single)
-                    # continue
-                # vector = np.array(vector)
-                if np.size(vector) > 100:  # 降维
-                    # vector = vector[-1, 0:100]
+                    
+                if np.size(vector) > 100: 
                     vector = vector.T
-                    # ====================问题所在：因为gamma的值================
-                    # 先在服务器上跑
                     kpca = decomposition.KernelPCA(kernel='rbf', gamma=10, n_components=1)
-                    # kpca = decomposition.KernelPCA(kernel='rbf',n_components=1)
-                    # kpca = decomposition.PCA(n_components=1)
-                    # ===========================================
+                  
                     vector = kpca.fit_transform(vector).T
 
                 vector = vector[-1, 0:100]
                 vectors_cdfg.append(vector.tolist())
-            #处理CDFG的特征向量
-            # random_use = np.random.rand(100)
-            #
-            # vectors_cdfg = []
-            # model = word2vec.Word2Vec.load(os.path.split(filename)[0]+"/word2vec_" + str(os.path.split(filename)[1]) + '.pkl')
-            # for i in range(len(joern_word)):
-            #     word_single1 = joern_word[i].split(" ")
-            #     try:
-            #         vector = model.wv[word_single1]  # 查词
-            #     except:
-            #         vector = np.reshape(random_use, (1, 100))
-            #
-            #     vector = vector[-1, 0:100]
-            #     #
-            #     vectors_cdfg.append(vector.tolist())
-            # if len(vectors_cdfg) < len(num):
-            #     vectors_cdfg.append(vector.tolist())
-            # 处理AST的特征向量
+           
             vectors = []
-            # model = word2vec.Word2Vec.load \
-            #     (r'C:\Users\Orange\Desktop\RGIN/word2vec_test_369.pkl')
-            # a = model.wv.vocab
-
-            # a=os.path.split(sys.argv[0])
+        
             with open(os.path.split(filename)[0]+"/our_map_all.txt", "r") as f:
                 s = f.read()
                 s = s.replace('\'', '\"')
@@ -339,23 +292,19 @@ def GetInfor(filename):
             for i in range(len(num)):
                 vector = []
                 word_single = num[i]
-                # for j in word_single:
-                # vector = model.wv[word_single]  # 查词
                 try:
-                    vector = mapping[word_single]  # 查词
+                    vector = mapping[word_single]
                 except:
                     vector = random_use.tolist()
-                # vector = vector[-1, 0:99]
                 vectors.append(vector)
             label = int(label_single) + 0.0
 
-            # adj_singel = [adj_child, adj_com, adj_next, adj_jump, adj_guared, adj_lexical]
             adj_singel = []
             adj_ast_total.append(adj_singel)
             adj_singel = [adj_cdfg_c]
             adj_cdfg_total = []
             adj_cdfg_total.append(adj_singel)
-            # 存储AST文件
+            
             with jsonlines.open(os.path.split(filename)[0]+'/'+str(os.path.split(filename)[1])+'_ast.jsonl', mode='a') as writer:
                 writer.write(
                             {"Property": label, "graph": {"node_features": vectors, "adjacency_lists": adj_ast_total[0]}})
@@ -365,37 +314,26 @@ def GetInfor(filename):
     return files_test
 
 def mkdir(path):
-    # 引入模块
+   
     import os
-    # 去除首位空格
     path = path.strip()
-    # 去除尾部 \ 符号
     path = path.rstrip("\\")
-    # 判断路径是否存在
-    # 存在     True
-    # 不存在   False
     isExists = os.path.exists(path)
-    # 判断结果
     if not isExists:
-        # 如果不存在则创建目录
-        # 创建目录操作函数
         os.makedirs(path)
         print(path + ' ready now')
         return True
     else:
-        # 如果目录存在则不创建，并提示目录已存在
         print(path + ' already')
         return False
-#spilt and zip
+    
 def Split(train,valid,test,path):
     tem_ast=[]
     mkdir(os.path.split(path)[0]+'/'+'tem_'+os.path.split(path)[1]+'/ast')
-    #ast+cdfg
     with open(os.path.split(path)[0] + '/' + str(os.path.split(path)[1]) + '_ast.jsonl', "r+", encoding="utf8") as f:
         for item in jsonlines.Reader(f):
             tem_ast.append(item)
-    #1:1
-    # randomtem=np.arange(len(tem_ast))
+            
     randomtem = np.arange(len(tem_ast))
     pos_tem=[]
     neg_tem=[]
@@ -409,8 +347,6 @@ def Split(train,valid,test,path):
     length=min(len(pos_tem),len(neg_tem))
     neg_tem=neg_tem[:length]
     pos_tem=pos_tem[:length]
-    #
-    # print("a")
 
     tem_train=neg_tem[:int(length*train)]+pos_tem[:int(length*train)]
     np.random.shuffle(tem_train)
@@ -418,56 +354,45 @@ def Split(train,valid,test,path):
     np.random.shuffle(tem_valid)
     tem_test=(neg_tem[int(length * (train+valid)):])+(pos_tem[int(length * (train+valid)):])
     np.random.shuffle(tem_test)
-    # tem=tem_train+tem_valid+tem_test
     path_tem=os.path.split(path)[0]+'/'+'tem_'+os.path.split(path)[1]+'/ast/ast.jsonl'
     for i in tem_train:
         with jsonlines.open(path_tem,
                             mode='a') as writer:
             writer.write(i)
     f_in = open(path_tem, 'rb')
-    # print(os.getcwd())
     f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/ast/train.jsonl.gz', 'wb')
     f_out.writelines(f_in)
     f_out.close()
     f_in.close()
     os.remove(path_tem)
-    # print("train ready")
 
     for i in tem_valid:
         with jsonlines.open(path_tem,
                             mode='a') as writer:
             writer.write(i)
     f_in = open(path_tem, 'rb')
-    # print(os.getcwd())
     f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/ast/valid.jsonl.gz', 'wb')
     f_out.writelines(f_in)
     f_out.close()
     f_in.close()
     os.remove(path_tem)
-    # print("valid ready")
 
     for i in tem_test:
         with jsonlines.open(path_tem,
                             mode='a') as writer:
             writer.write(i)
-    # zip
     f_in = open(path_tem, 'rb')
-    # print(os.getcwd())
     f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/ast/test.jsonl.gz', 'wb')
     f_out.writelines(f_in)
     f_out.close()
     f_in.close()
     os.remove(path_tem)
-    # print("test ready")
-    #############################################################################################
     tem_cdfg=[]
     mkdir(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/cdfg')
-    #ast+cdfg
     with open(os.path.split(path)[0]+'/'+str(os.path.split(path)[1])+'_cdfg.jsonl', "r+", encoding="utf8") as f:
         for item in jsonlines.Reader(f):
             tem_cdfg.append(item)
-    #1:1
-    # randomtem=np.arange(len(tem_ast))
+            
     randomtem = np.arange(len(tem_cdfg))
     pos_tem=[]
     neg_tem=[]
@@ -481,8 +406,7 @@ def Split(train,valid,test,path):
     length=min(len(pos_tem),len(neg_tem))
     neg_tem=neg_tem[:length]
     pos_tem=pos_tem[:length]
-    #
-    # print("a")
+    
 
     tem_train=neg_tem[:int(length*train)]+pos_tem[:int(length*train)]
     np.random.shuffle(tem_train)
@@ -490,41 +414,35 @@ def Split(train,valid,test,path):
     np.random.shuffle(tem_valid)
     tem_test=(neg_tem[int(length * (train+valid)):])+(pos_tem[int(length * (train+valid)):])
     np.random.shuffle(tem_test)
-    # tem=tem_train+tem_valid+tem_test
     path_tem=os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/cdfg/cdfg.jsonl'
     for i in tem_train:
         with jsonlines.open(path_tem,
                             mode='a') as writer:
             writer.write(i)
     f_in = open(path_tem, 'rb')
-    # print(os.getcwd())
     f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/cdfg/train.jsonl.gz', 'wb')
     f_out.writelines(f_in)
     f_out.close()
     f_in.close()
     os.remove(path_tem)
-    # print("train ready")
 
     for i in tem_valid:
         with jsonlines.open(path_tem,
                             mode='a') as writer:
             writer.write(i)
     f_in = open(path_tem, 'rb')
-    # print(os.getcwd())
     f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/cdfg/valid.jsonl.gz', 'wb')
     f_out.writelines(f_in)
     f_out.close()
     f_in.close()
     os.remove(path_tem)
-    # print("valid ready")
 
     for i in tem_test:
         with jsonlines.open(path_tem,
                             mode='a') as writer:
             writer.write(i)
-    # zip
+            
     f_in = open(path_tem, 'rb')
-    # print(os.getcwd())
     f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/cdfg/test.jsonl.gz', 'wb')
     f_out.writelines(f_in)
     f_out.close()
@@ -532,103 +450,12 @@ def Split(train,valid,test,path):
     os.remove(path_tem)
     print("data ready")
 
-    # tem_ast=[]
-    # tem_cdfg=[]
-    # mkdir(os.path.split(path)[0]+'/'+'tem_'+os.path.split(path)[1]+'/ast')
-    # mkdir(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/cdfg')
-    #
-    #
-    # #ast+cdfg
-    # with open(os.path.split(path)[0]+'/'+str(os.path.split(path)[1])+'_ast.jsonl', "r+", encoding="utf8") as f:
-    #     for item in jsonlines.Reader(f):
-    #         tem_ast.append(item)
-    # with open(os.path.split(path)[0]+'/'+str(os.path.split(path)[1])+'_cdfg.jsonl', "r+", encoding="utf8") as f:
-    #     for item in jsonlines.Reader(f):
-    #         tem_cdfg.append(item)
-    # randomtem=np.arange(len(tem_ast))
-    # np.random.shuffle(randomtem)
-    # for step,i in enumerate(randomtem):
-    #     ast=tem_ast[i]
-    #     cdfg=tem_cdfg[i]
-    #     # a=len(tem_ast)*train
-    #     if step+1<int(len(tem_ast)*train):
-    #         with jsonlines.open(os.path.split(path)[0]+'/'+'tem_'+os.path.split(path)[1]+'/ast/ast.jsonl', mode='a') as writer:
-    #             writer.write(ast)
-    #         with jsonlines.open(os.path.split(path)[0]+'/'+'tem_'+os.path.split(path)[1]+'/cdfg/cdfg.jsonl', mode='a') as writer:
-    #             writer.write(cdfg)
-    #         continue
-    #     if step+1 == int(len(tem_ast)*train):
-    #         # zip
-    #         f_in = open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/ast/ast.jsonl', 'rb')
-    #         # print(os.getcwd())
-    #         f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/ast/train.jsonl.gz', 'wb')
-    #         f_out.writelines(f_in)
-    #         f_out.close()
-    #         f_in.close()
-    #         os.remove(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/ast/ast.jsonl')
-    #         f_in = open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/cdfg/cdfg.jsonl', 'rb')
-    #         # print(os.getcwd())
-    #         f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/cdfg/train.jsonl.gz', 'wb')
-    #         f_out.writelines(f_in)
-    #         f_out.close()
-    #         f_in.close()
-    #         os.remove(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/cdfg/cdfg.jsonl')
-    #         print("train ready")
-    #         continue
-    #     if step+1>int(len(tem_ast)*train) and step+1<int(len(tem_ast)*(train+valid)):
-    #         with jsonlines.open(os.path.split(path)[0]+'/'+'tem_'+os.path.split(path)[1]+'/ast/ast.jsonl', mode='a') as writer:
-    #             writer.write(ast)
-    #         with jsonlines.open(os.path.split(path)[0]+'/'+'tem_'+os.path.split(path)[1]+'/cdfg/cdfg.jsonl', mode='a') as writer:
-    #             writer.write(cdfg)
-    #         continue
-    #     if step+1 == int(len(tem_ast)*(train+valid)):
-    #         # zip
-    #         f_in = open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/ast/ast.jsonl', 'rb')
-    #         # print(os.getcwd())
-    #         f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/ast/valid.jsonl.gz', 'wb')
-    #         f_out.writelines(f_in)
-    #         f_out.close()
-    #         f_in.close()
-    #         os.remove(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/ast/ast.jsonl')
-    #         f_in = open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/cdfg/cdfg.jsonl', 'rb')
-    #         # print(os.getcwd())
-    #         f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/cdfg/valid.jsonl.gz', 'wb')
-    #         f_out.writelines(f_in)
-    #         f_out.close()
-    #         f_in.close()
-    #         os.remove(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/cdfg/cdfg.jsonl')
-    #         print("valid ready")
-    #         continue
-    #     if step + 1 > int(len(tem_ast) * (train + valid)) and step + 1 < int(len(tem_ast)) :
-    #         with jsonlines.open(os.path.split(path)[0]+'/'+'tem_'+os.path.split(path)[1]+'/ast/ast.jsonl', mode='a') as writer:
-    #             writer.write(ast)
-    #         with jsonlines.open(os.path.split(path)[0]+'/'+'tem_'+os.path.split(path)[1]+'/cdfg/cdfg.jsonl', mode='a') as writer:
-    #             writer.write(cdfg)
-    #         continue
-    #     if step + 1 == int(len(tem_ast)) :
-    #         # zip
-    #         f_in = open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/ast/ast.jsonl', 'rb')
-    #         # print(os.getcwd())
-    #         f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/ast/test.jsonl.gz', 'wb')
-    #         f_out.writelines(f_in)
-    #         f_out.close()
-    #         f_in.close()
-    #         os.remove(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/ast/ast.jsonl')
-    #         f_in = open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/cdfg/cdfg.jsonl', 'rb')
-    #         # print(os.getcwd())
-    #         f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/cdfg/test.jsonl.gz', 'wb')
-    #         f_out.writelines(f_in)
-    #         f_out.close()
-    #         f_in.close()
-    #         os.remove(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/cdfg/cdfg.jsonl')
-    #         print("test ready")
-
+   
 def Preprocess(path):
     cwetype = os.path.split(path)[1]
-    #检测是否有字典如果没有就训练
-    # w2v(path,cwetype)
+ 
     os.path.split(path)[0] + '/' + str(os.path.split(path)[1]) + '_ast.jsonl'
-    #进行jsonal的提取
+    
     a=os.path.split(path)[0]+'/'+str(os.path.split(path)[1])+'_ast.jsonl'
     if os.path.exists(os.path.split(path)[0]+'/'+str(os.path.split(path)[1])+'_ast.jsonl') and os.path.exists(os.path.split(path)[0]+'/'+str(os.path.split(path)[1])+"_cdfg.jsonl"):
         Split(0.8,0.1,0.1,path)
@@ -639,12 +466,11 @@ def Preprocess(path):
 def Split_test(train,valid,test,path):
     tem_ast=[]
     mkdir(os.path.split(path)[0]+'/'+'tem_'+os.path.split(path)[1]+'/ast')
-    #ast+cdfg
+   
     with open(os.path.split(path)[0] + '/' + str(os.path.split(path)[1]) + '_ast.jsonl', "r+", encoding="utf8") as f:
         for item in jsonlines.Reader(f):
             tem_ast.append(item)
-    #1:1
-    # randomtem=np.arange(len(tem_ast))
+   
     randomtem = np.arange(len(tem_ast))
     pos_tem=[]
     neg_tem=[]
@@ -655,66 +481,54 @@ def Split_test(train,valid,test,path):
             neg_tem.append(ast)
         else:
             pos_tem.append(ast)
-    # modify
+    
     length=max(len(pos_tem),len(neg_tem))
     neg_tem=neg_tem[:length]
     pos_tem=pos_tem[:length]
-    #
-    # print("a")
+   
 
     tem_train=neg_tem[:int(length)]+pos_tem[:int(length)]
     tem_valid=tem_train
     tem_test=tem_train
-    # tem=tem_train+tem_valid+tem_test
     path_tem=os.path.split(path)[0]+'/'+'tem_'+os.path.split(path)[1]+'/ast/ast.jsonl'
     for i in tem_train:
         with jsonlines.open(path_tem,
                             mode='a') as writer:
             writer.write(i)
     f_in = open(path_tem, 'rb')
-    # print(os.getcwd())
     f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/ast/train.jsonl.gz', 'wb')
     f_out.writelines(f_in)
     f_out.close()
     f_in.close()
     os.remove(path_tem)
-    # print("train ready")
 
     for i in tem_valid:
         with jsonlines.open(path_tem,
                             mode='a') as writer:
             writer.write(i)
     f_in = open(path_tem, 'rb')
-    # print(os.getcwd())
     f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/ast/valid.jsonl.gz', 'wb')
     f_out.writelines(f_in)
     f_out.close()
     f_in.close()
     os.remove(path_tem)
-    # print("valid ready")
 
     for i in tem_test:
         with jsonlines.open(path_tem,
                             mode='a') as writer:
             writer.write(i)
-    # zip
+            
     f_in = open(path_tem, 'rb')
-    # print(os.getcwd())
     f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/ast/test.jsonl.gz', 'wb')
     f_out.writelines(f_in)
     f_out.close()
     f_in.close()
     os.remove(path_tem)
-    # print("test ready")
-    #############################################################################################
     tem_cdfg=[]
     mkdir(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/cdfg')
-    #ast+cdfg
     with open(os.path.split(path)[0]+'/'+str(os.path.split(path)[1])+'_cdfg.jsonl', "r+", encoding="utf8") as f:
         for item in jsonlines.Reader(f):
             tem_cdfg.append(item)
-    #1:1
-    # randomtem=np.arange(len(tem_ast))
     randomtem = np.arange(len(tem_cdfg))
     pos_tem=[]
     neg_tem=[]
@@ -726,51 +540,41 @@ def Split_test(train,valid,test,path):
         else:
             pos_tem.append(ast)
 
-    # modify
     length=max(len(pos_tem),len(neg_tem))
     neg_tem=neg_tem[:length]
     pos_tem=pos_tem[:length]
-    #
-    # print("a")
 
     tem_train=neg_tem[:int(length)]+pos_tem[:int(length)]
     tem_valid=tem_train
     tem_test=tem_train
-    # tem=tem_train+tem_valid+tem_test
     path_tem=os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/cdfg/cdfg.jsonl'
     for i in tem_train:
         with jsonlines.open(path_tem,
                             mode='a') as writer:
             writer.write(i)
     f_in = open(path_tem, 'rb')
-    # print(os.getcwd())
     f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/cdfg/train.jsonl.gz', 'wb')
     f_out.writelines(f_in)
     f_out.close()
     f_in.close()
     os.remove(path_tem)
-    # print("train ready")
 
     for i in tem_valid:
         with jsonlines.open(path_tem,
                             mode='a') as writer:
             writer.write(i)
     f_in = open(path_tem, 'rb')
-    # print(os.getcwd())
     f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/cdfg/valid.jsonl.gz', 'wb')
     f_out.writelines(f_in)
     f_out.close()
     f_in.close()
     os.remove(path_tem)
-    # print("valid ready")
 
     for i in tem_test:
         with jsonlines.open(path_tem,
                             mode='a') as writer:
             writer.write(i)
-    # zip
     f_in = open(path_tem, 'rb')
-    # print(os.getcwd())
     f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/cdfg/test.jsonl.gz', 'wb')
     f_out.writelines(f_in)
     f_out.close()
@@ -780,11 +584,8 @@ def Split_test(train,valid,test,path):
 
 def Preprocess_test(path):
     cwetype = os.path.split(path)[1]
-    # 检测是否有字典如果没有就训练
-    # w2v(path, cwetype)
     print("跳过w2v")
     os.path.split(path)[0] + '/' + str(os.path.split(path)[1]) + '_ast.jsonl'
-    # 进行jsonal的提取
     a = os.path.split(path)[0] + '/' + str(os.path.split(path)[1]) + '_ast.jsonl'
     if os.path.exists(os.path.split(path)[0] + '/' + str(os.path.split(path)[1]) + '_ast.jsonl') and os.path.exists(
             os.path.split(path)[0] + '/' + str(os.path.split(path)[1]) + "_cdfg.jsonl"):
@@ -796,5 +597,3 @@ def Preprocess_test(path):
         files_test = GetInfor(path)
         Split_test(0.8, 0.1, 0.1, path)
     return files_test
-
-# Preprocess(r"F:\Github\CCS19\Curre\GNN\GNNsearch\tf2-gnn-master\tf2-gnn-master\tf2_gnn\data\573_train")
