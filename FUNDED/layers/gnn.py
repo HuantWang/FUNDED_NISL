@@ -28,27 +28,6 @@ class GNNInput(NamedTuple):
 
 
 class GNN(tf.keras.layers.Layer):
-    """Encode graph states using a combination of graph message passing layers and dense layers
-
-    Example usage:
-    >>> layer_input = GNNInput(
-    ...     node_features = tf.random.normal(shape=(5, 3)),
-    ...     adjacency_lists = (
-    ...         tf.constant([[0, 1], [1, 2], [3, 4]], dtype=tf.int32),
-    ...         tf.constant([[1, 2], [3, 4]], dtype=tf.int32),
-    ...         tf.constant([[2, 0]], dtype=tf.int32)
-    ...         ),
-    ...     node_to_graph_map = tf.fill(dims=(5,), value=0),
-    ...     num_graphs = 1,
-    ...     )
-    ...
-    >>> params = GNN.get_default_hyperparameters()
-    >>> params["hidden_dim"] = 12
-    >>> layer = GNN(params)
-    >>> output = layer(layer_input)
-    >>> print(output)
-    tf.Tensor(..., shape=(5, 12), dtype=float32)
-    """
 
     @classmethod
     def get_default_hyperparameters(cls, mp_style: Optional[str] = None) -> Dict[str, Any]:
@@ -115,16 +94,7 @@ class GNN(tf.keras.layers.Layer):
         self._global_exchange_layers: Dict[str, GraphGlobalExchange] = {}
 
     def build(self, tensor_shapes: GNNInput):
-        """Build the various layers in the model.
 
-        Args:
-            tensor_shapes: A GNNInput of tensor shapes.
-
-        Returns:
-            Nothing, but initialises the layers in the model based on the tensor shapes given.
-        """
-        # First, we go through the input shapes and make sure that anything which might vary batch
-        # to batch (number of nodes / number of edges) is set to None.
         initial_node_features_shape: tf.TensorShape = tensor_shapes.node_features
         variable_node_features_shape = tf.TensorShape((None, initial_node_features_shape[1]))
         adjacency_list_shapes = tensor_shapes.adjacency_lists
@@ -201,22 +171,7 @@ class GNN(tf.keras.layers.Layer):
 
         super().build(tensor_shapes)
 
-        # The following is needed to work around a limitation in the @tf.function annotation.
-        # (See https://github.com/tensorflow/tensorflow/issues/32457 for a related issue,
-        #  though there are many more).
-        # Our aim is to trace the `call` function once and for all. However, as the first
-        # dimension of node features and adjacency lists keeps changing between batches (with
-        # the number of nodes/edges in the batch), generalisation doesn't work automatically.
-        # Instead, we have to specify the input spec explicitly; but as this depends on a
-        # build-time constant (the number of edges), we cannot do that by just using @tf.function.
-        # Instead, we construct the TensorSpec explicitly, and then use setattr to wrap
-        # our function using tf.function.
-        #
-        # Finally, the `return_all_representations` option changes the shape of the return values,
-        # but a tf.function-traced function must return the same shape on all code paths. To
-        # handle this, we let the core function _always_ return all representations (and trace
-        # that for performance reasons), and then use a thin wrapper `call` function to drop
-        # the unneeded return value if needed.
+
         internal_call_input_spec = (
             GNNInput(
                 node_features=tf.TensorSpec(shape=variable_node_features_shape, dtype=tf.float32),
@@ -232,40 +187,6 @@ class GNN(tf.keras.layers.Layer):
         setattr(self, "_internal_call", tf.function(func=self._internal_call, input_signature=internal_call_input_spec))
 
     def call(self, inputs: GNNInput, training: bool = False, return_all_representations: bool = False):
-        """
-        Args:
-            inputs: A GNNInput containing the following fields:
-                node_features: float32 tensor of shape [V, D], the original representation
-                    of each node in the graph.
-
-                adjacency_lists: an tuple of tensors of shape [E, 2] which represents an adjacency
-                    list for a given edge type. Concretely,
-                        adjacency_list[l][k,:] == [v, u]
-                    means that the k-th edge of type l connects node v to node u.
-
-                node_to_graph_map: int32 tensor of shape [V], where node_to_graph_map[v] = i
-                    means that node v belongs to graph i in the batch.
-
-                num_graphs: int32 tensor of shape [], specifying number of graphs in batch.
-
-            training: A bool representing whether the model is training or evaluating.
-
-            return_all_representations: A bool indicating whether to return all (initial,
-                intermediate, and final) GNN results as well.
-
-        Returns:
-            If return_all_representations is False (the default):
-            A tensor of shape [V, hidden_dim], where hidden_dim was defined in the layer
-            initialisation. The tensor represents the encoding of the initial node_features by the
-            GNN framework.
-
-            If return_all_representations is True:
-            A pair, first element as for return_all_representations=False, second element a  list
-            of Tensors of shape [V, hidden_dim], where the first element is the original GNN
-            input (after a potential projection layer) and the remaining elements are the
-            output of all GNN layers (without dropout, residual connections, dense layers 
-            or layer norm applied).
-        """
 
         cur_node_representations, all_node_representations = self._internal_call(inputs, training)
 

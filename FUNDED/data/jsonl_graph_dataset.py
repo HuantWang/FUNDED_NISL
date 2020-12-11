@@ -11,17 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class JsonLGraphDataset(GraphDataset[GraphSampleType]):
-    """
-    General class representing pre-split datasets in JSONLines format.
-    Concretely, this class expects the following:
-    * In the data directory, files "train.jsonl.gz", "valid.jsonl.gz" and
-      "test.jsonl.gz" are used to store the train/valid/test datasets.
-    * Each of the files is gzipped text file in which each line is a valid
-      JSON dictionary with a "graph" key, which in turn points to a
-      dictionary with keys
-       - "node_features" (list of numerical initial node labels)
-       - "adjacency_lists" (list of list of directed edge pairs)
-    """
+
 
     @classmethod
     def get_default_hyperparameters(cls) -> Dict[str, Any]:
@@ -62,12 +52,7 @@ class JsonLGraphDataset(GraphDataset[GraphSampleType]):
         return self._node_feature_shape
 
     def load_metadata(self, path: RichPath) -> None:
-        """Load the metadata for a dataset (such as vocabularies, names of properties, ...)
-        from a path on disk.
 
-        Note: Implementors needing to act on metadata information before loading any actual data
-        should override this method.
-        """
         if self.metadata == {}:
             metadata_path = path.join("metadata.pkl.gz")
             if metadata_path.exists():
@@ -152,7 +137,7 @@ class JsonLGraphDataset(GraphDataset[GraphSampleType]):
 
         # Add backward edges as an additional edge type that goes backwards:
         if not (self.params["tie_fwd_bkwd_edges"]):
-            # for (edge_type, adj_list) in enumerate(type_to_adj_list):
+
             num_edge_types_in_adj_lists = len(type_to_adj_list)
             for edge_type in range(num_edge_types_in_adj_lists):
                 adj_list = type_to_adj_list[edge_type]

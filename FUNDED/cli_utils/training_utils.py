@@ -50,7 +50,7 @@ def train(
 ):
     train_data = dataset.get_tensorflow_dataset(DataFold.TRAIN).prefetch(3)
     valid_data = dataset.get_tensorflow_dataset(DataFold.VALIDATION).prefetch(3)
-    #
+
     train_data_2 = dataset2.get_tensorflow_dataset(DataFold.TRAIN).prefetch(3)
     valid_data_2 = dataset2.get_tensorflow_dataset(DataFold.VALIDATION).prefetch(3)
 
@@ -76,7 +76,6 @@ def train(
     save_model(save_file, model, dataset)
     best_valid_epoch = 0
     train_time_start = time.time()
-    # for epoch in range(1, max_epochs + 1):
     for epoch in range(1, 100):
         log_fun(f"== Epoch {epoch}")
         train_loss, train_speed, train_results = model.run_one_epoch_new(
@@ -108,7 +107,6 @@ def train(
         best_valid_metric_FPR, best_val_strfpr, \
         best_valid_metric_TNR, best_val_strtnr, \
         best_valid_metric_FNR, best_val_strfnr, = model.compute_epoch_metrics(valid_results)
-        # valid_metric, valid_metric_string = model.compute_epoch_metrics(valid_results)
         log_fun(
             f" Valid:  {valid_loss:.4f} loss | {val_stracc} | {best_val_strpre} | {best_val_strre} | {best_val_strf1} |"
             f"{best_val_strtpr} | {best_val_strfpr} | {best_val_strtnr} | {best_val_strfnr} | {valid_speed:.2f} graphs/s",
@@ -217,7 +215,6 @@ def run_train_from_args(args, hyperdrive_hyperparameter_overrides: Dict[str, str
         quiet=args.quiet,
         aml_run=aml_run,
     )
-###################
     if args.run_test:
         data_path = RichPath.create(
             os.path.split(args.data_path)[0] + '/tem_' + os.path.split(args.data_path)[1] + '/ast', args.azure_info)
@@ -242,26 +239,23 @@ def run_train_from_args(args, hyperdrive_hyperparameter_overrides: Dict[str, str
         best_valid_metric_FPR, best_val_strfpr, \
         best_valid_metric_TNR, best_val_strtnr, \
         best_valid_metric_FNR, best_val_strfnr, = model.compute_epoch_metrics(test_results)
-        # valid_metric, valid_metric_string = model.compute_epoch_metrics(valid_results)
+
         log(
             f"NoneCP_test  {val_stracc}|{best_val_strpre} | {best_val_strre} | {best_val_strf1} |"
             f"{best_val_strtpr} | {best_val_strfpr} | {best_val_strtnr} | {best_val_strfnr} |",
         )
-        # test_metric, test_metric_string = model.compute_epoch_metrics(test_results)
-        # log(val_stracc)
+
         if aml_run is not None:
             aml_run.log("task_test_metric", float(valid_ACC))
-##################
-        # cp
-        # unzip
+
         import gzip
         def un_gz(file_name):
 
-            # 获取文件的名称，去掉后缀名
+
             f_name = file_name.replace(".gz", "")
-            # 开始解压
+
             g_file = gzip.GzipFile(file_name)
-            # 读取解压后的文件，并写入去掉后缀名的同名文件（即得到解压后的文件）
+
             open(f_name, "wb+").write(g_file.read())
             g_file.close()
 
@@ -295,11 +289,11 @@ def run_train_from_args(args, hyperdrive_hyperparameter_overrides: Dict[str, str
             else:
                 print(path + ' already')
                 return False
-        # a=os.path.split(data_path)[0] + '/new/ast'
+
         mkdir(str(os.path.split(str(data_path))[0]) + '/new/ast')
         ast_path=str(os.path.split(str(data_path))[0]) + '/new/ast'
         os.remove(str(data_path) + '/train.jsonl')
-        # os.remove(str(data_path) + '/valid.jsonl')
+
         os.remove(str(data_path) + '/test.jsonl')
         for i in train_flies:
             with jsonlines.open(str(data_path) + '/train.jsonl',
@@ -309,31 +303,31 @@ def run_train_from_args(args, hyperdrive_hyperparameter_overrides: Dict[str, str
             with jsonlines.open(str(data_path) + '/test.jsonl',
                                 mode='a') as writer:
                 writer.write(i)
-        #
+
         f_in = open(str(data_path) + '/train.jsonl', 'rb')
-        # print(os.getcwd())
+
         f_out = gzip.open(ast_path+'/train.jsonl.gz', 'wb')
         f_out.writelines(f_in)
         f_out.close()
         f_in.close()
         os.remove(str(data_path) + '/train.jsonl')
-        #
+
         f_in = open(str(data_path) + '/valid.jsonl', 'rb')
-        # print(os.getcwd())
+
         f_out = gzip.open(ast_path+'/valid.jsonl.gz', 'wb')
         f_out.writelines(f_in)
         f_out.close()
         f_in.close()
         os.remove(str(data_path) + '/valid.jsonl')
-        #
+
         f_in = open(str(data_path) + '/test.jsonl', 'rb')
-        # print(os.getcwd())
+
         f_out = gzip.open(ast_path+'/test.jsonl.gz', 'wb')
         f_out.writelines(f_in)
         f_out.close()
         f_in.close()
         os.remove(str(data_path) + '/test.jsonl')
-##################cdfg
+
         un_gz(str(data_path_2) + '/train.jsonl.gz')
         un_gz(str(data_path_2) + '/test.jsonl.gz')
         un_gz(str(data_path_2) + '/valid.jsonl.gz')
@@ -352,11 +346,11 @@ def run_train_from_args(args, hyperdrive_hyperparameter_overrides: Dict[str, str
                 elif step in index:
                     train_flies.append(item)
 
-        # a=os.path.split(data_path)[0] + '/new/ast'
+
         mkdir(str(os.path.split(str(data_path_2))[0]) + '/new/cdfg')
         cdfg_path=str(os.path.split(str(data_path_2))[0]) + '/new/cdfg'
         os.remove(str(data_path_2) + '/train.jsonl')
-        # os.remove(str(data_path) + '/valid.jsonl')
+
         os.remove(str(data_path_2) + '/test.jsonl')
         for i in train_flies:
             with jsonlines.open(str(data_path_2) + '/train.jsonl',
@@ -366,31 +360,31 @@ def run_train_from_args(args, hyperdrive_hyperparameter_overrides: Dict[str, str
             with jsonlines.open(str(data_path_2) + '/test.jsonl',
                                 mode='a') as writer:
                 writer.write(i)
-        #
+
         f_in = open(str(data_path_2) + '/train.jsonl', 'rb')
-        # print(os.getcwd())
+
         f_out = gzip.open(cdfg_path+'/train.jsonl.gz', 'wb')
         f_out.writelines(f_in)
         f_out.close()
         f_in.close()
         os.remove(str(data_path_2) + '/train.jsonl')
-        #
+
         f_in = open(str(data_path_2) + '/valid.jsonl', 'rb')
-        # print(os.getcwd())
+
         f_out = gzip.open(cdfg_path+'/valid.jsonl.gz', 'wb')
         f_out.writelines(f_in)
         f_out.close()
         f_in.close()
         os.remove(str(data_path_2) + '/valid.jsonl')
-        #
+
         f_in = open(str(data_path_2) + '/test.jsonl', 'rb')
-        # print(os.getcwd())
+
         f_out = gzip.open(cdfg_path+'/test.jsonl.gz', 'wb')
         f_out.writelines(f_in)
         f_out.close()
         f_in.close()
         os.remove(str(data_path_2) + '/test.jsonl')
-        ##########run around
+
         data_path = RichPath.create(
             os.path.split(args.data_path)[0] + '/tem_' + os.path.split(args.data_path)[1] + '/new/ast', args.azure_info)
         # second path
@@ -471,52 +465,14 @@ def run_train_from_args(args, hyperdrive_hyperparameter_overrides: Dict[str, str
                 f"CP_test  {val_stracc}|{best_val_strpre} | {best_val_strre} | {best_val_strf1} |"
                 f"{best_val_strtpr} | {best_val_strfpr} | {best_val_strtnr} | {best_val_strfnr} |",
             )
-            # test_metric, test_metric_string = model.compute_epoch_metrics(test_results)
-            # log(val_stracc)
+
             if aml_run is not None:
                 aml_run.log("task_test_metric", float(valid_ACC))
-    # import gzip
-    # if args.run_test:
-    #     data_path = RichPath.create(os.path.split(args.data_path)[0] + '/tem_'+os.path.split(args.data_path)[1]+'/ast', args.azure_info)
-    #     data_path_2 = RichPath.create(os.path.split(args.data_path)[0] + '/tem_'+os.path.split(args.data_path)[1]+'/cdfg', args.azure_info)
-    #     log("== Running on test dataset")
-    #     log(f"Loading data from {data_path}.")
-    #     dataset.load_data(data_path, {DataFold.TEST})
-    #     dataset2.load_data(data_path_2, {DataFold.TEST})
-    #     log(f"Restoring best model state from {trained_model_path}.")
-    #     load_weights_verbosely(trained_model_path, model)
-    #     test_data_1 = dataset.get_tensorflow_dataset(DataFold.TEST)
-    #     test_data_2 = dataset2.get_tensorflow_dataset(DataFold.TEST)
-    #     _, _, test_results = model.run_one_epoch_new(test_data_1,test_data_2, training=False, quiet=args.quiet)
-    #
-    #     valid_ACC, val_stracc, \
-    #     best_valid_Pre, best_val_strpre, \
-    #     best_valid_metric_RE, best_val_strre, \
-    #     best_valid_metric_f1, best_val_strf1, \
-    #     best_valid_metric_TPR, best_val_strtpr, \
-    #     best_valid_metric_FPR, best_val_strfpr, \
-    #     best_valid_metric_TNR, best_val_strtnr, \
-    #     best_valid_metric_FNR, best_val_strfnr, = model.compute_epoch_metrics(test_results)
-    #     # valid_metric, valid_metric_string = model.compute_epoch_metrics(valid_results)
-    #     log(
-    #         f"  {val_stracc}|{best_val_strpre} | {best_val_strre} | {best_val_strf1} |"
-    #         f"{best_val_strtpr} | {best_val_strfpr} | {best_val_strtnr} | {best_val_strfnr} |",
-    #     )
-    #     # test_metric, test_metric_string = model.compute_epoch_metrics(test_results)
-    #     # log(val_stracc)
-    #     if aml_run is not None:
-    #         aml_run.log("task_test_metric", float(valid_ACC))
-
 
 def get_train_cli_arg_parser():
     import argparse
 
     parser = argparse.ArgumentParser(description="Train a GNN model.")
-    # We use a somewhat horrible trick to support both
-    #  train.py --model MODEL --task TASK --data_path DATA_PATH
-    # as well as
-    #  train.py model task data_path
-    # The former is useful because of limitations in AzureML; the latter is nicer to type.
     if "--model" in sys.argv:
         model_param_name, task_param_name, data_path_param_name = "--model", "--task", "--data_path"
     else:

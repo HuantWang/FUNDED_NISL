@@ -2,11 +2,9 @@ from typing import Dict, Any, NamedTuple, Type, Iterable, Tuple
 
 from ..models import (
     GraphTaskModel,
-    NodeMulticlassTask,
-    GraphRegressionTask,
     GraphBinaryClassificationTask,
 )
-from ..data import GraphDataset, JsonLGraphPropertyDataset, QM9Dataset, PPIDataset
+from ..data import GraphDataset, JsonLGraphPropertyDataset
 
 
 class TaskInfo(NamedTuple):
@@ -60,29 +58,6 @@ def task_name_to_model_class(name: str) -> Tuple[Type[GraphTaskModel], Dict[str,
 
 
 # Register some default tasks:
-register_task(
-    task_name="PPI",
-    dataset_class=PPIDataset,
-    dataset_default_hypers={},
-    model_class=NodeMulticlassTask,
-    model_default_hypers={},
-)
-
-register_task(
-    task_name="QM9",
-    dataset_class=QM9Dataset,
-    dataset_default_hypers={},
-    model_class=GraphRegressionTask,
-    model_default_hypers={},
-)
-
-register_task(
-    task_name="GraphRegression",
-    dataset_class=JsonLGraphPropertyDataset,
-    dataset_default_hypers={"threshold_for_classification": None},
-    model_class=GraphRegressionTask,
-    model_default_hypers={},
-)
 
 register_task(
     task_name="GraphBinaryClassification",

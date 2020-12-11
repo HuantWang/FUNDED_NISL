@@ -11,40 +11,6 @@ from tf2_gnn.utils.constants import SMALL_NUMBER
 
 @register_message_passing_implementation
 class GNN_FiLM(GNN_Edge_MLP):
-    """Compute new graph states by neural message passing modulated by the target state.
-    For this, we assume existing node states h^t_v and a list of per-edge-type adjacency
-    matrices A_\ell.
-
-    We compute new states as follows:
-        h^{t+1}_v := \sum_\ell
-                     \sum_{(u, v) \in A_\ell}
-                        \sigma(1/c_{v,\ell} * \alpha_{\ell,v} * (W_\ell * h^t_u) + \beta_{\ell,v})
-        \alpha_{\ell,v} := F_{\ell,\alpha} * h^t_v
-        \beta_{\ell,v} := F_{\ell,\beta} * h^t_v
-        c_{\v,\ell} is usually 1 (but could also be the number of incoming edges).
-    The learnable parameters of this are the W_\ell, F_{\ell,\alpha}, F_{\ell,\beta} \in R^{D, D}.
-
-    We use the following abbreviations in shape descriptions:
-    * V: number of nodes
-    * L: number of different edge types
-    * E: number of edges of a given edge type
-    * D: input node representation dimension
-    * H: output node representation dimension (set as hidden_dim)
-
-    >>> node_embeddings = tf.random.normal(shape=(5, 3))
-    >>> adjacency_lists = (
-    ...    tf.constant([[0, 1], [2, 4], [2, 4]], dtype=tf.int32),
-    ...    tf.constant([[2, 3], [2, 4]], dtype=tf.int32),
-    ...    tf.constant([[3, 1]], dtype=tf.int32),
-    ... )
-    ...
-    >>> params = GNN_FiLM.get_default_hyperparameters()
-    >>> params["hidden_dim"] = 12
-    >>> layer = GNN_FiLM(params)
-    >>> output = layer(MessagePassingInput(node_embeddings, adjacency_lists))
-    >>> print(output)
-    tf.Tensor(..., shape=(5, 12), dtype=float32)
-    """
 
     @classmethod
     def get_default_hyperparameters(cls):

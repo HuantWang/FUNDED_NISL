@@ -356,7 +356,6 @@ class GraphTaskModel(tf.keras.Model):
         import numpy as np
         total_loss = tf.constant(0, dtype=tf.float32)
         for ((step, (batch_features, batch_labels)),(step_2, (batch_features_2, batch_labels_2))) in zip(enumerate(dataset),enumerate(dataset2)):
-        # for step, (batch_features, batch_labels) in enumerate(dataset2):
             with tf.GradientTape() as tape:
                 task_output = self(batch_features,batch_features_2, training=training)
                 task_metrics = self.compute_task_metrics(batch_features, task_output, batch_labels)
@@ -394,20 +393,3 @@ class GraphTaskModel(tf.keras.Model):
             print("\r\x1b[K", end="")
         return index
 
-    # def run_one_epoch_new(
-    #     self, dataset: tf.data.Dataset,dataset2: tf.data.Dataset, quiet: bool = False, training: bool = True,
-    # ) -> Tuple[float, float, List[Any]]:
-    #     epoch_time_start = time.time()
-    #     total_num_graphs = 0
-    #     task_results = []
-    #     total_loss = tf.constant(0, dtype=tf.float32)
-    #     for (step, (batch_features, batch_labels),step_2, (batch_features_2, batch_labels_2)) in zip(enumerate(dataset),enumerate(dataset2)):
-    #         with tf.GradientTape() as tape:
-    #             task_output = self(batch_features, training=training)
-    #             task_output_2 = self(batch_features_2, training=training)
-    #             task_metrics = self.compute_task_metrics(batch_features, task_output, batch_labels)
-    #         total_loss += task_metrics["loss"]
-    #         total_num_graphs += batch_features["num_graphs_in_batch"]
-    #         task_results.append(task_metrics)
-    #
-    #     return task_output,batch_labels

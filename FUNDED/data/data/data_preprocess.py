@@ -1,5 +1,4 @@
-# F:\Github\CCS19\Curre\GNN\GraphNNCode\GraphNNCode\New\result\result\test
-# 合边
+
 import gzip
 import random
 import warnings

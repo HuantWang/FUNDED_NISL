@@ -34,12 +34,7 @@ class GraphWithPropertySample(GraphSample):
             return [1,0]
         elif target_value==1:
             return [0,1]
-        # cfs = [0.0, 1.0]
-        # hot = np.zeros(len(cfs), dtype=np.int32)
-        # for i in range(len(cfs)):
-        #     if cfs[i] == target_value:
-        #         hot[i] = 1
-        # return list(hot)
+
 
     def __str__(self):
         return (
@@ -55,27 +50,13 @@ GraphWithPropertySampleType = TypeVar(
 
 
 class JsonLGraphPropertyDataset(JsonLGraphDataset[GraphWithPropertySampleType]):
-    """
-    General class representing pre-split datasets in JSONLines format.
-    Concretely, this class expects the following:
-    * In the data directory, files "train.jsonl.gz", "valid.jsonl.gz" and
-      "test.jsonl.gz" are used to store the train/valid/test datasets.
-    * Each of the files is gzipped text file in which each line is a valid
-      JSON dictionary with a "graph" key, which in turn points to a
-      dictionary with keys
-       - "node_features" (list of numerical initial node labels)
-       - "adjacency_lists" (list of list of directed edge pairs)
-      Addtionally, the dictionary has to contain a "Property" key with a
-      floating point value.
-    """
+
 
     @classmethod
     def get_default_hyperparameters(cls) -> Dict[str, Any]:
         super_hypers = super().get_default_hyperparameters()
         this_hypers = {
-            # If None, the data-provided property is used; otherwise, a floating point
-            # value is expected and property values greater than this value will be
-            # encoded as 1.0 and smaller values will be encoded as 0.0.
+
             "threshold_for_classification": None,
         }
         super_hypers.update(this_hypers)
@@ -98,8 +79,6 @@ class JsonLGraphPropertyDataset(JsonLGraphDataset[GraphWithPropertySampleType]):
 
         target_value = float(datapoint["Property"])
 
-        # if self._threshold_for_classification is not None:
-        #     target_value = float(target_value > self._threshold_for_classification)
 
         return GraphWithPropertySample(
             adjacency_lists=type_to_adj_list,
