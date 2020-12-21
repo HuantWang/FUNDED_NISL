@@ -17,8 +17,9 @@ warnings.filterwarnings("ignore")
 
 
 def w2v(filename,cwetype):
+    print("generating word2vec...")
     if os.path.exists(os.path.split(filename)[0]+"/" + "word2vec_" + str(cwetype) + ".pkl"):
-        print("Word2Vec already !")
+        print("Word2Vec already exists!")
         return
     words = []
     for root, dirs, files in os.walk(filename):  
@@ -45,9 +46,10 @@ def w2v(filename,cwetype):
                      negative=3, sample=0.001, hs=1, workers=4)
 
     model.save(os.path.split(filename)[0]+"/"+ "word2vec_" + str(cwetype) + ".pkl")
-    print("Word2Vec ready")
+    print("Word2Vec is ready")
 
 def GetInfor(filename):
+    print("\ngenerating vectors files...")
     import gzip
     random_use=np.random.rand(100)
     files_test = []
@@ -83,8 +85,12 @@ def GetInfor(filename):
             label_jump = False  # jump
             label_joern = False  # cdfg
             label_joern_word = False # joern_word
-            count += 1
             joern_word = []
+            
+            # count all files which have been preprocessed.
+            count += 1
+            print("deal_with  {:.2f}".format((count / (1.0 * files.__len__()) * 100)) + "%")
+            
             with open(root +'/'+ fname, "r") as f:
                 data = f.readlines()
                 for line in data:
@@ -310,8 +316,9 @@ def GetInfor(filename):
             with jsonlines.open(os.path.split(filename)[0]+'/'+str(os.path.split(filename)[1])+'_cdfg.jsonl', mode='a') as writer:
                 writer.write(
                             {"Property": label, "graph": {"node_features": vectors_cdfg, "adjacency_lists": adj_cdfg_total[0]}})
-    return files_test
-
+   
+    print("vectors files is ready")
+    
 def mkdir(path):
    
     import os
@@ -327,6 +334,7 @@ def mkdir(path):
         return False
     
 def Split(train,valid,test,path):
+    print("\nspliting datasets...")
     tem_ast=[]
     mkdir(os.path.split(path)[0]+'/'+'tem_'+os.path.split(path)[1]+'/ast')
     with open(os.path.split(path)[0] + '/' + str(os.path.split(path)[1]) + '_ast.jsonl', "r+", encoding="utf8") as f:
@@ -461,138 +469,3 @@ def Preprocess(path):
     else:
         GetInfor(path)
         Split(0.8, 0.1, 0.1, path)
-
-def Split_test(train,valid,test,path):
-    tem_ast=[]
-    mkdir(os.path.split(path)[0]+'/'+'tem_'+os.path.split(path)[1]+'/ast')
-   
-    with open(os.path.split(path)[0] + '/' + str(os.path.split(path)[1]) + '_ast.jsonl', "r+", encoding="utf8") as f:
-        for item in jsonlines.Reader(f):
-            tem_ast.append(item)
-   
-    randomtem = np.arange(len(tem_ast))
-    pos_tem=[]
-    neg_tem=[]
-
-    for step,i in enumerate(randomtem):
-        ast=tem_ast[i]
-        if ast['Property']==0:
-            neg_tem.append(ast)
-        else:
-            pos_tem.append(ast)
-    
-    length=max(len(pos_tem),len(neg_tem))
-    neg_tem=neg_tem[:length]
-    pos_tem=pos_tem[:length]
-   
-
-    tem_train=neg_tem[:int(length)]+pos_tem[:int(length)]
-    tem_valid=tem_train
-    tem_test=tem_train
-    path_tem=os.path.split(path)[0]+'/'+'tem_'+os.path.split(path)[1]+'/ast/ast.jsonl'
-    for i in tem_train:
-        with jsonlines.open(path_tem,
-                            mode='a') as writer:
-            writer.write(i)
-    f_in = open(path_tem, 'rb')
-    f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/ast/train.jsonl.gz', 'wb')
-    f_out.writelines(f_in)
-    f_out.close()
-    f_in.close()
-    os.remove(path_tem)
-
-    for i in tem_valid:
-        with jsonlines.open(path_tem,
-                            mode='a') as writer:
-            writer.write(i)
-    f_in = open(path_tem, 'rb')
-    f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/ast/valid.jsonl.gz', 'wb')
-    f_out.writelines(f_in)
-    f_out.close()
-    f_in.close()
-    os.remove(path_tem)
-
-    for i in tem_test:
-        with jsonlines.open(path_tem,
-                            mode='a') as writer:
-            writer.write(i)
-            
-    f_in = open(path_tem, 'rb')
-    f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/ast/test.jsonl.gz', 'wb')
-    f_out.writelines(f_in)
-    f_out.close()
-    f_in.close()
-    os.remove(path_tem)
-    tem_cdfg=[]
-    mkdir(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/cdfg')
-    with open(os.path.split(path)[0]+'/'+str(os.path.split(path)[1])+'_cdfg.jsonl', "r+", encoding="utf8") as f:
-        for item in jsonlines.Reader(f):
-            tem_cdfg.append(item)
-    randomtem = np.arange(len(tem_cdfg))
-    pos_tem=[]
-    neg_tem=[]
-
-    for step,i in enumerate(randomtem):
-        ast=tem_cdfg[i]
-        if ast['Property']==0:
-            neg_tem.append(ast)
-        else:
-            pos_tem.append(ast)
-
-    length=max(len(pos_tem),len(neg_tem))
-    neg_tem=neg_tem[:length]
-    pos_tem=pos_tem[:length]
-
-    tem_train=neg_tem[:int(length)]+pos_tem[:int(length)]
-    tem_valid=tem_train
-    tem_test=tem_train
-    path_tem=os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/cdfg/cdfg.jsonl'
-    for i in tem_train:
-        with jsonlines.open(path_tem,
-                            mode='a') as writer:
-            writer.write(i)
-    f_in = open(path_tem, 'rb')
-    f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/cdfg/train.jsonl.gz', 'wb')
-    f_out.writelines(f_in)
-    f_out.close()
-    f_in.close()
-    os.remove(path_tem)
-
-    for i in tem_valid:
-        with jsonlines.open(path_tem,
-                            mode='a') as writer:
-            writer.write(i)
-    f_in = open(path_tem, 'rb')
-    f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/cdfg/valid.jsonl.gz', 'wb')
-    f_out.writelines(f_in)
-    f_out.close()
-    f_in.close()
-    os.remove(path_tem)
-
-    for i in tem_test:
-        with jsonlines.open(path_tem,
-                            mode='a') as writer:
-            writer.write(i)
-    f_in = open(path_tem, 'rb')
-    f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_'+os.path.split(path)[1]+'/cdfg/test.jsonl.gz', 'wb')
-    f_out.writelines(f_in)
-    f_out.close()
-    f_in.close()
-    os.remove(path_tem)
-    print("data ready")
-
-def Preprocess_test(path):
-    cwetype = os.path.split(path)[1]
-    print("跳过w2v")
-    os.path.split(path)[0] + '/' + str(os.path.split(path)[1]) + '_ast.jsonl'
-    a = os.path.split(path)[0] + '/' + str(os.path.split(path)[1]) + '_ast.jsonl'
-    if os.path.exists(os.path.split(path)[0] + '/' + str(os.path.split(path)[1]) + '_ast.jsonl') and os.path.exists(
-            os.path.split(path)[0] + '/' + str(os.path.split(path)[1]) + "_cdfg.jsonl"):
-        os.remove(os.path.split(path)[0] + '/' + str(os.path.split(path)[1]) + '_ast.jsonl')
-        os.remove(os.path.split(path)[0] + '/' + str(os.path.split(path)[1]) + "_cdfg.jsonl")
-        files_test = GetInfor(path)
-        Split_test(0.8, 0.1, 0.1, path)
-    else:
-        files_test = GetInfor(path)
-        Split_test(0.8, 0.1, 0.1, path)
-    return files_test
