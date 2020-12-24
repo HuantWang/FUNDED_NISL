@@ -59,7 +59,6 @@ def GetInfor(filename):
         count = 0
         save = 0
         for fname in files:
-            files_test.append(fname)
            
             adj_ast_total = []
             adj_child = []
@@ -86,10 +85,6 @@ def GetInfor(filename):
             label_joern = False  # cdfg
             label_joern_word = False # joern_word
             joern_word = []
-            
-            # count all files which have been preprocessed.
-            count += 1
-            print("deal_with  {:.2f}".format((count / (1.0 * files.__len__()) * 100)) + "%")
             
             with open(root +'/'+ fname, "r") as f:
                 data = f.readlines()
@@ -268,7 +263,8 @@ def GetInfor(filename):
 
           
             vectors_cdfg = []
-            model = word2vec.Word2Vec.load("/home/garyhu/gnn_web_cp/tf2-gnn-master/tf2_gnn/data/data/word2vec_CWE-399.pkl")
+            model = word2vec.Word2Vec.load(
+                os.path.split(filename)[0] + "/word2vec_" + str(os.path.split(filename)[1]) + '.pkl')
 
             for i in range(len(joern_word)):
 
@@ -316,7 +312,9 @@ def GetInfor(filename):
             with jsonlines.open(os.path.split(filename)[0]+'/'+str(os.path.split(filename)[1])+'_cdfg.jsonl', mode='a') as writer:
                 writer.write(
                             {"Property": label, "graph": {"node_features": vectors_cdfg, "adjacency_lists": adj_cdfg_total[0]}})
-   
+            count = count + 1
+            print("\rprocess : {:.2f}".format((count / (1.0 * files.__len__()) * 100)) + "%",end=' ')
+
     print("vectors files is ready")
     
 def mkdir(path):
