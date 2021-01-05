@@ -2,11 +2,7 @@ import json
 import re
 import numpy as np
 import os
-from gensim.models import Word2Vec, word2vec
-from sklearn.decomposition import PCA
-from sklearn.feature_selection import VarianceThreshold
-from sklearn.linear_model import RandomizedLasso
-from sklearn.datasets import load_boston
+from gensim.models import Word2Vec
 
 def isContainChinese(s):
     for c in s:
@@ -21,7 +17,6 @@ def check(str):
             f = open(os.path.join(fpathe, file),
                      encoding='utf-8')
             setting = json.load(f)
-            feature_logsingle = []
             for (key, value) in setting.items():
                 if value == []:
                     file_all.append(file)
@@ -32,7 +27,7 @@ def check(str):
 
 
 def fla(arr):
-    """save same vector length"""
+    # save same vector length
     b = np.zeros((1, 1000))
     arr = np.array(arr).flatten()
     arr = arr.reshape(1, arr.size)
@@ -42,11 +37,12 @@ def fla(arr):
     return arr
 
 def feature_pre(str,model,num):
-    """data preprocess"""
+    # data preprocess
     punctuation = '0-9’!"#$%&\'()*+,-./:;<=>?@，。?★、…【】《》？“”‘’！[\\]^_`{|}~#!@/,;:?"\''
     # stopwords
     stopwords = []
-    with open(r'E:\Pycharm\PyProject\6_4\6_4\stopwords.txt', 'r') as f:
+    # load stopwords.txt
+    with open('stopwords.txt', 'r') as f:
         for line in f:
             stopwords.append(line.strip())
     f.close()
@@ -72,8 +68,6 @@ def feature_pre(str,model,num):
 
             for (key, value) in setting.items():
                 value = "".join(value).replace("\n", " ")
-
-
                 if key in ['commit_message','commitmessage']:
                     value = re.sub(r'[{}]+'.format(punctuation), ' ', value)
                     if (isContainChinese(value) == True):
@@ -143,18 +137,15 @@ def feature_pre(str,model,num):
 
 def InputData(negstr,posstr,model):
     feature_all=[]
-    
     #check
     check(negstr)
     check(posstr)
-    
     #extract feature to vector
     neg_feature=feature_pre(negstr, model,0)
     pos_feature=feature_pre(posstr, model,1)
     feature=np.vstack((neg_feature[0],pos_feature[0]))
     url=np.vstack((neg_feature[1],pos_feature[1]))
     label=np.hstack((neg_feature[2],pos_feature[2]))
-
     feature_all.append(feature)
     feature_all.append(url)
     feature_all.append(label)
