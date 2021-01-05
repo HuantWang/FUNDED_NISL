@@ -21,8 +21,8 @@ import InputData_New
 p_set = 0.3
 
 # set data path
-posstr=r'samples\pos'
-negstr=r'samples\neg'
+posstr=r'sample\pos'
+negstr=r'sample\neg'
 
 # extract feature
 feature=InputData_New.InputData(negstr,posstr,"w2v_model")
