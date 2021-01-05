@@ -276,11 +276,15 @@ CP_test  Accuracy = 0.942|precision = 0.893 | recall = 1.000 | f1 = 0.943 |TPR =
 ├── EnsembleLearning.py
 ├── InputData_New.py                       
 ├── stopwords.txt
+├── sample.zip
 ~~~
+### Ready for training
+- Download our pretrained w2v model [here](https://drive.google.com/file/d/118EDwayV9Kqsf3ik5of7UErl0_WW73Qk/view?usp=sharing)
+- We also provide a dataset sample.zip, unzip and make it work
 
 ### Prepare data
 
-- Extract features from commits
+- You can extract features from commits, or just use our sample.zip
 
 ### Train your own ensemble classifier
 
