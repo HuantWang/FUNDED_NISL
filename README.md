@@ -273,10 +273,8 @@ $ pip install nni
 ```
 
 Add a search_space.json file under the work directory and write the parameters to be configured,which we have configured in the project.
-
-```
 search_space.json
-
+```
 {
  "gnn_hidden_dim":{ "_type": "choice", "_value": [4,8,16]},
  "gnn_num_layers": { "_type": "choice", "_value": [2,4,8] },
@@ -289,10 +287,8 @@ search_space.json
 }
 ```
 Define the configuration file in YAML format, which declares the search space and the path of the trial file. It also provides other information, such as the parameters of the whole algorithm, the maximum number of trials and the maximum duration.
-
-``` 
 config.yml
-
+``` 
 authorName: NNI Example
 experimentName: tf2-nn TF v2.x
 trialConcurrency: 1
