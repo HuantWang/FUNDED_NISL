@@ -267,7 +267,7 @@ CP_test  Accuracy = 0.942|precision = 0.893 | recall = 1.000 | f1 = 0.943 |TPR =
 ```
 
 ### Tuning
-We used [nni(Neural Network Intelligence)](https://github.com/Microsoft/nni) for tuning in this project.
+We use [nni(Neural Network Intelligence)](https://github.com/Microsoft/nni) for tuning in this project.
 ``` console
 $ pip install nni
 ```
