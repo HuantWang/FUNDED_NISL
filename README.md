@@ -305,10 +305,10 @@ tuner:
         optimize_mode: maximize # choices: maximize, minimize
     gpuIndices: "1" # specify GPUof optimizer
 trial:
-    command: python3 train.py GGNN GraphBinaryClassification ../data/data/ssrf --patience 100 # execute commands
+    command: python3 train.py GGNN GraphBinaryClassification ../data/data/CWE-400 --patience 100 # execute commands
     codeDir: .
     gpuNum: 0
-logDir: /home/nisl1/nisl8121/hh/nni # log
+logDir: ~/nni # log directory
 localConfig:
     gpuIndices: "0" # specify GPU number
     useActiveGpu: true
