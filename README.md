@@ -24,6 +24,7 @@ FUNDED is a novel learning framework for building vulnerability detection models
   * [Data Preprocessing](#data-preprocessing)
   * [Dataset](#dataset)
   * [Results](#results)
+  * [Tuning](#Tuning)
 * [Data collection module](#data-collection-module)
   * [Collection Structure](#structure1)
   * [Data Preprocessing](#prepare-data)
@@ -38,7 +39,8 @@ These instructions will get you a copy of the project up and running on your loc
 
 ### Prerequisites
 
-Install the necessary dependencies before running the project:
+Install the necessary dependencies before running the project,the part of SoftWare is related to data preprocess while Python Libraries are the environment we have tested.
+For more details, please reference requirements.txt:
 <br/>
 ##### Software:
 * [joern](https://joern.io/)
@@ -47,11 +49,7 @@ Install the necessary dependencies before running the project:
 * [Antlr](https://github.com/antlr/antlr4)
 ##### Python Libraries:
 * [tensorflow (>=2.0.0)](https://tensorflow.google.cn/)
-* [numpy](https://numpy.org/)
-* [docopt](http://docopt.org/)
-* [dpu-utils (>=0.2.7)](https://pypi.org/project/dpu-utils/)
-* [h5py](https://pypi.org/project/h5py/)
-
+* [nni](https://github.com/Microsoft/nni)
 ### Setup
 
 ---
@@ -267,7 +265,64 @@ Loading data from ../data/data/tem_CWE-400/new/cdfg.
 Restoring best model state from trained_model/GGNN_GraphBinaryClassification__2020-11-30_10-44-23_best.pkl.
 CP_test  Accuracy = 0.942|precision = 0.893 | recall = 1.000 | f1 = 0.943 |TPR = 1.000 | FPR = 0.111 | TNR = 0.889 | FNR = 0.000 |
 ```
+
+### Tuning
+We used [nni(Neural Network Intelligence)](https://github.com/Microsoft/nni) for tuning in this project.
+``` console
+$ pip install nni
+```
+
+Add a search_space.json file under the work directory and write the parameters to be configured,which we have configured in the project.
+
+``` console
+{
+ "gnn_hidden_dim":{ "_type": "choice", "_value": [4,8,16]},
+ "gnn_num_layers": { "_type": "choice", "_value": [2,4,8] },
+ "graph_aggregation_num_heads":{ "_type": "choice", "_value": [4,8,16,32]
+},
+ "graph_aggregation_hidden_layers":{ "_type": "choice", "_value": [32,64,128,256] },
+ "graph_aggregation_dropout_rate":{ "_type": "choice", "_value": [
+0.1,0.2,0.5] },
+ "learning_rate": { "_type": "choice", "_value": [0.01,0.001,0.0001] }
+}
+```
+Define the configuration file in YAML format, which declares the search space and the path of the trial file. It also provides other information, such as the parameters of the whole algorithm, the maximum number of trials and the maximum duration.
+
+``` console
+authorName: NNI Example
+experimentName: tf2-nn TF v2.x
+trialConcurrency: 1
+maxExecDuration: 110h # max executable time
+maxTrialNum: 500 # max trial num
+trainingServicePlatform: local
+searchSpacePath: search_space.json # path of search space
+useAnnotation: false
+tuner:
+    builtinTunerName: TPE
+    classArgs:
+        optimize_mode: maximize # choices: maximize, minimize
+    gpuIndices: "1" # specify GPUof optimizer
+trial:
+    command: python3 train.py GGNN GraphBinaryClassification ../data/data/ssrf --patience 100 # execute commands
+    codeDir: .
+    gpuNum: 0
+logDir: /home/nisl1/nisl8121/hh/nni # log
+localConfig:
+    gpuIndices: "0" # specify GPU number
+    useActiveGpu: true
+```
+
+run nni
+
+```console
+nnictl create --config config.yml --port 8080
+```
+Wait for the output INFO: Successfully started experiment! in the command line. This message indicates that the experiment has been successfully started.
+
+For more details,reference https://github.com/Microsoft/nni
 <br/><br/>
+
+
 ## Data collection module
 
 ### Collection Structure
