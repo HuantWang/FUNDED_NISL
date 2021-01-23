@@ -107,6 +107,9 @@ def train(
         best_valid_metric_FPR, best_val_strfpr, \
         best_valid_metric_TNR, best_val_strtnr, \
         best_valid_metric_FNR, best_val_strfnr, = model.compute_epoch_metrics(valid_results)
+
+        nni.report_intermediate_result(-valid_ACC)
+
         log_fun(
             f" Valid:  {valid_loss:.4f} loss | {val_stracc} | {best_val_strpre} | {best_val_strre} | {best_val_strf1} |"
             f"{best_val_strtpr} | {best_val_strfpr} | {best_val_strtnr} | {best_val_strfnr} | {valid_speed:.2f} graphs/s",
@@ -239,6 +242,8 @@ def run_train_from_args(args, hyperdrive_hyperparameter_overrides: Dict[str, str
         best_valid_metric_FPR, best_val_strfpr, \
         best_valid_metric_TNR, best_val_strtnr, \
         best_valid_metric_FNR, best_val_strfnr, = model.compute_epoch_metrics(test_results)
+
+        nni.report_final_result(-valid_ACC)
 
         log(
             f"NoneCP_test  {val_stracc}|{best_val_strpre} | {best_val_strre} | {best_val_strf1} |"
