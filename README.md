@@ -267,7 +267,7 @@ CP_test  Accuracy = 0.942|precision = 0.893 | recall = 1.000 | f1 = 0.943 |TPR =
 ```
 
 ### Tuning
-We use [nni(Neural Network Intelligence)](https://github.com/Microsoft/nni) for tuning in this project.
+We use [NNI(Neural Network Intelligence)](https://github.com/Microsoft/nni) for tuning in this project.
 ``` console
 $ pip install nni
 ```
@@ -277,14 +277,13 @@ Add a search_space.json file under the work directory and write the parameters t
 search_space.json
 ```
 {
- "gnn_hidden_dim":{ "_type": "choice", "_value": [4,8,16]},
- "gnn_num_layers": { "_type": "choice", "_value": [2,4,8] },
- "graph_aggregation_num_heads":{ "_type": "choice", "_value": [4,8,16,32]
+ "gnn_hidden_dim":{ "_type": "choice", "_value": [4,8,16,...]},
+ "gnn_num_layers": { "_type": "choice", "_value": [2,4,8,...] },
+ "graph_aggregation_num_heads":{ "_type": "choice", "_value": [4,8,16,32,...]
 },
- "graph_aggregation_hidden_layers":{ "_type": "choice", "_value": [32,64,128,256] },
- "graph_aggregation_dropout_rate":{ "_type": "choice", "_value": [
-0.1,0.2,0.5] },
- "learning_rate": { "_type": "choice", "_value": [0.01,0.001,0.0001] }
+ "graph_aggregation_hidden_layers":{ "_type": "choice", "_value": [32,64,128,256,...] },
+ "graph_aggregation_dropout_rate":{ "_type": "choice", "_value": [0.1,0.2,0.5,...] },
+ "learning_rate": { "_type": "choice", "_value": [0.01,0.001,0.0001,...] }
 }
 ```
 Define the configuration file in YAML format, which declares the search space and the path of the trial file. It also provides other information, such as the parameters of the whole algorithm, the maximum number of trials and the maximum duration.
