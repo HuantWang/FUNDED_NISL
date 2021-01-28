@@ -365,13 +365,13 @@ Huanting Wang - wanghuanting@stumail.nwu.edu.cn
 
 ~~~
 @ARTICLE{Wang2020FUNDED,
-  author={H. {Wang} and G. {Ye} and Z. {Tang} and S. H. {Tan} and S. {Huang} and D. {Fang} and Y. {Feng} and L. {Bian} and Z. {Wang}},
-  journal={IEEE Transactions on Information Forensics and Security}, 
-  title={Combining Graph-Based Learning With Automated Data Collection for Code Vulnerability Detection}, 
-  year={2021},
-  volume={16},
-  pages={1943-1958},
-  doi={10.1109/TIFS.2020.3044773}
+  author = {H. {Wang} and G. {Ye} and Z. {Tang} and S. H. {Tan} and S. {Huang} and D. {Fang} and Y. {Feng} and L. {Bian} and Z. {Wang}},
+  journal = {IEEE Transactions on Information Forensics and Security}, 
+  title = {Combining Graph-Based Learning With Automated Data Collection for Code Vulnerability Detection}, 
+  year = {2021},
+  volume = {16},
+  pages = {1943-1958},
+  doi = {10.1109/TIFS.2020.3044773}
   ieeeid = {9293321},
   publisher = {IEEE},
   keywords = {Software Vulnerability, Code Vulnerability Detection, Deep Learning, Deep Graph Neural Networks},}
