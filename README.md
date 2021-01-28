@@ -2,11 +2,11 @@
 
 Using graph neural networks and open-source repositories to detect code vulnerabilities. This is an official implementation of the model described in:
 
-[Huanting Wang](https://scholar.google.com.hk/citations?user=inrTk6cAAAAJ&hl=zh-CN&oi=sra), [Guixin Ye](https://dblp.uni-trier.de/pid/125/3245.html), [Zhanyong Tang](https://scholar.google.com.hk/citations?user=SgNEtJwAAAAJ&hl=zh-CN&oi=sra), [Shin Hwei Tan](https://scholar.google.com.hk/citations?user=1eFjFs8AAAAJ&hl=zh-CN&oi=ao), [Songfang Huang](https://dblp.uni-trier.de/pid/05/4919.html), [Dingyi Fang](https://dblp.uni-trier.de/pid/80/3909.html), [Yansong Feng](https://scholar.google.com.hk/citations?user=67qAw_wAAAAJ&hl=zh-CN), Lizhong Bian and [Zheng Wang](https://scholar.google.com.hk/citations?user=qJ7ZKG8AAAAJ&hl=zh-CN) "Combining Graph-based Learning with Automated Data Collection for Code Vulnerability Detection" [Preprint](https://www.nwu.edu.cn/)
+[Huanting Wang](https://scholar.google.com.hk/citations?user=inrTk6cAAAAJ&hl=zh-CN&oi=sra), [Guixin Ye](https://dblp.uni-trier.de/pid/125/3245.html), [Zhanyong Tang](https://scholar.google.com.hk/citations?user=SgNEtJwAAAAJ&hl=zh-CN&oi=sra), [Shin Hwei Tan](https://scholar.google.com.hk/citations?user=1eFjFs8AAAAJ&hl=zh-CN&oi=ao), [Songfang Huang](https://dblp.uni-trier.de/pid/05/4919.html), [Dingyi Fang](https://dblp.uni-trier.de/pid/80/3909.html), [Yansong Feng](https://scholar.google.com.hk/citations?user=67qAw_wAAAAJ&hl=zh-CN), Lizhong Bian and [Zheng Wang](https://scholar.google.com.hk/citations?user=qJ7ZKG8AAAAJ&hl=zh-CN) "Combining Graph-based Learning with Automated Data Collection for Code Vulnerability Detection" [Paper](https://ieeexplore.ieee.org/document/9293321)
 
 **November 2020** - The paper was accepted to [IEEE TIFS](https://ieeexplore.ieee.org/xpl/RecentIssue.jsp?punumber=10206)!
 
-**Online Tools** and **Dataset** are available at our [website]()(preparing) .
+**Online Tools** and **Dataset** are available at our [website].
 
 FUNDED is a novel learning framework for building vulnerability detection models, which leverages the advances in graph neural networks (GNNs) to develop a novel graph-based learning method to capture and reason about the program’s control, data, and call dependencies.
 
@@ -43,13 +43,13 @@ Install the necessary dependencies before running the project,the part of SoftWa
 For more details, please reference requirements.txt:
 <br/>
 ##### Software:
-* [joern](https://joern.io/)
+* [Joern](https://joern.io/)
 * [Python (==3.7)](https://www.python.org/)
 * [Soot](https://soot-oss.github.io/soot/)
 * [Antlr](https://github.com/antlr/antlr4)
 ##### Python Libraries:
-* [tensorflow (>=2.0.0)](https://tensorflow.google.cn/)
-* [nni](https://github.com/Microsoft/nni)
+* [TensorFlow (>=2.0.0)](https://tensorflow.google.cn/)
+* [NNI](https://github.com/Microsoft/nni)
 ### Setup
 
 ---
@@ -314,7 +314,7 @@ localConfig:
     useActiveGpu: true
 ```
 
-Run nni
+Run NNI
 
 ```
 nnictl create --config config.yml --port 8080
@@ -354,10 +354,6 @@ python EnsembleLearning.py
 ~~~
 
 
-## Authors
-* **Huanting Wang**, **Guixin Ye**, **Zhanyong Tang**, **Songfang Huang**, **Dingyi Fang**, **Yansong Feng**, **Lizhong Bian**, **Zheng Wang**
-* *Initial work* - [Paper](https://www.nwu.edu.cn/), [Datasets](http://www.leogoat.site/)
-
 ## License
 Distributed under the NISL License. See LICENSE for more information.
 
@@ -367,4 +363,11 @@ Huanting Wang - wanghuanting@stumail.nwu.edu.cn
 
 ## Citation
 
-Combining Graph-based Learning with Automated Data Collection for Code Vulnerability Detection" [Preprint](https://www.nwu.edu.cn/)
+@ARTICLE{9293321,
+  author={H. {Wang} and G. {Ye} and Z. {Tang} and S. H. {Tan} and S. {Huang} and D. {Fang} and Y. {Feng} and L. {Bian} and Z. {Wang}},
+  journal={IEEE Transactions on Information Forensics and Security}, 
+  title={Combining Graph-Based Learning With Automated Data Collection for Code Vulnerability Detection}, 
+  year={2021},
+  volume={16},
+  pages={1943-1958},
+  doi={10.1109/TIFS.2020.3044773}}
