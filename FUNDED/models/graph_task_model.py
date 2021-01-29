@@ -15,7 +15,7 @@ class GraphTaskModel(tf.keras.Model):
         params = {f"gnn_{name}": value for name, value in GNN.get_default_hyperparameters(mp_style).items()}
         these_hypers: Dict[str, Any] = {
             "optimizer": "Adam",  # One of "SGD", "RMSProp", "Adam"
-            "learning_rate": 0.001,
+            "learning_rate": 0.01,
             "learning_rate_decay": 0.98,
             "momentum": 0.85,
             "gradient_clip_value": 1.0,

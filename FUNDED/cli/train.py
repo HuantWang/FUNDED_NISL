@@ -7,6 +7,8 @@ import tensorflow as tf
 from dpu_utils.utils import run_and_debug
 from FUNDED.cli_utils import get_train_cli_arg_parser, run_train_from_args
 import nni
+import warnings
+warnings.filterwarnings("ignore")
 
 gpus = tf.config.experimental.list_physical_devices(device_type='GPU')
 for gpu in gpus:
@@ -54,7 +56,7 @@ def nni_config():
 
     with open(json_file, 'w') as f:
         json.dump(params, f)
-        print("参数配置", params)
+        print("Parameter Config:", params)
 
 if __name__ == "__main__":
     run()
