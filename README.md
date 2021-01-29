@@ -187,7 +187,7 @@ $ java TestSwift3.java sourceFilePath savafilePath
 ### Dataset
 
 ---
-The datasets used are [HERE](http://www.leogoat.site/).
+The datasets used are [HERE](http://nisl.cn1.utools.club/tifs/).
 <br/>
 The edges dataset contains 44 different types of C language CWE data. Through script processing,we can get the final inputs.
 For example, under ```data/data/CWE-399``` and ```data/data/CWE-400``` are available the test datasets with the graphs consisting of ast, cfg and pdg.
