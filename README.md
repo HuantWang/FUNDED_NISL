@@ -91,7 +91,7 @@ This part contains GNN Detection model' relevant source code structure and parti
 │   │   ├── __init__.py
 │   ├── cli_utils     
 │   │   ├── default_hypers	
-│   │   │   ├── GraphBinaryClassification_RGIN.json
+│   │   │   ├── GraphBinaryClassification_GGNN.json
 │   │   ├── dataset_utils.py	
 │   │   ├── model_utils.py	
 │   │   ├── param_helpers.py	
