@@ -24,7 +24,7 @@ FUNDED is a novel learning framework for building vulnerability detection models
   * [Setup](#setup)
 * [GNN Detection module](#gnn-detection-module)
   
-  * [Detection Structure](#dection-structure)
+  * [Detection Structure](#detection-structure)
   * [Data Preprocessing](#data-preprocessing)
   * [Dataset](#dataset)
   * [Results](#results)
