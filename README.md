@@ -2,7 +2,7 @@
 
 Using graph neural networks and open-source repositories to detect code vulnerabilities. This is an implementation of the model described in:
 
-[Huanting Wang](https://scholar.google.com.hk/citations?user=inrTk6cAAAAJ&hl=zh-CN&oi=sra), [Guixin Ye](https://dblp.uni-trier.de/pid/125/3245.html), [Zhanyong Tang](https://scholar.google.com.hk/citations?user=SgNEtJwAAAAJ&hl=zh-CN&oi=sra), [Shin Hwei Tan](https://scholar.google.com.hk/citations?user=1eFjFs8AAAAJ&hl=zh-CN&oi=ao), [Songfang Huang](https://dblp.uni-trier.de/pid/05/4919.html), [Dingyi Fang](https://dblp.uni-trier.de/pid/80/3909.html), [Yansong Feng](https://scholar.google.com.hk/citations?user=67qAw_wAAAAJ&hl=zh-CN), Lizhong Bian and [Zheng Wang](https://scholar.google.com.hk/citations?user=qJ7ZKG8AAAAJ&hl=zh-CN), "Combining Graph-based Learning with Automated Data Collection for Code Vulnerability Detection"[[PDF]](http://nisl.cn1.utools.club/tifs/pdf/TIFS2020.pdf) 
+[Huanting Wang](https://scholar.google.com.hk/citations?user=inrTk6cAAAAJ&hl=zh-CN&oi=sra), [Guixin Ye](https://dblp.uni-trier.de/pid/125/3245.html), [Zhanyong Tang](https://scholar.google.com.hk/citations?user=SgNEtJwAAAAJ&hl=zh-CN&oi=sra), [Shin Hwei Tan](https://scholar.google.com.hk/citations?user=1eFjFs8AAAAJ&hl=zh-CN&oi=ao), [Songfang Huang](https://dblp.uni-trier.de/pid/05/4919.html), [Dingyi Fang](https://dblp.uni-trier.de/pid/80/3909.html), [Yansong Feng](https://scholar.google.com.hk/citations?user=67qAw_wAAAAJ&hl=zh-CN), Lizhong Bian and [Zheng Wang](https://scholar.google.com.hk/citations?user=qJ7ZKG8AAAAJ&hl=zh-CN), "Combining Graph-based Learning with Automated Data Collection for Code Vulnerability Detection"[[PDF]](http://nisl.cn1.utools.club/tifs/pdf/TIFS2020.pdf).
 
 FUNDED is a novel learning framework for building vulnerability detection models, which leverages the advances in graph neural networks (GNNs) to develop a novel graph-based learning method to capture and reason about the program’s control, data, and call dependencies.
 
@@ -72,7 +72,7 @@ $ pip install -r requirements.txt
 #### 3) Run the testcase
 ``` console
 $ cd NISL_TIFS2021/FUNDED/cli
-$ CUDA_VISIBLE_DEVICES=2 python train.py GGNN GraphBinaryClassification ../data/data/CWE-400
+$ CUDA_VISIBLE_DEVICES=2 python train.py GGNN GraphBinaryClassification ../data/data/CWE-77
 ```
 <br/><br/>
 ## GNN Detection module
@@ -215,7 +215,7 @@ Saved Model checkpoint at 60 epochs.
 
 Dataset parameters: {
 ```
- "max_nodes_per_batch": 16,
+ "max_nodes_per_batch": 128,
  "num_fwd_edge_types": 7, 
  "add_self_loop_edges": true, 
  "tie_fwd_bkwd_edges": true,
@@ -256,18 +256,18 @@ Model parameters: {
 
 ```
 == Running on test dataset
-Loading data from ../data/data/tem_CWE-400/ast.
-Loading data from ../data/data/tem_CWE-400/cdfg.
+Loading data from ../data/data/tem_CWE-77/ast.
+Loading data from ../data/data/tem_CWE-77/cdfg.
 Restoring best model state from trained_model/GGNN_GraphBinaryClassification__2020-11-30_10-41-23_best.pkl.
-NoneCP_test  Accuracy = 0.915|precision = 0.846 | recall = 1.000 | f1 = 0.917 |TPR = 1.000 | FPR = 0.160 | TNR = 0.840 | FNR = 0.000 |
+NoneCP_test  Accuracy = 0.915|precision = 0.846 | recall = 1.000 | f1 = 0.917
 ```
 
 ```
 == Running on test dataset
-Loading data from ../data/data/tem_CWE-400/new/ast.
-Loading data from ../data/data/tem_CWE-400/new/cdfg.
+Loading data from ../data/data/tem_CWE-77/new/ast.
+Loading data from ../data/data/tem_CWE-77/new/cdfg.
 Restoring best model state from trained_model/GGNN_GraphBinaryClassification__2020-11-30_10-44-23_best.pkl.
-CP_test  Accuracy = 0.942|precision = 0.893 | recall = 1.000 | f1 = 0.943 |TPR = 1.000 | FPR = 0.111 | TNR = 0.889 | FNR = 0.000 |
+CP_test  Accuracy = 0.942|precision = 0.893 | recall = 1.000 | f1 = 0.943
 ```
 
 ### Tuning
@@ -281,6 +281,7 @@ Add a search_space.json file under the work directory and write the parameters t
 search_space.json
 ```
 {
+ "max_nodes_per_batch":{ "_type": "choice", "_value": [32,64,128]},
  "gnn_hidden_dim":{ "_type": "choice", "_value": [4,8,16,...]},
  "gnn_num_layers": { "_type": "choice", "_value": [2,4,8,...] },
  "graph_aggregation_num_heads":{ "_type": "choice", "_value": [4,8,16,32,...]
@@ -295,7 +296,7 @@ Define the configuration file in YAML format, which declares the search space an
 config.yml
 ``` 
 authorName: NNI Example
-experimentName: tf2-nn TF v2.x
+experimentName: CWE-77
 trialConcurrency: 1
 maxExecDuration: 110h # max executable time
 maxTrialNum: 500 # max trial num
@@ -308,7 +309,7 @@ tuner:
         optimize_mode: maximize # choices: maximize, minimize
     gpuIndices: "1" # specify GPUof optimizer
 trial:
-    command: python3 train.py GGNN GraphBinaryClassification ../data/data/CWE-400 --patience 100 # execute commands
+    command: python3 train.py GGNN GraphBinaryClassification ../data/data/CWE-77 --patience 100 # execute commands
     codeDir: .
     gpuNum: 0
 logDir: ~/nni # log directory
