@@ -150,7 +150,9 @@ Finally,connect the two parts.
 ``` console
 $ cd FUNDED_NISL/Edge_processing/slicec_7edges_funcblock/src/main/java/sevenEdges
 ```
-run Main.java,remember to modify the path with your own data including sourcePath(which contains c files) and storePath(the results where you want to store)
+run Main.java.
+</br>
+<br/>
 <br/>
 then run concateJoern.java and concatenate all intermediate results to get the final datas.you ennd to provide path1(results processed by above code) and path2(results processed by joern) before running 
 concateJoern.java
