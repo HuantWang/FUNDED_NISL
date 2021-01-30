@@ -27,8 +27,8 @@ public class Main {
 
     public static void main(String[] args) {
 
-        String sourceFilePath = "docs/test/";
-        String storeFilePath = "docs/out/";
+        String sourceFilePath = "demo\\1slice";
+        String storeFilePath = "demo\\2sevenEdges";
 
         int batchsize = 10;
         int batchnum_lastrun = 0;
@@ -51,7 +51,7 @@ public class Main {
                 if (!(batchnum_now == ((line_count - 1) / batchsize + 1))) {
                     batchnum_now = (line_count / batchsize + 1);
                     double c = ((batchnum_now - 1) * batchsize / (count * 1.0)) * 100;
-                    System.out.printf("%s%.2f%s%s%d\n", "已完成:", c, "%", "   Batch ", batchnum_now);
+                    System.out.printf("%s%.2f%s%s%d\n", "finished:", c, "%", "   Batch ", batchnum_now);
                 }
                 if (batchnum_now <= batchnum_lastrun) {
                     continue;
@@ -76,7 +76,7 @@ public class Main {
                                 for (IASTDeclaration decl : declarations) {
                                     if (decl instanceof CPPASTFunctionDefinition) {
                                         String funcName = String.valueOf(((CPPASTFunctionDefinition) decl).getDeclarator().getName());
-                                        String savepath = storeFilePath + File.separator + f.getName() + "$" + funcName + ".txt";
+                                        String savepath = storeFilePath + File.separator + f.getName() + "-" + funcName + ".txt";
 
                                         if (!(bad.matcher(funcName).matches()) && (!good.matcher(funcName).matches())) {
                                             continue;
@@ -91,7 +91,6 @@ public class Main {
 
 
                                         int label = 1;
-
 
                                         //append:true
                                         FileWriter fw = new FileWriter(new File(savepath));
@@ -175,19 +174,12 @@ public class Main {
                                         bw.write("-----attribute-----\n");
                                         bw.write(attribute.toString());
 
-
-                                        bw.write("\n-----ast_node-----\n" +
-                                                "-----joern-----\n" +
-                                                "-----------------------------------\n" +
-                                                "(0,0)\n" +
-                                                "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^");
-
-//                                            //"-----ast_node-----"
-//                                            bw.write("\n-----ast_node-----\n");
-//                                            ArrayList<String> ast_node = visitor1.getAst_node();
-//                                            for (String e : ast_node) {
-//                                                bw.write(e + "\n");
-//                                            }
+                                            //"-----ast_node-----"
+                                        bw.write("\n-----ast_node-----\n");
+                                        ArrayList<String> ast_node = visitor1.getAst_node();
+                                        for (String e : ast_node) {
+                                            bw.write(e + "\n");
+                                        }
                                         bw.flush();
                                     }
                                 }

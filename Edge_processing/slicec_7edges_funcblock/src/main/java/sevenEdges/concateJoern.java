@@ -13,7 +13,7 @@ public class concateJoern {
 
         if (fsEdge != null && fsJoern != null) {
             for (File fE : fsEdge) {
-                //joern和edge中文件个数不同，是single的删掉。
+                //Delete inconsistent files
                 boolean isSingle = true;
                 String varE = fE.toString().split("\\\\")[fE.toString()
                         .split("\\\\").length - 1]
@@ -53,21 +53,18 @@ public class concateJoern {
                 }
                 if (isSingle) {
                     fE.delete();
-//                    System.out.println(fE.toString().split("\\\\")[fE.toString()
-//                            .split("\\\\").length - 1]);
                 }
             }
         }
     }
 
     public static void main(String[] args) {
-        String[] cwe = {"20"};
-        for (int i = 0; i < cwe.length; i++) {
-            // ast数据路径, joern加到ast后面
-            String pathEge = "D:\\jjj\\ast_out\\CWE-" + cwe[i];
-            // joern数据路径
-            String pathJoern = "D:\\jjj\\s\\CWE-" + cwe[i];
-            concate(pathEge, pathJoern);
-        }
+        //Seven Edges Path
+        String pathEge = "demo\\2SevenEdges";
+        //joern Result Path
+        String pathJoern = "demo\\3joern\\result";
+        //Note:
+        //2SevenEdges put the result of concat =>4concat
+        concate(pathEge, pathJoern);
     }
 }

@@ -15,9 +15,9 @@ class GraphBinaryClassificationTask(GraphTaskModel):
     def get_default_hyperparameters(cls, mp_style: Optional[str] = None) -> Dict[str, Any]:
         super_params = super().get_default_hyperparameters(mp_style)
         these_hypers: Dict[str, Any] = {
-            "graph_aggregation_num_heads": 16,
-            "graph_aggregation_hidden_layers": [128],
-            "graph_aggregation_dropout_rate": 0.2,
+            "graph_aggregation_num_heads": 128,
+            "graph_aggregation_hidden_layers": [4],
+            "graph_aggregation_dropout_rate": 0.1,
         }
         super_params.update(these_hypers)
         return super_params
