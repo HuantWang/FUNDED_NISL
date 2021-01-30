@@ -59,10 +59,15 @@ public class concateJoern {
     }
 
     public static void main(String[] args) {
+        if (args.length != 2) {
+            System.out.println("please input parameters");
+            return;
+        }
+        
         //Seven Edges Path
-        String pathEge = "demo\\2SevenEdges";
+        String pathEge = args[0];
         //joern Result Path
-        String pathJoern = "demo\\3joern\\result";
+        String pathJoern = args[1];
         //Note:
         //2SevenEdges put the result of concat =>4concat
         concate(pathEge, pathJoern);
