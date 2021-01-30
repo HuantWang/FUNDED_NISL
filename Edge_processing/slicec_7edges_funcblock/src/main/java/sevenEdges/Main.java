@@ -26,9 +26,13 @@ public class Main {
 
 
     public static void main(String[] args) {
-
-        String sourceFilePath = "demo\\1slice";
-        String storeFilePath = "demo\\2sevenEdges";
+    
+        if (args.length != 2) {
+            System.out.println("please enter the appropriate parameters");
+            return;
+        }
+        String sourceFilePath = args[0];
+        String storeFilePath = args[1];
 
         int batchsize = 10;
         int batchnum_lastrun = 0;
