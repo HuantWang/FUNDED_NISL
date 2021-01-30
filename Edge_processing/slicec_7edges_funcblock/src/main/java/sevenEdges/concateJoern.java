@@ -60,7 +60,7 @@ public class concateJoern {
 
     public static void main(String[] args) {
         if (args.length != 2) {
-            System.out.println("please input parameters");
+            System.out.println("please enter the appropriate parameters");
             return;
         }
         
