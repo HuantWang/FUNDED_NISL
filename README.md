@@ -143,7 +143,7 @@ For c/c++, we download different CWE types' datasets from [SARD](https://samate.
 The specific steps of data preprocessing are as follows：
 
 > Warning: Modify the path with your own data in code.
-1. Slicing data
+1. **Slicing data**
 
 ``` console
 $ cd FUNDED_NISL/Edge_processing/slicec_7edges_funcblock/src/main/java/slice
@@ -151,7 +151,7 @@ $ cd FUNDED_NISL/Edge_processing/slicec_7edges_funcblock/src/main/java/slice
    - Run ClassifyFileOfProject.java to extract all the C file.
    - Run Main.java to slice data in function level.
     
-2. Extracting different edge relationship
+2. **Extracting different edge relationship**
 
 Then we traverse all the source codes' AST nodes,which have been parsed by [cdt](http://www.eclipse.org/cdt/).While traversing, all nodes are numbered in sequence, and the relationship between different edges is obtained according to specific rules.
 
