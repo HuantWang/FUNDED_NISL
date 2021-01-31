@@ -138,24 +138,30 @@ To construct the AST, we use Soot for Java, ANTLR for Swift, PHP and joern for C
 #### c/c++
 
 ---
-For c/c++,we download different CWE types' datasets from [SARD](https://samate.nist.gov/SARD/search.php), [CVE](https://cve.mitre.org/) and Github.
+For c/c++, we download different CWE types' datasets from [SARD](https://samate.nist.gov/SARD/search.php), [CVE](https://cve.mitre.org/) and Github.
+
+The specific steps of data preprocessing are as follows：
+
+> Warning: Modify the path with your own data in code.
+1. Slicing data
+
+``` console
+$ cd FUNDED_NISL/Edge_processing/slicec_7edges_funcblock/src/main/java/slice
+```
+   - Run ClassifyFileOfProject.java to extract all the C file.
+   - Run Main.java to slice data in function level.
+    
+2. Extracting different edge relationship
 
 Then we traverse all the source codes' AST nodes,which have been parsed by [cdt](http://www.eclipse.org/cdt/).While traversing, all nodes are numbered in sequence, and the relationship between different edges is obtained according to specific rules.
 
-With [joern](https://joern.io/), we can get all the control flows and data flows in the source code.
-
-Finally,connect the two parts.
-
-> Warning: Modify the path with your own data including sourcePath(which contains c files) and storePath(the results where you want to store)
 ``` console
 $ cd FUNDED_NISL/Edge_processing/slicec_7edges_funcblock/src/main/java/sevenEdges
 ```
-Run Main.java.
-<br/>
-<br/>
-Then run concateJoern.java and concatenate all intermediate results to get the final datas.you ennd to provide path1(results processed by above code) and path2(results processed by joern) before running 
-concateJoern.java
-<br/>
+   - Use joern to get all the control flows and data flows in the source code, specific reference: [joern](https://github.com/HuantWang/FUNDED_NISL/tree/main/Edge_processing/joern-cli).
+   - Run Main.java to extrace others.
+   - Run concateJoern.java to concate all edges.
+
 #### java 
 
 ---
