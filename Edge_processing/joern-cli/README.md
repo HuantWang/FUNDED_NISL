@@ -14,7 +14,7 @@ We use joern to parse AST, CFG, PDG for C/C++.
 
     $ cpg.runScript("graph/all.sc")
  
-### 4) Use [joern_relation.py](https://github.com/FrancisWangH/NISL_TIFS2021/blob/main/EdgesGenerationAndDataPreprocess/data_preprocess/joern_relation.py) to extract node information and purify
+### 4) Use [joern_relation.py](https://github.com/HuantWang/FUNDED_NISL/blob/main/Edge_processing/joern-cli/joern_relation.py) to extract node information and purify
 Part of the result is shown below:
 
     ...
@@ -27,4 +27,4 @@ Part of the result is shown below:
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     1                                   <- Sample label
 
-Click [here](https://github.com/FrancisWangH/NISL_TIFS2021/tree/main/EdgesGenerationAndDataPreprocess/joern-cli/result) to view the full result.
+Click [here](https://github.com/HuantWang/FUNDED_NISL/tree/main/Edge_processing/joern-cli/result) to view the full result.
