@@ -73,27 +73,7 @@ def graphRelation(rootpath,pathdir,tag):
                                 break
 
                     # write to file
-                    if os.path.exists(pathdir) == False:
-                        os.makedirs(pathdir)
-                    with open(pathdir +"\\"+ filename + ".txt", 'w', encoding='utf-8') as f1:
-                        for x, y, z in zip(new_node1, new_node2, relation):
-                            # for x, y, z in zip(node1, node2, relation):
-                            f1.write('(' + x + ',' + y + ',' + z + ')')
-                            # f1.write(x + ',' + y + ',' + z)
-                            f1.write("\n")
-                        f1.write("-----------------------------------")
-                        f1.write("\n")
-                        for x, y in zip(new_nodes, means):
-                            # for x, y in zip(nodes, means):
-                            f1.write('(' + str(x) + ',' + y)
-                            # f1.write(str(x) + ',' + y)
-                            f1.write(("\n"))
-                        f1.write('^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^')
-                        f1.write("\n")
-                        if tag == 'good':
-                            f1.write('0')
-                        elif tag == 'bad':
-                            f1.write('1')
+                    
         except:
             print(path)
 
