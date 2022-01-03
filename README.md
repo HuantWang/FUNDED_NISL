@@ -9,7 +9,7 @@ FUNDED is a novel learning framework for building vulnerability detection models
 
 **November 2020** - The paper was accepted to [IEEE TIFS'20](https://ieeexplore.ieee.org/document/9293321) !
 
-**Online Tools** and **More Dataset** are available at our [website](http://www.leogoat.site). (The website is changing domain name and the reopening time is to be determined. If you have any questions, please contact us via email. Sorry for the inconvenience!)
+**Online Tools** and **More Dataset** are available at our [website](http://www.leogoat.site). (The website has been closed. I intend to apply a new website in 3 months later. If you have any questions now, please contact me via email. Sorry for the inconvenience!)
 
 
 
