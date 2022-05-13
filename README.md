@@ -385,7 +385,7 @@ Huanting Wang - wanghuanting@stumail.nwu.edu.cn; schwa@leeds.ac.uk
   year = {2021},
   volume = {16},
   pages = {1943-1958},
-  doi = {10.1109/TIFS.2020.3044773}
+  doi = {10.1109/TIFS.2020.3044773},
   ieeeid = {9293321},
   publisher = {IEEE},
   keywords = {Software Vulnerability, Code Vulnerability Detection, Deep Learning, Deep Graph Neural Networks},}
