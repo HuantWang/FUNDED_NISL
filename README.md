@@ -373,7 +373,7 @@ Distributed under the NISL License. See LICENSE for more information.
 
 ## Contact
 
-Huanting Wang - wanghuanting@stumail.nwu.edu.cn; schwa@leeds.ac.uk
+Huanting Wang - schwa@leeds.ac.uk
 
 ## Citation
 
