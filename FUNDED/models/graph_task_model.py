@@ -307,7 +307,21 @@ class GraphTaskModel(tf.keras.Model):
         # Note: This assumes that the task output is a tensor (true for classification, regression,
         #  etc.) but subclasses implementing more complicated outputs will need to override this.
         return tf.concat(task_outputs, axis=0)
-
+    
+    def prediction(
+        self, dataset: tf.data.Dataset,dataset2: tf.data.Dataset, quiet: bool = False, training: bool = False,
+    ) -> Tuple[float, float, List[Any]]:     
+        task_results = []
+        for ((step, (batch_features, batch_labels)),(step_2, (batch_features_2, batch_labels_2))) in zip(enumerate(dataset),enumerate(dataset2)):
+        # for step, (batch_features, batch_labels) in enumerate(dataset2):
+            with tf.GradientTape() as tape:
+                task_output = self(batch_features,batch_features_2, training=training)
+            #     print(f"this is task_output in graph_task_model.py 321:{task_output}")
+            # print(f"np.argmax(task_output, axis=1).tolist():{np.argmax(task_output, axis=1).tolist()}")
+            task_results=task_results+np.argmax(task_output, axis=1).tolist()
+        print(f"this is task_results in graph_task_model.py 323:{task_results}")
+        return task_results
+    
     def run_one_epoch_new(
         self, dataset: tf.data.Dataset,dataset2: tf.data.Dataset, quiet: bool = False, training: bool = True,
     ) -> Tuple[float, float, List[Any]]:
