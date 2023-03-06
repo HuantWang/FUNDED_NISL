@@ -80,7 +80,7 @@ def load_weights_verbosely(save_file: str, model: GraphTaskModel):
         if var_name not in var_name_to_variable:
             print(f"I: Model does not use saved weights for {var_name}.")
 
-    K.batch_set_value(tfvar_weight_tuples)
+    K.batch_set_value(tfvar_weight_tuples)#将读取的权重写入到层
 
 
 def load_dataset_for_prediction(trained_model_file: str):
@@ -172,6 +172,7 @@ def get_model_and_dataset(
 ):
     # case of a trained model file being passed, where the entire model should be loaded,
     # a new class and dataset type are not required
+    print(f"this is trained_model_file:{trained_model_file},load_weights_only:{load_weights_only} ")
     if trained_model_file and not load_weights_only:
         with open(get_model_file_path(trained_model_file, "pkl"), "rb") as in_file:
             data_to_load = pickle.load(in_file)
@@ -208,6 +209,100 @@ def get_model_and_dataset(
                 "Cannot load only weights when model file from which to load is not specified."
             )
 
+    dataset = get_dataset(
+        task_name,
+        dataset_class,
+        default_task_model_hypers.get("task_params", {}),
+        data_to_load.get("dataset_params", {}),
+        json.loads(cli_data_hyperparameter_overrides or "{}"),
+        data_to_load.get("dataset_metadata", {}),
+    )
+
+    # Actually load data:
+    print(f"Loading data from {data_path}.")
+    dataset.load_data(data_path, folds_to_load)
+
+    model = get_model(
+        msg_passing_implementation,
+        task_name,
+        model_class,
+        dataset,
+        dataset_model_optimised_default_hyperparameters=default_task_model_hypers.get(
+            "model_params", {}
+        ),
+        loaded_model_hyperparameters=data_to_load.get("model_params", {}),
+        cli_model_hyperparameter_overrides=json.loads(
+            cli_model_hyperparameter_overrides or "{}"
+        ),
+        hyperdrive_hyperparameter_overrides=hyperdrive_hyperparameter_overrides or {},
+    )
+
+    data_description = dataset.get_batch_tf_data_description()
+    model.build(data_description.batch_features_shapes)
+
+    # If needed, load weights for model:
+    if trained_model_file:
+        print(f"Restoring model weights from {trained_model_file}.")
+        load_weights_verbosely(trained_model_file, model)
+
+    return dataset, model
+
+def get_model_and_dataset_predic(
+
+    task_name: Optional[str],
+    msg_passing_implementation: Optional[str],
+    data_path: RichPath,
+    trained_model_file: Optional[str],
+    cli_data_hyperparameter_overrides: Optional[str],
+    cli_model_hyperparameter_overrides: Optional[str],
+    task_model_default_hypers_filePath:str,
+    hyperdrive_hyperparameter_overrides: Dict[str, str] = {},
+    folds_to_load: Optional[Set[DataFold]] = None,
+    load_weights_only: bool = False,
+
+):
+    # case of a trained model file being passed, where the entire model should be loaded,
+    # a new class and dataset type are not required
+    print(f"this is trained_model_file:{trained_model_file},load_weights_only:{load_weights_only} ")
+    if trained_model_file and not load_weights_only:
+        with open(get_model_file_path(trained_model_file, "pkl"), "rb") as in_file:
+            data_to_load = pickle.load(in_file)
+        model_class = data_to_load["model_class"]
+        dataset_class = data_to_load["dataset_class"]
+        default_task_model_hypers = {}
+        print(f"model_class,dataset_class:{model_class},{dataset_class}")
+    # case 1: trained_model_file and loading weights only -- create new dataset and class of the type specified by the
+    # task to be trained, but use weights from another corresponding model
+    # case 2: no model to be loaded; make fresh dataset and model classes
+    elif (trained_model_file and load_weights_only) or not trained_model_file:
+        data_to_load = {}
+        model_class, dataset_class = None, None
+
+        # Load potential task-specific defaults:
+        default_task_model_hypers = {}
+        # task_model_default_hypers_file = os.path.join(
+        #     os.path.dirname(__file__),
+        #     "default_hypers",
+        #     "%s_%s.json" % (task_name, msg_passing_implementation),
+        # )
+        task_model_default_hypers_file=task_model_default_hypers_filePath
+        print(
+            f"Trying to load task/model-specific default parameters from {task_model_default_hypers_file} ... ",
+            end="",
+        )
+        if os.path.exists(task_model_default_hypers_file):
+            print("File found.")
+            with open(task_model_default_hypers_file, "rt") as f:
+                default_task_model_hypers = json.load(f)
+        else:
+            print("File not found, using global defaults.")
+
+        if not trained_model_file and load_weights_only:
+            raise ValueError(
+                "Cannot load only weights when model file from which to load is not specified."
+            )
+
+    print(f"default_task_model_hypers:{default_task_model_hypers}")
     dataset = get_dataset(
         task_name,
         dataset_class,

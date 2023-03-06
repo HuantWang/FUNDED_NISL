@@ -5,7 +5,7 @@ sys.path.append(path)
 import json
 import tensorflow as tf
 from dpu_utils.utils import run_and_debug
-from FUNDED.cli_utils import get_train_cli_arg_parser, run_train_from_args
+from FUNDED.cli_utils import get_train_cli_arg_parser, run_train_from_args,loadModuleAndPredict
 import nni
 import warnings
 warnings.filterwarnings("ignore")
@@ -15,13 +15,11 @@ for gpu in gpus:
     tf.config.experimental.set_memory_growth(gpu, True)
 
 def run():
-    # nni_config()
+    nni_config()
     parser = get_train_cli_arg_parser()
     args, potential_hyperdrive_args = parser.parse_known_args()
-
     hyperdrive_hyperparameter_overrides = None
     if args.hyperdrive_arg_parse and len(potential_hyperdrive_args) % 2 == 0:
-
         hyperdrive_hyperparameter_overrides = {
             param.replace("--", ""): value
             for param, value in zip(potential_hyperdrive_args[::2], potential_hyperdrive_args[1::2])
@@ -34,7 +32,7 @@ def run():
     tf.get_logger().setLevel("ERROR")
 
     run_and_debug(
-        lambda: run_train_from_args(args, hyperdrive_hyperparameter_overrides), args.debug
+        lambda:run_train_from_args(args, hyperdrive_hyperparameter_overrides), args.debug
     )
 
 def nni_config():

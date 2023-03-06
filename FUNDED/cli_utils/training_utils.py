@@ -18,7 +18,7 @@ from tensorflow_core.python.keras.layers import Dense
 from ..data import DataFold, GraphDataset
 from ..layers import get_known_message_passing_classes
 from ..models import GraphTaskModel
-from .model_utils import save_model, load_weights_verbosely, get_model_and_dataset
+from .model_utils import save_model, load_weights_verbosely, get_model_and_dataset,get_model_and_dataset_predic
 from .task_utils import get_known_tasks
 import FUNDED.data.data.data_preprocess as DataSplit
 
@@ -35,6 +35,8 @@ def log_line(log_file: str, msg: str):
         log_fh.write(msg + "\n")
     print(msg)
 
+
+ 
 
 def train(
     model: GraphTaskModel,
@@ -54,7 +56,7 @@ def train(
     train_data_2 = dataset2.get_tensorflow_dataset(DataFold.TRAIN).prefetch(3)
     valid_data_2 = dataset2.get_tensorflow_dataset(DataFold.VALIDATION).prefetch(3)
 
-    save_file = os.path.join(save_dir, f"{run_id}_best.pkl")
+    # save_file = os.path.join(save_dir, f"{run_id}_best.pkl")
 
     _, _, initial_valid_results = model.run_one_epoch_new(train_data,train_data_2, training=False, quiet=quiet)
     best_valid_ACC, best_val_stracc,\
@@ -73,6 +75,8 @@ def train(
             f"Initial valid FPR: {best_val_strfpr}."
             f"Initial valid TNR: {best_val_strtnr}."
             f"Initial valid FNR: {best_val_strfnr}.")
+    BestValidf1=best_val_strf1
+    save_file = os.path.join(save_dir, f"{run_id}_{best_val_strf1}_best.pkl")
     save_model(save_file, model, dataset)
     best_valid_epoch = 0
     train_time_start = time.time()
@@ -108,7 +112,7 @@ def train(
         best_valid_metric_TNR, best_val_strtnr, \
         best_valid_metric_FNR, best_val_strfnr, = model.compute_epoch_metrics(valid_results)
 
-        # nni.report_intermediate_result(-valid_ACC)
+        nni.report_intermediate_result(-valid_ACC)
 
         log_fun(
             f" Valid:  {valid_loss:.4f} loss | {val_stracc} | {best_val_strpre} | {best_val_strre} | {best_val_strf1} |"
@@ -122,12 +126,13 @@ def train(
             aml_run.log("valid_speed", float(valid_speed))
 
         # Save if good enough.
-        if valid_ACC < best_valid_ACC:
+        if best_val_strf1 > BestValidf1:
             log_fun(
-                f"  (Best epoch so far, target metric decreased to {valid_ACC:.5f} from {best_valid_ACC:.5f}.)",
+                f"  (Best epoch so far, target metric decreased to {best_val_strf1} from {BestValidf1}.)",
             )
+            save_file = os.path.join(save_dir, f"{run_id}_{best_val_strf1}_best.pkl")
             save_model(save_file, model, dataset)
-            best_valid_ACC = valid_ACC
+            BestValidf1 = best_val_strf1
             best_valid_epoch = epoch
         elif epoch - best_valid_epoch >= patience:
             total_time = time.time() - train_time_start
@@ -147,6 +152,83 @@ def unwrap_tf_tracked_data(data: Any) -> Any:
         return {k: unwrap_tf_tracked_data(v) for k, v in data.items()}
     else:
         return data
+
+def loadModuleAndPredict(args, hyperdrive_hyperparameter_overrides: Dict[str, str] = {}) -> None:
+    print(f"this is loadModuleAndPredict-----")
+    #loadmoduel地址
+    trained_model_path=args.storedModel_path
+    args.load_saved_model=trained_model_path
+    print(f"thia is trained_model_path :{trained_model_path}")
+    os.makedirs(args.save_dir, exist_ok=True)
+    run_id = make_run_id(args.model, args.task)
+    log_file = os.path.join(args.save_dir, f"{run_id}.log")
+    def log(msg):
+        log_line(log_file, msg)
+
+    log(f"Setting random seed {args.random_seed}.")
+    random.seed(args.random_seed)
+    np.random.seed(args.random_seed)
+    tf.random.set_seed(args.random_seed)
+    #data split
+    DataSplit.Preprocess_predict(args.data_path)
+    data_path = RichPath.create(os.path.split(args.data_path)[0]+'/tem_'+os.path.split(args.data_path)[1]+'/ast', args.azure_info)
+    #second path
+    data_path_2 = RichPath.create(os.path.split(args.data_path)[0]+'/tem_'+os.path.split(args.data_path)[1]+'/cdfg', args.azure_info)
+    print(f"this is args.load_saved_model:{args.load_saved_model} ")
+    print(f"this is data_path:{data_path},data_path_2:{data_path_2}")
+    print(f"this is args.model:{args.model}")
+    try:
+        dataset, model = get_model_and_dataset_predic(
+            msg_passing_implementation=args.model,
+            task_name=args.task,
+            data_path=data_path,
+            trained_model_file=args.load_saved_model,
+            cli_data_hyperparameter_overrides=args.data_param_override,
+            cli_model_hyperparameter_overrides=args.model_param_override,
+            task_model_default_hypers_filePath=args.task_model_default_hypers_filePath,
+            hyperdrive_hyperparameter_overrides=hyperdrive_hyperparameter_overrides,
+            folds_to_load={DataFold.TRAIN, DataFold.VALIDATION,DataFold.TEST},
+            load_weights_only=args.load_weights_only,
+        )
+        #second
+        dataset2, model_2 = get_model_and_dataset_predic(
+            msg_passing_implementation=args.model,
+            task_name=args.task,
+            data_path=data_path_2,
+            trained_model_file=args.load_saved_model,
+            cli_data_hyperparameter_overrides=args.data_param_override,
+            cli_model_hyperparameter_overrides=args.model_param_override,
+            task_model_default_hypers_filePath=args.task_model_default_hypers_filePath,
+            hyperdrive_hyperparameter_overrides=hyperdrive_hyperparameter_overrides,
+            folds_to_load={DataFold.TRAIN, DataFold.VALIDATION,DataFold.TEST},
+            load_weights_only=args.load_weights_only,
+        )
+    except ValueError as err:
+        print("error! in traububg_utils.py line199")
+        print(err.args)
+    log(f"Restoring best model state from {trained_model_path}.")
+    load_weights_verbosely(trained_model_path, model)
+    
+    data_path = RichPath.create(
+            os.path.split(args.data_path)[0] + '/tem_' + os.path.split(args.data_path)[1] + '/ast', args.azure_info)
+    data_path_2 = RichPath.create(
+            os.path.split(args.data_path)[0] + '/tem_' + os.path.split(args.data_path)[1] + '/cdfg', args.azure_info)
+    print(f"this is data_path:{data_path},data_path_2:{data_path_2} ")
+    log("== Running on test dataset")
+    log(f"Loading data from {data_path}.")
+    results=[]
+
+#在data_preprocess.py中数据处理将输入的全部数据都放入test.json中,所以只需要对DataFold.TEST 预测
+    dataset.load_data(data_path, {DataFold.TEST})
+    dataset2.load_data(data_path_2, {DataFold.TEST})
+    test_data_1 = dataset.get_tensorflow_dataset(DataFold.TEST)
+    test_data_2 = dataset2.get_tensorflow_dataset(DataFold.TEST)
+    model.prediction(
+        test_data_1, test_data_2
+    )
+
+
+
 
 
 def run_train_from_args(args, hyperdrive_hyperparameter_overrides: Dict[str, str] = {}) -> None:
@@ -206,6 +288,9 @@ def run_train_from_args(args, hyperdrive_hyperparameter_overrides: Dict[str, str
     else:
         aml_run = None
 
+    print(f"this is args.save_dir:{args.save_dir}")
+    print(f"this is dataset:{dataset}")
+    print(f"this is dataset2:{dataset2}")
     trained_model_path = train(
         model,
         dataset,
@@ -223,6 +308,7 @@ def run_train_from_args(args, hyperdrive_hyperparameter_overrides: Dict[str, str
             os.path.split(args.data_path)[0] + '/tem_' + os.path.split(args.data_path)[1] + '/ast', args.azure_info)
         data_path_2 = RichPath.create(
             os.path.split(args.data_path)[0] + '/tem_' + os.path.split(args.data_path)[1] + '/cdfg', args.azure_info)
+        print(f"in run_test this is data_path:{data_path},data_path_2:{data_path_2} ")
         log("== Running on test dataset")
         log(f"Loading data from {data_path}.")
         dataset.load_data(data_path, {DataFold.TEST})
@@ -234,6 +320,7 @@ def run_train_from_args(args, hyperdrive_hyperparameter_overrides: Dict[str, str
         index = model.run_one_epoch_cp(test_data_1,test_data_2, training=False, quiet=args.quiet)
         _, _, test_results = model.run_one_epoch_new(test_data_1, test_data_2, training=False, quiet=args.quiet)
 
+
         valid_ACC, val_stracc, \
         best_valid_Pre, best_val_strpre, \
         best_valid_metric_RE, best_val_strre, \
@@ -243,7 +330,7 @@ def run_train_from_args(args, hyperdrive_hyperparameter_overrides: Dict[str, str
         best_valid_metric_TNR, best_val_strtnr, \
         best_valid_metric_FNR, best_val_strfnr, = model.compute_epoch_metrics(test_results)
 
-        # nni.report_final_result(-valid_ACC)
+        nni.report_final_result(-valid_ACC)
 
         log(
             f"NoneCP_test  {val_stracc}|{best_val_strpre} | {best_val_strre} | {best_val_strf1} |"
@@ -456,7 +543,7 @@ def run_train_from_args(args, hyperdrive_hyperparameter_overrides: Dict[str, str
             test_data_1 = dataset.get_tensorflow_dataset(DataFold.TEST)
             test_data_2 = dataset2.get_tensorflow_dataset(DataFold.TEST)
             _, _, test_results = model.run_one_epoch_new(test_data_1, test_data_2, training=False, quiet=args.quiet)
-
+         
             valid_ACC, val_stracc, \
             best_valid_Pre, best_val_strpre, \
             best_valid_metric_RE, best_val_strre, \
@@ -483,6 +570,20 @@ def get_train_cli_arg_parser():
     else:
         model_param_name, task_param_name, data_path_param_name = "model", "task", "data_path"
 
+    parser.add_argument(
+        "--task_model_default_hypers_filePath",
+        dest="task_model_default_hypers_filePath",
+        type=str,
+        default="../default_hypers/GraphBinaryClassification_GGNN.json",
+        help="load the task_model_default_hypers",
+    )
+    parser.add_argument(
+        "--storedModel_path",
+        dest="storedModel_path",
+        type=str,
+        default="../cli/trained_model/GGNN_GraphBinaryClassification__2023-02-01_05-36-00_f1 = 0.800_best.pkl",
+        help="load the model which is trained before",
+    )
     parser.add_argument(
         model_param_name,
         type=str,

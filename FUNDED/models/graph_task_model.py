@@ -3,6 +3,7 @@ from abc import abstractmethod
 from typing import Tuple, List, Dict, Optional, Any, Iterable, Union
 
 import tensorflow as tf
+import numpy as np
 
 from FUNDED import GNNInput, GNN
 from FUNDED.data import GraphDataset
@@ -308,6 +309,33 @@ class GraphTaskModel(tf.keras.Model):
         #  etc.) but subclasses implementing more complicated outputs will need to override this.
         return tf.concat(task_outputs, axis=0)
 
+    def prediction(
+            self, dataset: tf.data.Dataset, dataset2: tf.data.Dataset, quiet: bool = False, training: bool = False,
+    ) -> Tuple[float, float, List[Any]]:
+
+        task_outputs=[]
+        for ((step, (batch_features, batch_labels)), (step_2, (batch_features_2, batch_labels_2))) in zip(
+                enumerate(dataset), enumerate(dataset2)):
+            task_output = self(batch_features, batch_features_2, training=training)
+            task_outputs.append(np.argmax(task_output, axis=1))
+        print(f"task_outputs:{task_outputs}")
+
+        __, _, test_results = self.run_one_epoch_new(dataset, dataset2, training=False, quiet=False)
+
+        valid_ACC, val_stracc, \
+        best_valid_Pre, best_val_strpre, \
+        best_valid_metric_RE, best_val_strre, \
+        best_valid_metric_f1, best_val_strf1, \
+        best_valid_metric_TPR, best_val_strtpr, \
+        best_valid_metric_FPR, best_val_strfpr, \
+        best_valid_metric_TNR, best_val_strtnr, \
+        best_valid_metric_FNR, best_val_strfnr, = self.compute_epoch_metrics(test_results)
+        print(
+            f"task_metric:|{val_stracc}|{best_val_strpre} | {best_val_strre} | {best_val_strf1} |"
+            # f"{best_val_strtpr} | {best_val_strfpr} | {best_val_strtnr} | {best_val_strfnr} |",
+        )
+
+
     def run_one_epoch_new(
         self, dataset: tf.data.Dataset,dataset2: tf.data.Dataset, quiet: bool = False, training: bool = True,
     ) -> Tuple[float, float, List[Any]]:
@@ -319,6 +347,7 @@ class GraphTaskModel(tf.keras.Model):
         # for step, (batch_features, batch_labels) in enumerate(dataset2):
             with tf.GradientTape() as tape:
                 task_output = self(batch_features,batch_features_2, training=training)
+                # print(f"this is task_output in 322:{task_output}")
                 task_metrics = self.compute_task_metrics(batch_features, task_output, batch_labels)
             total_loss += task_metrics["loss"]
             total_num_graphs += batch_features["num_graphs_in_batch"]
@@ -346,6 +375,8 @@ class GraphTaskModel(tf.keras.Model):
             print("\r\x1b[K", end="")
         total_time = time.time() - epoch_time_start
         return total_loss / float(total_num_graphs), float(total_num_graphs) / total_time, task_results
+
+
 
     def run_one_epoch_new_test(
         self, dataset: tf.data.Dataset,dataset2: tf.data.Dataset, quiet: bool = False, training: bool = True,
