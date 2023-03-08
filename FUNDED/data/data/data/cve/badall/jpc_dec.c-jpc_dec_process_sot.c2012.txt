@@ -1,0 +1,1507 @@
+-----label-----
+1
+-----code-----
+static int jpc_dec_process_sot(jpc_dec_t *dec, jpc_ms_t *ms)
+{
+	jpc_dec_tile_t *tile;
+	jpc_sot_t *sot = &ms->parms.sot;
+	jas_image_cmptparm_t *compinfos;
+	jas_image_cmptparm_t *compinfo;
+	jpc_dec_cmpt_t *cmpt;
+	int cmptno;
+
+	if (dec->state == JPC_MH) {
+
+		if (!(compinfos = jas_alloc2(dec->numcomps,
+		  sizeof(jas_image_cmptparm_t)))) {
+			abort();
+		}
+		for (cmptno = 0, cmpt = dec->cmpts, compinfo = compinfos;
+		  cmptno < dec->numcomps; ++cmptno, ++cmpt, ++compinfo) {
+			compinfo->tlx = 0;
+			compinfo->tly = 0;
+			compinfo->prec = cmpt->prec;
+			compinfo->sgnd = cmpt->sgnd;
+			compinfo->width = cmpt->width;
+			compinfo->height = cmpt->height;
+			compinfo->hstep = cmpt->hstep;
+			compinfo->vstep = cmpt->vstep;
+		}
+
+		if (!(dec->image = jas_image_create(dec->numcomps, compinfos,
+		  JAS_CLRSPC_UNKNOWN))) {
+			jas_free(compinfos);
+			return -1;
+		}
+		jas_free(compinfos);
+
+		/* Is the packet header information stored in PPM marker segments in
+		  the main header? */
+		if (dec->ppmstab) {
+			/* Convert the PPM marker segment data into a collection of streams
+			  (one stream per tile-part). */
+			if (!(dec->pkthdrstreams = jpc_ppmstabtostreams(dec->ppmstab))) {
+				abort();
+			}
+			jpc_ppxstab_destroy(dec->ppmstab);
+			dec->ppmstab = 0;
+		}
+	}
+
+	if (sot->len > 0) {
+		dec->curtileendoff = jas_stream_getrwcount(dec->in) - ms->len -
+		  4 + sot->len;
+	} else {
+		dec->curtileendoff = 0;
+	}
+
+	if (JAS_CAST(int, sot->tileno) >= dec->numtiles) {
+		jas_eprintf("invalid tile number in SOT marker segment\n");
+		return -1;
+	}
+	/* Set the current tile. */
+	dec->curtile = &dec->tiles[sot->tileno];
+	tile = dec->curtile;
+	/* Ensure that this is the expected part number. */
+	if (sot->partno != tile->partno) {
+		return -1;
+	}
+	if (tile->numparts > 0 && sot->partno >= tile->numparts) {
+		return -1;
+	}
+	if (!tile->numparts && sot->numparts > 0) {
+		tile->numparts = sot->numparts;
+	}
+
+	tile->pptstab = 0;
+
+	switch (tile->state) {
+	case JPC_TILE_INIT:
+		/* This is the first tile-part for this tile. */
+		tile->state = JPC_TILE_ACTIVE;
+		assert(!tile->cp);
+		if (!(tile->cp = jpc_dec_cp_copy(dec->cp))) {
+			return -1;
+		}
+		jpc_dec_cp_resetflags(dec->cp);
+		break;
+	default:
+		if (sot->numparts == sot->partno - 1) {
+			tile->state = JPC_TILE_ACTIVELAST;
+		}
+		break;
+	}
+
+	/* Note: We do not increment the expected tile-part number until
+	  all processing for this tile-part is complete. */
+
+	/* We should expect to encounter other tile-part header marker
+	  segments next. */
+	dec->state = JPC_TPH;
+
+	return 0;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+17,19
+17,20
+17,21
+17,22
+17,23
+17,24
+17,25
+17,26
+17,27
+17,28
+17,29
+17,30
+17,31
+17,32
+17,33
+17,34
+17,35
+18,19
+19,20
+19,21
+20,21
+22,23
+22,24
+25,26
+26,27
+26,28
+27,28
+29,30
+29,31
+29,32
+32,33
+33,34
+34,35
+34,36
+35,36
+35,37
+36,37
+40,41
+41,42
+41,43
+42,43
+44,45
+44,46
+47,48
+48,49
+48,50
+49,50
+51,52
+51,53
+54,55
+55,56
+55,57
+56,57
+58,59
+58,60
+61,62
+62,63
+62,64
+64,65
+66,67
+66,68
+67,68
+67,69
+68,69
+68,70
+69,70
+72,73
+74,75
+74,76
+74,77
+74,78
+74,79
+75,76
+75,77
+76,77
+77,78
+78,79
+78,80
+79,80
+81,82
+81,83
+81,84
+82,83
+84,85
+84,86
+85,86
+88,89
+89,90
+89,91
+90,91
+93,94
+94,95
+95,96
+96,97
+98,99
+98,100
+98,101
+98,102
+99,100
+100,101
+100,102
+100,103
+101,102
+101,103
+102,103
+105,106
+105,107
+106,107
+108,109
+108,110
+109,110
+112,113
+112,114
+113,114
+115,116
+117,118
+117,119
+118,119
+120,121
+120,122
+121,122
+124,125
+124,126
+124,127
+125,126
+126,127
+128,129
+129,130
+131,132
+132,133
+134,135
+134,136
+134,137
+134,138
+134,139
+134,140
+134,141
+134,142
+135,136
+136,137
+136,138
+137,138
+137,139
+138,139
+142,143
+143,144
+143,145
+144,145
+144,146
+145,146
+149,150
+150,151
+150,152
+151,152
+151,153
+152,153
+155,156
+155,157
+156,157
+159,160
+160,161
+160,162
+161,162
+161,163
+162,163
+165,166
+165,167
+166,167
+169,170
+170,171
+170,172
+171,172
+171,173
+172,173
+175,176
+175,177
+176,177
+179,180
+180,181
+180,182
+181,182
+181,183
+182,183
+185,186
+185,187
+186,187
+189,190
+190,191
+190,192
+191,192
+191,193
+192,193
+195,196
+195,197
+196,197
+199,200
+200,201
+200,202
+201,202
+201,203
+202,203
+205,206
+205,207
+206,207
+209,210
+209,211
+210,211
+211,212
+212,213
+212,214
+213,214
+213,215
+214,215
+217,218
+217,219
+217,220
+217,221
+218,219
+220,221
+220,222
+221,222
+224,225
+226,227
+228,229
+228,230
+229,230
+230,231
+230,232
+231,232
+233,234
+235,236
+236,237
+238,239
+239,240
+239,241
+240,241
+242,243
+244,245
+244,246
+245,246
+245,247
+246,247
+249,250
+249,251
+249,252
+250,251
+250,252
+251,252
+252,253
+253,254
+253,255
+254,255
+254,256
+255,256
+258,259
+258,260
+259,260
+261,262
+261,263
+262,263
+265,266
+266,267
+267,268
+268,269
+270,271
+271,272
+271,273
+272,273
+274,275
+274,276
+275,276
+278,279
+279,280
+279,281
+280,281
+280,282
+281,282
+285,286
+285,287
+285,288
+286,287
+286,288
+287,288
+287,289
+288,289
+292,293
+293,294
+294,295
+294,296
+295,296
+295,297
+296,297
+299,300
+299,301
+300,301
+300,302
+301,302
+301,303
+302,303
+302,304
+303,304
+305,306
+305,307
+306,307
+309,310
+309,311
+310,311
+314,315
+314,316
+315,316
+318,319
+319,320
+320,321
+320,322
+321,322
+321,323
+322,323
+326,327
+326,328
+327,328
+328,329
+328,330
+329,330
+330,331
+330,332
+331,332
+334,335
+335,336
+337,338
+338,339
+338,340
+339,340
+339,341
+340,341
+343,344
+344,345
+344,346
+345,346
+345,347
+346,347
+349,350
+349,351
+350,351
+353,354
+354,355
+354,356
+355,356
+357,358
+357,359
+358,359
+361,362
+361,363
+362,363
+362,364
+363,364
+363,365
+364,365
+367,368
+367,369
+368,369
+371,372
+372,373
+373,374
+375,376
+375,377
+376,377
+376,378
+377,378
+377,379
+378,379
+378,380
+379,380
+383,384
+383,385
+384,385
+384,386
+385,386
+388,389
+388,390
+389,390
+392,393
+393,394
+394,395
+396,397
+396,398
+397,398
+397,399
+398,399
+399,400
+399,401
+400,401
+403,404
+403,405
+404,405
+404,406
+405,406
+409,410
+410,411
+411,412
+411,413
+412,413
+412,414
+413,414
+416,417
+416,418
+417,418
+420,421
+421,422
+421,423
+422,423
+422,424
+423,424
+427,428
+427,429
+428,429
+428,430
+429,430
+432,433
+432,434
+432,435
+432,436
+432,437
+432,438
+432,439
+432,440
+432,441
+433,434
+434,435
+436,437
+437,438
+437,439
+438,439
+438,440
+439,440
+442,443
+444,445
+445,446
+445,447
+446,447
+448,449
+449,450
+449,451
+450,451
+453,454
+453,455
+454,455
+455,456
+456,457
+456,458
+457,458
+457,459
+458,459
+461,462
+461,463
+462,463
+464,465
+464,466
+465,466
+468,469
+469,470
+470,471
+472,473
+473,474
+473,475
+474,475
+476,477
+476,478
+477,478
+482,483
+482,484
+483,484
+483,485
+484,485
+484,486
+485,486
+488,489
+488,490
+489,490
+489,491
+490,491
+494,495
+495,496
+496,497
+496,498
+497,498
+497,499
+498,499
+501,502
+504,505
+505,506
+505,507
+506,507
+506,508
+507,508
+510,511
+512,513
+-----nextToken-----
+2,4,7,9,10,13,15,16,21,23,24,28,30,31,37,38,39,43,45,46,50,52,53,57,59,60,63,65,70,71,73,80,83,86,87,91,92,97,103,104,107,110,111,114,116,119,122,123,127,130,133,139,140,141,146,147,148,153,154,157,158,163,164,167,168,173,174,177,178,183,184,187,188,193,194,197,198,203,204,207,208,215,216,219,222,223,225,227,232,234,237,241,243,247,248,256,257,260,263,264,269,273,276,277,282,283,284,289,290,291,297,298,304,307,308,311,312,313,316,317,323,324,325,332,333,336,341,342,347,348,351,352,356,359,360,365,366,369,370,374,380,381,382,386,387,390,391,395,401,402,406,407,408,414,415,418,419,424,425,426,430,431,435,440,441,443,447,451,452,459,460,463,466,467,471,475,478,479,480,481,486,487,491,492,493,499,500,502,503,508,509,511,513
+-----computeFrom-----
+67,68
+67,69
+78,79
+78,80
+101,102
+101,103
+105,106
+105,107
+112,113
+112,114
+117,118
+117,119
+136,137
+136,138
+143,144
+143,145
+150,151
+150,152
+160,161
+160,162
+170,171
+170,172
+180,181
+180,182
+190,191
+190,192
+200,201
+200,202
+212,213
+212,214
+253,254
+253,255
+279,280
+279,281
+286,287
+286,288
+294,295
+294,296
+299,300
+299,301
+300,301
+300,302
+301,302
+301,303
+320,321
+320,322
+338,339
+338,340
+354,355
+354,356
+362,363
+362,364
+376,377
+376,378
+377,378
+377,379
+383,384
+383,385
+397,398
+397,399
+403,404
+403,405
+411,412
+411,413
+421,422
+421,423
+437,438
+437,439
+456,457
+456,458
+483,484
+483,485
+488,489
+488,490
+496,497
+496,498
+505,506
+505,507
+-----guardedBy-----
+70,282
+290,317
+289,316
+401,414
+407,419
+406,418
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;UnaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;TypeIdExpression;TypeId;NamedTypeSpecifier;Name;Declarator;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ForStatement;ExpressionStatement;ExpressionList;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionList;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;UnaryExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;FieldReference;IdExpression;Name;Name;CompoundStatement;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;BinaryExpression;BinaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;IfStatement;ProblemExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ReturnStatement;UnaryExpression;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;UnaryExpression;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ReturnStatement;UnaryExpression;LiteralExpression;IfStatement;BinaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ReturnStatement;UnaryExpression;LiteralExpression;IfStatement;BinaryExpression;UnaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;SwitchStatement;FieldReference;IdExpression;Name;Name;CompoundStatement;CaseStatement;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ReturnStatement;UnaryExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BreakStatement;DefaultStatement;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;BreakStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ReturnStatement;LiteralExpression;
+-----ast_node-----
+static int jpc_dec_process_sot(jpc_dec_t *dec, jpc_ms_t *ms){	jpc_dec_tile_t *tile;	jpc_sot_t *sot = &ms->parms.sot;	jas_image_cmptparm_t *compinfos;	jas_image_cmptparm_t *compinfo;	jpc_dec_cmpt_t *cmpt;	int cmptno;	if (dec->state == JPC_MH) {		if (!(compinfos = jas_alloc2(dec->numcomps,		  sizeof(jas_image_cmptparm_t)))) {			abort();		}		for (cmptno = 0, cmpt = dec->cmpts, compinfo = compinfos;		  cmptno < dec->numcomps; ++cmptno, ++cmpt, ++compinfo) {			compinfo->tlx = 0;			compinfo->tly = 0;			compinfo->prec = cmpt->prec;			compinfo->sgnd = cmpt->sgnd;			compinfo->width = cmpt->width;			compinfo->height = cmpt->height;			compinfo->hstep = cmpt->hstep;			compinfo->vstep = cmpt->vstep;		}		if (!(dec->image = jas_image_create(dec->numcomps, compinfos,		  JAS_CLRSPC_UNKNOWN))) {			jas_free(compinfos);			return -1;		}		jas_free(compinfos);		/* Is the packet header information stored in PPM marker segments in		  the main header? */		if (dec->ppmstab) {			/* Convert the PPM marker segment data into a collection of streams			  (one stream per tile-part). */			if (!(dec->pkthdrstreams = jpc_ppmstabtostreams(dec->ppmstab))) {				abort();			}			jpc_ppxstab_destroy(dec->ppmstab);			dec->ppmstab = 0;		}	}	if (sot->len > 0) {		dec->curtileendoff = jas_stream_getrwcount(dec->in) - ms->len -		  4 + sot->len;	} else {		dec->curtileendoff = 0;	}	if (JAS_CAST(int, sot->tileno) >= dec->numtiles) {		jas_eprintf("invalid tile number in SOT marker segment\n");		return -1;	}	/* Set the current tile. */	dec->curtile = &dec->tiles[sot->tileno];	tile = dec->curtile;	/* Ensure that this is the expected part number. */	if (sot->partno != tile->partno) {		return -1;	}	if (tile->numparts > 0 && sot->partno >= tile->numparts) {		return -1;	}	if (!tile->numparts && sot->numparts > 0) {		tile->numparts = sot->numparts;	}	tile->pptstab = 0;	switch (tile->state) {	case JPC_TILE_INIT:		/* This is the first tile-part for this tile. */		tile->state = JPC_TILE_ACTIVE;		assert(!tile->cp);		if (!(tile->cp = jpc_dec_cp_copy(dec->cp))) {			return -1;		}		jpc_dec_cp_resetflags(dec->cp);		break;	default:		if (sot->numparts == sot->partno - 1) {			tile->state = JPC_TILE_ACTIVELAST;		}		break;	}	/* Note: We do not increment the expected tile-part number until	  all processing for this tile-part is complete. */	/* We should expect to encounter other tile-part header marker	  segments next. */	dec->state = JPC_TPH;	return 0;}
+static int
+jpc_dec_process_sot(jpc_dec_t *dec, jpc_ms_t *ms)
+jpc_dec_process_sot
+jpc_dec_t *dec
+jpc_dec_t
+jpc_dec_t
+*dec
+*
+dec
+jpc_ms_t *ms
+jpc_ms_t
+jpc_ms_t
+*ms
+*
+ms
+{	jpc_dec_tile_t *tile;	jpc_sot_t *sot = &ms->parms.sot;	jas_image_cmptparm_t *compinfos;	jas_image_cmptparm_t *compinfo;	jpc_dec_cmpt_t *cmpt;	int cmptno;	if (dec->state == JPC_MH) {		if (!(compinfos = jas_alloc2(dec->numcomps,		  sizeof(jas_image_cmptparm_t)))) {			abort();		}		for (cmptno = 0, cmpt = dec->cmpts, compinfo = compinfos;		  cmptno < dec->numcomps; ++cmptno, ++cmpt, ++compinfo) {			compinfo->tlx = 0;			compinfo->tly = 0;			compinfo->prec = cmpt->prec;			compinfo->sgnd = cmpt->sgnd;			compinfo->width = cmpt->width;			compinfo->height = cmpt->height;			compinfo->hstep = cmpt->hstep;			compinfo->vstep = cmpt->vstep;		}		if (!(dec->image = jas_image_create(dec->numcomps, compinfos,		  JAS_CLRSPC_UNKNOWN))) {			jas_free(compinfos);			return -1;		}		jas_free(compinfos);		/* Is the packet header information stored in PPM marker segments in		  the main header? */		if (dec->ppmstab) {			/* Convert the PPM marker segment data into a collection of streams			  (one stream per tile-part). */			if (!(dec->pkthdrstreams = jpc_ppmstabtostreams(dec->ppmstab))) {				abort();			}			jpc_ppxstab_destroy(dec->ppmstab);			dec->ppmstab = 0;		}	}	if (sot->len > 0) {		dec->curtileendoff = jas_stream_getrwcount(dec->in) - ms->len -		  4 + sot->len;	} else {		dec->curtileendoff = 0;	}	if (JAS_CAST(int, sot->tileno) >= dec->numtiles) {		jas_eprintf("invalid tile number in SOT marker segment\n");		return -1;	}	/* Set the current tile. */	dec->curtile = &dec->tiles[sot->tileno];	tile = dec->curtile;	/* Ensure that this is the expected part number. */	if (sot->partno != tile->partno) {		return -1;	}	if (tile->numparts > 0 && sot->partno >= tile->numparts) {		return -1;	}	if (!tile->numparts && sot->numparts > 0) {		tile->numparts = sot->numparts;	}	tile->pptstab = 0;	switch (tile->state) {	case JPC_TILE_INIT:		/* This is the first tile-part for this tile. */		tile->state = JPC_TILE_ACTIVE;		assert(!tile->cp);		if (!(tile->cp = jpc_dec_cp_copy(dec->cp))) {			return -1;		}		jpc_dec_cp_resetflags(dec->cp);		break;	default:		if (sot->numparts == sot->partno - 1) {			tile->state = JPC_TILE_ACTIVELAST;		}		break;	}	/* Note: We do not increment the expected tile-part number until	  all processing for this tile-part is complete. */	/* We should expect to encounter other tile-part header marker	  segments next. */	dec->state = JPC_TPH;	return 0;}
+jpc_dec_tile_t *tile;
+jpc_dec_tile_t *tile;
+jpc_dec_tile_t
+jpc_dec_tile_t
+*tile
+*
+tile
+jpc_sot_t *sot = &ms->parms.sot;
+jpc_sot_t *sot = &ms->parms.sot;
+jpc_sot_t
+jpc_sot_t
+*sot = &ms->parms.sot
+*
+sot
+= &ms->parms.sot
+&ms->parms.sot
+ms->parms.sot
+ms->parms
+ms
+ms
+parms
+sot
+jas_image_cmptparm_t *compinfos;
+jas_image_cmptparm_t *compinfos;
+jas_image_cmptparm_t
+jas_image_cmptparm_t
+*compinfos
+*
+compinfos
+jas_image_cmptparm_t *compinfo;
+jas_image_cmptparm_t *compinfo;
+jas_image_cmptparm_t
+jas_image_cmptparm_t
+*compinfo
+*
+compinfo
+jpc_dec_cmpt_t *cmpt;
+jpc_dec_cmpt_t *cmpt;
+jpc_dec_cmpt_t
+jpc_dec_cmpt_t
+*cmpt
+*
+cmpt
+int cmptno;
+int cmptno;
+int
+cmptno
+cmptno
+if (dec->state == JPC_MH) {		if (!(compinfos = jas_alloc2(dec->numcomps,		  sizeof(jas_image_cmptparm_t)))) {			abort();		}		for (cmptno = 0, cmpt = dec->cmpts, compinfo = compinfos;		  cmptno < dec->numcomps; ++cmptno, ++cmpt, ++compinfo) {			compinfo->tlx = 0;			compinfo->tly = 0;			compinfo->prec = cmpt->prec;			compinfo->sgnd = cmpt->sgnd;			compinfo->width = cmpt->width;			compinfo->height = cmpt->height;			compinfo->hstep = cmpt->hstep;			compinfo->vstep = cmpt->vstep;		}		if (!(dec->image = jas_image_create(dec->numcomps, compinfos,		  JAS_CLRSPC_UNKNOWN))) {			jas_free(compinfos);			return -1;		}		jas_free(compinfos);		/* Is the packet header information stored in PPM marker segments in		  the main header? */		if (dec->ppmstab) {			/* Convert the PPM marker segment data into a collection of streams			  (one stream per tile-part). */			if (!(dec->pkthdrstreams = jpc_ppmstabtostreams(dec->ppmstab))) {				abort();			}			jpc_ppxstab_destroy(dec->ppmstab);			dec->ppmstab = 0;		}	}
+dec->state == JPC_MH
+dec->state
+dec
+dec
+state
+JPC_MH
+JPC_MH
+{		if (!(compinfos = jas_alloc2(dec->numcomps,		  sizeof(jas_image_cmptparm_t)))) {			abort();		}		for (cmptno = 0, cmpt = dec->cmpts, compinfo = compinfos;		  cmptno < dec->numcomps; ++cmptno, ++cmpt, ++compinfo) {			compinfo->tlx = 0;			compinfo->tly = 0;			compinfo->prec = cmpt->prec;			compinfo->sgnd = cmpt->sgnd;			compinfo->width = cmpt->width;			compinfo->height = cmpt->height;			compinfo->hstep = cmpt->hstep;			compinfo->vstep = cmpt->vstep;		}		if (!(dec->image = jas_image_create(dec->numcomps, compinfos,		  JAS_CLRSPC_UNKNOWN))) {			jas_free(compinfos);			return -1;		}		jas_free(compinfos);		/* Is the packet header information stored in PPM marker segments in		  the main header? */		if (dec->ppmstab) {			/* Convert the PPM marker segment data into a collection of streams			  (one stream per tile-part). */			if (!(dec->pkthdrstreams = jpc_ppmstabtostreams(dec->ppmstab))) {				abort();			}			jpc_ppxstab_destroy(dec->ppmstab);			dec->ppmstab = 0;		}	}
+if (!(compinfos = jas_alloc2(dec->numcomps,		  sizeof(jas_image_cmptparm_t)))) {			abort();		}
+!(compinfos = jas_alloc2(dec->numcomps,		  sizeof(jas_image_cmptparm_t)))
+(compinfos = jas_alloc2(dec->numcomps,		  sizeof(jas_image_cmptparm_t)))
+compinfos = jas_alloc2(dec->numcomps,		  sizeof(jas_image_cmptparm_t))
+compinfos
+compinfos
+jas_alloc2(dec->numcomps,		  sizeof(jas_image_cmptparm_t))
+jas_alloc2
+jas_alloc2
+dec->numcomps
+dec
+dec
+numcomps
+sizeof(jas_image_cmptparm_t)
+jas_image_cmptparm_t
+jas_image_cmptparm_t
+jas_image_cmptparm_t
+
+{			abort();		}
+abort();
+abort()
+abort
+abort
+for (cmptno = 0, cmpt = dec->cmpts, compinfo = compinfos;		  cmptno < dec->numcomps; ++cmptno, ++cmpt, ++compinfo) {			compinfo->tlx = 0;			compinfo->tly = 0;			compinfo->prec = cmpt->prec;			compinfo->sgnd = cmpt->sgnd;			compinfo->width = cmpt->width;			compinfo->height = cmpt->height;			compinfo->hstep = cmpt->hstep;			compinfo->vstep = cmpt->vstep;		}
+cmptno = 0, cmpt = dec->cmpts, compinfo = compinfos;
+cmptno = 0, cmpt = dec->cmpts, compinfo = compinfos
+cmptno = 0
+cmptno
+cmptno
+0
+cmpt = dec->cmpts
+cmpt
+cmpt
+dec->cmpts
+dec
+dec
+cmpts
+compinfo = compinfos
+compinfo
+compinfo
+compinfos
+compinfos
+cmptno < dec->numcomps
+cmptno
+cmptno
+dec->numcomps
+dec
+dec
+numcomps
+++cmptno, ++cmpt, ++compinfo
+++cmptno
+cmptno
+cmptno
+++cmpt
+cmpt
+cmpt
+++compinfo
+compinfo
+compinfo
+{			compinfo->tlx = 0;			compinfo->tly = 0;			compinfo->prec = cmpt->prec;			compinfo->sgnd = cmpt->sgnd;			compinfo->width = cmpt->width;			compinfo->height = cmpt->height;			compinfo->hstep = cmpt->hstep;			compinfo->vstep = cmpt->vstep;		}
+compinfo->tlx = 0;
+compinfo->tlx = 0
+compinfo->tlx
+compinfo
+compinfo
+tlx
+0
+compinfo->tly = 0;
+compinfo->tly = 0
+compinfo->tly
+compinfo
+compinfo
+tly
+0
+compinfo->prec = cmpt->prec;
+compinfo->prec = cmpt->prec
+compinfo->prec
+compinfo
+compinfo
+prec
+cmpt->prec
+cmpt
+cmpt
+prec
+compinfo->sgnd = cmpt->sgnd;
+compinfo->sgnd = cmpt->sgnd
+compinfo->sgnd
+compinfo
+compinfo
+sgnd
+cmpt->sgnd
+cmpt
+cmpt
+sgnd
+compinfo->width = cmpt->width;
+compinfo->width = cmpt->width
+compinfo->width
+compinfo
+compinfo
+width
+cmpt->width
+cmpt
+cmpt
+width
+compinfo->height = cmpt->height;
+compinfo->height = cmpt->height
+compinfo->height
+compinfo
+compinfo
+height
+cmpt->height
+cmpt
+cmpt
+height
+compinfo->hstep = cmpt->hstep;
+compinfo->hstep = cmpt->hstep
+compinfo->hstep
+compinfo
+compinfo
+hstep
+cmpt->hstep
+cmpt
+cmpt
+hstep
+compinfo->vstep = cmpt->vstep;
+compinfo->vstep = cmpt->vstep
+compinfo->vstep
+compinfo
+compinfo
+vstep
+cmpt->vstep
+cmpt
+cmpt
+vstep
+if (!(dec->image = jas_image_create(dec->numcomps, compinfos,		  JAS_CLRSPC_UNKNOWN))) {			jas_free(compinfos);			return -1;		}
+!(dec->image = jas_image_create(dec->numcomps, compinfos,		  JAS_CLRSPC_UNKNOWN))
+(dec->image = jas_image_create(dec->numcomps, compinfos,		  JAS_CLRSPC_UNKNOWN))
+dec->image = jas_image_create(dec->numcomps, compinfos,		  JAS_CLRSPC_UNKNOWN)
+dec->image
+dec
+dec
+image
+jas_image_create(dec->numcomps, compinfos,		  JAS_CLRSPC_UNKNOWN)
+jas_image_create
+jas_image_create
+dec->numcomps
+dec
+dec
+numcomps
+compinfos
+compinfos
+JAS_CLRSPC_UNKNOWN
+JAS_CLRSPC_UNKNOWN
+{			jas_free(compinfos);			return -1;		}
+jas_free(compinfos);
+jas_free(compinfos)
+jas_free
+jas_free
+compinfos
+compinfos
+return -1;
+-1
+1
+jas_free(compinfos);
+jas_free(compinfos)
+jas_free
+jas_free
+compinfos
+compinfos
+if (dec->ppmstab) {			/* Convert the PPM marker segment data into a collection of streams			  (one stream per tile-part). */			if (!(dec->pkthdrstreams = jpc_ppmstabtostreams(dec->ppmstab))) {				abort();			}			jpc_ppxstab_destroy(dec->ppmstab);			dec->ppmstab = 0;		}
+dec->ppmstab
+dec
+dec
+ppmstab
+{			/* Convert the PPM marker segment data into a collection of streams			  (one stream per tile-part). */			if (!(dec->pkthdrstreams = jpc_ppmstabtostreams(dec->ppmstab))) {				abort();			}			jpc_ppxstab_destroy(dec->ppmstab);			dec->ppmstab = 0;		}
+if (!(dec->pkthdrstreams = jpc_ppmstabtostreams(dec->ppmstab))) {				abort();			}
+!(dec->pkthdrstreams = jpc_ppmstabtostreams(dec->ppmstab))
+(dec->pkthdrstreams = jpc_ppmstabtostreams(dec->ppmstab))
+dec->pkthdrstreams = jpc_ppmstabtostreams(dec->ppmstab)
+dec->pkthdrstreams
+dec
+dec
+pkthdrstreams
+jpc_ppmstabtostreams(dec->ppmstab)
+jpc_ppmstabtostreams
+jpc_ppmstabtostreams
+dec->ppmstab
+dec
+dec
+ppmstab
+{				abort();			}
+abort();
+abort()
+abort
+abort
+jpc_ppxstab_destroy(dec->ppmstab);
+jpc_ppxstab_destroy(dec->ppmstab)
+jpc_ppxstab_destroy
+jpc_ppxstab_destroy
+dec->ppmstab
+dec
+dec
+ppmstab
+dec->ppmstab = 0;
+dec->ppmstab = 0
+dec->ppmstab
+dec
+dec
+ppmstab
+0
+if (sot->len > 0) {		dec->curtileendoff = jas_stream_getrwcount(dec->in) - ms->len -		  4 + sot->len;	} else {		dec->curtileendoff = 0;	}
+sot->len > 0
+sot->len
+sot
+sot
+len
+0
+{		dec->curtileendoff = jas_stream_getrwcount(dec->in) - ms->len -		  4 + sot->len;	}
+dec->curtileendoff = jas_stream_getrwcount(dec->in) - ms->len -		  4 + sot->len;
+dec->curtileendoff = jas_stream_getrwcount(dec->in) - ms->len -		  4 + sot->len
+dec->curtileendoff
+dec
+dec
+curtileendoff
+jas_stream_getrwcount(dec->in) - ms->len -		  4 + sot->len
+jas_stream_getrwcount(dec->in) - ms->len -		  4
+jas_stream_getrwcount(dec->in) - ms->len
+jas_stream_getrwcount(dec->in)
+jas_stream_getrwcount
+jas_stream_getrwcount
+dec->in
+dec
+dec
+in
+ms->len
+ms
+ms
+len
+4
+sot->len
+sot
+sot
+len
+{		dec->curtileendoff = 0;	}
+dec->curtileendoff = 0;
+dec->curtileendoff = 0
+dec->curtileendoff
+dec
+dec
+curtileendoff
+0
+if (JAS_CAST(int, sot->tileno) >= dec->numtiles) {		jas_eprintf("invalid tile number in SOT marker segment\n");		return -1;	}
+JAS_CAST(int, sot->tileno) >= dec->numtiles
+{		jas_eprintf("invalid tile number in SOT marker segment\n");		return -1;	}
+jas_eprintf("invalid tile number in SOT marker segment\n");
+jas_eprintf("invalid tile number in SOT marker segment\n")
+jas_eprintf
+jas_eprintf
+"invalid tile number in SOT marker segment\n"
+return -1;
+-1
+1
+dec->curtile = &dec->tiles[sot->tileno];
+dec->curtile = &dec->tiles[sot->tileno]
+dec->curtile
+dec
+dec
+curtile
+&dec->tiles[sot->tileno]
+dec->tiles[sot->tileno]
+dec->tiles
+dec
+dec
+tiles
+sot->tileno
+sot
+sot
+tileno
+tile = dec->curtile;
+tile = dec->curtile
+tile
+tile
+dec->curtile
+dec
+dec
+curtile
+if (sot->partno != tile->partno) {		return -1;	}
+sot->partno != tile->partno
+sot->partno
+sot
+sot
+partno
+tile->partno
+tile
+tile
+partno
+{		return -1;	}
+return -1;
+-1
+1
+if (tile->numparts > 0 && sot->partno >= tile->numparts) {		return -1;	}
+tile->numparts > 0 && sot->partno >= tile->numparts
+tile->numparts > 0
+tile->numparts
+tile
+tile
+numparts
+0
+sot->partno >= tile->numparts
+sot->partno
+sot
+sot
+partno
+tile->numparts
+tile
+tile
+numparts
+{		return -1;	}
+return -1;
+-1
+1
+if (!tile->numparts && sot->numparts > 0) {		tile->numparts = sot->numparts;	}
+!tile->numparts && sot->numparts > 0
+!tile->numparts
+tile->numparts
+tile
+tile
+numparts
+sot->numparts > 0
+sot->numparts
+sot
+sot
+numparts
+0
+{		tile->numparts = sot->numparts;	}
+tile->numparts = sot->numparts;
+tile->numparts = sot->numparts
+tile->numparts
+tile
+tile
+numparts
+sot->numparts
+sot
+sot
+numparts
+tile->pptstab = 0;
+tile->pptstab = 0
+tile->pptstab
+tile
+tile
+pptstab
+0
+switch (tile->state) {	case JPC_TILE_INIT:		/* This is the first tile-part for this tile. */		tile->state = JPC_TILE_ACTIVE;		assert(!tile->cp);		if (!(tile->cp = jpc_dec_cp_copy(dec->cp))) {			return -1;		}		jpc_dec_cp_resetflags(dec->cp);		break;	default:		if (sot->numparts == sot->partno - 1) {			tile->state = JPC_TILE_ACTIVELAST;		}		break;	}
+tile->state
+tile
+tile
+state
+{	case JPC_TILE_INIT:		/* This is the first tile-part for this tile. */		tile->state = JPC_TILE_ACTIVE;		assert(!tile->cp);		if (!(tile->cp = jpc_dec_cp_copy(dec->cp))) {			return -1;		}		jpc_dec_cp_resetflags(dec->cp);		break;	default:		if (sot->numparts == sot->partno - 1) {			tile->state = JPC_TILE_ACTIVELAST;		}		break;	}
+case JPC_TILE_INIT:
+JPC_TILE_INIT
+JPC_TILE_INIT
+tile->state = JPC_TILE_ACTIVE;
+tile->state = JPC_TILE_ACTIVE
+tile->state
+tile
+tile
+state
+JPC_TILE_ACTIVE
+JPC_TILE_ACTIVE
+assert(!tile->cp);
+assert(!tile->cp)
+assert
+assert
+!tile->cp
+tile->cp
+tile
+tile
+cp
+if (!(tile->cp = jpc_dec_cp_copy(dec->cp))) {			return -1;		}
+!(tile->cp = jpc_dec_cp_copy(dec->cp))
+(tile->cp = jpc_dec_cp_copy(dec->cp))
+tile->cp = jpc_dec_cp_copy(dec->cp)
+tile->cp
+tile
+tile
+cp
+jpc_dec_cp_copy(dec->cp)
+jpc_dec_cp_copy
+jpc_dec_cp_copy
+dec->cp
+dec
+dec
+cp
+{			return -1;		}
+return -1;
+-1
+1
+jpc_dec_cp_resetflags(dec->cp);
+jpc_dec_cp_resetflags(dec->cp)
+jpc_dec_cp_resetflags
+jpc_dec_cp_resetflags
+dec->cp
+dec
+dec
+cp
+break;
+default:
+if (sot->numparts == sot->partno - 1) {			tile->state = JPC_TILE_ACTIVELAST;		}
+sot->numparts == sot->partno - 1
+sot->numparts
+sot
+sot
+numparts
+sot->partno - 1
+sot->partno
+sot
+sot
+partno
+1
+{			tile->state = JPC_TILE_ACTIVELAST;		}
+tile->state = JPC_TILE_ACTIVELAST;
+tile->state = JPC_TILE_ACTIVELAST
+tile->state
+tile
+tile
+state
+JPC_TILE_ACTIVELAST
+JPC_TILE_ACTIVELAST
+break;
+dec->state = JPC_TPH;
+dec->state = JPC_TPH
+dec->state
+dec
+dec
+state
+JPC_TPH
+JPC_TPH
+return 0;
+0
+-----joern-----
+(41,17,0)
+(52,8,0)
+(53,48,0)
+(50,43,0)
+(48,53,0)
+(7,43,0)
+(54,58,0)
+(22,41,0)
+(47,57,0)
+(38,0,0)
+(43,15,0)
+(58,46,0)
+(26,42,0)
+(23,31,0)
+(21,3,0)
+(11,42,0)
+(31,39,0)
+(59,47,0)
+(28,42,0)
+(41,22,0)
+(57,47,0)
+(58,56,0)
+(56,58,0)
+(25,61,0)
+(5,42,0)
+(57,37,0)
+(3,40,0)
+(20,21,0)
+(9,28,0)
+(22,37,0)
+(37,22,0)
+(17,53,0)
+(18,46,0)
+(34,8,0)
+(49,26,0)
+(0,8,0)
+(45,28,0)
+(44,8,0)
+(12,51,0)
+(51,42,0)
+(41,61,0)
+(16,48,0)
+(33,26,0)
+(28,47,0)
+(6,8,0)
+(27,17,0)
+(17,40,0)
+(43,60,0)
+(36,57,0)
+(56,8,0)
+(26,56,0)
+(29,42,0)
+(3,15,0)
+(30,8,0)
+(19,29,0)
+(53,8,0)
+(0,31,0)
+(3,21,0)
+(32,53,0)
+(43,42,0)
+(51,57,0)
+(17,41,0)
+(15,55,0)
+(31,0,0)
+(61,1,0)
+(22,1,0)
+(57,51,0)
+(47,28,0)
+(2,22,0)
+(46,1,0)
+(37,57,0)
+(13,46,0)
+(40,3,0)
+(21,0,0)
+(40,17,0)
+(46,58,0)
+(61,41,0)
+(15,3,0)
+(4,37,0)
+(14,61,0)
+(10,51,0)
+(48,39,0)
+(35,56,0)
+(42,5,1)
+(31,23,1)
+(48,16,1)
+(61,1,1)
+(58,46,1)
+(41,61,1)
+(29,19,1)
+(11,56,1)
+(41,22,1)
+(49,33,1)
+(26,42,1)
+(5,11,1)
+(46,13,1)
+(7,50,1)
+(46,1,1)
+(20,43,1)
+(43,7,1)
+(31,39,1)
+(14,27,1)
+(2,61,1)
+(25,14,1)
+(28,45,1)
+(47,59,1)
+(54,46,1)
+(26,49,1)
+(4,2,1)
+(53,48,1)
+(58,54,1)
+(21,20,1)
+(17,53,1)
+(57,51,1)
+(57,36,1)
+(28,42,1)
+(37,57,1)
+(0,31,1)
+(13,18,1)
+(24,26,1)
+(3,21,1)
+(18,35,1)
+(57,47,1)
+(16,32,1)
+(59,28,1)
+(51,42,1)
+(33,42,1)
+(61,25,1)
+(21,0,1)
+(9,51,1)
+(50,26,1)
+(26,56,1)
+(38,53,1)
+(22,37,1)
+(36,51,1)
+(17,41,1)
+(48,39,1)
+(45,9,1)
+(47,28,1)
+(27,21,1)
+(56,58,1)
+(40,17,1)
+(35,0,1)
+(10,12,1)
+(3,40,1)
+(23,38,1)
+(15,3,1)
+(43,60,1)
+(29,42,1)
+(51,10,1)
+(43,42,1)
+(19,15,1)
+(33,29,1)
+(22,1,1)
+(12,4,1)
+(4,26,2)
+(57,26,2)
+(51,26,2)
+(12,26,2)
+(33,26,2)
+(15,3,2)
+(36,51,2)
+(22,1,2)
+(15,26,2)
+(40,26,2)
+(9,51,2)
+(43,26,2)
+(17,53,2)
+(37,57,2)
+(41,22,2)
+(17,41,2)
+(22,37,2)
+(61,1,2)
+(59,51,2)
+(26,56,2)
+(48,39,2)
+(14,26,2)
+(41,26,2)
+(47,51,2)
+(22,26,2)
+(25,26,2)
+(50,26,2)
+(41,61,2)
+(27,26,2)
+(57,47,2)
+(46,1,2)
+(43,42,2)
+(3,26,2)
+(21,26,2)
+(29,42,2)
+(28,42,2)
+(0,31,2)
+(10,26,2)
+(40,17,2)
+(58,46,2)
+(17,26,2)
+(3,40,2)
+(7,26,2)
+(47,28,2)
+(45,51,2)
+(37,26,2)
+(56,58,2)
+(20,26,2)
+(53,48,2)
+(49,26,2)
+(57,51,2)
+(31,39,2)
+(26,26,2)
+(29,26,2)
+(21,0,2)
+(43,60,2)
+(26,42,2)
+(28,51,2)
+(3,21,2)
+(51,42,2)
+(61,26,2)
+(2,26,2)
+(19,26,2)
+-----------------------------------
+(0,mant = JPC_QCX_GETMANT(refstepsize)
+(1,int numrlvls)
+(2,numrlvls)
+(3,JPC_QCX_MANT(mant)
+(4,1)
+(5,0)
+(6,numbands)
+(7,bandno)
+(8,)
+(9,bandno)
+(10,0)
+(11,bandno)
+(12,bandno)
+(13,numrlvls)
+(14,numrlvls)
+(15,stepsizes[bandno] = JPC_QCX_MANT(mant)
+(16,refstepsize)
+(17,expn +\\n\\t\\t  (numrlvls - 1)
+(18,3)
+(19,bandno)
+(20,mant)
+(21,JPC_QCX_MANT(mant)
+(22,numrlvls - 1 - ((bandno > 0)
+(23,refstepsize)
+(24,RET)
+(25,1)
+(26,bandno < numbands)
+(27,expn)
+(28,bandno + 2)
+(29,++bandno)
+(30,mant)
+(31,JPC_QCX_GETMANT(refstepsize)
+(32,expn)
+(33,bandno)
+(34,expn)
+(35,numbands)
+(36,0)
+(37,1 - ((bandno > 0)
+(38,mant)
+(39,uint_fast16_t refstepsize)
+(40,JPC_QCX_EXPN(expn +\\n\\t\\t  (numrlvls - 1)
+(41,(numrlvls - 1)
+(42,bandno = 0)
+(43,stepsizes[bandno])
+(44,bandno)
+(45,2)
+(46,3 * numrlvls)
+(47,(bandno + 2)
+(48,JPC_QCX_GETEXPN(refstepsize)
+(49,numbands)
+(50,stepsizes)
+(51,bandno > 0)
+(52,for (bandno = 0; bandno < numbands; ++bandno)
+(53,expn = JPC_QCX_GETEXPN(refstepsize)
+(54,2)
+(55,)
+(56,numbands = 3 * numrlvls - 2)
+(57,(bandno > 0)
+(58,3 * numrlvls - 2)
+(59,3)
+(60,uint_fast16_t *stepsizes)
+(61,numrlvls - 1)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

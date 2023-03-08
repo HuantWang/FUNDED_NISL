@@ -1,0 +1,2874 @@
+-----label-----
+1
+-----code-----
+static int ras_putdatastd(jas_stream_t *out, ras_hdr_t *hdr, jas_image_t *image,  int numcmpts, int *cmpts)
+{
+	int rowsize;
+	int pad;
+	unsigned int z;
+	int nz;
+	int c;
+	int x;
+	int y;
+	int v;
+	jas_matrix_t *data[3];
+	int i;
+
+	assert(numcmpts <= 3);
+
+	for (i = 0; i < 3; ++i) {
+		data[i] = 0;
+	}
+
+	for (i = 0; i < numcmpts; ++i) {
+		if (!(data[i] = jas_matrix_create(jas_image_height(image),
+		  jas_image_width(image)))) {
+			goto error;
+		}
+	}
+
+	rowsize = RAS_ROWSIZE(hdr);
+	pad = rowsize - (hdr->width * hdr->depth + 7) / 8;
+
+	hdr->length = hdr->height * rowsize;
+
+	for (y = 0; y < hdr->height; y++) {
+		for (i = 0; i < numcmpts; ++i) {
+			if (jas_image_readcmpt(image, cmpts[i], 0, y,
+					jas_image_width(image), 1, data[i])) {
+				goto error;
+			}
+		}
+		z = 0;
+		nz = 0;
+		for (x = 0; x < hdr->width; x++) {
+			z <<= hdr->depth;
+			if (RAS_ISRGB(hdr)) {
+				v = RAS_RED((jas_matrix_getv(data[0], x))) |
+				  RAS_GREEN((jas_matrix_getv(data[1], x))) |
+				  RAS_BLUE((jas_matrix_getv(data[2], x)));
+			} else {
+				v = (jas_matrix_getv(data[0], x));
+			}
+			z |= v & RAS_ONES(hdr->depth);
+			nz += hdr->depth;
+			while (nz >= 8) {
+				c = (z >> (nz - 8)) & 0xff;
+				if (jas_stream_putc(out, c) == EOF) {
+					goto error;
+				}
+				nz -= 8;
+				z &= RAS_ONES(nz);
+			}
+		}
+		if (nz > 0) {
+			c = (z >> (8 - nz)) & RAS_ONES(nz);
+			if (jas_stream_putc(out, c) == EOF) {
+				goto error;
+			}
+		}
+		if (pad % 2) {
+			if (jas_stream_putc(out, 0) == EOF) {
+				goto error;
+			}
+		}
+	}
+
+	for (i = 0; i < numcmpts; ++i) {
+		jas_matrix_destroy(data[i]);
+		data[i] = 0;
+	}
+
+	return 0;
+
+error:
+	for (i = 0; i < numcmpts; ++i) {
+		if (data[i]) {
+			jas_matrix_destroy(data[i]);
+		}
+	}
+	return -1;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+3,8
+3,9
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+17,19
+18,19
+20,21
+20,22
+23,24
+23,25
+25,26
+27,28
+27,29
+29,30
+29,31
+32,33
+32,34
+32,35
+32,36
+32,37
+32,38
+32,39
+32,40
+32,41
+32,42
+32,43
+32,44
+32,45
+32,46
+32,47
+32,48
+32,49
+32,50
+32,51
+32,52
+32,53
+33,34
+34,35
+34,36
+36,37
+38,39
+39,40
+39,41
+41,42
+43,44
+44,45
+44,46
+46,47
+48,49
+49,50
+49,51
+51,52
+53,54
+54,55
+54,56
+56,57
+58,59
+59,60
+59,61
+61,62
+63,64
+64,65
+64,66
+66,67
+68,69
+69,70
+69,71
+71,72
+73,74
+74,75
+74,76
+75,76
+77,78
+77,79
+77,80
+80,81
+82,83
+83,84
+83,85
+85,86
+87,88
+88,89
+88,90
+89,90
+91,92
+91,93
+92,93
+95,96
+95,97
+95,98
+95,99
+96,97
+97,98
+97,99
+98,99
+101,102
+101,103
+102,103
+105,106
+106,107
+108,109
+109,110
+110,111
+110,112
+111,112
+111,113
+112,113
+114,115
+117,118
+117,119
+117,120
+117,121
+118,119
+119,120
+119,121
+120,121
+123,124
+123,125
+124,125
+126,127
+128,129
+129,130
+131,132
+132,133
+132,134
+133,134
+134,135
+135,136
+135,137
+136,137
+136,138
+137,138
+139,140
+141,142
+141,143
+141,144
+142,143
+144,145
+144,146
+145,146
+147,148
+149,150
+149,151
+150,151
+152,153
+154,155
+155,156
+157,158
+158,159
+158,160
+159,160
+161,162
+161,163
+162,163
+164,165
+166,167
+167,168
+167,169
+168,169
+170,171
+170,172
+171,172
+173,174
+173,175
+174,175
+175,176
+175,177
+176,177
+176,178
+177,178
+177,179
+178,179
+181,182
+181,183
+182,183
+187,188
+188,189
+188,190
+189,190
+189,191
+190,191
+193,194
+193,195
+194,195
+194,196
+195,196
+198,199
+200,201
+200,202
+200,203
+200,204
+201,202
+202,203
+202,204
+203,204
+206,207
+206,208
+207,208
+209,210
+209,211
+210,211
+213,214
+214,215
+216,217
+216,218
+216,219
+216,220
+216,221
+216,222
+217,218
+217,219
+217,220
+217,221
+218,219
+219,220
+219,221
+220,221
+223,224
+223,225
+224,225
+226,227
+228,229
+229,230
+231,232
+232,233
+232,234
+233,234
+233,235
+233,236
+233,237
+233,238
+233,239
+233,240
+233,241
+234,235
+236,237
+238,239
+238,240
+239,240
+241,242
+244,245
+246,247
+246,248
+247,248
+249,250
+252,253
+252,254
+253,254
+255,256
+257,258
+258,259
+260,261
+261,262
+261,263
+262,263
+265,266
+266,267
+266,268
+267,268
+270,271
+270,272
+270,273
+270,274
+271,272
+272,273
+272,274
+273,274
+276,277
+276,278
+277,278
+279,280
+279,281
+280,281
+283,284
+284,285
+286,287
+286,288
+286,289
+286,290
+286,291
+287,288
+288,289
+288,290
+289,290
+291,292
+291,293
+292,293
+295,296
+295,297
+295,298
+296,297
+296,298
+297,298
+299,300
+301,302
+302,303
+303,304
+303,305
+304,305
+306,307
+306,308
+307,308
+307,309
+308,309
+308,310
+309,310
+311,312
+312,313
+312,314
+312,315
+313,314
+315,316
+315,317
+316,317
+319,320
+321,322
+321,323
+322,323
+324,325
+325,326
+325,327
+325,328
+326,327
+328,329
+328,330
+329,330
+332,333
+334,335
+334,336
+335,336
+337,338
+338,339
+338,340
+338,341
+339,340
+341,342
+341,343
+342,343
+345,346
+347,348
+348,349
+349,350
+349,351
+350,351
+352,353
+353,354
+353,355
+353,356
+354,355
+356,357
+356,358
+357,358
+360,361
+362,363
+363,364
+363,365
+364,365
+366,367
+366,368
+367,368
+369,370
+369,371
+370,371
+372,373
+372,374
+373,374
+376,377
+377,378
+377,379
+378,379
+380,381
+380,382
+381,382
+384,385
+384,386
+385,386
+385,387
+386,387
+389,390
+389,391
+389,392
+389,393
+390,391
+391,392
+391,393
+392,393
+394,395
+394,396
+395,396
+396,397
+396,398
+397,398
+399,400
+400,401
+400,402
+401,402
+405,406
+405,407
+406,407
+406,408
+407,408
+407,409
+407,410
+408,409
+410,411
+412,413
+414,415
+416,417
+417,418
+419,420
+420,421
+420,422
+421,422
+424,425
+425,426
+425,427
+426,427
+428,429
+428,430
+429,430
+431,432
+433,434
+433,435
+434,435
+434,436
+435,436
+438,439
+438,440
+439,440
+440,441
+440,442
+441,442
+443,444
+443,445
+444,445
+445,446
+445,447
+446,447
+448,449
+449,450
+449,451
+451,452
+453,454
+453,455
+454,455
+456,457
+458,459
+458,460
+459,460
+459,461
+460,461
+460,462
+460,463
+461,462
+463,464
+465,466
+467,468
+469,470
+470,471
+472,473
+472,474
+473,474
+473,475
+474,475
+477,478
+478,479
+478,480
+479,480
+479,481
+480,481
+480,482
+480,483
+481,482
+483,484
+486,487
+488,489
+489,490
+491,492
+491,493
+491,494
+491,495
+492,493
+493,494
+493,495
+494,495
+497,498
+497,499
+498,499
+500,501
+502,503
+503,504
+505,506
+505,507
+506,507
+507,508
+507,509
+508,509
+510,511
+510,512
+511,512
+513,514
+515,516
+516,517
+516,518
+517,518
+517,519
+518,519
+520,521
+523,524
+525,526
+525,527
+527,528
+527,529
+527,530
+527,531
+528,529
+529,530
+529,531
+530,531
+533,534
+533,535
+534,535
+536,537
+538,539
+539,540
+541,542
+542,543
+542,544
+543,544
+543,545
+544,545
+546,547
+548,549
+549,550
+550,551
+550,552
+551,552
+553,554
+553,555
+554,555
+556,557
+558,559
+559,560
+-----nextToken-----
+2,4,7,9,10,13,15,16,19,21,22,24,26,28,30,31,35,37,40,42,45,47,50,52,55,57,60,62,65,67,70,72,76,78,79,81,84,86,90,93,94,99,100,103,104,107,113,115,116,121,122,125,127,130,138,140,143,146,148,151,153,156,160,163,165,169,172,179,180,183,184,185,186,191,192,196,197,199,204,205,208,211,212,215,221,222,225,227,230,235,237,240,242,243,245,248,250,251,254,256,259,263,264,268,269,274,275,278,281,282,285,290,293,294,298,300,305,310,314,317,318,320,323,327,330,331,333,336,340,343,344,346,351,355,358,359,361,365,368,371,374,375,379,382,383,387,388,393,398,402,403,404,409,411,413,415,418,422,423,427,430,432,436,437,442,447,450,452,455,457,462,464,466,468,471,475,476,482,484,485,487,490,495,496,499,501,504,509,512,514,519,521,522,524,526,531,532,535,537,540,545,547,552,555,557,560
+-----computeFrom-----
+91,92
+91,93
+97,98
+97,99
+101,102
+101,103
+110,111
+110,112
+119,120
+119,121
+123,124
+123,125
+135,136
+135,137
+158,159
+158,160
+167,168
+167,169
+170,171
+170,172
+173,174
+173,175
+175,176
+175,177
+176,177
+176,178
+188,189
+188,190
+193,194
+193,195
+202,203
+202,204
+206,207
+206,208
+219,220
+219,221
+223,224
+223,225
+261,262
+261,263
+266,267
+266,268
+272,273
+272,274
+276,277
+276,278
+288,289
+288,290
+303,304
+303,305
+306,307
+306,308
+307,308
+307,309
+349,350
+349,351
+363,364
+363,365
+366,367
+366,368
+377,378
+377,379
+385,386
+385,387
+391,392
+391,393
+394,395
+394,396
+396,397
+396,398
+400,401
+400,402
+406,407
+406,408
+420,421
+420,422
+425,426
+425,427
+434,435
+434,436
+440,441
+440,442
+443,444
+443,445
+445,446
+445,447
+449,450
+449,451
+459,460
+459,461
+473,474
+473,475
+479,480
+479,481
+493,494
+493,495
+497,498
+497,499
+516,517
+516,518
+529,530
+529,531
+533,534
+533,535
+-----guardedBy-----
+436,457
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;ArrayDeclarator;Pointer;Name;ArrayModifier;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;LiteralExpression;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;GotoStatement;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;BinaryExpression;UnaryExpression;BinaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;GotoStatement;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;BinaryExpression;FunctionCallExpression;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;WhileStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;LiteralExpression;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;GotoStatement;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;LiteralExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;GotoStatement;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;CompoundStatement;GotoStatement;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ReturnStatement;LiteralExpression;LabelStatement;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;IfStatement;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;UnaryExpression;LiteralExpression;
+-----ast_node-----
+static int ras_putdatastd(jas_stream_t *out, ras_hdr_t *hdr, jas_image_t *image,  int numcmpts, int *cmpts){	int rowsize;	int pad;	unsigned int z;	int nz;	int c;	int x;	int y;	int v;	jas_matrix_t *data[3];	int i;	assert(numcmpts <= 3);	for (i = 0; i < 3; ++i) {		data[i] = 0;	}	for (i = 0; i < numcmpts; ++i) {		if (!(data[i] = jas_matrix_create(jas_image_height(image),		  jas_image_width(image)))) {			goto error;		}	}	rowsize = RAS_ROWSIZE(hdr);	pad = rowsize - (hdr->width * hdr->depth + 7) / 8;	hdr->length = hdr->height * rowsize;	for (y = 0; y < hdr->height; y++) {		for (i = 0; i < numcmpts; ++i) {			if (jas_image_readcmpt(image, cmpts[i], 0, y,					jas_image_width(image), 1, data[i])) {				goto error;			}		}		z = 0;		nz = 0;		for (x = 0; x < hdr->width; x++) {			z <<= hdr->depth;			if (RAS_ISRGB(hdr)) {				v = RAS_RED((jas_matrix_getv(data[0], x))) |				  RAS_GREEN((jas_matrix_getv(data[1], x))) |				  RAS_BLUE((jas_matrix_getv(data[2], x)));			} else {				v = (jas_matrix_getv(data[0], x));			}			z |= v & RAS_ONES(hdr->depth);			nz += hdr->depth;			while (nz >= 8) {				c = (z >> (nz - 8)) & 0xff;				if (jas_stream_putc(out, c) == EOF) {					goto error;				}				nz -= 8;				z &= RAS_ONES(nz);			}		}		if (nz > 0) {			c = (z >> (8 - nz)) & RAS_ONES(nz);			if (jas_stream_putc(out, c) == EOF) {				goto error;			}		}		if (pad % 2) {			if (jas_stream_putc(out, 0) == EOF) {				goto error;			}		}	}	for (i = 0; i < numcmpts; ++i) {		jas_matrix_destroy(data[i]);		data[i] = 0;	}	return 0;error:	for (i = 0; i < numcmpts; ++i) {		if (data[i]) {			jas_matrix_destroy(data[i]);		}	}	return -1;}
+static int
+ras_putdatastd(jas_stream_t *out, ras_hdr_t *hdr, jas_image_t *image,  int numcmpts, int *cmpts)
+ras_putdatastd
+jas_stream_t *out
+jas_stream_t
+jas_stream_t
+*out
+*
+out
+ras_hdr_t *hdr
+ras_hdr_t
+ras_hdr_t
+*hdr
+*
+hdr
+jas_image_t *image
+jas_image_t
+jas_image_t
+*image
+*
+image
+int numcmpts
+int
+numcmpts
+numcmpts
+int *cmpts
+int
+*cmpts
+*
+cmpts
+{	int rowsize;	int pad;	unsigned int z;	int nz;	int c;	int x;	int y;	int v;	jas_matrix_t *data[3];	int i;	assert(numcmpts <= 3);	for (i = 0; i < 3; ++i) {		data[i] = 0;	}	for (i = 0; i < numcmpts; ++i) {		if (!(data[i] = jas_matrix_create(jas_image_height(image),		  jas_image_width(image)))) {			goto error;		}	}	rowsize = RAS_ROWSIZE(hdr);	pad = rowsize - (hdr->width * hdr->depth + 7) / 8;	hdr->length = hdr->height * rowsize;	for (y = 0; y < hdr->height; y++) {		for (i = 0; i < numcmpts; ++i) {			if (jas_image_readcmpt(image, cmpts[i], 0, y,					jas_image_width(image), 1, data[i])) {				goto error;			}		}		z = 0;		nz = 0;		for (x = 0; x < hdr->width; x++) {			z <<= hdr->depth;			if (RAS_ISRGB(hdr)) {				v = RAS_RED((jas_matrix_getv(data[0], x))) |				  RAS_GREEN((jas_matrix_getv(data[1], x))) |				  RAS_BLUE((jas_matrix_getv(data[2], x)));			} else {				v = (jas_matrix_getv(data[0], x));			}			z |= v & RAS_ONES(hdr->depth);			nz += hdr->depth;			while (nz >= 8) {				c = (z >> (nz - 8)) & 0xff;				if (jas_stream_putc(out, c) == EOF) {					goto error;				}				nz -= 8;				z &= RAS_ONES(nz);			}		}		if (nz > 0) {			c = (z >> (8 - nz)) & RAS_ONES(nz);			if (jas_stream_putc(out, c) == EOF) {				goto error;			}		}		if (pad % 2) {			if (jas_stream_putc(out, 0) == EOF) {				goto error;			}		}	}	for (i = 0; i < numcmpts; ++i) {		jas_matrix_destroy(data[i]);		data[i] = 0;	}	return 0;error:	for (i = 0; i < numcmpts; ++i) {		if (data[i]) {			jas_matrix_destroy(data[i]);		}	}	return -1;}
+int rowsize;
+int rowsize;
+int
+rowsize
+rowsize
+int pad;
+int pad;
+int
+pad
+pad
+unsigned int z;
+unsigned int z;
+unsigned int
+z
+z
+int nz;
+int nz;
+int
+nz
+nz
+int c;
+int c;
+int
+c
+c
+int x;
+int x;
+int
+x
+x
+int y;
+int y;
+int
+y
+y
+int v;
+int v;
+int
+v
+v
+jas_matrix_t *data[3];
+jas_matrix_t *data[3];
+jas_matrix_t
+jas_matrix_t
+*data[3]
+*
+data
+[3]
+3
+int i;
+int i;
+int
+i
+i
+assert(numcmpts <= 3);
+assert(numcmpts <= 3)
+assert
+assert
+numcmpts <= 3
+numcmpts
+numcmpts
+3
+for (i = 0; i < 3; ++i) {		data[i] = 0;	}
+i = 0;
+i = 0
+i
+i
+0
+i < 3
+i
+i
+3
+++i
+i
+i
+{		data[i] = 0;	}
+data[i] = 0;
+data[i] = 0
+data[i]
+data
+data
+i
+i
+0
+for (i = 0; i < numcmpts; ++i) {		if (!(data[i] = jas_matrix_create(jas_image_height(image),		  jas_image_width(image)))) {			goto error;		}	}
+i = 0;
+i = 0
+i
+i
+0
+i < numcmpts
+i
+i
+numcmpts
+numcmpts
+++i
+i
+i
+{		if (!(data[i] = jas_matrix_create(jas_image_height(image),		  jas_image_width(image)))) {			goto error;		}	}
+if (!(data[i] = jas_matrix_create(jas_image_height(image),		  jas_image_width(image)))) {			goto error;		}
+!(data[i] = jas_matrix_create(jas_image_height(image),		  jas_image_width(image)))
+(data[i] = jas_matrix_create(jas_image_height(image),		  jas_image_width(image)))
+data[i] = jas_matrix_create(jas_image_height(image),		  jas_image_width(image))
+data[i]
+data
+data
+i
+i
+jas_matrix_create(jas_image_height(image),		  jas_image_width(image))
+jas_matrix_create
+jas_matrix_create
+jas_image_height(image)
+jas_image_height
+jas_image_height
+image
+image
+jas_image_width(image)
+jas_image_width
+jas_image_width
+image
+image
+{			goto error;		}
+goto error;
+error
+rowsize = RAS_ROWSIZE(hdr);
+rowsize = RAS_ROWSIZE(hdr)
+rowsize
+rowsize
+RAS_ROWSIZE(hdr)
+RAS_ROWSIZE
+RAS_ROWSIZE
+hdr
+hdr
+pad = rowsize - (hdr->width * hdr->depth + 7) / 8;
+pad = rowsize - (hdr->width * hdr->depth + 7) / 8
+pad
+pad
+rowsize - (hdr->width * hdr->depth + 7) / 8
+rowsize
+rowsize
+(hdr->width * hdr->depth + 7) / 8
+(hdr->width * hdr->depth + 7)
+hdr->width * hdr->depth + 7
+hdr->width * hdr->depth
+hdr->width
+hdr
+hdr
+width
+hdr->depth
+hdr
+hdr
+depth
+7
+8
+hdr->length = hdr->height * rowsize;
+hdr->length = hdr->height * rowsize
+hdr->length
+hdr
+hdr
+length
+hdr->height * rowsize
+hdr->height
+hdr
+hdr
+height
+rowsize
+rowsize
+for (y = 0; y < hdr->height; y++) {		for (i = 0; i < numcmpts; ++i) {			if (jas_image_readcmpt(image, cmpts[i], 0, y,					jas_image_width(image), 1, data[i])) {				goto error;			}		}		z = 0;		nz = 0;		for (x = 0; x < hdr->width; x++) {			z <<= hdr->depth;			if (RAS_ISRGB(hdr)) {				v = RAS_RED((jas_matrix_getv(data[0], x))) |				  RAS_GREEN((jas_matrix_getv(data[1], x))) |				  RAS_BLUE((jas_matrix_getv(data[2], x)));			} else {				v = (jas_matrix_getv(data[0], x));			}			z |= v & RAS_ONES(hdr->depth);			nz += hdr->depth;			while (nz >= 8) {				c = (z >> (nz - 8)) & 0xff;				if (jas_stream_putc(out, c) == EOF) {					goto error;				}				nz -= 8;				z &= RAS_ONES(nz);			}		}		if (nz > 0) {			c = (z >> (8 - nz)) & RAS_ONES(nz);			if (jas_stream_putc(out, c) == EOF) {				goto error;			}		}		if (pad % 2) {			if (jas_stream_putc(out, 0) == EOF) {				goto error;			}		}	}
+y = 0;
+y = 0
+y
+y
+0
+y < hdr->height
+y
+y
+hdr->height
+hdr
+hdr
+height
+y++
+y
+y
+{		for (i = 0; i < numcmpts; ++i) {			if (jas_image_readcmpt(image, cmpts[i], 0, y,					jas_image_width(image), 1, data[i])) {				goto error;			}		}		z = 0;		nz = 0;		for (x = 0; x < hdr->width; x++) {			z <<= hdr->depth;			if (RAS_ISRGB(hdr)) {				v = RAS_RED((jas_matrix_getv(data[0], x))) |				  RAS_GREEN((jas_matrix_getv(data[1], x))) |				  RAS_BLUE((jas_matrix_getv(data[2], x)));			} else {				v = (jas_matrix_getv(data[0], x));			}			z |= v & RAS_ONES(hdr->depth);			nz += hdr->depth;			while (nz >= 8) {				c = (z >> (nz - 8)) & 0xff;				if (jas_stream_putc(out, c) == EOF) {					goto error;				}				nz -= 8;				z &= RAS_ONES(nz);			}		}		if (nz > 0) {			c = (z >> (8 - nz)) & RAS_ONES(nz);			if (jas_stream_putc(out, c) == EOF) {				goto error;			}		}		if (pad % 2) {			if (jas_stream_putc(out, 0) == EOF) {				goto error;			}		}	}
+for (i = 0; i < numcmpts; ++i) {			if (jas_image_readcmpt(image, cmpts[i], 0, y,					jas_image_width(image), 1, data[i])) {				goto error;			}		}
+i = 0;
+i = 0
+i
+i
+0
+i < numcmpts
+i
+i
+numcmpts
+numcmpts
+++i
+i
+i
+{			if (jas_image_readcmpt(image, cmpts[i], 0, y,					jas_image_width(image), 1, data[i])) {				goto error;			}		}
+if (jas_image_readcmpt(image, cmpts[i], 0, y,					jas_image_width(image), 1, data[i])) {				goto error;			}
+jas_image_readcmpt(image, cmpts[i], 0, y,					jas_image_width(image), 1, data[i])
+jas_image_readcmpt
+jas_image_readcmpt
+image
+image
+cmpts[i]
+cmpts
+cmpts
+i
+i
+0
+y
+y
+jas_image_width(image)
+jas_image_width
+jas_image_width
+image
+image
+1
+data[i]
+data
+data
+i
+i
+{				goto error;			}
+goto error;
+error
+z = 0;
+z = 0
+z
+z
+0
+nz = 0;
+nz = 0
+nz
+nz
+0
+for (x = 0; x < hdr->width; x++) {			z <<= hdr->depth;			if (RAS_ISRGB(hdr)) {				v = RAS_RED((jas_matrix_getv(data[0], x))) |				  RAS_GREEN((jas_matrix_getv(data[1], x))) |				  RAS_BLUE((jas_matrix_getv(data[2], x)));			} else {				v = (jas_matrix_getv(data[0], x));			}			z |= v & RAS_ONES(hdr->depth);			nz += hdr->depth;			while (nz >= 8) {				c = (z >> (nz - 8)) & 0xff;				if (jas_stream_putc(out, c) == EOF) {					goto error;				}				nz -= 8;				z &= RAS_ONES(nz);			}		}
+x = 0;
+x = 0
+x
+x
+0
+x < hdr->width
+x
+x
+hdr->width
+hdr
+hdr
+width
+x++
+x
+x
+{			z <<= hdr->depth;			if (RAS_ISRGB(hdr)) {				v = RAS_RED((jas_matrix_getv(data[0], x))) |				  RAS_GREEN((jas_matrix_getv(data[1], x))) |				  RAS_BLUE((jas_matrix_getv(data[2], x)));			} else {				v = (jas_matrix_getv(data[0], x));			}			z |= v & RAS_ONES(hdr->depth);			nz += hdr->depth;			while (nz >= 8) {				c = (z >> (nz - 8)) & 0xff;				if (jas_stream_putc(out, c) == EOF) {					goto error;				}				nz -= 8;				z &= RAS_ONES(nz);			}		}
+z <<= hdr->depth;
+z <<= hdr->depth
+z
+z
+hdr->depth
+hdr
+hdr
+depth
+if (RAS_ISRGB(hdr)) {				v = RAS_RED((jas_matrix_getv(data[0], x))) |				  RAS_GREEN((jas_matrix_getv(data[1], x))) |				  RAS_BLUE((jas_matrix_getv(data[2], x)));			} else {				v = (jas_matrix_getv(data[0], x));			}
+RAS_ISRGB(hdr)
+RAS_ISRGB
+RAS_ISRGB
+hdr
+hdr
+{				v = RAS_RED((jas_matrix_getv(data[0], x))) |				  RAS_GREEN((jas_matrix_getv(data[1], x))) |				  RAS_BLUE((jas_matrix_getv(data[2], x)));			}
+v = RAS_RED((jas_matrix_getv(data[0], x))) |				  RAS_GREEN((jas_matrix_getv(data[1], x))) |				  RAS_BLUE((jas_matrix_getv(data[2], x)));
+v = RAS_RED((jas_matrix_getv(data[0], x))) |				  RAS_GREEN((jas_matrix_getv(data[1], x))) |				  RAS_BLUE((jas_matrix_getv(data[2], x)))
+v
+v
+RAS_RED((jas_matrix_getv(data[0], x))) |				  RAS_GREEN((jas_matrix_getv(data[1], x))) |				  RAS_BLUE((jas_matrix_getv(data[2], x)))
+RAS_RED((jas_matrix_getv(data[0], x))) |				  RAS_GREEN((jas_matrix_getv(data[1], x)))
+RAS_RED((jas_matrix_getv(data[0], x)))
+RAS_RED
+RAS_RED
+(jas_matrix_getv(data[0], x))
+jas_matrix_getv(data[0], x)
+jas_matrix_getv
+jas_matrix_getv
+data[0]
+data
+data
+0
+x
+x
+RAS_GREEN((jas_matrix_getv(data[1], x)))
+RAS_GREEN
+RAS_GREEN
+(jas_matrix_getv(data[1], x))
+jas_matrix_getv(data[1], x)
+jas_matrix_getv
+jas_matrix_getv
+data[1]
+data
+data
+1
+x
+x
+RAS_BLUE((jas_matrix_getv(data[2], x)))
+RAS_BLUE
+RAS_BLUE
+(jas_matrix_getv(data[2], x))
+jas_matrix_getv(data[2], x)
+jas_matrix_getv
+jas_matrix_getv
+data[2]
+data
+data
+2
+x
+x
+{				v = (jas_matrix_getv(data[0], x));			}
+v = (jas_matrix_getv(data[0], x));
+v = (jas_matrix_getv(data[0], x))
+v
+v
+(jas_matrix_getv(data[0], x))
+jas_matrix_getv(data[0], x)
+jas_matrix_getv
+jas_matrix_getv
+data[0]
+data
+data
+0
+x
+x
+z |= v & RAS_ONES(hdr->depth);
+z |= v & RAS_ONES(hdr->depth)
+z
+z
+v & RAS_ONES(hdr->depth)
+v
+v
+RAS_ONES(hdr->depth)
+RAS_ONES
+RAS_ONES
+hdr->depth
+hdr
+hdr
+depth
+nz += hdr->depth;
+nz += hdr->depth
+nz
+nz
+hdr->depth
+hdr
+hdr
+depth
+while (nz >= 8) {				c = (z >> (nz - 8)) & 0xff;				if (jas_stream_putc(out, c) == EOF) {					goto error;				}				nz -= 8;				z &= RAS_ONES(nz);			}
+nz >= 8
+nz
+nz
+8
+{				c = (z >> (nz - 8)) & 0xff;				if (jas_stream_putc(out, c) == EOF) {					goto error;				}				nz -= 8;				z &= RAS_ONES(nz);			}
+c = (z >> (nz - 8)) & 0xff;
+c = (z >> (nz - 8)) & 0xff
+c
+c
+(z >> (nz - 8)) & 0xff
+(z >> (nz - 8))
+z >> (nz - 8)
+z
+z
+(nz - 8)
+nz - 8
+nz
+nz
+8
+0xff
+if (jas_stream_putc(out, c) == EOF) {					goto error;				}
+jas_stream_putc(out, c) == EOF
+jas_stream_putc(out, c)
+jas_stream_putc
+jas_stream_putc
+out
+out
+c
+c
+EOF
+EOF
+{					goto error;				}
+goto error;
+error
+nz -= 8;
+nz -= 8
+nz
+nz
+8
+z &= RAS_ONES(nz);
+z &= RAS_ONES(nz)
+z
+z
+RAS_ONES(nz)
+RAS_ONES
+RAS_ONES
+nz
+nz
+if (nz > 0) {			c = (z >> (8 - nz)) & RAS_ONES(nz);			if (jas_stream_putc(out, c) == EOF) {				goto error;			}		}
+nz > 0
+nz
+nz
+0
+{			c = (z >> (8 - nz)) & RAS_ONES(nz);			if (jas_stream_putc(out, c) == EOF) {				goto error;			}		}
+c = (z >> (8 - nz)) & RAS_ONES(nz);
+c = (z >> (8 - nz)) & RAS_ONES(nz)
+c
+c
+(z >> (8 - nz)) & RAS_ONES(nz)
+(z >> (8 - nz))
+z >> (8 - nz)
+z
+z
+(8 - nz)
+8 - nz
+8
+nz
+nz
+RAS_ONES(nz)
+RAS_ONES
+RAS_ONES
+nz
+nz
+if (jas_stream_putc(out, c) == EOF) {				goto error;			}
+jas_stream_putc(out, c) == EOF
+jas_stream_putc(out, c)
+jas_stream_putc
+jas_stream_putc
+out
+out
+c
+c
+EOF
+EOF
+{				goto error;			}
+goto error;
+error
+if (pad % 2) {			if (jas_stream_putc(out, 0) == EOF) {				goto error;			}		}
+pad % 2
+pad
+pad
+2
+{			if (jas_stream_putc(out, 0) == EOF) {				goto error;			}		}
+if (jas_stream_putc(out, 0) == EOF) {				goto error;			}
+jas_stream_putc(out, 0) == EOF
+jas_stream_putc(out, 0)
+jas_stream_putc
+jas_stream_putc
+out
+out
+0
+EOF
+EOF
+{				goto error;			}
+goto error;
+error
+for (i = 0; i < numcmpts; ++i) {		jas_matrix_destroy(data[i]);		data[i] = 0;	}
+i = 0;
+i = 0
+i
+i
+0
+i < numcmpts
+i
+i
+numcmpts
+numcmpts
+++i
+i
+i
+{		jas_matrix_destroy(data[i]);		data[i] = 0;	}
+jas_matrix_destroy(data[i]);
+jas_matrix_destroy(data[i])
+jas_matrix_destroy
+jas_matrix_destroy
+data[i]
+data
+data
+i
+i
+data[i] = 0;
+data[i] = 0
+data[i]
+data
+data
+i
+i
+0
+return 0;
+0
+error:	for (i = 0; i < numcmpts; ++i) {		if (data[i]) {			jas_matrix_destroy(data[i]);		}	}
+error
+for (i = 0; i < numcmpts; ++i) {		if (data[i]) {			jas_matrix_destroy(data[i]);		}	}
+i = 0;
+i = 0
+i
+i
+0
+i < numcmpts
+i
+i
+numcmpts
+numcmpts
+++i
+i
+i
+{		if (data[i]) {			jas_matrix_destroy(data[i]);		}	}
+if (data[i]) {			jas_matrix_destroy(data[i]);		}
+data[i]
+data
+data
+i
+i
+{			jas_matrix_destroy(data[i]);		}
+jas_matrix_destroy(data[i]);
+jas_matrix_destroy(data[i])
+jas_matrix_destroy
+jas_matrix_destroy
+data[i]
+data
+data
+i
+i
+return -1;
+-1
+1
+-----joern-----
+(85,144,0)
+(168,215,0)
+(84,261,0)
+(192,16,0)
+(137,6,0)
+(33,177,0)
+(265,71,0)
+(101,85,0)
+(121,104,0)
+(13,193,0)
+(203,300,0)
+(230,302,0)
+(175,258,0)
+(216,216,0)
+(194,114,0)
+(130,220,0)
+(76,69,0)
+(159,194,0)
+(73,287,0)
+(202,175,0)
+(67,216,0)
+(248,287,0)
+(16,192,0)
+(238,96,0)
+(273,99,0)
+(181,239,0)
+(156,235,0)
+(254,103,0)
+(32,238,0)
+(118,100,0)
+(213,235,0)
+(37,151,0)
+(93,215,0)
+(35,171,0)
+(74,268,0)
+(217,74,0)
+(191,218,0)
+(276,261,0)
+(221,201,0)
+(38,230,0)
+(229,148,0)
+(267,53,0)
+(127,284,0)
+(281,117,0)
+(236,261,0)
+(161,288,0)
+(207,63,0)
+(31,85,0)
+(276,157,0)
+(35,53,0)
+(152,10,0)
+(0,147,0)
+(163,212,0)
+(10,37,0)
+(287,234,0)
+(152,201,0)
+(279,235,0)
+(201,127,0)
+(291,175,0)
+(141,218,0)
+(194,170,0)
+(243,81,0)
+(238,116,0)
+(290,91,0)
+(83,266,0)
+(300,37,0)
+(41,61,0)
+(261,239,0)
+(30,51,0)
+(194,140,0)
+(212,163,0)
+(105,100,0)
+(270,155,0)
+(176,133,0)
+(3,170,0)
+(119,148,0)
+(125,171,0)
+(94,212,0)
+(281,50,0)
+(104,98,0)
+(242,98,0)
+(235,279,0)
+(188,166,0)
+(219,152,0)
+(26,193,0)
+(192,239,0)
+(122,166,0)
+(153,133,0)
+(173,53,0)
+(21,37,0)
+(8,1,0)
+(5,103,0)
+(221,190,0)
+(74,50,0)
+(160,235,0)
+(132,44,0)
+(262,89,0)
+(130,239,0)
+(135,279,0)
+(253,97,0)
+(288,278,0)
+(71,147,0)
+(39,215,0)
+(11,103,0)
+(295,133,0)
+(216,155,0)
+(303,117,0)
+(194,129,0)
+(20,126,0)
+(149,166,0)
+(78,302,0)
+(210,234,0)
+(222,16,0)
+(89,258,0)
+(202,44,0)
+(140,65,0)
+(20,100,0)
+(83,93,0)
+(93,83,0)
+(246,61,0)
+(147,268,0)
+(49,127,0)
+(144,150,0)
+(25,33,0)
+(261,276,0)
+(300,216,0)
+(205,21,0)
+(56,133,0)
+(152,148,0)
+(116,238,0)
+(294,143,0)
+(167,201,0)
+(3,98,0)
+(33,299,0)
+(182,39,0)
+(163,268,0)
+(227,114,0)
+(259,221,0)
+(78,201,0)
+(11,258,0)
+(54,151,0)
+(128,299,0)
+(260,245,0)
+(60,210,0)
+(247,225,0)
+(24,11,0)
+(85,126,0)
+(283,3,0)
+(113,22,0)
+(23,143,0)
+(92,195,0)
+(263,133,0)
+(234,133,0)
+(184,230,0)
+(15,133,0)
+(169,10,0)
+(178,22,0)
+(235,278,0)
+(250,244,0)
+(275,37,0)
+(61,202,0)
+(78,238,0)
+(62,196,0)
+(47,10,0)
+(296,190,0)
+(67,37,0)
+(4,67,0)
+(115,74,0)
+(110,125,0)
+(166,122,0)
+(80,218,0)
+(274,104,0)
+(251,43,0)
+(79,216,0)
+(300,117,0)
+(152,299,0)
+(75,133,0)
+(189,126,0)
+(302,230,0)
+(228,95,0)
+(134,78,0)
+(90,290,0)
+(163,33,0)
+(22,171,0)
+(232,290,0)
+(125,97,0)
+(240,7,0)
+(3,62,0)
+(138,16,0)
+(175,202,0)
+(226,143,0)
+(29,192,0)
+(174,220,0)
+(127,201,0)
+(21,216,0)
+(116,83,0)
+(19,218,0)
+(62,3,0)
+(70,74,0)
+(289,5,0)
+(122,133,0)
+(199,133,0)
+(279,249,0)
+(215,39,0)
+(154,133,0)
+(244,37,0)
+(127,148,0)
+(233,258,0)
+(117,300,0)
+(9,279,0)
+(143,294,0)
+(83,116,0)
+(27,35,0)
+(102,294,0)
+(85,100,0)
+(211,244,0)
+(21,151,0)
+(126,53,0)
+(237,21,0)
+(65,140,0)
+(77,216,0)
+(272,281,0)
+(231,294,0)
+(17,140,0)
+(208,20,0)
+(126,140,0)
+(117,201,0)
+(287,248,0)
+(299,152,0)
+(28,144,0)
+(216,37,0)
+(282,133,0)
+(10,151,0)
+(20,63,0)
+(64,114,0)
+(241,63,0)
+(266,83,0)
+(57,91,0)
+(202,61,0)
+(108,5,0)
+(48,57,0)
+(22,114,0)
+(107,225,0)
+(52,158,0)
+(142,286,0)
+(1,278,0)
+(166,171,0)
+(88,114,0)
+(63,199,0)
+(66,163,0)
+(235,91,0)
+(164,39,0)
+(232,140,0)
+(55,97,0)
+(294,102,0)
+(120,286,0)
+(225,98,0)
+(299,128,0)
+(106,289,0)
+(179,239,0)
+(256,234,0)
+(10,152,0)
+(128,37,0)
+(215,239,0)
+(128,151,0)
+(117,281,0)
+(100,170,0)
+(18,84,0)
+(99,193,0)
+(17,97,0)
+(81,97,0)
+(129,194,0)
+(201,286,0)
+(102,116,0)
+(284,258,0)
+(72,133,0)
+(139,82,0)
+(185,284,0)
+(294,239,0)
+(123,133,0)
+(223,194,0)
+(10,216,0)
+(292,150,0)
+(2,109,0)
+(12,278,0)
+(235,156,0)
+(252,217,0)
+(37,37,0)
+(150,111,0)
+(198,17,0)
+(244,258,0)
+(57,232,0)
+(44,248,0)
+(290,232,0)
+(42,267,0)
+(5,289,0)
+(5,199,0)
+(255,151,0)
+(61,258,0)
+(59,133,0)
+(288,233,0)
+(78,276,0)
+(220,130,0)
+(145,248,0)
+(112,125,0)
+(46,50,0)
+(277,133,0)
+(232,57,0)
+(58,99,0)
+(264,35,0)
+(172,136,0)
+(85,133,0)
+(69,239,0)
+(129,111,0)
+(234,287,0)
+(50,281,0)
+(37,286,0)
+(235,17,0)
+(40,170,0)
+(215,93,0)
+(289,258,0)
+(127,286,0)
+(50,155,0)
+(199,5,0)
+(165,98,0)
+(100,193,0)
+(14,67,0)
+(204,220,0)
+(20,133,0)
+(297,175,0)
+(44,202,0)
+(298,235,0)
+(269,133,0)
+(144,114,0)
+(116,102,0)
+(103,133,0)
+(190,221,0)
+(248,44,0)
+(16,258,0)
+(36,17,0)
+(170,180,0)
+(130,266,0)
+(190,216,0)
+(85,63,0)
+(271,147,0)
+(197,130,0)
+(201,78,0)
+(206,133,0)
+(63,258,0)
+(186,300,0)
+(146,276,0)
+(124,278,0)
+(230,258,0)
+(299,33,0)
+(86,144,0)
+(183,128,0)
+(148,218,0)
+(280,126,0)
+(214,84,0)
+(37,244,0)
+(74,217,0)
+(261,84,0)
+(293,284,0)
+(103,11,0)
+(287,103,0)
+(131,210,0)
+(285,177,0)
+(162,156,0)
+(187,289,0)
+(221,155,0)
+(266,130,0)
+(87,3,0)
+(37,216,0)
+(158,98,0)
+(3,140,0)
+(147,71,0)
+(101,20,0)
+(68,53,0)
+(233,288,0)
+(279,97,0)
+(6,193,0)
+(209,233,0)
+(17,170,0)
+(156,91,0)
+(128,216,0)
+(200,235,0)
+(34,163,0)
+(140,232,0)
+(284,127,0)
+(224,233,0)
+(45,208,0)
+(104,171,0)
+(302,78,0)
+(17,235,0)
+(151,218,0)
+(257,227,0)
+(194,150,0)
+(301,133,0)
+(212,163,1)
+(300,37,1)
+(278,124,1)
+(21,151,1)
+(44,202,1)
+(197,220,1)
+(98,242,1)
+(73,256,1)
+(238,116,1)
+(165,92,1)
+(5,289,1)
+(124,12,1)
+(16,258,1)
+(115,70,1)
+(275,201,1)
+(30,65,1)
+(225,107,1)
+(8,71,1)
+(172,212,1)
+(152,148,1)
+(254,35,1)
+(121,98,1)
+(182,266,1)
+(10,216,1)
+(302,230,1)
+(79,217,1)
+(150,292,1)
+(37,244,1)
+(9,213,1)
+(74,115,1)
+(235,279,1)
+(64,88,1)
+(3,98,1)
+(230,38,1)
+(166,188,1)
+(283,225,1)
+(66,34,1)
+(250,275,1)
+(212,94,1)
+(67,37,1)
+(271,210,1)
+(58,273,1)
+(231,143,1)
+(31,22,1)
+(221,190,1)
+(6,193,1)
+(199,5,1)
+(165,172,1)
+(6,137,1)
+(81,97,1)
+(97,253,1)
+(60,21,1)
+(33,299,1)
+(194,150,1)
+(117,201,1)
+(203,186,1)
+(104,98,1)
+(35,171,1)
+(88,288,1)
+(128,37,1)
+(241,234,1)
+(169,47,1)
+(93,215,1)
+(165,139,1)
+(37,151,1)
+(125,97,1)
+(29,69,1)
+(99,58,1)
+(264,27,1)
+(236,84,1)
+(14,4,1)
+(27,267,1)
+(178,113,1)
+(237,205,1)
+(296,259,1)
+(290,90,1)
+(208,45,1)
+(78,302,1)
+(0,271,1)
+(292,144,1)
+(4,37,1)
+(147,0,1)
+(77,79,1)
+(298,200,1)
+(128,151,1)
+(52,225,1)
+(74,268,1)
+(162,298,1)
+(297,73,1)
+(220,174,1)
+(216,216,1)
+(259,216,1)
+(216,37,1)
+(132,202,1)
+(135,9,1)
+(5,103,1)
+(151,54,1)
+(248,44,1)
+(214,146,1)
+(255,148,1)
+(230,258,1)
+(242,165,1)
+(57,91,1)
+(243,235,1)
+(280,35,1)
+(4,221,1)
+(68,99,1)
+(198,36,1)
+(165,30,1)
+(85,144,1)
+(247,104,1)
+(185,293,1)
+(13,122,1)
+(17,170,1)
+(219,25,1)
+(54,255,1)
+(201,78,1)
+(20,126,1)
+(200,279,1)
+(11,24,1)
+(86,28,1)
+(276,261,1)
+(69,239,1)
+(117,300,1)
+(257,150,1)
+(256,103,1)
+(22,171,1)
+(37,37,1)
+(63,258,1)
+(105,118,1)
+(174,204,1)
+(34,33,1)
+(110,81,1)
+(161,278,1)
+(226,32,1)
+(223,22,1)
+(233,224,1)
+(10,151,1)
+(181,151,1)
+(299,152,1)
+(159,223,1)
+(52,62,1)
+(5,108,1)
+(144,86,1)
+(217,252,1)
+(288,278,1)
+(232,290,1)
+(222,29,1)
+(45,104,1)
+(114,64,1)
+(221,201,1)
+(40,100,1)
+(125,112,1)
+(21,37,1)
+(113,114,1)
+(287,103,1)
+(158,52,1)
+(161,1,1)
+(29,239,1)
+(192,16,1)
+(192,239,1)
+(252,74,1)
+(189,280,1)
+(262,127,1)
+(248,145,1)
+(8,210,1)
+(175,258,1)
+(131,60,1)
+(127,201,1)
+(163,268,1)
+(106,63,1)
+(183,152,1)
+(21,237,1)
+(71,147,1)
+(107,247,1)
+(10,169,1)
+(81,243,1)
+(16,138,1)
+(47,219,1)
+(244,258,1)
+(57,48,1)
+(127,284,1)
+(216,77,1)
+(163,33,1)
+(50,281,1)
+(210,234,1)
+(246,41,1)
+(202,175,1)
+(17,97,1)
+(23,226,1)
+(92,235,1)
+(71,265,1)
+(215,39,1)
+(22,178,1)
+(279,249,1)
+(300,203,1)
+(126,53,1)
+(94,163,1)
+(148,229,1)
+(65,140,1)
+(170,40,1)
+(76,67,1)
+(234,287,1)
+(85,100,1)
+(294,239,1)
+(112,110,1)
+(22,114,1)
+(3,140,1)
+(55,288,1)
+(35,264,1)
+(49,192,1)
+(128,216,1)
+(299,128,1)
+(44,132,1)
+(104,274,1)
+(25,21,1)
+(100,105,1)
+(28,129,1)
+(244,211,1)
+(213,125,1)
+(152,10,1)
+(228,217,1)
+(165,228,1)
+(104,171,1)
+(145,44,1)
+(138,222,1)
+(235,91,1)
+(20,208,1)
+(26,13,1)
+(229,119,1)
+(287,248,1)
+(48,126,1)
+(67,216,1)
+(266,130,1)
+(61,258,1)
+(53,173,1)
+(78,276,1)
+(294,231,1)
+(215,168,1)
+(291,297,1)
+(202,61,1)
+(101,20,1)
+(209,161,1)
+(232,57,1)
+(100,193,1)
+(11,258,1)
+(284,258,1)
+(126,189,1)
+(110,97,1)
+(166,171,1)
+(20,100,1)
+(267,42,1)
+(130,197,1)
+(10,37,1)
+(194,159,1)
+(253,55,1)
+(36,160,1)
+(3,87,1)
+(207,241,1)
+(215,239,1)
+(63,207,1)
+(179,181,1)
+(190,296,1)
+(61,246,1)
+(261,84,1)
+(290,91,1)
+(293,49,1)
+(89,258,1)
+(62,3,1)
+(60,212,1)
+(1,8,1)
+(113,227,1)
+(122,166,1)
+(152,201,1)
+(175,291,1)
+(102,294,1)
+(119,125,1)
+(239,179,1)
+(41,175,1)
+(167,238,1)
+(235,17,1)
+(300,216,1)
+(273,6,1)
+(27,53,1)
+(37,216,1)
+(281,117,1)
+(194,140,1)
+(18,214,1)
+(188,149,1)
+(289,187,1)
+(303,46,1)
+(108,289,1)
+(233,258,1)
+(24,254,1)
+(87,283,1)
+(90,57,1)
+(289,258,1)
+(85,126,1)
+(156,91,1)
+(143,23,1)
+(38,184,1)
+(274,121,1)
+(204,102,1)
+(187,106,1)
+(279,135,1)
+(267,53,1)
+(70,50,1)
+(193,26,1)
+(261,239,1)
+(265,147,1)
+(130,220,1)
+(288,233,1)
+(129,194,1)
+(128,183,1)
+(284,185,1)
+(39,164,1)
+(261,236,1)
+(35,53,1)
+(130,239,1)
+(46,67,1)
+(78,238,1)
+(224,209,1)
+(42,65,1)
+(84,18,1)
+(83,93,1)
+(210,131,1)
+(167,276,1)
+(140,232,1)
+(3,170,1)
+(21,216,1)
+(20,63,1)
+(116,102,1)
+(17,140,1)
+(85,31,1)
+(103,11,1)
+(194,114,1)
+(17,198,1)
+(147,268,1)
+(85,63,1)
+(273,193,1)
+(146,89,1)
+(134,167,1)
+(121,158,1)
+(83,266,1)
+(99,193,1)
+(205,192,1)
+(225,98,1)
+(184,134,1)
+(227,114,1)
+(32,89,1)
+(69,76,1)
+(211,250,1)
+(127,148,1)
+(116,83,1)
+(281,272,1)
+(272,117,1)
+(217,74,1)
+(294,143,1)
+(101,85,1)
+(164,182,1)
+(12,199,1)
+(139,71,1)
+(235,278,1)
+(125,171,1)
+(186,303,1)
+(227,257,1)
+(89,262,1)
+(279,97,1)
+(168,39,1)
+(156,162,1)
+(74,50,1)
+(190,216,1)
+(235,156,1)
+(67,14,1)
+(173,68,1)
+(144,114,1)
+(118,99,1)
+(158,98,1)
+(194,170,1)
+(137,170,1)
+(201,127,1)
+(160,156,1)
+(1,278,1)
+(163,66,1)
+(294,143,2)
+(147,268,2)
+(102,294,2)
+(105,99,2)
+(88,288,2)
+(197,89,2)
+(85,100,2)
+(39,89,2)
+(104,217,2)
+(279,125,2)
+(189,35,2)
+(14,192,2)
+(194,114,2)
+(235,125,2)
+(10,216,2)
+(237,192,2)
+(241,35,2)
+(60,21,2)
+(6,193,2)
+(242,65,2)
+(77,217,2)
+(221,190,2)
+(161,210,2)
+(192,125,2)
+(11,35,2)
+(45,217,2)
+(6,99,2)
+(166,171,2)
+(46,67,2)
+(10,151,2)
+(20,63,2)
+(27,65,2)
+(202,175,2)
+(242,71,2)
+(78,276,2)
+(106,35,2)
+(276,89,2)
+(194,170,2)
+(202,61,2)
+(103,11,2)
+(255,125,2)
+(45,212,2)
+(287,103,2)
+(168,89,2)
+(140,35,2)
+(294,89,2)
+(200,125,2)
+(21,151,2)
+(84,89,2)
+(248,44,2)
+(194,140,2)
+(104,212,2)
+(47,21,2)
+(161,35,2)
+(61,258,2)
+(287,248,2)
+(226,89,2)
+(248,35,2)
+(67,37,2)
+(143,89,2)
+(110,235,2)
+(238,89,2)
+(85,288,2)
+(167,192,2)
+(164,89,2)
+(99,99,2)
+(279,249,2)
+(274,212,2)
+(18,89,2)
+(134,192,2)
+(165,217,2)
+(98,235,2)
+(186,67,2)
+(50,67,2)
+(65,140,2)
+(62,225,2)
+(169,21,2)
+(243,235,2)
+(126,35,2)
+(281,117,2)
+(1,71,2)
+(50,281,2)
+(181,125,2)
+(3,140,2)
+(210,212,2)
+(35,53,2)
+(184,192,2)
+(235,278,2)
+(117,201,2)
+(215,89,2)
+(205,192,2)
+(67,192,2)
+(170,99,2)
+(236,89,2)
+(10,21,2)
+(194,150,2)
+(8,210,2)
+(215,39,2)
+(222,125,2)
+(296,217,2)
+(235,91,2)
+(22,288,2)
+(132,35,2)
+(227,114,2)
+(83,89,2)
+(11,258,2)
+(101,20,2)
+(128,37,2)
+(42,65,2)
+(266,130,2)
+(98,212,2)
+(125,235,2)
+(224,71,2)
+(100,99,2)
+(179,125,2)
+(246,35,2)
+(235,156,2)
+(178,288,2)
+(208,235,2)
+(52,104,2)
+(0,210,2)
+(90,35,2)
+(99,193,2)
+(274,65,2)
+(138,67,2)
+(100,193,2)
+(239,125,2)
+(121,65,2)
+(199,5,2)
+(216,217,2)
+(126,53,2)
+(276,261,2)
+(83,93,2)
+(3,225,2)
+(210,234,2)
+(228,217,2)
+(16,125,2)
+(217,67,2)
+(299,128,2)
+(288,278,2)
+(271,210,2)
+(262,192,2)
+(67,217,2)
+(161,71,2)
+(152,21,2)
+(178,22,2)
+(156,125,2)
+(222,67,2)
+(274,71,2)
+(158,98,2)
+(110,288,2)
+(28,22,2)
+(204,89,2)
+(83,266,2)
+(41,35,2)
+(33,21,2)
+(121,71,2)
+(16,258,2)
+(89,258,2)
+(5,103,2)
+(253,288,2)
+(208,217,2)
+(45,65,2)
+(256,35,2)
+(208,71,2)
+(130,239,2)
+(55,288,2)
+(284,258,2)
+(264,65,2)
+(190,216,2)
+(274,104,2)
+(165,212,2)
+(131,21,2)
+(302,192,2)
+(128,216,2)
+(33,299,2)
+(98,65,2)
+(201,78,2)
+(212,21,2)
+(102,89,2)
+(279,97,2)
+(69,67,2)
+(158,104,2)
+(233,35,2)
+(209,35,2)
+(278,35,2)
+(289,258,2)
+(252,67,2)
+(234,287,2)
+(35,171,2)
+(292,22,2)
+(25,21,2)
+(107,104,2)
+(71,147,2)
+(3,98,2)
+(127,284,2)
+(29,125,2)
+(36,125,2)
+(70,67,2)
+(231,89,2)
+(212,163,2)
+(223,22,2)
+(302,230,2)
+(266,89,2)
+(122,166,2)
+(185,192,2)
+(135,125,2)
+(192,16,2)
+(175,258,2)
+(300,37,2)
+(63,258,2)
+(151,125,2)
+(37,244,2)
+(192,239,2)
+(232,35,2)
+(78,238,2)
+(58,99,2)
+(233,210,2)
+(24,35,2)
+(101,85,2)
+(20,212,2)
+(44,202,2)
+(242,212,2)
+(79,217,2)
+(92,235,2)
+(1,278,2)
+(274,235,2)
+(259,217,2)
+(128,151,2)
+(21,216,2)
+(104,98,2)
+(208,212,2)
+(112,235,2)
+(216,216,2)
+(130,89,2)
+(165,65,2)
+(235,279,2)
+(116,89,2)
+(125,171,2)
+(63,35,2)
+(283,225,2)
+(247,104,2)
+(20,71,2)
+(32,89,2)
+(125,97,2)
+(298,125,2)
+(4,217,2)
+(108,35,2)
+(62,3,2)
+(48,35,2)
+(187,35,2)
+(148,125,2)
+(20,100,2)
+(213,125,2)
+(289,35,2)
+(294,239,2)
+(267,53,2)
+(78,302,2)
+(85,63,2)
+(254,35,2)
+(250,192,2)
+(303,67,2)
+(225,98,2)
+(152,201,2)
+(281,67,2)
+(261,84,2)
+(93,89,2)
+(183,21,2)
+(20,126,2)
+(23,89,2)
+(138,125,2)
+(232,57,2)
+(9,125,2)
+(190,217,2)
+(117,300,2)
+(165,71,2)
+(288,233,2)
+(17,140,2)
+(57,35,2)
+(16,67,2)
+(147,210,2)
+(34,21,2)
+(121,235,2)
+(22,22,2)
+(152,148,2)
+(229,125,2)
+(30,65,2)
+(159,22,2)
+(224,210,2)
+(31,288,2)
+(139,71,2)
+(174,89,2)
+(113,288,2)
+(21,192,2)
+(235,17,2)
+(54,125,2)
+(20,65,2)
+(129,194,2)
+(291,35,2)
+(261,239,2)
+(175,35,2)
+(104,71,2)
+(119,125,2)
+(201,192,2)
+(113,22,2)
+(37,37,2)
+(104,65,2)
+(297,35,2)
+(284,192,2)
+(1,210,2)
+(242,217,2)
+(163,268,2)
+(114,288,2)
+(162,125,2)
+(74,67,2)
+(60,212,2)
+(211,192,2)
+(124,35,2)
+(127,148,2)
+(71,210,2)
+(272,67,2)
+(85,126,2)
+(230,258,2)
+(192,67,2)
+(22,171,2)
+(257,22,2)
+(290,35,2)
+(210,21,2)
+(104,235,2)
+(287,35,2)
+(300,67,2)
+(127,192,2)
+(201,127,2)
+(38,192,2)
+(49,192,2)
+(275,192,2)
+(215,239,2)
+(5,35,2)
+(125,288,2)
+(288,71,2)
+(172,212,2)
+(45,71,2)
+(20,217,2)
+(116,102,2)
+(146,89,2)
+(242,235,2)
+(209,71,2)
+(86,22,2)
+(94,21,2)
+(267,65,2)
+(121,217,2)
+(116,83,2)
+(76,67,2)
+(117,67,2)
+(238,116,2)
+(230,192,2)
+(293,192,2)
+(300,216,2)
+(65,35,2)
+(128,21,2)
+(21,37,2)
+(207,35,2)
+(8,71,2)
+(121,104,2)
+(221,201,2)
+(203,67,2)
+(288,210,2)
+(233,71,2)
+(227,22,2)
+(217,74,2)
+(129,22,2)
+(37,192,2)
+(85,144,2)
+(160,125,2)
+(288,35,2)
+(57,91,2)
+(35,65,2)
+(121,212,2)
+(115,67,2)
+(221,217,2)
+(74,50,2)
+(112,288,2)
+(20,235,2)
+(219,21,2)
+(150,22,2)
+(104,104,2)
+(29,67,2)
+(64,288,2)
+(40,99,2)
+(98,217,2)
+(127,201,2)
+(37,216,2)
+(244,192,2)
+(152,10,2)
+(97,288,2)
+(66,21,2)
+(61,35,2)
+(145,35,2)
+(45,235,2)
+(81,97,2)
+(299,152,2)
+(73,35,2)
+(199,35,2)
+(202,35,2)
+(44,35,2)
+(244,258,2)
+(22,114,2)
+(290,91,2)
+(280,35,2)
+(14,217,2)
+(144,114,2)
+(37,151,2)
+(103,35,2)
+(5,289,2)
+(234,35,2)
+(274,217,2)
+(87,225,2)
+(163,33,2)
+(69,239,2)
+(137,99,2)
+(163,21,2)
+(130,220,2)
+(261,89,2)
+(182,89,2)
+(98,71,2)
+(232,290,2)
+(214,89,2)
+(209,210,2)
+(208,65,2)
+(3,170,2)
+(194,22,2)
+(17,125,2)
+(17,170,2)
+(10,37,2)
+(265,210,2)
+(4,192,2)
+(224,35,2)
+(233,258,2)
+(67,216,2)
+(225,104,2)
+(81,235,2)
+(144,22,2)
+(220,89,2)
+(156,91,2)
+(93,215,2)
+(118,99,2)
+(299,21,2)
+(17,97,2)
+(12,35,2)
+(74,268,2)
+(131,212,2)
+(198,125,2)
+(78,192,2)
+(165,235,2)
+(140,232,2)
+(89,192,2)
+(216,37,2)
+(104,171,2)
+(273,99,2)
+-----------------------------------
+(0,0)
+(1,y++)
+(2,if (!(data[i] = jas_matrix_create(jas_image_height(image)
+(3,data[i])
+(4,nz)
+(5,hdr->height * rowsize)
+(6,++i)
+(7,)
+(8,y)
+(9,cmpts)
+(10,8 - nz)
+(11,RAS_ROWSIZE(hdr)
+(12,y)
+(13,i)
+(14,8)
+(15,x)
+(16,hdr->width)
+(17,data[i])
+(18,0)
+(19,if (pad % 2)
+(20,return -1;)
+(21,nz > 0)
+(22,i < numcmpts)
+(23,0)
+(24,hdr)
+(25,c)
+(26,0)
+(27,i)
+(28,data)
+(29,x)
+(30,goto error;)
+(31,0)
+(32,v)
+(33,c = (z >> (8 - nz)
+(34,out)
+(35,i < numcmpts)
+(36,data)
+(37,nz += hdr->depth)
+(38,depth)
+(39,data[2])
+(40,0)
+(41,hdr)
+(42,i)
+(43,)
+(44,hdr->width * hdr->depth + 7)
+(45,1)
+(46,c)
+(47,8)
+(48,image)
+(49,z)
+(50,c = (z >> (nz - 8)
+(51,)
+(52,i)
+(53,i = 0)
+(54,0)
+(55,i)
+(56,y)
+(57,jas_image_height(image)
+(58,3)
+(59,nz)
+(60,pad)
+(61,hdr->depth)
+(62,jas_matrix_destroy(data[i])
+(63,hdr->length)
+(64,0)
+(65,!(data[i] = jas_matrix_create(jas_image_height(image)
+(66,c)
+(67,nz >= 8)
+(68,i)
+(69,x++)
+(70,out)
+(71,jas_stream_putc(out, 0)
+(72,pad)
+(73,rowsize)
+(74,jas_stream_putc(out, c)
+(75,c)
+(76,x)
+(77,8)
+(78,v & RAS_ONES(hdr->depth)
+(79,nz)
+(80,if (nz > 0)
+(81,++i)
+(82,)
+(83,RAS_GREEN((jas_matrix_getv(data[1], x)
+(84,data[0])
+(85,return 0;)
+(86,i)
+(87,i)
+(88,i)
+(89,RAS_ISRGB(hdr)
+(90,image)
+(91,jas_image_t *image)
+(92,goto error;)
+(93,RAS_BLUE((jas_matrix_getv(data[2], x)
+(94,EOF)
+(95,)
+(96,)
+(97,i = 0)
+(98,i = 0)
+(99,i < 3)
+(100,data[i])
+(101,RET)
+(102,RAS_RED((jas_matrix_getv(data[0], x)
+(103,rowsize = RAS_ROWSIZE(hdr)
+(104,i < numcmpts)
+(105,i)
+(106,hdr)
+(107,i)
+(108,rowsize)
+(109,)
+(110,i)
+(111,)
+(112,numcmpts)
+(113,i)
+(114,i = 0)
+(115,c)
+(116,RAS_RED((jas_matrix_getv(data[0], x)
+(117,z >> (nz - 8)
+(118,data)
+(119,z)
+(120,if (RAS_ISRGB(hdr)
+(121,i)
+(122,assert(numcmpts <= 3)
+(123,data)
+(124,0)
+(125,i < numcmpts)
+(126,data[i])
+(127,z <<= hdr->depth)
+(128,RAS_ONES(nz)
+(129,jas_matrix_destroy(data[i])
+(130,jas_matrix_getv(data[1], x)
+(131,2)
+(132,7)
+(133,)
+(134,v)
+(135,i)
+(136,)
+(137,i)
+(138,width)
+(139,goto error;)
+(140,data[i] = jas_matrix_create(jas_image_height(image)
+(141,for (i = 0; i < numcmpts; ++i)
+(142,while (nz >= 8)
+(143,data[0])
+(144,data[i])
+(145,8)
+(146,v)
+(147,jas_stream_putc(out, 0)
+(148,z = 0)
+(149,numcmpts)
+(150,data[i] = 0)
+(151,nz = 0)
+(152,z >> (8 - nz)
+(153,z)
+(154,for (i = 0; i < numcmpts; ++i)
+(155,)
+(156,jas_image_width(image)
+(157,)
+(158,++i)
+(159,i)
+(160,1)
+(161,y)
+(162,image)
+(163,jas_stream_putc(out, c)
+(164,2)
+(165,i)
+(166,numcmpts <= 3)
+(167,z)
+(168,x)
+(169,nz)
+(170,data[i] = 0)
+(171,int numcmpts)
+(172,goto error;)
+(173,0)
+(174,1)
+(175,hdr->width)
+(176,for (i = 0; i < numcmpts; ++i)
+(177,)
+(178,numcmpts)
+(179,0)
+(180,)
+(181,x)
+(182,data)
+(183,nz)
+(184,hdr)
+(185,depth)
+(186,nz)
+(187,height)
+(188,3)
+(189,i)
+(190,RAS_ONES(nz)
+(191,for (x = 0; x < hdr->width; x++)
+(192,x < hdr->width)
+(193,i = 0)
+(194,data[i])
+(195,)
+(196,)
+(197,x)
+(198,i)
+(199,hdr->length = hdr->height * rowsize)
+(200,0)
+(201,z |= v & RAS_ONES(hdr->depth)
+(202,hdr->width * hdr->depth)
+(203,8)
+(204,data)
+(205,nz)
+(206,error:)
+(207,length)
+(208,-1)
+(209,hdr)
+(210,pad % 2)
+(211,depth)
+(212,jas_stream_putc(out, c)
+(213,image)
+(214,data)
+(215,jas_matrix_getv(data[2], x)
+(216,nz -= 8)
+(217,jas_stream_putc(out, c)
+(218,)
+(219,z)
+(220,data[1])
+(221,z &= RAS_ONES(nz)
+(222,hdr)
+(223,data)
+(224,height)
+(225,data[i])
+(226,data)
+(227,++i)
+(228,goto error;)
+(229,0)
+(230,hdr->depth)
+(231,x)
+(232,jas_matrix_create(jas_image_height(image)
+(233,hdr->height)
+(234,pad = rowsize - (hdr->width * hdr->depth + 7)
+(235,jas_image_readcmpt(image, cmpts[i], 0, y,\\n\\t\\t\\t\\t\\tjas_image_width(image)
+(236,x)
+(237,0)
+(238,v = RAS_RED((jas_matrix_getv(data[0], x)
+(239,x = 0)
+(240,if (data[i])
+(241,hdr)
+(242,0)
+(243,i)
+(244,hdr->depth)
+(245,)
+(246,depth)
+(247,data)
+(248,(hdr->width * hdr->depth + 7)
+(249,int *cmpts)
+(250,hdr)
+(251,if (jas_image_readcmpt(image, cmpts[i], 0, y,\\n\\t\\t\\t\\t\\tjas_image_width(image)
+(252,EOF)
+(253,0)
+(254,rowsize)
+(255,nz)
+(256,pad)
+(257,i)
+(258,ras_hdr_t *hdr)
+(259,z)
+(260,if (jas_stream_putc(out, 0)
+(261,jas_matrix_getv(data[0], x)
+(262,hdr)
+(263,for (i = 0; i < 3; ++i)
+(264,numcmpts)
+(265,EOF)
+(266,RAS_GREEN((jas_matrix_getv(data[1], x)
+(267,++i)
+(268,jas_stream_t *out)
+(269,for (i = 0; i < numcmpts; ++i)
+(270,if (jas_stream_putc(out, c)
+(271,out)
+(272,0xff)
+(273,i)
+(274,numcmpts)
+(275,nz)
+(276,v = (jas_matrix_getv(data[0], x)
+(277,for (y = 0; y < hdr->height; y++)
+(278,y = 0)
+(279,cmpts[i])
+(280,data)
+(281,(z >> (nz - 8)
+(282,rowsize)
+(283,data)
+(284,hdr->depth)
+(285,if (jas_stream_putc(out, c)
+(286,)
+(287,rowsize - (hdr->width * hdr->depth + 7)
+(288,y < hdr->height)
+(289,hdr->height)
+(290,jas_image_width(image)
+(291,width)
+(292,0)
+(293,hdr)
+(294,jas_matrix_getv(data[0], x)
+(295,v)
+(296,nz)
+(297,hdr)
+(298,y)
+(299,(z >> (8 - nz)
+(300,nz - 8)
+(301,i)
+(302,RAS_ONES(hdr->depth)
+(303,z)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

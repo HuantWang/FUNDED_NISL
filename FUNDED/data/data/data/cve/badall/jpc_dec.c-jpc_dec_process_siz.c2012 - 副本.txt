@@ -1,0 +1,2609 @@
+-----label-----
+1
+-----code-----
+static int jpc_dec_process_siz(jpc_dec_t *dec, jpc_ms_t *ms)
+{
+	jpc_siz_t *siz = &ms->parms.siz;
+	int compno;
+	int tileno;
+	jpc_dec_tile_t *tile;
+	jpc_dec_tcomp_t *tcomp;
+	int htileno;
+	int vtileno;
+	jpc_dec_cmpt_t *cmpt;
+	size_t size;
+	size_t num_samples;
+	size_t num_samples_delta;
+
+	dec->xstart = siz->xoff;
+	dec->ystart = siz->yoff;
+	dec->xend = siz->width;
+	dec->yend = siz->height;
+	dec->tilewidth = siz->tilewidth;
+	dec->tileheight = siz->tileheight;
+	dec->tilexoff = siz->tilexoff;
+	dec->tileyoff = siz->tileyoff;
+	dec->numcomps = siz->numcomps;
+
+	if (!(dec->cp = jpc_dec_cp_create(dec->numcomps))) {
+		return -1;
+	}
+
+	if (!(dec->cmpts = jas_alloc2(dec->numcomps, sizeof(jpc_dec_cmpt_t)))) {
+		return -1;
+	}
+
+	num_samples = 0;
+	for (compno = 0, cmpt = dec->cmpts; compno < dec->numcomps; ++compno,
+	  ++cmpt) {
+		cmpt->prec = siz->comps[compno].prec;
+		cmpt->sgnd = siz->comps[compno].sgnd;
+		cmpt->hstep = siz->comps[compno].hsamp;
+		cmpt->vstep = siz->comps[compno].vsamp;
+		cmpt->width = JPC_CEILDIV(dec->xend, cmpt->hstep) -
+		  JPC_CEILDIV(dec->xstart, cmpt->hstep);
+		cmpt->height = JPC_CEILDIV(dec->yend, cmpt->vstep) -
+		  JPC_CEILDIV(dec->ystart, cmpt->vstep);
+		cmpt->hsubstep = 0;
+		cmpt->vsubstep = 0;
+
+		if (!jas_safe_size_mul(cmpt->width, cmpt->height, &num_samples_delta)) {
+			jas_eprintf("image too large\n");
+			return -1;
+		}
+		if (!jas_safe_size_add(num_samples, num_samples_delta, &num_samples)) {
+			jas_eprintf("image too large\n");
+		}
+	}
+
+	if (dec->max_samples > 0 && num_samples > dec->max_samples) {
+		jas_eprintf("maximum number of samples exceeded (%zu > %zu)\n",
+		  num_samples, dec->max_samples);
+		return -1;
+	}
+
+	dec->image = 0;
+
+	dec->numhtiles = JPC_CEILDIV(dec->xend - dec->tilexoff, dec->tilewidth);
+	dec->numvtiles = JPC_CEILDIV(dec->yend - dec->tileyoff, dec->tileheight);
+	assert(dec->numhtiles >= 0);
+	assert(dec->numvtiles >= 0);
+	if (!jas_safe_size_mul(dec->numhtiles, dec->numvtiles, &size) ||
+	  size > INT_MAX) {
+		return -1;
+	}
+	dec->numtiles = size;
+	JAS_DBGLOG(10, ("numtiles = %d; numhtiles = %d; numvtiles = %d;\n",
+	  dec->numtiles, dec->numhtiles, dec->numvtiles));
+	if (!(dec->tiles = jas_alloc2(dec->numtiles, sizeof(jpc_dec_tile_t)))) {
+		return -1;
+	}
+
+	for (tileno = 0, tile = dec->tiles; tileno < dec->numtiles; ++tileno,
+	  ++tile) {
+		htileno = tileno % dec->numhtiles;
+		vtileno = tileno / dec->numhtiles;
+		tile->realmode = 0;
+		tile->state = JPC_TILE_INIT;
+		tile->xstart = JAS_MAX(dec->tilexoff + htileno * dec->tilewidth,
+		  dec->xstart);
+		tile->ystart = JAS_MAX(dec->tileyoff + vtileno * dec->tileheight,
+		  dec->ystart);
+		tile->xend = JAS_MIN(dec->tilexoff + (htileno + 1) *
+		  dec->tilewidth, dec->xend);
+		tile->yend = JAS_MIN(dec->tileyoff + (vtileno + 1) *
+		  dec->tileheight, dec->yend);
+		tile->numparts = 0;
+		tile->partno = 0;
+		tile->pkthdrstream = 0;
+		tile->pkthdrstreampos = 0;
+		tile->pptstab = 0;
+		tile->cp = 0;
+		tile->pi = 0;
+		if (!(tile->tcomps = jas_alloc2(dec->numcomps,
+		  sizeof(jpc_dec_tcomp_t)))) {
+			return -1;
+		}
+		for (compno = 0, cmpt = dec->cmpts, tcomp = tile->tcomps;
+		  compno < dec->numcomps; ++compno, ++cmpt, ++tcomp) {
+			tcomp->rlvls = 0;
+			tcomp->numrlvls = 0;
+			tcomp->data = 0;
+			tcomp->xstart = JPC_CEILDIV(tile->xstart, cmpt->hstep);
+			tcomp->ystart = JPC_CEILDIV(tile->ystart, cmpt->vstep);
+			tcomp->xend = JPC_CEILDIV(tile->xend, cmpt->hstep);
+			tcomp->yend = JPC_CEILDIV(tile->yend, cmpt->vstep);
+			tcomp->tsfb = 0;
+		}
+	}
+
+	dec->pkthdrstreams = 0;
+
+	/* We should expect to encounter other main header marker segments
+	  or an SOT marker segment next. */
+	dec->state = JPC_MH;
+
+	return 0;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+17,19
+17,20
+17,21
+17,22
+17,23
+17,24
+17,25
+17,26
+17,27
+17,28
+17,29
+17,30
+17,31
+17,32
+17,33
+17,34
+17,35
+17,36
+17,37
+17,38
+17,39
+17,40
+17,41
+17,42
+17,43
+17,44
+17,45
+17,46
+17,47
+17,48
+17,49
+17,50
+17,51
+17,52
+17,53
+17,54
+17,55
+18,19
+19,20
+19,21
+20,21
+22,23
+22,24
+22,25
+25,26
+26,27
+27,28
+27,29
+28,29
+28,30
+29,30
+33,34
+34,35
+34,36
+36,37
+38,39
+39,40
+39,41
+41,42
+43,44
+44,45
+44,46
+45,46
+47,48
+47,49
+50,51
+51,52
+51,53
+52,53
+54,55
+54,56
+57,58
+58,59
+58,60
+60,61
+62,63
+63,64
+63,65
+65,66
+67,68
+68,69
+68,70
+69,70
+71,72
+71,73
+74,75
+75,76
+75,77
+76,77
+78,79
+80,81
+81,82
+81,83
+82,83
+84,85
+86,87
+87,88
+87,89
+88,89
+90,91
+92,93
+93,94
+93,95
+94,95
+94,96
+95,96
+98,99
+98,100
+99,100
+102,103
+103,104
+103,105
+104,105
+104,106
+105,106
+108,109
+108,110
+109,110
+112,113
+113,114
+113,115
+114,115
+114,116
+115,116
+118,119
+118,120
+119,120
+122,123
+123,124
+123,125
+124,125
+124,126
+125,126
+128,129
+128,130
+129,130
+132,133
+133,134
+133,135
+134,135
+134,136
+135,136
+138,139
+138,140
+139,140
+142,143
+143,144
+143,145
+144,145
+144,146
+145,146
+148,149
+148,150
+149,150
+152,153
+153,154
+153,155
+154,155
+154,156
+155,156
+158,159
+158,160
+159,160
+162,163
+163,164
+163,165
+164,165
+164,166
+165,166
+168,169
+168,170
+169,170
+172,173
+173,174
+173,175
+174,175
+174,176
+175,176
+178,179
+178,180
+179,180
+182,183
+182,184
+183,184
+184,185
+185,186
+185,187
+186,187
+186,188
+187,188
+190,191
+190,192
+191,192
+193,194
+193,195
+194,195
+197,198
+198,199
+199,200
+201,202
+201,203
+202,203
+203,204
+204,205
+204,206
+205,206
+205,207
+206,207
+209,210
+209,211
+209,212
+210,211
+212,213
+212,214
+213,214
+216,217
+217,218
+217,219
+218,219
+221,222
+222,223
+223,224
+225,226
+226,227
+226,228
+227,228
+230,231
+230,232
+230,233
+230,234
+231,232
+232,233
+232,234
+233,234
+233,235
+234,235
+237,238
+237,239
+238,239
+240,241
+240,242
+241,242
+244,245
+244,246
+245,246
+247,248
+247,249
+248,249
+251,252
+251,253
+252,253
+253,254
+255,256
+256,257
+258,259
+258,260
+258,261
+258,262
+258,263
+258,264
+258,265
+258,266
+258,267
+258,268
+259,260
+260,261
+260,262
+261,262
+261,263
+262,263
+265,266
+265,267
+266,267
+266,268
+267,268
+267,269
+268,269
+271,272
+274,275
+275,276
+275,277
+276,277
+276,278
+277,278
+280,281
+280,282
+281,282
+281,283
+282,283
+282,284
+283,284
+286,287
+289,290
+290,291
+290,292
+291,292
+291,293
+292,293
+295,296
+295,297
+296,297
+296,298
+297,298
+297,299
+298,299
+301,302
+304,305
+305,306
+305,307
+306,307
+306,308
+307,308
+310,311
+310,312
+311,312
+311,313
+312,313
+312,314
+313,314
+316,317
+319,320
+320,321
+320,322
+321,322
+321,323
+322,323
+325,326
+325,327
+326,327
+326,328
+326,329
+327,328
+329,330
+329,331
+330,331
+333,334
+333,335
+334,335
+337,338
+337,339
+337,340
+338,339
+340,341
+340,342
+341,342
+344,345
+344,346
+345,346
+348,349
+349,350
+349,351
+350,351
+350,352
+351,352
+354,355
+354,356
+355,356
+355,357
+355,358
+356,357
+358,359
+358,360
+359,360
+362,363
+362,364
+363,364
+366,367
+366,368
+366,369
+367,368
+369,370
+369,371
+370,371
+373,374
+373,375
+374,375
+377,378
+378,379
+378,380
+379,380
+379,381
+380,381
+384,385
+385,386
+385,387
+386,387
+386,388
+387,388
+391,392
+391,393
+392,393
+393,394
+393,395
+393,396
+393,397
+394,395
+396,397
+396,398
+397,398
+400,401
+400,402
+401,402
+404,405
+405,406
+407,408
+407,409
+408,409
+409,410
+409,411
+410,411
+413,414
+414,415
+416,417
+416,418
+417,418
+418,419
+418,420
+418,421
+418,422
+419,420
+421,422
+423,424
+425,426
+426,427
+428,429
+429,430
+430,431
+430,432
+431,432
+434,435
+434,436
+435,436
+435,437
+436,437
+436,438
+437,438
+437,439
+438,439
+442,443
+442,444
+443,444
+445,446
+445,447
+446,447
+449,450
+449,451
+450,451
+451,452
+451,453
+451,454
+451,455
+452,453
+455,456
+457,458
+457,459
+458,459
+461,462
+462,463
+464,465
+465,466
+465,467
+466,467
+466,468
+467,468
+471,472
+472,473
+472,474
+473,474
+473,475
+474,475
+477,478
+477,479
+477,480
+478,479
+480,481
+480,482
+481,482
+481,483
+482,483
+485,486
+485,487
+486,487
+489,490
+489,491
+490,491
+493,494
+494,495
+494,496
+495,496
+495,497
+496,497
+499,500
+499,501
+499,502
+500,501
+502,503
+502,504
+503,504
+503,505
+504,505
+507,508
+507,509
+508,509
+511,512
+511,513
+512,513
+515,516
+516,517
+516,518
+517,518
+519,520
+519,521
+520,521
+520,522
+521,522
+525,526
+526,527
+526,528
+527,528
+529,530
+529,531
+530,531
+530,532
+531,532
+535,536
+535,537
+536,537
+536,538
+537,538
+538,539
+538,540
+538,541
+538,542
+539,540
+541,542
+541,543
+542,543
+545,546
+545,547
+546,547
+549,550
+550,551
+552,553
+552,554
+553,554
+555,556
+557,558
+558,559
+559,560
+561,562
+562,563
+562,564
+563,564
+563,565
+564,565
+567,568
+569,570
+570,571
+570,572
+570,573
+571,572
+574,575
+575,576
+575,577
+575,578
+575,579
+577,578
+577,579
+578,579
+581,582
+581,583
+582,583
+585,586
+585,587
+586,587
+589,590
+589,591
+590,591
+591,592
+592,593
+592,594
+593,594
+593,595
+594,595
+597,598
+597,599
+597,600
+598,599
+600,601
+600,602
+601,602
+604,605
+605,606
+605,607
+606,607
+609,610
+610,611
+611,612
+613,614
+613,615
+613,616
+613,617
+614,615
+615,616
+615,617
+616,617
+616,618
+617,618
+620,621
+620,622
+621,622
+623,624
+623,625
+624,625
+627,628
+627,629
+628,629
+630,631
+630,632
+631,632
+634,635
+634,636
+635,636
+636,637
+638,639
+639,640
+641,642
+641,643
+641,644
+641,645
+641,646
+641,647
+641,648
+641,649
+641,650
+641,651
+641,652
+641,653
+641,654
+641,655
+641,656
+641,657
+641,658
+642,643
+643,644
+643,645
+644,645
+646,647
+646,648
+647,648
+649,650
+649,651
+650,651
+653,654
+654,655
+654,656
+655,656
+657,658
+657,659
+658,659
+660,661
+660,662
+661,662
+664,665
+665,666
+665,667
+666,667
+666,668
+667,668
+671,672
+672,673
+672,674
+673,674
+673,675
+674,675
+677,678
+679,680
+680,681
+680,682
+681,682
+681,683
+682,683
+685,686
+685,687
+685,688
+686,687
+688,689
+688,690
+689,690
+689,691
+690,691
+693,694
+693,695
+694,695
+696,697
+696,698
+697,698
+700,701
+700,702
+701,702
+704,705
+705,706
+705,707
+706,707
+706,708
+707,708
+710,711
+710,712
+710,713
+711,712
+713,714
+713,715
+714,715
+714,716
+715,716
+718,719
+718,720
+719,720
+721,722
+721,723
+722,723
+725,726
+725,727
+726,727
+729,730
+730,731
+730,732
+731,732
+731,733
+732,733
+735,736
+735,737
+735,738
+736,737
+738,739
+738,740
+739,740
+739,741
+740,741
+743,744
+743,745
+744,745
+745,746
+745,747
+746,747
+749,750
+749,751
+750,751
+753,754
+753,755
+754,755
+757,758
+758,759
+758,760
+759,760
+759,761
+760,761
+763,764
+763,765
+763,766
+764,765
+766,767
+766,768
+767,768
+767,769
+768,769
+771,772
+771,773
+772,773
+773,774
+773,775
+774,775
+777,778
+777,779
+778,779
+781,782
+781,783
+782,783
+785,786
+786,787
+786,788
+787,788
+787,789
+788,789
+792,793
+793,794
+793,795
+794,795
+794,796
+795,796
+799,800
+800,801
+800,802
+801,802
+801,803
+802,803
+806,807
+807,808
+807,809
+808,809
+808,810
+809,810
+813,814
+814,815
+814,816
+815,816
+815,817
+816,817
+820,821
+821,822
+821,823
+822,823
+822,824
+823,824
+827,828
+828,829
+828,830
+829,830
+829,831
+830,831
+834,835
+834,836
+835,836
+836,837
+837,838
+837,839
+838,839
+838,840
+839,840
+842,843
+842,844
+842,845
+843,844
+845,846
+845,847
+846,847
+849,850
+850,851
+850,852
+851,852
+854,855
+855,856
+856,857
+858,859
+858,860
+858,861
+858,862
+859,860
+860,861
+860,862
+860,863
+861,862
+861,863
+862,863
+865,866
+865,867
+866,867
+868,869
+868,870
+869,870
+872,873
+872,874
+873,874
+875,876
+875,877
+876,877
+879,880
+879,881
+880,881
+882,883
+882,884
+883,884
+886,887
+886,888
+886,889
+887,888
+888,889
+890,891
+891,892
+893,894
+894,895
+896,897
+896,898
+896,899
+896,900
+896,901
+896,902
+896,903
+896,904
+897,898
+898,899
+898,900
+899,900
+899,901
+900,901
+904,905
+905,906
+905,907
+906,907
+906,908
+907,908
+911,912
+912,913
+912,914
+913,914
+913,915
+914,915
+918,919
+919,920
+919,921
+920,921
+920,922
+921,922
+924,925
+924,926
+924,927
+925,926
+927,928
+927,929
+928,929
+931,932
+931,933
+932,933
+935,936
+936,937
+936,938
+937,938
+937,939
+938,939
+941,942
+941,943
+941,944
+942,943
+944,945
+944,946
+945,946
+948,949
+948,950
+949,950
+952,953
+953,954
+953,955
+954,955
+954,956
+955,956
+958,959
+958,960
+958,961
+959,960
+961,962
+961,963
+962,963
+965,966
+965,967
+966,967
+969,970
+970,971
+970,972
+971,972
+971,973
+972,973
+975,976
+975,977
+975,978
+976,977
+978,979
+978,980
+979,980
+982,983
+982,984
+983,984
+986,987
+987,988
+987,989
+988,989
+988,990
+989,990
+993,994
+994,995
+994,996
+995,996
+995,997
+996,997
+1000,1001
+1001,1002
+1001,1003
+1002,1003
+1002,1004
+1003,1004
+1006,1007
+1008,1009
+-----nextToken-----
+2,4,7,9,10,13,15,16,21,23,24,30,31,32,35,37,40,42,46,48,49,53,55,56,59,61,64,66,70,72,73,77,79,83,85,89,91,96,97,100,101,106,107,110,111,116,117,120,121,126,127,130,131,136,137,140,141,146,147,150,151,156,157,160,161,166,167,170,171,176,177,180,181,188,189,192,195,196,200,207,208,211,214,215,219,220,224,228,229,235,236,239,242,243,246,249,250,254,257,263,264,269,270,272,273,278,279,284,285,287,288,293,294,299,300,302,303,308,309,314,315,317,318,323,324,328,331,332,335,336,339,342,343,346,347,352,353,357,360,361,364,365,368,371,372,375,376,381,382,383,388,389,390,395,398,399,402,403,406,411,412,415,420,422,424,427,432,433,439,440,441,444,447,448,453,454,456,459,460,463,468,469,470,475,476,479,483,484,487,488,491,492,497,498,501,505,506,509,510,513,514,518,522,523,524,528,532,533,534,540,543,544,547,548,551,554,556,560,565,566,568,572,573,576,579,580,583,584,587,588,595,596,599,602,603,607,608,612,618,619,622,625,626,629,632,633,637,640,645,648,651,652,656,659,662,663,668,669,670,675,676,678,683,684,687,691,692,695,698,699,702,703,708,709,712,716,717,720,723,724,727,728,733,734,737,741,742,747,748,751,752,755,756,761,762,765,769,770,775,776,779,780,783,784,789,790,791,796,797,798,803,804,805,810,811,812,817,818,819,824,825,826,831,832,833,840,841,844,847,848,852,853,857,863,864,867,870,871,874,877,878,881,884,885,889,892,895,901,902,903,908,909,910,915,916,917,922,923,926,929,930,933,934,939,940,943,946,947,950,951,956,957,960,963,964,967,968,973,974,977,980,981,984,985,990,991,992,997,998,999,1004,1005,1007,1009
+-----computeFrom-----
+93,94
+93,95
+103,104
+103,105
+113,114
+113,115
+123,124
+123,125
+133,134
+133,135
+143,144
+143,145
+153,154
+153,155
+163,164
+163,165
+173,174
+173,175
+185,186
+185,187
+204,205
+204,206
+226,227
+226,228
+233,234
+233,235
+237,238
+237,239
+244,245
+244,246
+260,261
+260,262
+275,276
+275,277
+290,291
+290,292
+305,306
+305,307
+320,321
+320,322
+325,326
+325,327
+349,350
+349,351
+354,355
+354,356
+378,379
+378,380
+385,386
+385,387
+435,436
+435,437
+436,437
+436,438
+442,443
+442,444
+465,466
+465,467
+472,473
+472,474
+480,481
+480,482
+494,495
+494,496
+502,503
+502,504
+519,520
+519,521
+529,530
+529,531
+536,537
+536,538
+552,553
+552,554
+562,563
+562,564
+592,593
+592,594
+616,617
+616,618
+620,621
+620,622
+627,628
+627,629
+643,644
+643,645
+646,647
+646,648
+654,655
+654,656
+657,658
+657,659
+665,666
+665,667
+672,673
+672,674
+680,681
+680,682
+688,689
+688,690
+693,694
+693,695
+705,706
+705,707
+713,714
+713,715
+718,719
+718,720
+730,731
+730,732
+738,739
+738,740
+743,744
+743,745
+745,746
+745,747
+758,759
+758,760
+766,767
+766,768
+771,772
+771,773
+773,774
+773,775
+786,787
+786,788
+793,794
+793,795
+800,801
+800,802
+807,808
+807,809
+814,815
+814,816
+821,822
+821,823
+828,829
+828,830
+837,838
+837,839
+861,862
+861,863
+865,866
+865,867
+872,873
+872,874
+879,880
+879,881
+898,899
+898,900
+905,906
+905,907
+912,913
+912,914
+919,920
+919,921
+936,937
+936,938
+953,954
+953,955
+970,971
+970,972
+987,988
+987,989
+994,995
+994,996
+1001,1002
+1001,1003
+-----guardedBy-----
+448,460
+447,459
+444,456
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;UnaryExpression;FieldReference;FieldReference;IdExpression;Name;Name;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ReturnStatement;UnaryExpression;LiteralExpression;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;TypeIdExpression;TypeId;NamedTypeSpecifier;Name;Declarator;CompoundStatement;ReturnStatement;UnaryExpression;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ForStatement;ExpressionStatement;ExpressionList;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionList;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ReturnStatement;UnaryExpression;LiteralExpression;IfStatement;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ReturnStatement;UnaryExpression;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;IfStatement;BinaryExpression;UnaryExpression;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ReturnStatement;UnaryExpression;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;UnaryExpression;ExpressionList;LiteralExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;TypeIdExpression;TypeId;NamedTypeSpecifier;Name;Declarator;CompoundStatement;ReturnStatement;UnaryExpression;LiteralExpression;ForStatement;ExpressionStatement;ExpressionList;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionList;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;TypeIdExpression;TypeId;NamedTypeSpecifier;Name;Declarator;CompoundStatement;ReturnStatement;UnaryExpression;LiteralExpression;ForStatement;ExpressionStatement;ExpressionList;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionList;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ReturnStatement;LiteralExpression;
+-----ast_node-----
+static int jpc_dec_process_siz(jpc_dec_t *dec, jpc_ms_t *ms){	jpc_siz_t *siz = &ms->parms.siz;	int compno;	int tileno;	jpc_dec_tile_t *tile;	jpc_dec_tcomp_t *tcomp;	int htileno;	int vtileno;	jpc_dec_cmpt_t *cmpt;	size_t size;	size_t num_samples;	size_t num_samples_delta;	dec->xstart = siz->xoff;	dec->ystart = siz->yoff;	dec->xend = siz->width;	dec->yend = siz->height;	dec->tilewidth = siz->tilewidth;	dec->tileheight = siz->tileheight;	dec->tilexoff = siz->tilexoff;	dec->tileyoff = siz->tileyoff;	dec->numcomps = siz->numcomps;	if (!(dec->cp = jpc_dec_cp_create(dec->numcomps))) {		return -1;	}	if (!(dec->cmpts = jas_alloc2(dec->numcomps, sizeof(jpc_dec_cmpt_t)))) {		return -1;	}	num_samples = 0;	for (compno = 0, cmpt = dec->cmpts; compno < dec->numcomps; ++compno,	  ++cmpt) {		cmpt->prec = siz->comps[compno].prec;		cmpt->sgnd = siz->comps[compno].sgnd;		cmpt->hstep = siz->comps[compno].hsamp;		cmpt->vstep = siz->comps[compno].vsamp;		cmpt->width = JPC_CEILDIV(dec->xend, cmpt->hstep) -		  JPC_CEILDIV(dec->xstart, cmpt->hstep);		cmpt->height = JPC_CEILDIV(dec->yend, cmpt->vstep) -		  JPC_CEILDIV(dec->ystart, cmpt->vstep);		cmpt->hsubstep = 0;		cmpt->vsubstep = 0;		if (!jas_safe_size_mul(cmpt->width, cmpt->height, &num_samples_delta)) {			jas_eprintf("image too large\n");			return -1;		}		if (!jas_safe_size_add(num_samples, num_samples_delta, &num_samples)) {			jas_eprintf("image too large\n");		}	}	if (dec->max_samples > 0 && num_samples > dec->max_samples) {		jas_eprintf("maximum number of samples exceeded (%zu > %zu)\n",		  num_samples, dec->max_samples);		return -1;	}	dec->image = 0;	dec->numhtiles = JPC_CEILDIV(dec->xend - dec->tilexoff, dec->tilewidth);	dec->numvtiles = JPC_CEILDIV(dec->yend - dec->tileyoff, dec->tileheight);	assert(dec->numhtiles >= 0);	assert(dec->numvtiles >= 0);	if (!jas_safe_size_mul(dec->numhtiles, dec->numvtiles, &size) ||	  size > INT_MAX) {		return -1;	}	dec->numtiles = size;	JAS_DBGLOG(10, ("numtiles = %d; numhtiles = %d; numvtiles = %d;\n",	  dec->numtiles, dec->numhtiles, dec->numvtiles));	if (!(dec->tiles = jas_alloc2(dec->numtiles, sizeof(jpc_dec_tile_t)))) {		return -1;	}	for (tileno = 0, tile = dec->tiles; tileno < dec->numtiles; ++tileno,	  ++tile) {		htileno = tileno % dec->numhtiles;		vtileno = tileno / dec->numhtiles;		tile->realmode = 0;		tile->state = JPC_TILE_INIT;		tile->xstart = JAS_MAX(dec->tilexoff + htileno * dec->tilewidth,		  dec->xstart);		tile->ystart = JAS_MAX(dec->tileyoff + vtileno * dec->tileheight,		  dec->ystart);		tile->xend = JAS_MIN(dec->tilexoff + (htileno + 1) *		  dec->tilewidth, dec->xend);		tile->yend = JAS_MIN(dec->tileyoff + (vtileno + 1) *		  dec->tileheight, dec->yend);		tile->numparts = 0;		tile->partno = 0;		tile->pkthdrstream = 0;		tile->pkthdrstreampos = 0;		tile->pptstab = 0;		tile->cp = 0;		tile->pi = 0;		if (!(tile->tcomps = jas_alloc2(dec->numcomps,		  sizeof(jpc_dec_tcomp_t)))) {			return -1;		}		for (compno = 0, cmpt = dec->cmpts, tcomp = tile->tcomps;		  compno < dec->numcomps; ++compno, ++cmpt, ++tcomp) {			tcomp->rlvls = 0;			tcomp->numrlvls = 0;			tcomp->data = 0;			tcomp->xstart = JPC_CEILDIV(tile->xstart, cmpt->hstep);			tcomp->ystart = JPC_CEILDIV(tile->ystart, cmpt->vstep);			tcomp->xend = JPC_CEILDIV(tile->xend, cmpt->hstep);			tcomp->yend = JPC_CEILDIV(tile->yend, cmpt->vstep);			tcomp->tsfb = 0;		}	}	dec->pkthdrstreams = 0;	/* We should expect to encounter other main header marker segments	  or an SOT marker segment next. */	dec->state = JPC_MH;	return 0;}
+static int
+jpc_dec_process_siz(jpc_dec_t *dec, jpc_ms_t *ms)
+jpc_dec_process_siz
+jpc_dec_t *dec
+jpc_dec_t
+jpc_dec_t
+*dec
+*
+dec
+jpc_ms_t *ms
+jpc_ms_t
+jpc_ms_t
+*ms
+*
+ms
+{	jpc_siz_t *siz = &ms->parms.siz;	int compno;	int tileno;	jpc_dec_tile_t *tile;	jpc_dec_tcomp_t *tcomp;	int htileno;	int vtileno;	jpc_dec_cmpt_t *cmpt;	size_t size;	size_t num_samples;	size_t num_samples_delta;	dec->xstart = siz->xoff;	dec->ystart = siz->yoff;	dec->xend = siz->width;	dec->yend = siz->height;	dec->tilewidth = siz->tilewidth;	dec->tileheight = siz->tileheight;	dec->tilexoff = siz->tilexoff;	dec->tileyoff = siz->tileyoff;	dec->numcomps = siz->numcomps;	if (!(dec->cp = jpc_dec_cp_create(dec->numcomps))) {		return -1;	}	if (!(dec->cmpts = jas_alloc2(dec->numcomps, sizeof(jpc_dec_cmpt_t)))) {		return -1;	}	num_samples = 0;	for (compno = 0, cmpt = dec->cmpts; compno < dec->numcomps; ++compno,	  ++cmpt) {		cmpt->prec = siz->comps[compno].prec;		cmpt->sgnd = siz->comps[compno].sgnd;		cmpt->hstep = siz->comps[compno].hsamp;		cmpt->vstep = siz->comps[compno].vsamp;		cmpt->width = JPC_CEILDIV(dec->xend, cmpt->hstep) -		  JPC_CEILDIV(dec->xstart, cmpt->hstep);		cmpt->height = JPC_CEILDIV(dec->yend, cmpt->vstep) -		  JPC_CEILDIV(dec->ystart, cmpt->vstep);		cmpt->hsubstep = 0;		cmpt->vsubstep = 0;		if (!jas_safe_size_mul(cmpt->width, cmpt->height, &num_samples_delta)) {			jas_eprintf("image too large\n");			return -1;		}		if (!jas_safe_size_add(num_samples, num_samples_delta, &num_samples)) {			jas_eprintf("image too large\n");		}	}	if (dec->max_samples > 0 && num_samples > dec->max_samples) {		jas_eprintf("maximum number of samples exceeded (%zu > %zu)\n",		  num_samples, dec->max_samples);		return -1;	}	dec->image = 0;	dec->numhtiles = JPC_CEILDIV(dec->xend - dec->tilexoff, dec->tilewidth);	dec->numvtiles = JPC_CEILDIV(dec->yend - dec->tileyoff, dec->tileheight);	assert(dec->numhtiles >= 0);	assert(dec->numvtiles >= 0);	if (!jas_safe_size_mul(dec->numhtiles, dec->numvtiles, &size) ||	  size > INT_MAX) {		return -1;	}	dec->numtiles = size;	JAS_DBGLOG(10, ("numtiles = %d; numhtiles = %d; numvtiles = %d;\n",	  dec->numtiles, dec->numhtiles, dec->numvtiles));	if (!(dec->tiles = jas_alloc2(dec->numtiles, sizeof(jpc_dec_tile_t)))) {		return -1;	}	for (tileno = 0, tile = dec->tiles; tileno < dec->numtiles; ++tileno,	  ++tile) {		htileno = tileno % dec->numhtiles;		vtileno = tileno / dec->numhtiles;		tile->realmode = 0;		tile->state = JPC_TILE_INIT;		tile->xstart = JAS_MAX(dec->tilexoff + htileno * dec->tilewidth,		  dec->xstart);		tile->ystart = JAS_MAX(dec->tileyoff + vtileno * dec->tileheight,		  dec->ystart);		tile->xend = JAS_MIN(dec->tilexoff + (htileno + 1) *		  dec->tilewidth, dec->xend);		tile->yend = JAS_MIN(dec->tileyoff + (vtileno + 1) *		  dec->tileheight, dec->yend);		tile->numparts = 0;		tile->partno = 0;		tile->pkthdrstream = 0;		tile->pkthdrstreampos = 0;		tile->pptstab = 0;		tile->cp = 0;		tile->pi = 0;		if (!(tile->tcomps = jas_alloc2(dec->numcomps,		  sizeof(jpc_dec_tcomp_t)))) {			return -1;		}		for (compno = 0, cmpt = dec->cmpts, tcomp = tile->tcomps;		  compno < dec->numcomps; ++compno, ++cmpt, ++tcomp) {			tcomp->rlvls = 0;			tcomp->numrlvls = 0;			tcomp->data = 0;			tcomp->xstart = JPC_CEILDIV(tile->xstart, cmpt->hstep);			tcomp->ystart = JPC_CEILDIV(tile->ystart, cmpt->vstep);			tcomp->xend = JPC_CEILDIV(tile->xend, cmpt->hstep);			tcomp->yend = JPC_CEILDIV(tile->yend, cmpt->vstep);			tcomp->tsfb = 0;		}	}	dec->pkthdrstreams = 0;	/* We should expect to encounter other main header marker segments	  or an SOT marker segment next. */	dec->state = JPC_MH;	return 0;}
+jpc_siz_t *siz = &ms->parms.siz;
+jpc_siz_t *siz = &ms->parms.siz;
+jpc_siz_t
+jpc_siz_t
+*siz = &ms->parms.siz
+*
+siz
+= &ms->parms.siz
+&ms->parms.siz
+ms->parms.siz
+ms->parms
+ms
+ms
+parms
+siz
+int compno;
+int compno;
+int
+compno
+compno
+int tileno;
+int tileno;
+int
+tileno
+tileno
+jpc_dec_tile_t *tile;
+jpc_dec_tile_t *tile;
+jpc_dec_tile_t
+jpc_dec_tile_t
+*tile
+*
+tile
+jpc_dec_tcomp_t *tcomp;
+jpc_dec_tcomp_t *tcomp;
+jpc_dec_tcomp_t
+jpc_dec_tcomp_t
+*tcomp
+*
+tcomp
+int htileno;
+int htileno;
+int
+htileno
+htileno
+int vtileno;
+int vtileno;
+int
+vtileno
+vtileno
+jpc_dec_cmpt_t *cmpt;
+jpc_dec_cmpt_t *cmpt;
+jpc_dec_cmpt_t
+jpc_dec_cmpt_t
+*cmpt
+*
+cmpt
+size_t size;
+size_t size;
+size_t
+size_t
+size
+size
+size_t num_samples;
+size_t num_samples;
+size_t
+size_t
+num_samples
+num_samples
+size_t num_samples_delta;
+size_t num_samples_delta;
+size_t
+size_t
+num_samples_delta
+num_samples_delta
+dec->xstart = siz->xoff;
+dec->xstart = siz->xoff
+dec->xstart
+dec
+dec
+xstart
+siz->xoff
+siz
+siz
+xoff
+dec->ystart = siz->yoff;
+dec->ystart = siz->yoff
+dec->ystart
+dec
+dec
+ystart
+siz->yoff
+siz
+siz
+yoff
+dec->xend = siz->width;
+dec->xend = siz->width
+dec->xend
+dec
+dec
+xend
+siz->width
+siz
+siz
+width
+dec->yend = siz->height;
+dec->yend = siz->height
+dec->yend
+dec
+dec
+yend
+siz->height
+siz
+siz
+height
+dec->tilewidth = siz->tilewidth;
+dec->tilewidth = siz->tilewidth
+dec->tilewidth
+dec
+dec
+tilewidth
+siz->tilewidth
+siz
+siz
+tilewidth
+dec->tileheight = siz->tileheight;
+dec->tileheight = siz->tileheight
+dec->tileheight
+dec
+dec
+tileheight
+siz->tileheight
+siz
+siz
+tileheight
+dec->tilexoff = siz->tilexoff;
+dec->tilexoff = siz->tilexoff
+dec->tilexoff
+dec
+dec
+tilexoff
+siz->tilexoff
+siz
+siz
+tilexoff
+dec->tileyoff = siz->tileyoff;
+dec->tileyoff = siz->tileyoff
+dec->tileyoff
+dec
+dec
+tileyoff
+siz->tileyoff
+siz
+siz
+tileyoff
+dec->numcomps = siz->numcomps;
+dec->numcomps = siz->numcomps
+dec->numcomps
+dec
+dec
+numcomps
+siz->numcomps
+siz
+siz
+numcomps
+if (!(dec->cp = jpc_dec_cp_create(dec->numcomps))) {		return -1;	}
+!(dec->cp = jpc_dec_cp_create(dec->numcomps))
+(dec->cp = jpc_dec_cp_create(dec->numcomps))
+dec->cp = jpc_dec_cp_create(dec->numcomps)
+dec->cp
+dec
+dec
+cp
+jpc_dec_cp_create(dec->numcomps)
+jpc_dec_cp_create
+jpc_dec_cp_create
+dec->numcomps
+dec
+dec
+numcomps
+{		return -1;	}
+return -1;
+-1
+1
+if (!(dec->cmpts = jas_alloc2(dec->numcomps, sizeof(jpc_dec_cmpt_t)))) {		return -1;	}
+!(dec->cmpts = jas_alloc2(dec->numcomps, sizeof(jpc_dec_cmpt_t)))
+(dec->cmpts = jas_alloc2(dec->numcomps, sizeof(jpc_dec_cmpt_t)))
+dec->cmpts = jas_alloc2(dec->numcomps, sizeof(jpc_dec_cmpt_t))
+dec->cmpts
+dec
+dec
+cmpts
+jas_alloc2(dec->numcomps, sizeof(jpc_dec_cmpt_t))
+jas_alloc2
+jas_alloc2
+dec->numcomps
+dec
+dec
+numcomps
+sizeof(jpc_dec_cmpt_t)
+jpc_dec_cmpt_t
+jpc_dec_cmpt_t
+jpc_dec_cmpt_t
+
+{		return -1;	}
+return -1;
+-1
+1
+num_samples = 0;
+num_samples = 0
+num_samples
+num_samples
+0
+for (compno = 0, cmpt = dec->cmpts; compno < dec->numcomps; ++compno,	  ++cmpt) {		cmpt->prec = siz->comps[compno].prec;		cmpt->sgnd = siz->comps[compno].sgnd;		cmpt->hstep = siz->comps[compno].hsamp;		cmpt->vstep = siz->comps[compno].vsamp;		cmpt->width = JPC_CEILDIV(dec->xend, cmpt->hstep) -		  JPC_CEILDIV(dec->xstart, cmpt->hstep);		cmpt->height = JPC_CEILDIV(dec->yend, cmpt->vstep) -		  JPC_CEILDIV(dec->ystart, cmpt->vstep);		cmpt->hsubstep = 0;		cmpt->vsubstep = 0;		if (!jas_safe_size_mul(cmpt->width, cmpt->height, &num_samples_delta)) {			jas_eprintf("image too large\n");			return -1;		}		if (!jas_safe_size_add(num_samples, num_samples_delta, &num_samples)) {			jas_eprintf("image too large\n");		}	}
+compno = 0, cmpt = dec->cmpts;
+compno = 0, cmpt = dec->cmpts
+compno = 0
+compno
+compno
+0
+cmpt = dec->cmpts
+cmpt
+cmpt
+dec->cmpts
+dec
+dec
+cmpts
+compno < dec->numcomps
+compno
+compno
+dec->numcomps
+dec
+dec
+numcomps
+++compno,	  ++cmpt
+++compno
+compno
+compno
+++cmpt
+cmpt
+cmpt
+{		cmpt->prec = siz->comps[compno].prec;		cmpt->sgnd = siz->comps[compno].sgnd;		cmpt->hstep = siz->comps[compno].hsamp;		cmpt->vstep = siz->comps[compno].vsamp;		cmpt->width = JPC_CEILDIV(dec->xend, cmpt->hstep) -		  JPC_CEILDIV(dec->xstart, cmpt->hstep);		cmpt->height = JPC_CEILDIV(dec->yend, cmpt->vstep) -		  JPC_CEILDIV(dec->ystart, cmpt->vstep);		cmpt->hsubstep = 0;		cmpt->vsubstep = 0;		if (!jas_safe_size_mul(cmpt->width, cmpt->height, &num_samples_delta)) {			jas_eprintf("image too large\n");			return -1;		}		if (!jas_safe_size_add(num_samples, num_samples_delta, &num_samples)) {			jas_eprintf("image too large\n");		}	}
+cmpt->prec = siz->comps[compno].prec;
+cmpt->prec = siz->comps[compno].prec
+cmpt->prec
+cmpt
+cmpt
+prec
+siz->comps[compno].prec
+siz->comps[compno]
+siz->comps
+siz
+siz
+comps
+compno
+compno
+prec
+cmpt->sgnd = siz->comps[compno].sgnd;
+cmpt->sgnd = siz->comps[compno].sgnd
+cmpt->sgnd
+cmpt
+cmpt
+sgnd
+siz->comps[compno].sgnd
+siz->comps[compno]
+siz->comps
+siz
+siz
+comps
+compno
+compno
+sgnd
+cmpt->hstep = siz->comps[compno].hsamp;
+cmpt->hstep = siz->comps[compno].hsamp
+cmpt->hstep
+cmpt
+cmpt
+hstep
+siz->comps[compno].hsamp
+siz->comps[compno]
+siz->comps
+siz
+siz
+comps
+compno
+compno
+hsamp
+cmpt->vstep = siz->comps[compno].vsamp;
+cmpt->vstep = siz->comps[compno].vsamp
+cmpt->vstep
+cmpt
+cmpt
+vstep
+siz->comps[compno].vsamp
+siz->comps[compno]
+siz->comps
+siz
+siz
+comps
+compno
+compno
+vsamp
+cmpt->width = JPC_CEILDIV(dec->xend, cmpt->hstep) -		  JPC_CEILDIV(dec->xstart, cmpt->hstep);
+cmpt->width = JPC_CEILDIV(dec->xend, cmpt->hstep) -		  JPC_CEILDIV(dec->xstart, cmpt->hstep)
+cmpt->width
+cmpt
+cmpt
+width
+JPC_CEILDIV(dec->xend, cmpt->hstep) -		  JPC_CEILDIV(dec->xstart, cmpt->hstep)
+JPC_CEILDIV(dec->xend, cmpt->hstep)
+JPC_CEILDIV
+JPC_CEILDIV
+dec->xend
+dec
+dec
+xend
+cmpt->hstep
+cmpt
+cmpt
+hstep
+JPC_CEILDIV(dec->xstart, cmpt->hstep)
+JPC_CEILDIV
+JPC_CEILDIV
+dec->xstart
+dec
+dec
+xstart
+cmpt->hstep
+cmpt
+cmpt
+hstep
+cmpt->height = JPC_CEILDIV(dec->yend, cmpt->vstep) -		  JPC_CEILDIV(dec->ystart, cmpt->vstep);
+cmpt->height = JPC_CEILDIV(dec->yend, cmpt->vstep) -		  JPC_CEILDIV(dec->ystart, cmpt->vstep)
+cmpt->height
+cmpt
+cmpt
+height
+JPC_CEILDIV(dec->yend, cmpt->vstep) -		  JPC_CEILDIV(dec->ystart, cmpt->vstep)
+JPC_CEILDIV(dec->yend, cmpt->vstep)
+JPC_CEILDIV
+JPC_CEILDIV
+dec->yend
+dec
+dec
+yend
+cmpt->vstep
+cmpt
+cmpt
+vstep
+JPC_CEILDIV(dec->ystart, cmpt->vstep)
+JPC_CEILDIV
+JPC_CEILDIV
+dec->ystart
+dec
+dec
+ystart
+cmpt->vstep
+cmpt
+cmpt
+vstep
+cmpt->hsubstep = 0;
+cmpt->hsubstep = 0
+cmpt->hsubstep
+cmpt
+cmpt
+hsubstep
+0
+cmpt->vsubstep = 0;
+cmpt->vsubstep = 0
+cmpt->vsubstep
+cmpt
+cmpt
+vsubstep
+0
+if (!jas_safe_size_mul(cmpt->width, cmpt->height, &num_samples_delta)) {			jas_eprintf("image too large\n");			return -1;		}
+!jas_safe_size_mul(cmpt->width, cmpt->height, &num_samples_delta)
+jas_safe_size_mul(cmpt->width, cmpt->height, &num_samples_delta)
+jas_safe_size_mul
+jas_safe_size_mul
+cmpt->width
+cmpt
+cmpt
+width
+cmpt->height
+cmpt
+cmpt
+height
+&num_samples_delta
+num_samples_delta
+num_samples_delta
+{			jas_eprintf("image too large\n");			return -1;		}
+jas_eprintf("image too large\n");
+jas_eprintf("image too large\n")
+jas_eprintf
+jas_eprintf
+"image too large\n"
+return -1;
+-1
+1
+if (!jas_safe_size_add(num_samples, num_samples_delta, &num_samples)) {			jas_eprintf("image too large\n");		}
+!jas_safe_size_add(num_samples, num_samples_delta, &num_samples)
+jas_safe_size_add(num_samples, num_samples_delta, &num_samples)
+jas_safe_size_add
+jas_safe_size_add
+num_samples
+num_samples
+num_samples_delta
+num_samples_delta
+&num_samples
+num_samples
+num_samples
+{			jas_eprintf("image too large\n");		}
+jas_eprintf("image too large\n");
+jas_eprintf("image too large\n")
+jas_eprintf
+jas_eprintf
+"image too large\n"
+if (dec->max_samples > 0 && num_samples > dec->max_samples) {		jas_eprintf("maximum number of samples exceeded (%zu > %zu)\n",		  num_samples, dec->max_samples);		return -1;	}
+dec->max_samples > 0 && num_samples > dec->max_samples
+dec->max_samples > 0
+dec->max_samples
+dec
+dec
+max_samples
+0
+num_samples > dec->max_samples
+num_samples
+num_samples
+dec->max_samples
+dec
+dec
+max_samples
+{		jas_eprintf("maximum number of samples exceeded (%zu > %zu)\n",		  num_samples, dec->max_samples);		return -1;	}
+jas_eprintf("maximum number of samples exceeded (%zu > %zu)\n",		  num_samples, dec->max_samples);
+jas_eprintf("maximum number of samples exceeded (%zu > %zu)\n",		  num_samples, dec->max_samples)
+jas_eprintf
+jas_eprintf
+"maximum number of samples exceeded (%zu > %zu)\n"
+num_samples
+num_samples
+dec->max_samples
+dec
+dec
+max_samples
+return -1;
+-1
+1
+dec->image = 0;
+dec->image = 0
+dec->image
+dec
+dec
+image
+0
+dec->numhtiles = JPC_CEILDIV(dec->xend - dec->tilexoff, dec->tilewidth);
+dec->numhtiles = JPC_CEILDIV(dec->xend - dec->tilexoff, dec->tilewidth)
+dec->numhtiles
+dec
+dec
+numhtiles
+JPC_CEILDIV(dec->xend - dec->tilexoff, dec->tilewidth)
+JPC_CEILDIV
+JPC_CEILDIV
+dec->xend - dec->tilexoff
+dec->xend
+dec
+dec
+xend
+dec->tilexoff
+dec
+dec
+tilexoff
+dec->tilewidth
+dec
+dec
+tilewidth
+dec->numvtiles = JPC_CEILDIV(dec->yend - dec->tileyoff, dec->tileheight);
+dec->numvtiles = JPC_CEILDIV(dec->yend - dec->tileyoff, dec->tileheight)
+dec->numvtiles
+dec
+dec
+numvtiles
+JPC_CEILDIV(dec->yend - dec->tileyoff, dec->tileheight)
+JPC_CEILDIV
+JPC_CEILDIV
+dec->yend - dec->tileyoff
+dec->yend
+dec
+dec
+yend
+dec->tileyoff
+dec
+dec
+tileyoff
+dec->tileheight
+dec
+dec
+tileheight
+assert(dec->numhtiles >= 0);
+assert(dec->numhtiles >= 0)
+assert
+assert
+dec->numhtiles >= 0
+dec->numhtiles
+dec
+dec
+numhtiles
+0
+assert(dec->numvtiles >= 0);
+assert(dec->numvtiles >= 0)
+assert
+assert
+dec->numvtiles >= 0
+dec->numvtiles
+dec
+dec
+numvtiles
+0
+if (!jas_safe_size_mul(dec->numhtiles, dec->numvtiles, &size) ||	  size > INT_MAX) {		return -1;	}
+!jas_safe_size_mul(dec->numhtiles, dec->numvtiles, &size) ||	  size > INT_MAX
+!jas_safe_size_mul(dec->numhtiles, dec->numvtiles, &size)
+jas_safe_size_mul(dec->numhtiles, dec->numvtiles, &size)
+jas_safe_size_mul
+jas_safe_size_mul
+dec->numhtiles
+dec
+dec
+numhtiles
+dec->numvtiles
+dec
+dec
+numvtiles
+&size
+size
+size
+size > INT_MAX
+size
+size
+INT_MAX
+INT_MAX
+{		return -1;	}
+return -1;
+-1
+1
+dec->numtiles = size;
+dec->numtiles = size
+dec->numtiles
+dec
+dec
+numtiles
+size
+size
+JAS_DBGLOG(10, ("numtiles = %d; numhtiles = %d; numvtiles = %d;\n",	  dec->numtiles, dec->numhtiles, dec->numvtiles));
+JAS_DBGLOG(10, ("numtiles = %d; numhtiles = %d; numvtiles = %d;\n",	  dec->numtiles, dec->numhtiles, dec->numvtiles))
+JAS_DBGLOG
+JAS_DBGLOG
+10
+("numtiles = %d; numhtiles = %d; numvtiles = %d;\n",	  dec->numtiles, dec->numhtiles, dec->numvtiles)
+"numtiles = %d; numhtiles = %d; numvtiles = %d;\n",	  dec->numtiles, dec->numhtiles, dec->numvtiles
+"numtiles = %d; numhtiles = %d; numvtiles = %d;\n"
+dec->numtiles
+dec
+dec
+numtiles
+dec->numhtiles
+dec
+dec
+numhtiles
+dec->numvtiles
+dec
+dec
+numvtiles
+if (!(dec->tiles = jas_alloc2(dec->numtiles, sizeof(jpc_dec_tile_t)))) {		return -1;	}
+!(dec->tiles = jas_alloc2(dec->numtiles, sizeof(jpc_dec_tile_t)))
+(dec->tiles = jas_alloc2(dec->numtiles, sizeof(jpc_dec_tile_t)))
+dec->tiles = jas_alloc2(dec->numtiles, sizeof(jpc_dec_tile_t))
+dec->tiles
+dec
+dec
+tiles
+jas_alloc2(dec->numtiles, sizeof(jpc_dec_tile_t))
+jas_alloc2
+jas_alloc2
+dec->numtiles
+dec
+dec
+numtiles
+sizeof(jpc_dec_tile_t)
+jpc_dec_tile_t
+jpc_dec_tile_t
+jpc_dec_tile_t
+
+{		return -1;	}
+return -1;
+-1
+1
+for (tileno = 0, tile = dec->tiles; tileno < dec->numtiles; ++tileno,	  ++tile) {		htileno = tileno % dec->numhtiles;		vtileno = tileno / dec->numhtiles;		tile->realmode = 0;		tile->state = JPC_TILE_INIT;		tile->xstart = JAS_MAX(dec->tilexoff + htileno * dec->tilewidth,		  dec->xstart);		tile->ystart = JAS_MAX(dec->tileyoff + vtileno * dec->tileheight,		  dec->ystart);		tile->xend = JAS_MIN(dec->tilexoff + (htileno + 1) *		  dec->tilewidth, dec->xend);		tile->yend = JAS_MIN(dec->tileyoff + (vtileno + 1) *		  dec->tileheight, dec->yend);		tile->numparts = 0;		tile->partno = 0;		tile->pkthdrstream = 0;		tile->pkthdrstreampos = 0;		tile->pptstab = 0;		tile->cp = 0;		tile->pi = 0;		if (!(tile->tcomps = jas_alloc2(dec->numcomps,		  sizeof(jpc_dec_tcomp_t)))) {			return -1;		}		for (compno = 0, cmpt = dec->cmpts, tcomp = tile->tcomps;		  compno < dec->numcomps; ++compno, ++cmpt, ++tcomp) {			tcomp->rlvls = 0;			tcomp->numrlvls = 0;			tcomp->data = 0;			tcomp->xstart = JPC_CEILDIV(tile->xstart, cmpt->hstep);			tcomp->ystart = JPC_CEILDIV(tile->ystart, cmpt->vstep);			tcomp->xend = JPC_CEILDIV(tile->xend, cmpt->hstep);			tcomp->yend = JPC_CEILDIV(tile->yend, cmpt->vstep);			tcomp->tsfb = 0;		}	}
+tileno = 0, tile = dec->tiles;
+tileno = 0, tile = dec->tiles
+tileno = 0
+tileno
+tileno
+0
+tile = dec->tiles
+tile
+tile
+dec->tiles
+dec
+dec
+tiles
+tileno < dec->numtiles
+tileno
+tileno
+dec->numtiles
+dec
+dec
+numtiles
+++tileno,	  ++tile
+++tileno
+tileno
+tileno
+++tile
+tile
+tile
+{		htileno = tileno % dec->numhtiles;		vtileno = tileno / dec->numhtiles;		tile->realmode = 0;		tile->state = JPC_TILE_INIT;		tile->xstart = JAS_MAX(dec->tilexoff + htileno * dec->tilewidth,		  dec->xstart);		tile->ystart = JAS_MAX(dec->tileyoff + vtileno * dec->tileheight,		  dec->ystart);		tile->xend = JAS_MIN(dec->tilexoff + (htileno + 1) *		  dec->tilewidth, dec->xend);		tile->yend = JAS_MIN(dec->tileyoff + (vtileno + 1) *		  dec->tileheight, dec->yend);		tile->numparts = 0;		tile->partno = 0;		tile->pkthdrstream = 0;		tile->pkthdrstreampos = 0;		tile->pptstab = 0;		tile->cp = 0;		tile->pi = 0;		if (!(tile->tcomps = jas_alloc2(dec->numcomps,		  sizeof(jpc_dec_tcomp_t)))) {			return -1;		}		for (compno = 0, cmpt = dec->cmpts, tcomp = tile->tcomps;		  compno < dec->numcomps; ++compno, ++cmpt, ++tcomp) {			tcomp->rlvls = 0;			tcomp->numrlvls = 0;			tcomp->data = 0;			tcomp->xstart = JPC_CEILDIV(tile->xstart, cmpt->hstep);			tcomp->ystart = JPC_CEILDIV(tile->ystart, cmpt->vstep);			tcomp->xend = JPC_CEILDIV(tile->xend, cmpt->hstep);			tcomp->yend = JPC_CEILDIV(tile->yend, cmpt->vstep);			tcomp->tsfb = 0;		}	}
+htileno = tileno % dec->numhtiles;
+htileno = tileno % dec->numhtiles
+htileno
+htileno
+tileno % dec->numhtiles
+tileno
+tileno
+dec->numhtiles
+dec
+dec
+numhtiles
+vtileno = tileno / dec->numhtiles;
+vtileno = tileno / dec->numhtiles
+vtileno
+vtileno
+tileno / dec->numhtiles
+tileno
+tileno
+dec->numhtiles
+dec
+dec
+numhtiles
+tile->realmode = 0;
+tile->realmode = 0
+tile->realmode
+tile
+tile
+realmode
+0
+tile->state = JPC_TILE_INIT;
+tile->state = JPC_TILE_INIT
+tile->state
+tile
+tile
+state
+JPC_TILE_INIT
+JPC_TILE_INIT
+tile->xstart = JAS_MAX(dec->tilexoff + htileno * dec->tilewidth,		  dec->xstart);
+tile->xstart = JAS_MAX(dec->tilexoff + htileno * dec->tilewidth,		  dec->xstart)
+tile->xstart
+tile
+tile
+xstart
+JAS_MAX(dec->tilexoff + htileno * dec->tilewidth,		  dec->xstart)
+JAS_MAX
+JAS_MAX
+dec->tilexoff + htileno * dec->tilewidth
+dec->tilexoff
+dec
+dec
+tilexoff
+htileno * dec->tilewidth
+htileno
+htileno
+dec->tilewidth
+dec
+dec
+tilewidth
+dec->xstart
+dec
+dec
+xstart
+tile->ystart = JAS_MAX(dec->tileyoff + vtileno * dec->tileheight,		  dec->ystart);
+tile->ystart = JAS_MAX(dec->tileyoff + vtileno * dec->tileheight,		  dec->ystart)
+tile->ystart
+tile
+tile
+ystart
+JAS_MAX(dec->tileyoff + vtileno * dec->tileheight,		  dec->ystart)
+JAS_MAX
+JAS_MAX
+dec->tileyoff + vtileno * dec->tileheight
+dec->tileyoff
+dec
+dec
+tileyoff
+vtileno * dec->tileheight
+vtileno
+vtileno
+dec->tileheight
+dec
+dec
+tileheight
+dec->ystart
+dec
+dec
+ystart
+tile->xend = JAS_MIN(dec->tilexoff + (htileno + 1) *		  dec->tilewidth, dec->xend);
+tile->xend = JAS_MIN(dec->tilexoff + (htileno + 1) *		  dec->tilewidth, dec->xend)
+tile->xend
+tile
+tile
+xend
+JAS_MIN(dec->tilexoff + (htileno + 1) *		  dec->tilewidth, dec->xend)
+JAS_MIN
+JAS_MIN
+dec->tilexoff + (htileno + 1) *		  dec->tilewidth
+dec->tilexoff
+dec
+dec
+tilexoff
+(htileno + 1) *		  dec->tilewidth
+(htileno + 1)
+htileno + 1
+htileno
+htileno
+1
+dec->tilewidth
+dec
+dec
+tilewidth
+dec->xend
+dec
+dec
+xend
+tile->yend = JAS_MIN(dec->tileyoff + (vtileno + 1) *		  dec->tileheight, dec->yend);
+tile->yend = JAS_MIN(dec->tileyoff + (vtileno + 1) *		  dec->tileheight, dec->yend)
+tile->yend
+tile
+tile
+yend
+JAS_MIN(dec->tileyoff + (vtileno + 1) *		  dec->tileheight, dec->yend)
+JAS_MIN
+JAS_MIN
+dec->tileyoff + (vtileno + 1) *		  dec->tileheight
+dec->tileyoff
+dec
+dec
+tileyoff
+(vtileno + 1) *		  dec->tileheight
+(vtileno + 1)
+vtileno + 1
+vtileno
+vtileno
+1
+dec->tileheight
+dec
+dec
+tileheight
+dec->yend
+dec
+dec
+yend
+tile->numparts = 0;
+tile->numparts = 0
+tile->numparts
+tile
+tile
+numparts
+0
+tile->partno = 0;
+tile->partno = 0
+tile->partno
+tile
+tile
+partno
+0
+tile->pkthdrstream = 0;
+tile->pkthdrstream = 0
+tile->pkthdrstream
+tile
+tile
+pkthdrstream
+0
+tile->pkthdrstreampos = 0;
+tile->pkthdrstreampos = 0
+tile->pkthdrstreampos
+tile
+tile
+pkthdrstreampos
+0
+tile->pptstab = 0;
+tile->pptstab = 0
+tile->pptstab
+tile
+tile
+pptstab
+0
+tile->cp = 0;
+tile->cp = 0
+tile->cp
+tile
+tile
+cp
+0
+tile->pi = 0;
+tile->pi = 0
+tile->pi
+tile
+tile
+pi
+0
+if (!(tile->tcomps = jas_alloc2(dec->numcomps,		  sizeof(jpc_dec_tcomp_t)))) {			return -1;		}
+!(tile->tcomps = jas_alloc2(dec->numcomps,		  sizeof(jpc_dec_tcomp_t)))
+(tile->tcomps = jas_alloc2(dec->numcomps,		  sizeof(jpc_dec_tcomp_t)))
+tile->tcomps = jas_alloc2(dec->numcomps,		  sizeof(jpc_dec_tcomp_t))
+tile->tcomps
+tile
+tile
+tcomps
+jas_alloc2(dec->numcomps,		  sizeof(jpc_dec_tcomp_t))
+jas_alloc2
+jas_alloc2
+dec->numcomps
+dec
+dec
+numcomps
+sizeof(jpc_dec_tcomp_t)
+jpc_dec_tcomp_t
+jpc_dec_tcomp_t
+jpc_dec_tcomp_t
+
+{			return -1;		}
+return -1;
+-1
+1
+for (compno = 0, cmpt = dec->cmpts, tcomp = tile->tcomps;		  compno < dec->numcomps; ++compno, ++cmpt, ++tcomp) {			tcomp->rlvls = 0;			tcomp->numrlvls = 0;			tcomp->data = 0;			tcomp->xstart = JPC_CEILDIV(tile->xstart, cmpt->hstep);			tcomp->ystart = JPC_CEILDIV(tile->ystart, cmpt->vstep);			tcomp->xend = JPC_CEILDIV(tile->xend, cmpt->hstep);			tcomp->yend = JPC_CEILDIV(tile->yend, cmpt->vstep);			tcomp->tsfb = 0;		}
+compno = 0, cmpt = dec->cmpts, tcomp = tile->tcomps;
+compno = 0, cmpt = dec->cmpts, tcomp = tile->tcomps
+compno = 0
+compno
+compno
+0
+cmpt = dec->cmpts
+cmpt
+cmpt
+dec->cmpts
+dec
+dec
+cmpts
+tcomp = tile->tcomps
+tcomp
+tcomp
+tile->tcomps
+tile
+tile
+tcomps
+compno < dec->numcomps
+compno
+compno
+dec->numcomps
+dec
+dec
+numcomps
+++compno, ++cmpt, ++tcomp
+++compno
+compno
+compno
+++cmpt
+cmpt
+cmpt
+++tcomp
+tcomp
+tcomp
+{			tcomp->rlvls = 0;			tcomp->numrlvls = 0;			tcomp->data = 0;			tcomp->xstart = JPC_CEILDIV(tile->xstart, cmpt->hstep);			tcomp->ystart = JPC_CEILDIV(tile->ystart, cmpt->vstep);			tcomp->xend = JPC_CEILDIV(tile->xend, cmpt->hstep);			tcomp->yend = JPC_CEILDIV(tile->yend, cmpt->vstep);			tcomp->tsfb = 0;		}
+tcomp->rlvls = 0;
+tcomp->rlvls = 0
+tcomp->rlvls
+tcomp
+tcomp
+rlvls
+0
+tcomp->numrlvls = 0;
+tcomp->numrlvls = 0
+tcomp->numrlvls
+tcomp
+tcomp
+numrlvls
+0
+tcomp->data = 0;
+tcomp->data = 0
+tcomp->data
+tcomp
+tcomp
+data
+0
+tcomp->xstart = JPC_CEILDIV(tile->xstart, cmpt->hstep);
+tcomp->xstart = JPC_CEILDIV(tile->xstart, cmpt->hstep)
+tcomp->xstart
+tcomp
+tcomp
+xstart
+JPC_CEILDIV(tile->xstart, cmpt->hstep)
+JPC_CEILDIV
+JPC_CEILDIV
+tile->xstart
+tile
+tile
+xstart
+cmpt->hstep
+cmpt
+cmpt
+hstep
+tcomp->ystart = JPC_CEILDIV(tile->ystart, cmpt->vstep);
+tcomp->ystart = JPC_CEILDIV(tile->ystart, cmpt->vstep)
+tcomp->ystart
+tcomp
+tcomp
+ystart
+JPC_CEILDIV(tile->ystart, cmpt->vstep)
+JPC_CEILDIV
+JPC_CEILDIV
+tile->ystart
+tile
+tile
+ystart
+cmpt->vstep
+cmpt
+cmpt
+vstep
+tcomp->xend = JPC_CEILDIV(tile->xend, cmpt->hstep);
+tcomp->xend = JPC_CEILDIV(tile->xend, cmpt->hstep)
+tcomp->xend
+tcomp
+tcomp
+xend
+JPC_CEILDIV(tile->xend, cmpt->hstep)
+JPC_CEILDIV
+JPC_CEILDIV
+tile->xend
+tile
+tile
+xend
+cmpt->hstep
+cmpt
+cmpt
+hstep
+tcomp->yend = JPC_CEILDIV(tile->yend, cmpt->vstep);
+tcomp->yend = JPC_CEILDIV(tile->yend, cmpt->vstep)
+tcomp->yend
+tcomp
+tcomp
+yend
+JPC_CEILDIV(tile->yend, cmpt->vstep)
+JPC_CEILDIV
+JPC_CEILDIV
+tile->yend
+tile
+tile
+yend
+cmpt->vstep
+cmpt
+cmpt
+vstep
+tcomp->tsfb = 0;
+tcomp->tsfb = 0
+tcomp->tsfb
+tcomp
+tcomp
+tsfb
+0
+dec->pkthdrstreams = 0;
+dec->pkthdrstreams = 0
+dec->pkthdrstreams
+dec
+dec
+pkthdrstreams
+0
+dec->state = JPC_MH;
+dec->state = JPC_MH
+dec->state
+dec
+dec
+state
+JPC_MH
+JPC_MH
+return 0;
+0
+-----joern-----
+(41,17,0)
+(52,8,0)
+(53,48,0)
+(50,43,0)
+(48,53,0)
+(7,43,0)
+(54,58,0)
+(22,41,0)
+(47,57,0)
+(38,0,0)
+(43,15,0)
+(58,46,0)
+(26,42,0)
+(23,31,0)
+(21,3,0)
+(11,42,0)
+(31,39,0)
+(59,47,0)
+(28,42,0)
+(41,22,0)
+(57,47,0)
+(58,56,0)
+(56,58,0)
+(25,61,0)
+(5,42,0)
+(57,37,0)
+(3,40,0)
+(20,21,0)
+(9,28,0)
+(22,37,0)
+(37,22,0)
+(17,53,0)
+(18,46,0)
+(34,8,0)
+(49,26,0)
+(0,8,0)
+(45,28,0)
+(44,8,0)
+(12,51,0)
+(51,42,0)
+(41,61,0)
+(16,48,0)
+(33,26,0)
+(28,47,0)
+(6,8,0)
+(27,17,0)
+(17,40,0)
+(43,60,0)
+(36,57,0)
+(56,8,0)
+(26,56,0)
+(29,42,0)
+(3,15,0)
+(30,8,0)
+(19,29,0)
+(53,8,0)
+(0,31,0)
+(3,21,0)
+(32,53,0)
+(43,42,0)
+(51,57,0)
+(17,41,0)
+(15,55,0)
+(31,0,0)
+(61,1,0)
+(22,1,0)
+(57,51,0)
+(47,28,0)
+(2,22,0)
+(46,1,0)
+(37,57,0)
+(13,46,0)
+(40,3,0)
+(21,0,0)
+(40,17,0)
+(46,58,0)
+(61,41,0)
+(15,3,0)
+(4,37,0)
+(14,61,0)
+(10,51,0)
+(48,39,0)
+(35,56,0)
+(42,5,1)
+(31,23,1)
+(48,16,1)
+(61,1,1)
+(58,46,1)
+(41,61,1)
+(29,19,1)
+(11,56,1)
+(41,22,1)
+(49,33,1)
+(26,42,1)
+(5,11,1)
+(46,13,1)
+(7,50,1)
+(46,1,1)
+(20,43,1)
+(43,7,1)
+(31,39,1)
+(14,27,1)
+(2,61,1)
+(25,14,1)
+(28,45,1)
+(47,59,1)
+(54,46,1)
+(26,49,1)
+(4,2,1)
+(53,48,1)
+(58,54,1)
+(21,20,1)
+(17,53,1)
+(57,51,1)
+(57,36,1)
+(28,42,1)
+(37,57,1)
+(0,31,1)
+(13,18,1)
+(24,26,1)
+(3,21,1)
+(18,35,1)
+(57,47,1)
+(16,32,1)
+(59,28,1)
+(51,42,1)
+(33,42,1)
+(61,25,1)
+(21,0,1)
+(9,51,1)
+(50,26,1)
+(26,56,1)
+(38,53,1)
+(22,37,1)
+(36,51,1)
+(17,41,1)
+(48,39,1)
+(45,9,1)
+(47,28,1)
+(27,21,1)
+(56,58,1)
+(40,17,1)
+(35,0,1)
+(10,12,1)
+(3,40,1)
+(23,38,1)
+(15,3,1)
+(43,60,1)
+(29,42,1)
+(51,10,1)
+(43,42,1)
+(19,15,1)
+(33,29,1)
+(22,1,1)
+(12,4,1)
+(4,26,2)
+(57,26,2)
+(51,26,2)
+(12,26,2)
+(33,26,2)
+(15,3,2)
+(36,51,2)
+(22,1,2)
+(15,26,2)
+(40,26,2)
+(9,51,2)
+(43,26,2)
+(17,53,2)
+(37,57,2)
+(41,22,2)
+(17,41,2)
+(22,37,2)
+(61,1,2)
+(59,51,2)
+(26,56,2)
+(48,39,2)
+(14,26,2)
+(41,26,2)
+(47,51,2)
+(22,26,2)
+(25,26,2)
+(50,26,2)
+(41,61,2)
+(27,26,2)
+(57,47,2)
+(46,1,2)
+(43,42,2)
+(3,26,2)
+(21,26,2)
+(29,42,2)
+(28,42,2)
+(0,31,2)
+(10,26,2)
+(40,17,2)
+(58,46,2)
+(17,26,2)
+(3,40,2)
+(7,26,2)
+(47,28,2)
+(45,51,2)
+(37,26,2)
+(56,58,2)
+(20,26,2)
+(53,48,2)
+(49,26,2)
+(57,51,2)
+(31,39,2)
+(26,26,2)
+(29,26,2)
+(21,0,2)
+(43,60,2)
+(26,42,2)
+(28,51,2)
+(3,21,2)
+(51,42,2)
+(61,26,2)
+(2,26,2)
+(19,26,2)
+-----------------------------------
+(0,mant = JPC_QCX_GETMANT(refstepsize)
+(1,int numrlvls)
+(2,numrlvls)
+(3,JPC_QCX_MANT(mant)
+(4,1)
+(5,0)
+(6,numbands)
+(7,bandno)
+(8,)
+(9,bandno)
+(10,0)
+(11,bandno)
+(12,bandno)
+(13,numrlvls)
+(14,numrlvls)
+(15,stepsizes[bandno] = JPC_QCX_MANT(mant)
+(16,refstepsize)
+(17,expn +\\n\\t\\t  (numrlvls - 1)
+(18,3)
+(19,bandno)
+(20,mant)
+(21,JPC_QCX_MANT(mant)
+(22,numrlvls - 1 - ((bandno > 0)
+(23,refstepsize)
+(24,RET)
+(25,1)
+(26,bandno < numbands)
+(27,expn)
+(28,bandno + 2)
+(29,++bandno)
+(30,mant)
+(31,JPC_QCX_GETMANT(refstepsize)
+(32,expn)
+(33,bandno)
+(34,expn)
+(35,numbands)
+(36,0)
+(37,1 - ((bandno > 0)
+(38,mant)
+(39,uint_fast16_t refstepsize)
+(40,JPC_QCX_EXPN(expn +\\n\\t\\t  (numrlvls - 1)
+(41,(numrlvls - 1)
+(42,bandno = 0)
+(43,stepsizes[bandno])
+(44,bandno)
+(45,2)
+(46,3 * numrlvls)
+(47,(bandno + 2)
+(48,JPC_QCX_GETEXPN(refstepsize)
+(49,numbands)
+(50,stepsizes)
+(51,bandno > 0)
+(52,for (bandno = 0; bandno < numbands; ++bandno)
+(53,expn = JPC_QCX_GETEXPN(refstepsize)
+(54,2)
+(55,)
+(56,numbands = 3 * numrlvls - 2)
+(57,(bandno > 0)
+(58,3 * numrlvls - 2)
+(59,3)
+(60,uint_fast16_t *stepsizes)
+(61,numrlvls - 1)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

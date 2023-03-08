@@ -1,0 +1,3163 @@
+-----label-----
+1
+-----code-----
+static int bmp_getdata(jas_stream_t *in, bmp_info_t *info, jas_image_t *image)
+{
+	int i;
+	int j;
+	int y;
+	jas_matrix_t *cmpts[3];
+	int numpad;
+	int red;
+	int grn;
+	int blu;
+	int ret;
+	int numcmpts;
+	int cmptno;
+	int ind;
+	bmp_palent_t *palent;
+	int mxind;
+	int haspal;
+
+	assert(info->depth == 8 || info->depth == 24);
+	assert(info->enctype == BMP_ENC_RGB);
+
+	numcmpts = bmp_numcmpts(info);
+	haspal = bmp_haspal(info);
+
+	ret = 0;
+	for (i = 0; i < numcmpts; ++i) {
+		cmpts[i] = 0;
+	}
+
+	/* Create temporary matrices to hold component data. */
+	for (i = 0; i < numcmpts; ++i) {
+		if (!(cmpts[i] = jas_matrix_create(1, info->width))) {
+			ret = -1;
+			goto bmp_getdata_done;
+		}
+	}
+
+	/* Calculate number of padding bytes per row of image data. */
+	numpad = (numcmpts * info->width) % 4;
+	if (numpad) {
+		numpad = 4 - numpad;
+	}
+
+	mxind = (1 << info->depth) - 1;
+	for (i = 0; i < info->height; ++i) {
+		for (j = 0; j < info->width; ++j) {
+			if (haspal) {
+				if ((ind = jas_stream_getc(in)) == EOF) {
+					ret = -1;
+					goto bmp_getdata_done;
+				}
+				if (ind > mxind) {
+					ret = -1;
+					goto bmp_getdata_done;
+				}
+				if (ind < info->numcolors) {
+					palent = &info->palents[ind];
+					red = palent->red;
+					grn = palent->grn;
+					blu = palent->blu;
+				} else {
+					red = ind;
+					grn = ind;
+					blu = ind;
+				}
+			} else {
+				if ((blu = jas_stream_getc(in)) == EOF ||
+				  (grn = jas_stream_getc(in)) == EOF ||
+				  (red = jas_stream_getc(in)) == EOF) {
+					ret = -1;
+					goto bmp_getdata_done;
+				}
+			}
+			if (numcmpts == 3) {
+				jas_matrix_setv(cmpts[0], j, red);
+				jas_matrix_setv(cmpts[1], j, grn);
+				jas_matrix_setv(cmpts[2], j, blu);
+			} else {
+				jas_matrix_setv(cmpts[0], j, red);
+			}
+		}
+		for (j = numpad; j > 0; --j) {
+				if (jas_stream_getc(in) == EOF) {
+					ret = -1;
+					goto bmp_getdata_done;
+				}
+		}
+		for (cmptno = 0; cmptno < numcmpts; ++cmptno) {
+			y = info->topdown ? i : (info->height - 1 - i);
+			if (jas_image_writecmpt(image, cmptno, 0, y, info->width,
+			  1, cmpts[cmptno])) {
+				ret = -1;
+				goto bmp_getdata_done;
+			}
+		}
+	}
+
+bmp_getdata_done:
+	/* Destroy the temporary matrices. */
+	for (i = 0; i < numcmpts; ++i) {
+		if (cmpts[i]) {
+			jas_matrix_destroy(cmpts[i]);
+		}
+	}
+
+	return ret;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+17,19
+18,19
+20,21
+20,22
+23,24
+23,25
+23,26
+23,27
+23,28
+23,29
+23,30
+23,31
+23,32
+23,33
+23,34
+23,35
+23,36
+23,37
+23,38
+23,39
+23,40
+23,41
+23,42
+23,43
+23,44
+23,45
+23,46
+23,47
+23,48
+23,49
+23,50
+23,51
+24,25
+25,26
+25,27
+27,28
+29,30
+30,31
+30,32
+32,33
+34,35
+35,36
+35,37
+37,38
+39,40
+40,41
+40,42
+41,42
+43,44
+43,45
+43,46
+46,47
+48,49
+49,50
+49,51
+51,52
+53,54
+54,55
+54,56
+56,57
+58,59
+59,60
+59,61
+61,62
+63,64
+64,65
+64,66
+66,67
+68,69
+69,70
+69,71
+71,72
+73,74
+74,75
+74,76
+76,77
+78,79
+79,80
+79,81
+81,82
+83,84
+84,85
+84,86
+86,87
+88,89
+89,90
+89,91
+90,91
+92,93
+92,94
+95,96
+96,97
+96,98
+98,99
+100,101
+101,102
+101,103
+103,104
+105,106
+106,107
+106,108
+107,108
+109,110
+109,111
+110,111
+110,112
+111,112
+111,113
+112,113
+116,117
+116,118
+117,118
+117,119
+118,119
+122,123
+123,124
+123,125
+124,125
+126,127
+126,128
+127,128
+127,129
+128,129
+131,132
+133,134
+134,135
+134,136
+135,136
+137,138
+137,139
+138,139
+140,141
+142,143
+143,144
+143,145
+144,145
+146,147
+146,148
+147,148
+149,150
+151,152
+152,153
+152,154
+153,154
+156,157
+156,158
+156,159
+156,160
+157,158
+158,159
+158,160
+159,160
+162,163
+162,164
+163,164
+165,166
+167,168
+168,169
+170,171
+171,172
+172,173
+172,174
+173,174
+173,175
+174,175
+176,177
+179,180
+179,181
+179,182
+179,183
+180,181
+181,182
+181,183
+182,183
+185,186
+185,187
+186,187
+188,189
+190,191
+191,192
+193,194
+194,195
+194,196
+195,196
+196,197
+197,198
+197,199
+198,199
+198,200
+199,200
+201,202
+203,204
+203,205
+203,206
+204,205
+207,208
+207,209
+208,209
+211,212
+211,213
+212,213
+213,214
+213,215
+214,215
+216,217
+218,219
+220,221
+221,222
+221,223
+222,223
+224,225
+224,226
+225,226
+226,227
+226,228
+227,228
+229,230
+229,231
+230,231
+234,235
+234,236
+235,236
+237,238
+238,239
+239,240
+239,241
+240,241
+242,243
+242,244
+244,245
+246,247
+247,248
+247,249
+248,249
+250,251
+250,252
+251,252
+252,253
+252,254
+254,255
+254,256
+255,256
+259,260
+259,261
+259,262
+259,263
+260,261
+261,262
+261,263
+262,263
+265,266
+265,267
+266,267
+268,269
+268,270
+269,270
+272,273
+273,274
+275,276
+275,277
+275,278
+276,277
+276,278
+276,279
+276,280
+277,278
+278,279
+278,280
+279,280
+282,283
+282,284
+283,284
+285,286
+285,287
+286,287
+289,290
+290,291
+292,293
+292,294
+293,294
+293,295
+293,296
+294,295
+296,297
+296,298
+296,299
+297,298
+297,299
+298,299
+298,300
+299,300
+300,301
+300,302
+301,302
+303,304
+303,305
+304,305
+306,307
+308,309
+310,311
+310,312
+311,312
+312,313
+312,314
+313,314
+315,316
+317,318
+319,320
+319,321
+320,321
+320,322
+321,322
+323,324
+325,326
+325,327
+326,327
+327,328
+327,329
+328,329
+330,331
+332,333
+334,335
+334,336
+334,337
+335,336
+335,337
+336,337
+338,339
+338,340
+339,340
+342,343
+342,344
+342,345
+342,346
+343,344
+344,345
+344,346
+345,346
+347,348
+348,349
+348,350
+349,350
+349,351
+350,351
+353,354
+355,356
+356,357
+356,358
+357,358
+359,360
+359,361
+360,361
+363,364
+364,365
+364,366
+365,366
+367,368
+367,369
+368,369
+371,372
+372,373
+372,374
+373,374
+375,376
+375,377
+376,377
+379,380
+379,381
+379,382
+380,381
+381,382
+381,383
+382,383
+384,385
+386,387
+387,388
+387,389
+388,389
+390,391
+392,393
+393,394
+393,395
+394,395
+396,397
+398,399
+399,400
+399,401
+400,401
+400,402
+401,402
+401,403
+402,403
+402,404
+403,404
+404,405
+404,406
+405,406
+407,408
+407,409
+408,409
+410,411
+412,413
+414,415
+414,416
+415,416
+416,417
+416,418
+417,418
+419,420
+419,421
+420,421
+422,423
+424,425
+426,427
+426,428
+427,428
+428,429
+428,430
+429,430
+431,432
+431,433
+432,433
+434,435
+436,437
+438,439
+438,440
+439,440
+440,441
+440,442
+441,442
+443,444
+445,446
+447,448
+447,449
+447,450
+448,449
+448,450
+449,450
+452,453
+452,454
+452,455
+453,454
+454,455
+454,456
+454,457
+454,458
+455,456
+457,458
+457,459
+458,459
+461,462
+463,464
+465,466
+466,467
+466,468
+466,469
+466,470
+467,468
+469,470
+469,471
+470,471
+473,474
+475,476
+477,478
+478,479
+478,480
+478,481
+478,482
+479,480
+481,482
+481,483
+482,483
+485,486
+487,488
+489,490
+490,491
+491,492
+491,493
+491,494
+491,495
+492,493
+494,495
+494,496
+495,496
+498,499
+500,501
+502,503
+502,504
+502,505
+502,506
+503,504
+504,505
+504,506
+505,506
+507,508
+509,510
+509,511
+510,511
+513,514
+514,515
+516,517
+517,518
+517,519
+518,519
+518,520
+519,520
+519,521
+520,521
+522,523
+524,525
+526,527
+526,528
+527,528
+528,529
+528,530
+529,530
+531,532
+533,534
+535,536
+535,537
+535,538
+535,539
+536,537
+537,538
+537,539
+538,539
+541,542
+541,543
+542,543
+544,545
+546,547
+547,548
+549,550
+549,551
+550,551
+551,552
+551,553
+552,553
+554,555
+554,556
+554,557
+555,556
+555,557
+556,557
+559,560
+561,562
+562,563
+562,564
+563,564
+563,565
+564,565
+564,566
+565,566
+569,570
+571,572
+571,573
+572,573
+572,574
+572,575
+572,576
+572,577
+572,578
+572,579
+572,580
+573,574
+575,576
+577,578
+580,581
+582,583
+582,584
+583,584
+587,588
+587,589
+588,589
+590,591
+592,593
+592,594
+593,594
+594,595
+594,596
+595,596
+597,598
+599,600
+601,602
+601,603
+603,604
+603,605
+603,606
+603,607
+604,605
+605,606
+605,607
+606,607
+609,610
+609,611
+610,611
+612,613
+614,615
+615,616
+617,618
+618,619
+618,620
+619,620
+619,621
+620,621
+622,623
+624,625
+625,626
+626,627
+626,628
+627,628
+629,630
+629,631
+630,631
+632,633
+634,635
+635,636
+-----nextToken-----
+2,4,7,9,10,13,15,16,19,21,22,26,28,31,33,36,38,42,44,45,47,50,52,55,57,60,62,65,67,70,72,75,77,80,82,85,87,91,93,94,97,99,102,104,108,113,114,115,119,120,121,125,129,130,132,136,139,141,145,148,150,154,155,160,161,164,166,169,175,177,178,183,184,187,189,192,200,202,205,206,209,210,215,217,219,223,228,231,232,233,236,241,243,245,249,253,256,257,258,263,264,267,270,271,274,280,281,284,287,288,291,295,302,305,307,309,314,316,318,322,324,329,331,333,337,340,341,346,351,352,354,358,361,362,366,369,370,374,377,378,383,385,389,391,395,397,406,409,411,413,418,421,423,425,430,433,435,437,442,444,446,450,451,456,459,460,462,464,468,471,472,474,476,480,483,484,486,488,493,496,497,499,501,506,508,511,512,515,521,523,525,530,532,534,539,540,543,545,548,553,557,558,560,566,567,568,570,574,576,578,579,581,584,585,586,589,591,596,598,600,602,607,608,611,613,616,621,623,628,631,633,636
+-----computeFrom-----
+109,110
+109,111
+110,111
+110,112
+116,117
+116,118
+126,127
+126,128
+134,135
+134,136
+143,144
+143,145
+152,153
+152,154
+158,159
+158,160
+162,163
+162,164
+172,173
+172,174
+181,182
+181,183
+185,186
+185,187
+197,198
+197,199
+213,214
+213,215
+221,222
+221,223
+224,225
+224,226
+226,227
+226,228
+239,240
+239,241
+242,243
+242,244
+247,248
+247,249
+250,251
+250,252
+252,253
+252,254
+261,262
+261,263
+265,266
+265,267
+278,279
+278,280
+282,283
+282,284
+298,299
+298,300
+300,301
+300,302
+312,313
+312,314
+320,321
+320,322
+327,328
+327,329
+335,336
+335,337
+344,345
+344,346
+356,357
+356,358
+364,365
+364,366
+372,373
+372,374
+381,382
+381,383
+387,388
+387,389
+393,394
+393,395
+400,401
+400,402
+401,402
+401,403
+402,403
+402,404
+404,405
+404,406
+414,415
+414,416
+416,417
+416,418
+426,427
+426,428
+428,429
+428,430
+440,441
+440,442
+448,449
+448,450
+504,505
+504,506
+509,510
+509,511
+518,519
+518,520
+528,529
+528,530
+537,538
+537,539
+541,542
+541,543
+551,552
+551,553
+562,563
+562,564
+563,564
+563,565
+594,595
+594,596
+605,606
+605,607
+609,610
+609,611
+-----guardedBy-----
+337,354
+340,351
+-----guardedByNegation-----
+337,397
+-----lastLexicalUse-----
+337,397
+-----jump-----
+337,397
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;ArrayDeclarator;Pointer;Name;ArrayModifier;LiteralExpression;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;LiteralExpression;GotoStatement;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;LiteralExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;UnaryExpression;BinaryExpression;LiteralExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;UnaryExpression;IdExpression;Name;CompoundStatement;IfStatement;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;LiteralExpression;GotoStatement;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;LiteralExpression;GotoStatement;Name;IfStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;BinaryExpression;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;LiteralExpression;GotoStatement;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;IdExpression;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;UnaryExpression;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;LiteralExpression;GotoStatement;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;ConditionalExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;UnaryExpression;BinaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;IdExpression;Name;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;LiteralExpression;GotoStatement;Name;LabelStatement;Name;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;IfStatement;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IdExpression;Name;
+-----ast_node-----
+static int bmp_getdata(jas_stream_t *in, bmp_info_t *info, jas_image_t *image){	int i;	int j;	int y;	jas_matrix_t *cmpts[3];	int numpad;	int red;	int grn;	int blu;	int ret;	int numcmpts;	int cmptno;	int ind;	bmp_palent_t *palent;	int mxind;	int haspal;	assert(info->depth == 8 || info->depth == 24);	assert(info->enctype == BMP_ENC_RGB);	numcmpts = bmp_numcmpts(info);	haspal = bmp_haspal(info);	ret = 0;	for (i = 0; i < numcmpts; ++i) {		cmpts[i] = 0;	}	/* Create temporary matrices to hold component data. */	for (i = 0; i < numcmpts; ++i) {		if (!(cmpts[i] = jas_matrix_create(1, info->width))) {			ret = -1;			goto bmp_getdata_done;		}	}	/* Calculate number of padding bytes per row of image data. */	numpad = (numcmpts * info->width) % 4;	if (numpad) {		numpad = 4 - numpad;	}	mxind = (1 << info->depth) - 1;	for (i = 0; i < info->height; ++i) {		for (j = 0; j < info->width; ++j) {			if (haspal) {				if ((ind = jas_stream_getc(in)) == EOF) {					ret = -1;					goto bmp_getdata_done;				}				if (ind > mxind) {					ret = -1;					goto bmp_getdata_done;				}				if (ind < info->numcolors) {					palent = &info->palents[ind];					red = palent->red;					grn = palent->grn;					blu = palent->blu;				} else {					red = ind;					grn = ind;					blu = ind;				}			} else {				if ((blu = jas_stream_getc(in)) == EOF ||				  (grn = jas_stream_getc(in)) == EOF ||				  (red = jas_stream_getc(in)) == EOF) {					ret = -1;					goto bmp_getdata_done;				}			}			if (numcmpts == 3) {				jas_matrix_setv(cmpts[0], j, red);				jas_matrix_setv(cmpts[1], j, grn);				jas_matrix_setv(cmpts[2], j, blu);			} else {				jas_matrix_setv(cmpts[0], j, red);			}		}		for (j = numpad; j > 0; --j) {				if (jas_stream_getc(in) == EOF) {					ret = -1;					goto bmp_getdata_done;				}		}		for (cmptno = 0; cmptno < numcmpts; ++cmptno) {			y = info->topdown ? i : (info->height - 1 - i);			if (jas_image_writecmpt(image, cmptno, 0, y, info->width,			  1, cmpts[cmptno])) {				ret = -1;				goto bmp_getdata_done;			}		}	}bmp_getdata_done:	/* Destroy the temporary matrices. */	for (i = 0; i < numcmpts; ++i) {		if (cmpts[i]) {			jas_matrix_destroy(cmpts[i]);		}	}	return ret;}
+static int
+bmp_getdata(jas_stream_t *in, bmp_info_t *info, jas_image_t *image)
+bmp_getdata
+jas_stream_t *in
+jas_stream_t
+jas_stream_t
+*in
+*
+in
+bmp_info_t *info
+bmp_info_t
+bmp_info_t
+*info
+*
+info
+jas_image_t *image
+jas_image_t
+jas_image_t
+*image
+*
+image
+{	int i;	int j;	int y;	jas_matrix_t *cmpts[3];	int numpad;	int red;	int grn;	int blu;	int ret;	int numcmpts;	int cmptno;	int ind;	bmp_palent_t *palent;	int mxind;	int haspal;	assert(info->depth == 8 || info->depth == 24);	assert(info->enctype == BMP_ENC_RGB);	numcmpts = bmp_numcmpts(info);	haspal = bmp_haspal(info);	ret = 0;	for (i = 0; i < numcmpts; ++i) {		cmpts[i] = 0;	}	/* Create temporary matrices to hold component data. */	for (i = 0; i < numcmpts; ++i) {		if (!(cmpts[i] = jas_matrix_create(1, info->width))) {			ret = -1;			goto bmp_getdata_done;		}	}	/* Calculate number of padding bytes per row of image data. */	numpad = (numcmpts * info->width) % 4;	if (numpad) {		numpad = 4 - numpad;	}	mxind = (1 << info->depth) - 1;	for (i = 0; i < info->height; ++i) {		for (j = 0; j < info->width; ++j) {			if (haspal) {				if ((ind = jas_stream_getc(in)) == EOF) {					ret = -1;					goto bmp_getdata_done;				}				if (ind > mxind) {					ret = -1;					goto bmp_getdata_done;				}				if (ind < info->numcolors) {					palent = &info->palents[ind];					red = palent->red;					grn = palent->grn;					blu = palent->blu;				} else {					red = ind;					grn = ind;					blu = ind;				}			} else {				if ((blu = jas_stream_getc(in)) == EOF ||				  (grn = jas_stream_getc(in)) == EOF ||				  (red = jas_stream_getc(in)) == EOF) {					ret = -1;					goto bmp_getdata_done;				}			}			if (numcmpts == 3) {				jas_matrix_setv(cmpts[0], j, red);				jas_matrix_setv(cmpts[1], j, grn);				jas_matrix_setv(cmpts[2], j, blu);			} else {				jas_matrix_setv(cmpts[0], j, red);			}		}		for (j = numpad; j > 0; --j) {				if (jas_stream_getc(in) == EOF) {					ret = -1;					goto bmp_getdata_done;				}		}		for (cmptno = 0; cmptno < numcmpts; ++cmptno) {			y = info->topdown ? i : (info->height - 1 - i);			if (jas_image_writecmpt(image, cmptno, 0, y, info->width,			  1, cmpts[cmptno])) {				ret = -1;				goto bmp_getdata_done;			}		}	}bmp_getdata_done:	/* Destroy the temporary matrices. */	for (i = 0; i < numcmpts; ++i) {		if (cmpts[i]) {			jas_matrix_destroy(cmpts[i]);		}	}	return ret;}
+int i;
+int i;
+int
+i
+i
+int j;
+int j;
+int
+j
+j
+int y;
+int y;
+int
+y
+y
+jas_matrix_t *cmpts[3];
+jas_matrix_t *cmpts[3];
+jas_matrix_t
+jas_matrix_t
+*cmpts[3]
+*
+cmpts
+[3]
+3
+int numpad;
+int numpad;
+int
+numpad
+numpad
+int red;
+int red;
+int
+red
+red
+int grn;
+int grn;
+int
+grn
+grn
+int blu;
+int blu;
+int
+blu
+blu
+int ret;
+int ret;
+int
+ret
+ret
+int numcmpts;
+int numcmpts;
+int
+numcmpts
+numcmpts
+int cmptno;
+int cmptno;
+int
+cmptno
+cmptno
+int ind;
+int ind;
+int
+ind
+ind
+bmp_palent_t *palent;
+bmp_palent_t *palent;
+bmp_palent_t
+bmp_palent_t
+*palent
+*
+palent
+int mxind;
+int mxind;
+int
+mxind
+mxind
+int haspal;
+int haspal;
+int
+haspal
+haspal
+assert(info->depth == 8 || info->depth == 24);
+assert(info->depth == 8 || info->depth == 24)
+assert
+assert
+info->depth == 8 || info->depth == 24
+info->depth == 8
+info->depth
+info
+info
+depth
+8
+info->depth == 24
+info->depth
+info
+info
+depth
+24
+assert(info->enctype == BMP_ENC_RGB);
+assert(info->enctype == BMP_ENC_RGB)
+assert
+assert
+info->enctype == BMP_ENC_RGB
+info->enctype
+info
+info
+enctype
+BMP_ENC_RGB
+BMP_ENC_RGB
+numcmpts = bmp_numcmpts(info);
+numcmpts = bmp_numcmpts(info)
+numcmpts
+numcmpts
+bmp_numcmpts(info)
+bmp_numcmpts
+bmp_numcmpts
+info
+info
+haspal = bmp_haspal(info);
+haspal = bmp_haspal(info)
+haspal
+haspal
+bmp_haspal(info)
+bmp_haspal
+bmp_haspal
+info
+info
+ret = 0;
+ret = 0
+ret
+ret
+0
+for (i = 0; i < numcmpts; ++i) {		cmpts[i] = 0;	}
+i = 0;
+i = 0
+i
+i
+0
+i < numcmpts
+i
+i
+numcmpts
+numcmpts
+++i
+i
+i
+{		cmpts[i] = 0;	}
+cmpts[i] = 0;
+cmpts[i] = 0
+cmpts[i]
+cmpts
+cmpts
+i
+i
+0
+for (i = 0; i < numcmpts; ++i) {		if (!(cmpts[i] = jas_matrix_create(1, info->width))) {			ret = -1;			goto bmp_getdata_done;		}	}
+i = 0;
+i = 0
+i
+i
+0
+i < numcmpts
+i
+i
+numcmpts
+numcmpts
+++i
+i
+i
+{		if (!(cmpts[i] = jas_matrix_create(1, info->width))) {			ret = -1;			goto bmp_getdata_done;		}	}
+if (!(cmpts[i] = jas_matrix_create(1, info->width))) {			ret = -1;			goto bmp_getdata_done;		}
+!(cmpts[i] = jas_matrix_create(1, info->width))
+(cmpts[i] = jas_matrix_create(1, info->width))
+cmpts[i] = jas_matrix_create(1, info->width)
+cmpts[i]
+cmpts
+cmpts
+i
+i
+jas_matrix_create(1, info->width)
+jas_matrix_create
+jas_matrix_create
+1
+info->width
+info
+info
+width
+{			ret = -1;			goto bmp_getdata_done;		}
+ret = -1;
+ret = -1
+ret
+ret
+-1
+1
+goto bmp_getdata_done;
+bmp_getdata_done
+numpad = (numcmpts * info->width) % 4;
+numpad = (numcmpts * info->width) % 4
+numpad
+numpad
+(numcmpts * info->width) % 4
+(numcmpts * info->width)
+numcmpts * info->width
+numcmpts
+numcmpts
+info->width
+info
+info
+width
+4
+if (numpad) {		numpad = 4 - numpad;	}
+numpad
+numpad
+{		numpad = 4 - numpad;	}
+numpad = 4 - numpad;
+numpad = 4 - numpad
+numpad
+numpad
+4 - numpad
+4
+numpad
+numpad
+mxind = (1 << info->depth) - 1;
+mxind = (1 << info->depth) - 1
+mxind
+mxind
+(1 << info->depth) - 1
+(1 << info->depth)
+1 << info->depth
+1
+info->depth
+info
+info
+depth
+1
+for (i = 0; i < info->height; ++i) {		for (j = 0; j < info->width; ++j) {			if (haspal) {				if ((ind = jas_stream_getc(in)) == EOF) {					ret = -1;					goto bmp_getdata_done;				}				if (ind > mxind) {					ret = -1;					goto bmp_getdata_done;				}				if (ind < info->numcolors) {					palent = &info->palents[ind];					red = palent->red;					grn = palent->grn;					blu = palent->blu;				} else {					red = ind;					grn = ind;					blu = ind;				}			} else {				if ((blu = jas_stream_getc(in)) == EOF ||				  (grn = jas_stream_getc(in)) == EOF ||				  (red = jas_stream_getc(in)) == EOF) {					ret = -1;					goto bmp_getdata_done;				}			}			if (numcmpts == 3) {				jas_matrix_setv(cmpts[0], j, red);				jas_matrix_setv(cmpts[1], j, grn);				jas_matrix_setv(cmpts[2], j, blu);			} else {				jas_matrix_setv(cmpts[0], j, red);			}		}		for (j = numpad; j > 0; --j) {				if (jas_stream_getc(in) == EOF) {					ret = -1;					goto bmp_getdata_done;				}		}		for (cmptno = 0; cmptno < numcmpts; ++cmptno) {			y = info->topdown ? i : (info->height - 1 - i);			if (jas_image_writecmpt(image, cmptno, 0, y, info->width,			  1, cmpts[cmptno])) {				ret = -1;				goto bmp_getdata_done;			}		}	}
+i = 0;
+i = 0
+i
+i
+0
+i < info->height
+i
+i
+info->height
+info
+info
+height
+++i
+i
+i
+{		for (j = 0; j < info->width; ++j) {			if (haspal) {				if ((ind = jas_stream_getc(in)) == EOF) {					ret = -1;					goto bmp_getdata_done;				}				if (ind > mxind) {					ret = -1;					goto bmp_getdata_done;				}				if (ind < info->numcolors) {					palent = &info->palents[ind];					red = palent->red;					grn = palent->grn;					blu = palent->blu;				} else {					red = ind;					grn = ind;					blu = ind;				}			} else {				if ((blu = jas_stream_getc(in)) == EOF ||				  (grn = jas_stream_getc(in)) == EOF ||				  (red = jas_stream_getc(in)) == EOF) {					ret = -1;					goto bmp_getdata_done;				}			}			if (numcmpts == 3) {				jas_matrix_setv(cmpts[0], j, red);				jas_matrix_setv(cmpts[1], j, grn);				jas_matrix_setv(cmpts[2], j, blu);			} else {				jas_matrix_setv(cmpts[0], j, red);			}		}		for (j = numpad; j > 0; --j) {				if (jas_stream_getc(in) == EOF) {					ret = -1;					goto bmp_getdata_done;				}		}		for (cmptno = 0; cmptno < numcmpts; ++cmptno) {			y = info->topdown ? i : (info->height - 1 - i);			if (jas_image_writecmpt(image, cmptno, 0, y, info->width,			  1, cmpts[cmptno])) {				ret = -1;				goto bmp_getdata_done;			}		}	}
+for (j = 0; j < info->width; ++j) {			if (haspal) {				if ((ind = jas_stream_getc(in)) == EOF) {					ret = -1;					goto bmp_getdata_done;				}				if (ind > mxind) {					ret = -1;					goto bmp_getdata_done;				}				if (ind < info->numcolors) {					palent = &info->palents[ind];					red = palent->red;					grn = palent->grn;					blu = palent->blu;				} else {					red = ind;					grn = ind;					blu = ind;				}			} else {				if ((blu = jas_stream_getc(in)) == EOF ||				  (grn = jas_stream_getc(in)) == EOF ||				  (red = jas_stream_getc(in)) == EOF) {					ret = -1;					goto bmp_getdata_done;				}			}			if (numcmpts == 3) {				jas_matrix_setv(cmpts[0], j, red);				jas_matrix_setv(cmpts[1], j, grn);				jas_matrix_setv(cmpts[2], j, blu);			} else {				jas_matrix_setv(cmpts[0], j, red);			}		}
+j = 0;
+j = 0
+j
+j
+0
+j < info->width
+j
+j
+info->width
+info
+info
+width
+++j
+j
+j
+{			if (haspal) {				if ((ind = jas_stream_getc(in)) == EOF) {					ret = -1;					goto bmp_getdata_done;				}				if (ind > mxind) {					ret = -1;					goto bmp_getdata_done;				}				if (ind < info->numcolors) {					palent = &info->palents[ind];					red = palent->red;					grn = palent->grn;					blu = palent->blu;				} else {					red = ind;					grn = ind;					blu = ind;				}			} else {				if ((blu = jas_stream_getc(in)) == EOF ||				  (grn = jas_stream_getc(in)) == EOF ||				  (red = jas_stream_getc(in)) == EOF) {					ret = -1;					goto bmp_getdata_done;				}			}			if (numcmpts == 3) {				jas_matrix_setv(cmpts[0], j, red);				jas_matrix_setv(cmpts[1], j, grn);				jas_matrix_setv(cmpts[2], j, blu);			} else {				jas_matrix_setv(cmpts[0], j, red);			}		}
+if (haspal) {				if ((ind = jas_stream_getc(in)) == EOF) {					ret = -1;					goto bmp_getdata_done;				}				if (ind > mxind) {					ret = -1;					goto bmp_getdata_done;				}				if (ind < info->numcolors) {					palent = &info->palents[ind];					red = palent->red;					grn = palent->grn;					blu = palent->blu;				} else {					red = ind;					grn = ind;					blu = ind;				}			} else {				if ((blu = jas_stream_getc(in)) == EOF ||				  (grn = jas_stream_getc(in)) == EOF ||				  (red = jas_stream_getc(in)) == EOF) {					ret = -1;					goto bmp_getdata_done;				}			}
+haspal
+haspal
+{				if ((ind = jas_stream_getc(in)) == EOF) {					ret = -1;					goto bmp_getdata_done;				}				if (ind > mxind) {					ret = -1;					goto bmp_getdata_done;				}				if (ind < info->numcolors) {					palent = &info->palents[ind];					red = palent->red;					grn = palent->grn;					blu = palent->blu;				} else {					red = ind;					grn = ind;					blu = ind;				}			}
+if ((ind = jas_stream_getc(in)) == EOF) {					ret = -1;					goto bmp_getdata_done;				}
+(ind = jas_stream_getc(in)) == EOF
+(ind = jas_stream_getc(in))
+ind = jas_stream_getc(in)
+ind
+ind
+jas_stream_getc(in)
+jas_stream_getc
+jas_stream_getc
+in
+in
+EOF
+EOF
+{					ret = -1;					goto bmp_getdata_done;				}
+ret = -1;
+ret = -1
+ret
+ret
+-1
+1
+goto bmp_getdata_done;
+bmp_getdata_done
+if (ind > mxind) {					ret = -1;					goto bmp_getdata_done;				}
+ind > mxind
+ind
+ind
+mxind
+mxind
+{					ret = -1;					goto bmp_getdata_done;				}
+ret = -1;
+ret = -1
+ret
+ret
+-1
+1
+goto bmp_getdata_done;
+bmp_getdata_done
+if (ind < info->numcolors) {					palent = &info->palents[ind];					red = palent->red;					grn = palent->grn;					blu = palent->blu;				} else {					red = ind;					grn = ind;					blu = ind;				}
+ind < info->numcolors
+ind
+ind
+info->numcolors
+info
+info
+numcolors
+{					palent = &info->palents[ind];					red = palent->red;					grn = palent->grn;					blu = palent->blu;				}
+palent = &info->palents[ind];
+palent = &info->palents[ind]
+palent
+palent
+&info->palents[ind]
+info->palents[ind]
+info->palents
+info
+info
+palents
+ind
+ind
+red = palent->red;
+red = palent->red
+red
+red
+palent->red
+palent
+palent
+red
+grn = palent->grn;
+grn = palent->grn
+grn
+grn
+palent->grn
+palent
+palent
+grn
+blu = palent->blu;
+blu = palent->blu
+blu
+blu
+palent->blu
+palent
+palent
+blu
+{					red = ind;					grn = ind;					blu = ind;				}
+red = ind;
+red = ind
+red
+red
+ind
+ind
+grn = ind;
+grn = ind
+grn
+grn
+ind
+ind
+blu = ind;
+blu = ind
+blu
+blu
+ind
+ind
+{				if ((blu = jas_stream_getc(in)) == EOF ||				  (grn = jas_stream_getc(in)) == EOF ||				  (red = jas_stream_getc(in)) == EOF) {					ret = -1;					goto bmp_getdata_done;				}			}
+if ((blu = jas_stream_getc(in)) == EOF ||				  (grn = jas_stream_getc(in)) == EOF ||				  (red = jas_stream_getc(in)) == EOF) {					ret = -1;					goto bmp_getdata_done;				}
+(blu = jas_stream_getc(in)) == EOF ||				  (grn = jas_stream_getc(in)) == EOF ||				  (red = jas_stream_getc(in)) == EOF
+(blu = jas_stream_getc(in)) == EOF ||				  (grn = jas_stream_getc(in)) == EOF
+(blu = jas_stream_getc(in)) == EOF
+(blu = jas_stream_getc(in))
+blu = jas_stream_getc(in)
+blu
+blu
+jas_stream_getc(in)
+jas_stream_getc
+jas_stream_getc
+in
+in
+EOF
+EOF
+(grn = jas_stream_getc(in)) == EOF
+(grn = jas_stream_getc(in))
+grn = jas_stream_getc(in)
+grn
+grn
+jas_stream_getc(in)
+jas_stream_getc
+jas_stream_getc
+in
+in
+EOF
+EOF
+(red = jas_stream_getc(in)) == EOF
+(red = jas_stream_getc(in))
+red = jas_stream_getc(in)
+red
+red
+jas_stream_getc(in)
+jas_stream_getc
+jas_stream_getc
+in
+in
+EOF
+EOF
+{					ret = -1;					goto bmp_getdata_done;				}
+ret = -1;
+ret = -1
+ret
+ret
+-1
+1
+goto bmp_getdata_done;
+bmp_getdata_done
+if (numcmpts == 3) {				jas_matrix_setv(cmpts[0], j, red);				jas_matrix_setv(cmpts[1], j, grn);				jas_matrix_setv(cmpts[2], j, blu);			} else {				jas_matrix_setv(cmpts[0], j, red);			}
+numcmpts == 3
+numcmpts
+numcmpts
+3
+{				jas_matrix_setv(cmpts[0], j, red);				jas_matrix_setv(cmpts[1], j, grn);				jas_matrix_setv(cmpts[2], j, blu);			}
+jas_matrix_setv(cmpts[0], j, red);
+jas_matrix_setv(cmpts[0], j, red)
+jas_matrix_setv
+jas_matrix_setv
+cmpts[0]
+cmpts
+cmpts
+0
+j
+j
+red
+red
+jas_matrix_setv(cmpts[1], j, grn);
+jas_matrix_setv(cmpts[1], j, grn)
+jas_matrix_setv
+jas_matrix_setv
+cmpts[1]
+cmpts
+cmpts
+1
+j
+j
+grn
+grn
+jas_matrix_setv(cmpts[2], j, blu);
+jas_matrix_setv(cmpts[2], j, blu)
+jas_matrix_setv
+jas_matrix_setv
+cmpts[2]
+cmpts
+cmpts
+2
+j
+j
+blu
+blu
+{				jas_matrix_setv(cmpts[0], j, red);			}
+jas_matrix_setv(cmpts[0], j, red);
+jas_matrix_setv(cmpts[0], j, red)
+jas_matrix_setv
+jas_matrix_setv
+cmpts[0]
+cmpts
+cmpts
+0
+j
+j
+red
+red
+for (j = numpad; j > 0; --j) {				if (jas_stream_getc(in) == EOF) {					ret = -1;					goto bmp_getdata_done;				}		}
+j = numpad;
+j = numpad
+j
+j
+numpad
+numpad
+j > 0
+j
+j
+0
+--j
+j
+j
+{				if (jas_stream_getc(in) == EOF) {					ret = -1;					goto bmp_getdata_done;				}		}
+if (jas_stream_getc(in) == EOF) {					ret = -1;					goto bmp_getdata_done;				}
+jas_stream_getc(in) == EOF
+jas_stream_getc(in)
+jas_stream_getc
+jas_stream_getc
+in
+in
+EOF
+EOF
+{					ret = -1;					goto bmp_getdata_done;				}
+ret = -1;
+ret = -1
+ret
+ret
+-1
+1
+goto bmp_getdata_done;
+bmp_getdata_done
+for (cmptno = 0; cmptno < numcmpts; ++cmptno) {			y = info->topdown ? i : (info->height - 1 - i);			if (jas_image_writecmpt(image, cmptno, 0, y, info->width,			  1, cmpts[cmptno])) {				ret = -1;				goto bmp_getdata_done;			}		}
+cmptno = 0;
+cmptno = 0
+cmptno
+cmptno
+0
+cmptno < numcmpts
+cmptno
+cmptno
+numcmpts
+numcmpts
+++cmptno
+cmptno
+cmptno
+{			y = info->topdown ? i : (info->height - 1 - i);			if (jas_image_writecmpt(image, cmptno, 0, y, info->width,			  1, cmpts[cmptno])) {				ret = -1;				goto bmp_getdata_done;			}		}
+y = info->topdown ? i : (info->height - 1 - i);
+y = info->topdown ? i : (info->height - 1 - i)
+y
+y
+info->topdown ? i : (info->height - 1 - i)
+info->topdown
+info
+info
+topdown
+i
+i
+(info->height - 1 - i)
+info->height - 1 - i
+info->height - 1
+info->height
+info
+info
+height
+1
+i
+i
+if (jas_image_writecmpt(image, cmptno, 0, y, info->width,			  1, cmpts[cmptno])) {				ret = -1;				goto bmp_getdata_done;			}
+jas_image_writecmpt(image, cmptno, 0, y, info->width,			  1, cmpts[cmptno])
+jas_image_writecmpt
+jas_image_writecmpt
+image
+image
+cmptno
+cmptno
+0
+y
+y
+info->width
+info
+info
+width
+1
+cmpts[cmptno]
+cmpts
+cmpts
+cmptno
+cmptno
+{				ret = -1;				goto bmp_getdata_done;			}
+ret = -1;
+ret = -1
+ret
+ret
+-1
+1
+goto bmp_getdata_done;
+bmp_getdata_done
+bmp_getdata_done:	/* Destroy the temporary matrices. */	for (i = 0; i < numcmpts; ++i) {		if (cmpts[i]) {			jas_matrix_destroy(cmpts[i]);		}	}
+bmp_getdata_done
+for (i = 0; i < numcmpts; ++i) {		if (cmpts[i]) {			jas_matrix_destroy(cmpts[i]);		}	}
+i = 0;
+i = 0
+i
+i
+0
+i < numcmpts
+i
+i
+numcmpts
+numcmpts
+++i
+i
+i
+{		if (cmpts[i]) {			jas_matrix_destroy(cmpts[i]);		}	}
+if (cmpts[i]) {			jas_matrix_destroy(cmpts[i]);		}
+cmpts[i]
+cmpts
+cmpts
+i
+i
+{			jas_matrix_destroy(cmpts[i]);		}
+jas_matrix_destroy(cmpts[i]);
+jas_matrix_destroy(cmpts[i])
+jas_matrix_destroy
+jas_matrix_destroy
+cmpts[i]
+cmpts
+cmpts
+i
+i
+return ret;
+ret
+ret
+-----joern-----
+(94,206,0)
+(273,37,0)
+(318,129,0)
+(105,97,0)
+(49,278,0)
+(289,31,0)
+(334,142,0)
+(66,90,0)
+(44,315,0)
+(228,102,0)
+(186,247,0)
+(143,340,0)
+(132,115,0)
+(296,224,0)
+(247,145,0)
+(91,292,0)
+(243,338,0)
+(321,250,0)
+(126,323,0)
+(324,306,0)
+(29,338,0)
+(138,57,0)
+(289,297,0)
+(55,338,0)
+(164,65,0)
+(282,48,0)
+(3,248,0)
+(99,133,0)
+(72,32,0)
+(216,248,0)
+(196,149,0)
+(206,243,0)
+(249,11,0)
+(151,51,0)
+(318,50,0)
+(237,6,0)
+(43,31,0)
+(286,278,0)
+(100,135,0)
+(94,48,0)
+(28,232,0)
+(311,94,0)
+(64,207,0)
+(97,105,0)
+(38,344,0)
+(154,283,0)
+(276,111,0)
+(87,74,0)
+(208,115,0)
+(76,323,0)
+(247,143,0)
+(336,104,0)
+(237,7,0)
+(247,135,0)
+(329,252,0)
+(83,47,0)
+(255,102,0)
+(235,105,0)
+(207,180,0)
+(171,269,0)
+(234,58,0)
+(18,150,0)
+(57,41,0)
+(197,215,0)
+(299,41,0)
+(301,18,0)
+(190,41,0)
+(27,136,0)
+(152,137,0)
+(136,338,0)
+(26,17,0)
+(74,201,0)
+(188,102,0)
+(93,24,0)
+(70,128,0)
+(18,333,0)
+(123,70,0)
+(260,41,0)
+(302,95,0)
+(136,6,0)
+(128,35,0)
+(78,104,0)
+(316,230,0)
+(79,20,0)
+(60,338,0)
+(45,325,0)
+(230,48,0)
+(133,338,0)
+(18,203,0)
+(247,151,0)
+(236,210,0)
+(320,294,0)
+(87,29,0)
+(248,338,0)
+(59,41,0)
+(208,338,0)
+(86,145,0)
+(11,41,0)
+(310,318,0)
+(180,207,0)
+(72,286,0)
+(65,338,0)
+(37,138,0)
+(202,7,0)
+(101,70,0)
+(124,138,0)
+(314,272,0)
+(138,37,0)
+(1,41,0)
+(22,252,0)
+(66,69,0)
+(274,208,0)
+(63,38,0)
+(253,219,0)
+(165,60,0)
+(231,292,0)
+(278,286,0)
+(225,137,0)
+(158,50,0)
+(173,161,0)
+(246,22,0)
+(22,333,0)
+(129,338,0)
+(70,16,0)
+(286,41,0)
+(343,41,0)
+(125,228,0)
+(141,313,0)
+(56,224,0)
+(119,145,0)
+(332,128,0)
+(344,96,0)
+(22,325,0)
+(84,220,0)
+(74,87,0)
+(348,307,0)
+(198,229,0)
+(9,107,0)
+(194,56,0)
+(18,104,0)
+(56,69,0)
+(6,136,0)
+(11,196,0)
+(22,222,0)
+(115,208,0)
+(322,11,0)
+(56,344,0)
+(97,338,0)
+(110,7,0)
+(205,224,0)
+(291,23,0)
+(184,247,0)
+(88,230,0)
+(257,336,0)
+(71,237,0)
+(18,265,0)
+(75,111,0)
+(56,142,0)
+(331,242,0)
+(162,306,0)
+(230,242,0)
+(142,128,0)
+(221,289,0)
+(222,232,0)
+(105,74,0)
+(74,105,0)
+(26,69,0)
+(6,237,0)
+(78,323,0)
+(55,220,0)
+(269,333,0)
+(155,219,0)
+(144,297,0)
+(217,211,0)
+(39,335,0)
+(11,152,0)
+(341,55,0)
+(275,203,0)
+(73,103,0)
+(201,74,0)
+(67,35,0)
+(306,324,0)
+(110,6,0)
+(189,129,0)
+(142,227,0)
+(130,206,0)
+(69,66,0)
+(277,16,0)
+(280,24,0)
+(214,236,0)
+(251,133,0)
+(40,211,0)
+(32,192,0)
+(137,152,0)
+(11,61,0)
+(103,206,0)
+(335,327,0)
+(244,94,0)
+(113,26,0)
+(266,252,0)
+(54,86,0)
+(175,342,0)
+(135,220,0)
+(31,289,0)
+(42,41,0)
+(35,128,0)
+(22,170,0)
+(339,333,0)
+(81,86,0)
+(146,95,0)
+(60,269,0)
+(240,110,0)
+(324,278,0)
+(329,90,0)
+(313,315,0)
+(230,95,0)
+(319,149,0)
+(241,72,0)
+(327,335,0)
+(15,145,0)
+(169,118,0)
+(306,338,0)
+(31,96,0)
+(276,338,0)
+(47,7,0)
+(305,103,0)
+(326,48,0)
+(177,232,0)
+(122,130,0)
+(308,135,0)
+(79,110,0)
+(166,342,0)
+(187,104,0)
+(206,41,0)
+(111,276,0)
+(183,7,0)
+(242,230,0)
+(220,135,0)
+(295,41,0)
+(50,16,0)
+(61,92,0)
+(204,325,0)
+(172,312,0)
+(330,22,0)
+(285,100,0)
+(252,329,0)
+(131,72,0)
+(166,17,0)
+(11,335,0)
+(174,41,0)
+(78,31,0)
+(139,170,0)
+(342,252,0)
+(11,207,0)
+(69,26,0)
+(50,318,0)
+(196,283,0)
+(57,138,0)
+(32,72,0)
+(323,78,0)
+(294,102,0)
+(19,7,0)
+(170,227,0)
+(346,41,0)
+(233,87,0)
+(303,239,0)
+(82,41,0)
+(6,110,0)
+(263,90,0)
+(151,247,0)
+(218,129,0)
+(130,211,0)
+(313,206,0)
+(238,66,0)
+(219,133,0)
+(185,198,0)
+(8,339,0)
+(317,329,0)
+(252,342,0)
+(29,87,0)
+(232,297,0)
+(220,55,0)
+(37,338,0)
+(117,37,0)
+(265,18,0)
+(78,333,0)
+(167,79,0)
+(304,92,0)
+(281,32,0)
+(89,243,0)
+(337,289,0)
+(272,104,0)
+(200,41,0)
+(160,20,0)
+(153,265,0)
+(258,82,0)
+(224,56,0)
+(46,327,0)
+(268,237,0)
+(202,248,0)
+(25,148,0)
+(283,196,0)
+(86,206,0)
+(157,230,0)
+(193,206,0)
+(152,107,0)
+(212,142,0)
+(261,41,0)
+(215,145,0)
+(267,24,0)
+(230,179,0)
+(230,79,0)
+(22,112,0)
+(80,265,0)
+(168,82,0)
+(116,29,0)
+(195,41,0)
+(293,180,0)
+(77,78,0)
+(219,128,0)
+(176,60,0)
+(104,272,0)
+(284,130,0)
+(33,109,0)
+(62,97,0)
+(210,236,0)
+(254,61,0)
+(12,333,0)
+(191,203,0)
+(248,202,0)
+(345,263,0)
+(4,223,0)
+(95,230,0)
+(219,253,0)
+(239,211,0)
+(52,55,0)
+(278,324,0)
+(271,58,0)
+(78,112,0)
+(133,219,0)
+(108,230,0)
+(109,48,0)
+(110,65,0)
+(61,118,0)
+(135,308,0)
+(209,230,0)
+(111,128,0)
+(127,100,0)
+(106,41,0)
+(17,166,0)
+(159,276,0)
+(288,97,0)
+(245,38,0)
+(110,79,0)
+(21,292,0)
+(335,114,0)
+(147,78,0)
+(120,344,0)
+(264,69,0)
+(324,206,0)
+(102,286,0)
+(140,41,0)
+(16,41,0)
+(115,41,0)
+(287,41,0)
+(68,18,0)
+(259,306,0)
+(102,32,0)
+(242,338,0)
+(297,96,0)
+(30,215,0)
+(36,222,0)
+(0,313,0)
+(207,148,0)
+(17,26,0)
+(85,242,0)
+(100,211,0)
+(181,324,0)
+(5,41,0)
+(199,114,0)
+(11,82,0)
+(198,250,0)
+(129,318,0)
+(290,23,0)
+(269,60,0)
+(34,333,0)
+(201,41,0)
+(350,152,0)
+(253,297,0)
+(38,297,0)
+(263,128,0)
+(170,128,0)
+(328,41,0)
+(226,229,0)
+(347,143,0)
+(98,136,0)
+(236,90,0)
+(78,203,0)
+(23,315,0)
+(232,222,0)
+(134,29,0)
+(65,110,0)
+(10,286,0)
+(344,38,0)
+(2,276,0)
+(166,272,0)
+(95,48,0)
+(14,210,0)
+(250,198,0)
+(18,31,0)
+(300,196,0)
+(325,22,0)
+(56,333,0)
+(156,65,0)
+(297,253,0)
+(243,206,0)
+(213,145,0)
+(104,336,0)
+(262,315,0)
+(256,41,0)
+(182,228,0)
+(11,198,0)
+(53,315,0)
+(342,166,0)
+(23,143,0)
+(92,61,0)
+(279,41,0)
+(178,213,0)
+(56,112,0)
+(121,56,0)
+(128,263,0)
+(203,227,0)
+(13,262,0)
+(16,50,0)
+(203,128,0)
+(309,170,0)
+(222,96,0)
+(272,166,0)
+(270,41,0)
+(336,90,0)
+(349,202,0)
+(120,222,1)
+(269,60,1)
+(306,338,1)
+(100,127,1)
+(70,16,1)
+(22,325,1)
+(79,110,1)
+(314,104,1)
+(253,219,1)
+(50,318,1)
+(186,184,1)
+(210,236,1)
+(52,84,1)
+(31,289,1)
+(78,147,1)
+(56,194,1)
+(141,262,1)
+(26,113,1)
+(66,238,1)
+(324,306,1)
+(197,86,1)
+(317,266,1)
+(128,263,1)
+(36,31,1)
+(244,48,1)
+(22,252,1)
+(237,7,1)
+(78,31,1)
+(232,28,1)
+(125,294,1)
+(171,339,1)
+(56,142,1)
+(18,301,1)
+(269,333,1)
+(11,249,1)
+(214,228,1)
+(37,338,1)
+(291,313,1)
+(146,316,1)
+(82,168,1)
+(212,170,1)
+(130,284,1)
+(342,175,1)
+(180,293,1)
+(56,69,1)
+(75,70,1)
+(86,206,1)
+(254,35,1)
+(73,142,1)
+(10,130,1)
+(331,108,1)
+(185,230,1)
+(316,242,1)
+(115,208,1)
+(133,251,1)
+(326,228,1)
+(111,276,1)
+(66,90,1)
+(17,26,1)
+(12,34,1)
+(80,153,1)
+(65,338,1)
+(138,37,1)
+(142,128,1)
+(170,139,1)
+(135,220,1)
+(11,207,1)
+(170,128,1)
+(18,203,1)
+(110,7,1)
+(278,324,1)
+(217,313,1)
+(19,183,1)
+(206,243,1)
+(28,177,1)
+(84,100,1)
+(274,132,1)
+(230,79,1)
+(324,206,1)
+(39,70,1)
+(45,204,1)
+(104,336,1)
+(109,33,1)
+(119,9,1)
+(22,170,1)
+(188,269,1)
+(102,286,1)
+(60,338,1)
+(165,176,1)
+(94,311,1)
+(243,338,1)
+(83,94,1)
+(81,213,1)
+(226,198,1)
+(119,169,1)
+(330,246,1)
+(141,315,1)
+(49,324,1)
+(230,48,1)
+(18,265,1)
+(278,49,1)
+(213,145,1)
+(168,258,1)
+(67,128,1)
+(220,55,1)
+(11,82,1)
+(38,297,1)
+(145,15,1)
+(163,286,1)
+(125,102,1)
+(242,338,1)
+(8,18,1)
+(119,202,1)
+(61,92,1)
+(246,325,1)
+(327,46,1)
+(230,179,1)
+(339,8,1)
+(99,144,1)
+(228,182,1)
+(100,211,1)
+(224,296,1)
+(32,72,1)
+(240,65,1)
+(302,146,1)
+(345,332,1)
+(249,86,1)
+(151,247,1)
+(268,136,1)
+(109,48,1)
+(95,48,1)
+(86,54,1)
+(208,338,1)
+(222,232,1)
+(126,103,1)
+(342,252,1)
+(182,125,1)
+(305,73,1)
+(103,305,1)
+(239,211,1)
+(13,143,1)
+(72,286,1)
+(344,38,1)
+(202,248,1)
+(14,236,1)
+(18,104,1)
+(296,205,1)
+(22,222,1)
+(26,69,1)
+(102,32,1)
+(275,111,1)
+(216,3,1)
+(15,119,1)
+(213,178,1)
+(162,259,1)
+(78,323,1)
+(87,29,1)
+(319,196,1)
+(259,181,1)
+(309,203,1)
+(204,78,1)
+(152,137,1)
+(72,131,1)
+(86,145,1)
+(11,196,1)
+(194,121,1)
+(154,300,1)
+(159,2,1)
+(310,277,1)
+(263,345,1)
+(2,75,1)
+(242,85,1)
+(336,90,1)
+(76,126,1)
+(289,337,1)
+(277,163,1)
+(313,315,1)
+(199,335,1)
+(284,122,1)
+(184,215,1)
+(136,98,1)
+(38,63,1)
+(311,244,1)
+(92,304,1)
+(277,32,1)
+(239,303,1)
+(187,342,1)
+(248,216,1)
+(77,323,1)
+(47,83,1)
+(181,10,1)
+(55,341,1)
+(164,167,1)
+(139,309,1)
+(219,155,1)
+(286,278,1)
+(209,157,1)
+(251,99,1)
+(247,135,1)
+(33,230,1)
+(215,30,1)
+(35,67,1)
+(293,64,1)
+(11,152,1)
+(25,207,1)
+(101,123,1)
+(129,218,1)
+(6,136,1)
+(142,334,1)
+(281,163,1)
+(178,151,1)
+(117,273,1)
+(30,197,1)
+(341,52,1)
+(37,117,1)
+(138,124,1)
+(236,214,1)
+(9,152,1)
+(262,13,1)
+(17,166,1)
+(98,27,1)
+(7,19,1)
+(178,215,1)
+(315,44,1)
+(176,171,1)
+(183,16,1)
+(166,272,1)
+(283,154,1)
+(262,315,1)
+(196,283,1)
+(155,133,1)
+(350,308,1)
+(265,80,1)
+(94,206,1)
+(189,310,1)
+(87,233,1)
+(50,158,1)
+(230,242,1)
+(294,102,1)
+(157,88,1)
+(53,82,1)
+(34,202,1)
+(333,12,1)
+(318,129,1)
+(89,193,1)
+(323,76,1)
+(252,329,1)
+(349,47,1)
+(122,211,1)
+(35,128,1)
+(225,350,1)
+(201,74,1)
+(97,62,1)
+(233,29,1)
+(78,104,1)
+(11,335,1)
+(218,189,1)
+(308,135,1)
+(169,61,1)
+(298,269,1)
+(22,330,1)
+(16,50,1)
+(78,203,1)
+(215,145,1)
+(235,97,1)
+(8,56,1)
+(276,159,1)
+(334,212,1)
+(210,14,1)
+(108,209,1)
+(113,69,1)
+(147,77,1)
+(124,37,1)
+(68,265,1)
+(119,199,1)
+(56,333,1)
+(40,217,1)
+(137,225,1)
+(56,224,1)
+(22,333,1)
+(245,120,1)
+(325,45,1)
+(71,268,1)
+(158,318,1)
+(264,298,1)
+(74,105,1)
+(304,254,1)
+(64,210,1)
+(282,326,1)
+(103,206,1)
+(48,282,1)
+(313,206,1)
+(237,71,1)
+(166,342,1)
+(207,180,1)
+(73,344,1)
+(119,319,1)
+(320,210,1)
+(219,128,1)
+(156,164,1)
+(73,17,1)
+(105,235,1)
+(336,257,1)
+(175,252,1)
+(29,116,1)
+(255,188,1)
+(221,43,1)
+(198,250,1)
+(105,97,1)
+(171,333,1)
+(136,338,1)
+(285,130,1)
+(57,138,1)
+(193,57,1)
+(247,143,1)
+(119,226,1)
+(290,291,1)
+(289,297,1)
+(306,162,1)
+(244,109,1)
+(337,221,1)
+(301,68,1)
+(153,103,1)
+(97,338,1)
+(23,290,1)
+(329,90,1)
+(18,31,1)
+(273,201,1)
+(241,281,1)
+(294,320,1)
+(313,0,1)
+(88,79,1)
+(46,39,1)
+(95,302,1)
+(70,101,1)
+(332,298,1)
+(263,90,1)
+(69,66,1)
+(60,165,1)
+(230,95,1)
+(272,314,1)
+(130,211,1)
+(219,133,1)
+(177,36,1)
+(133,338,1)
+(78,333,1)
+(322,11,1)
+(205,22,1)
+(65,156,1)
+(211,40,1)
+(228,102,1)
+(203,128,1)
+(250,321,1)
+(27,65,1)
+(85,331,1)
+(247,186,1)
+(81,145,1)
+(258,115,1)
+(202,7,1)
+(119,25,1)
+(335,327,1)
+(56,344,1)
+(11,198,1)
+(62,288,1)
+(300,17,1)
+(110,65,1)
+(111,128,1)
+(347,23,1)
+(29,338,1)
+(127,285,1)
+(276,338,1)
+(23,315,1)
+(102,255,1)
+(248,338,1)
+(110,240,1)
+(167,94,1)
+(110,6,1)
+(129,338,1)
+(70,128,1)
+(63,245,1)
+(232,297,1)
+(236,90,1)
+(0,141,1)
+(191,275,1)
+(257,187,1)
+(272,104,1)
+(44,53,1)
+(132,206,1)
+(94,48,1)
+(122,239,1)
+(247,145,1)
+(329,317,1)
+(121,224,1)
+(243,89,1)
+(339,333,1)
+(18,333,1)
+(208,274,1)
+(144,111,1)
+(116,134,1)
+(47,7,1)
+(349,7,1)
+(6,237,1)
+(11,61,1)
+(54,81,1)
+(74,87,1)
+(134,105,1)
+(3,349,1)
+(130,206,1)
+(297,253,1)
+(131,241,1)
+(55,338,1)
+(266,26,1)
+(203,191,1)
+(43,297,1)
+(303,308,1)
+(143,347,1)
+(321,185,1)
+(238,264,1)
+(123,35,1)
+(146,94,2)
+(79,110,2)
+(142,128,2)
+(237,65,2)
+(350,308,2)
+(230,95,2)
+(243,338,2)
+(18,31,2)
+(17,26,2)
+(319,17,2)
+(228,102,2)
+(222,111,2)
+(248,338,2)
+(111,128,2)
+(113,298,2)
+(276,70,2)
+(72,163,2)
+(176,70,2)
+(316,94,2)
+(332,298,2)
+(50,318,2)
+(6,136,2)
+(163,130,2)
+(224,103,2)
+(86,86,2)
+(171,17,2)
+(276,338,2)
+(50,130,2)
+(151,247,2)
+(165,70,2)
+(207,180,2)
+(191,111,2)
+(285,130,2)
+(26,298,2)
+(0,313,2)
+(165,17,2)
+(212,111,2)
+(302,94,2)
+(115,208,2)
+(116,105,2)
+(57,138,2)
+(102,32,2)
+(194,103,2)
+(215,86,2)
+(18,203,2)
+(13,313,2)
+(225,308,2)
+(94,228,2)
+(277,130,2)
+(310,130,2)
+(342,26,2)
+(78,203,2)
+(181,130,2)
+(342,252,2)
+(347,313,2)
+(100,130,2)
+(230,48,2)
+(219,128,2)
+(11,335,2)
+(159,70,2)
+(151,215,2)
+(17,166,2)
+(141,313,2)
+(29,338,2)
+(123,35,2)
+(318,130,2)
+(196,17,2)
+(125,269,2)
+(334,111,2)
+(139,111,2)
+(216,94,2)
+(228,210,2)
+(220,55,2)
+(94,206,2)
+(138,37,2)
+(77,103,2)
+(8,70,2)
+(177,111,2)
+(38,297,2)
+(180,210,2)
+(254,35,2)
+(337,111,2)
+(122,308,2)
+(133,338,2)
+(237,7,2)
+(35,128,2)
+(313,313,2)
+(219,111,2)
+(79,94,2)
+(278,130,2)
+(110,6,2)
+(17,298,2)
+(126,103,2)
+(331,94,2)
+(104,336,2)
+(286,130,2)
+(152,137,2)
+(86,206,2)
+(335,70,2)
+(147,103,2)
+(335,327,2)
+(22,333,2)
+(305,70,2)
+(303,308,2)
+(248,130,2)
+(22,222,2)
+(54,86,2)
+(22,103,2)
+(125,210,2)
+(104,342,2)
+(170,128,2)
+(87,29,2)
+(103,17,2)
+(297,253,2)
+(111,276,2)
+(202,130,2)
+(266,26,2)
+(76,103,2)
+(296,103,2)
+(22,325,2)
+(269,70,2)
+(11,207,2)
+(311,228,2)
+(247,145,2)
+(86,145,2)
+(236,228,2)
+(11,61,2)
+(166,26,2)
+(55,338,2)
+(3,94,2)
+(142,111,2)
+(185,230,2)
+(56,344,2)
+(176,202,2)
+(158,130,2)
+(26,69,2)
+(31,289,2)
+(156,94,2)
+(65,338,2)
+(28,111,2)
+(60,338,2)
+(103,206,2)
+(71,65,2)
+(278,324,2)
+(152,308,2)
+(6,237,2)
+(37,338,2)
+(56,103,2)
+(311,230,2)
+(349,94,2)
+(239,308,2)
+(202,94,2)
+(178,86,2)
+(345,298,2)
+(73,17,2)
+(324,306,2)
+(109,48,2)
+(6,65,2)
+(94,230,2)
+(263,298,2)
+(166,342,2)
+(102,269,2)
+(213,145,2)
+(248,94,2)
+(73,70,2)
+(246,103,2)
+(56,333,2)
+(341,130,2)
+(60,70,2)
+(56,142,2)
+(171,70,2)
+(27,65,2)
+(309,111,2)
+(74,87,2)
+(329,90,2)
+(326,228,2)
+(70,35,2)
+(324,206,2)
+(136,65,2)
+(18,333,2)
+(175,26,2)
+(60,17,2)
+(291,313,2)
+(9,308,2)
+(232,111,2)
+(78,104,2)
+(47,7,2)
+(339,17,2)
+(203,128,2)
+(38,111,2)
+(169,35,2)
+(23,315,2)
+(134,105,2)
+(103,70,2)
+(7,130,2)
+(144,111,2)
+(87,105,2)
+(176,17,2)
+(78,323,2)
+(308,130,2)
+(320,210,2)
+(143,313,2)
+(182,210,2)
+(136,338,2)
+(306,338,2)
+(120,111,2)
+(74,105,2)
+(221,111,2)
+(242,94,2)
+(305,17,2)
+(333,202,2)
+(247,215,2)
+(210,236,2)
+(244,230,2)
+(22,170,2)
+(213,86,2)
+(294,210,2)
+(18,265,2)
+(240,65,2)
+(32,163,2)
+(131,163,2)
+(339,333,2)
+(317,26,2)
+(198,250,2)
+(157,94,2)
+(290,313,2)
+(230,179,2)
+(130,206,2)
+(39,70,2)
+(100,211,2)
+(105,97,2)
+(108,94,2)
+(293,210,2)
+(329,26,2)
+(269,60,2)
+(130,308,2)
+(201,74,2)
+(269,17,2)
+(245,111,2)
+(162,130,2)
+(238,298,2)
+(66,90,2)
+(198,230,2)
+(70,128,2)
+(170,111,2)
+(109,230,2)
+(257,342,2)
+(12,202,2)
+(49,130,2)
+(196,283,2)
+(66,298,2)
+(127,130,2)
+(330,103,2)
+(199,70,2)
+(204,103,2)
+(236,90,2)
+(284,308,2)
+(22,252,2)
+(244,228,2)
+(197,86,2)
+(294,102,2)
+(155,111,2)
+(187,342,2)
+(289,111,2)
+(88,94,2)
+(95,94,2)
+(63,111,2)
+(85,94,2)
+(11,198,2)
+(252,26,2)
+(306,130,2)
+(23,313,2)
+(95,48,2)
+(99,111,2)
+(94,48,2)
+(11,152,2)
+(84,130,2)
+(222,232,2)
+(110,94,2)
+(207,210,2)
+(166,272,2)
+(167,94,2)
+(205,103,2)
+(228,269,2)
+(164,94,2)
+(304,35,2)
+(264,298,2)
+(262,315,2)
+(184,215,2)
+(18,103,2)
+(275,111,2)
+(46,70,2)
+(247,135,2)
+(189,130,2)
+(289,297,2)
+(153,103,2)
+(33,230,2)
+(230,242,2)
+(135,130,2)
+(188,269,2)
+(101,35,2)
+(263,90,2)
+(255,269,2)
+(182,269,2)
+(281,163,2)
+(259,130,2)
+(219,133,2)
+(206,243,2)
+(32,72,2)
+(203,111,2)
+(186,215,2)
+(250,230,2)
+(75,70,2)
+(230,94,2)
+(137,308,2)
+(3,130,2)
+(253,111,2)
+(313,315,2)
+(72,286,2)
+(64,210,2)
+(68,103,2)
+(67,298,2)
+(314,342,2)
+(69,66,2)
+(11,196,2)
+(253,219,2)
+(80,103,2)
+(30,86,2)
+(286,278,2)
+(81,86,2)
+(209,94,2)
+(65,94,2)
+(272,342,2)
+(16,130,2)
+(36,111,2)
+(129,338,2)
+(61,92,2)
+(31,111,2)
+(233,105,2)
+(262,313,2)
+(128,263,2)
+(336,90,2)
+(43,111,2)
+(121,103,2)
+(202,248,2)
+(318,129,2)
+(218,130,2)
+(18,104,2)
+(78,31,2)
+(232,297,2)
+(165,202,2)
+(45,103,2)
+(69,298,2)
+(102,286,2)
+(272,104,2)
+(98,65,2)
+(242,338,2)
+(56,69,2)
+(47,94,2)
+(61,35,2)
+(269,202,2)
+(297,111,2)
+(56,224,2)
+(321,230,2)
+(247,143,2)
+(210,228,2)
+(208,338,2)
+(111,70,2)
+(8,17,2)
+(110,65,2)
+(322,11,2)
+(265,103,2)
+(14,228,2)
+(336,342,2)
+(214,228,2)
+(130,211,2)
+(268,65,2)
+(78,333,2)
+(202,7,2)
+(215,145,2)
+(300,17,2)
+(135,220,2)
+(325,103,2)
+(154,17,2)
+(133,111,2)
+(344,38,2)
+(70,16,2)
+(128,298,2)
+(313,206,2)
+(16,50,2)
+(241,163,2)
+(19,130,2)
+(97,338,2)
+(10,130,2)
+(52,130,2)
+(129,130,2)
+(220,130,2)
+(327,70,2)
+(2,70,2)
+(35,298,2)
+(251,111,2)
+(252,329,2)
+(55,130,2)
+(269,333,2)
+(48,228,2)
+(78,103,2)
+(110,7,2)
+(308,135,2)
+(226,230,2)
+(216,130,2)
+(283,17,2)
+(83,94,2)
+(323,103,2)
+(92,35,2)
+(349,130,2)
+(183,130,2)
+(60,202,2)
+(230,79,2)
+(339,70,2)
+(34,202,2)
+(282,228,2)
+(324,130,2)
+(301,103,2)
+(344,111,2)
+(11,82,2)
+(29,105,2)
+(239,211,2)
+(25,210,2)
+(298,269,2)
+(171,202,2)
+-----------------------------------
+(0,numcmpts)
+(1,ind)
+(2,info)
+(3,info)
+(4,if ((blu = jas_stream_getc(in)
+(5,red)
+(6,info->height - 1 - i)
+(7,i = 0)
+(8,j)
+(9,goto bmp_getdata_done;)
+(10,numpad)
+(11,return ret;)
+(12,0)
+(13,i)
+(14,EOF)
+(15,0)
+(16,mxind = (1 << info->depth)
+(17,(blu = jas_stream_getc(in)
+(18,jas_matrix_setv(cmpts[0], j, red)
+(19,0)
+(20,)
+(21,if ((ind = jas_stream_getc(in)
+(22,jas_matrix_setv(cmpts[1], j, grn)
+(23,cmpts[i])
+(24,)
+(25,goto bmp_getdata_done;)
+(26,(blu = jas_stream_getc(in)
+(27,info)
+(28,grn)
+(29,info->depth)
+(30,i)
+(31,red = palent->red)
+(32,numpad = 4 - numpad)
+(33,cmptno)
+(34,j)
+(35,(ind = jas_stream_getc(in)
+(36,grn)
+(37,info->enctype)
+(38,palent->blu)
+(39,ret)
+(40,0)
+(41,)
+(42,haspal)
+(43,red)
+(44,0)
+(45,1)
+(46,1)
+(47,++i)
+(48,cmptno = 0)
+(49,4)
+(50,(1 << info->depth)
+(51,)
+(52,info)
+(53,i)
+(54,numcmpts)
+(55,info->width)
+(56,jas_matrix_setv(cmpts[2], j, blu)
+(57,assert(info->enctype == BMP_ENC_RGB)
+(58,)
+(59,for (i = 0; i < info->height; ++i)
+(60,info->width)
+(61,ret = -1)
+(62,depth)
+(63,blu)
+(64,ret)
+(65,info->topdown)
+(66,jas_stream_getc(in)
+(67,EOF)
+(68,j)
+(69,blu = jas_stream_getc(in)
+(70,ind > mxind)
+(71,i)
+(72,4 - numpad)
+(73,numcmpts)
+(74,info->depth == 8 || info->depth == 24)
+(75,ind)
+(76,0)
+(77,j)
+(78,jas_matrix_setv(cmpts[0], j, red)
+(79,y = info->topdown ? i : (info->height - 1 - i)
+(80,0)
+(81,i)
+(82,ret = 0)
+(83,i)
+(84,1)
+(85,width)
+(86,i < numcmpts)
+(87,info->depth == 24)
+(88,image)
+(89,info)
+(90,jas_stream_t *in)
+(91,if (ind > mxind)
+(92,-1)
+(93,for (cmptno = 0; cmptno < numcmpts; ++cmptno)
+(94,cmptno < numcmpts)
+(95,cmpts[cmptno])
+(96,)
+(97,info->depth)
+(98,height)
+(99,info)
+(100,cmpts[i])
+(101,mxind)
+(102,j = numpad)
+(103,numcmpts == 3)
+(104,red = jas_stream_getc(in)
+(105,info->depth == 8)
+(106,numcmpts)
+(107,)
+(108,y)
+(109,++cmptno)
+(110,info->topdown ? i : (info->height - 1 - i)
+(111,ind < info->numcolors)
+(112,)
+(113,EOF)
+(114,)
+(115,haspal = bmp_haspal(info)
+(116,depth)
+(117,enctype)
+(118,)
+(119,i)
+(120,blu)
+(121,j)
+(122,i)
+(123,ind)
+(124,BMP_ENC_RGB)
+(125,j)
+(126,cmpts)
+(127,i)
+(128,ind = jas_stream_getc(in)
+(129,info->depth)
+(130,i < numcmpts)
+(131,numpad)
+(132,haspal)
+(133,info->palents)
+(134,info)
+(135,cmpts[i] = jas_matrix_create(1, info->width)
+(136,info->height)
+(137,-1)
+(138,info->enctype == BMP_ENC_RGB)
+(139,ind)
+(140,palent)
+(141,i)
+(142,blu = ind)
+(143,cmpts[i] = 0)
+(144,palent)
+(145,i = 0)
+(146,cmpts)
+(147,red)
+(148,)
+(149,)
+(150,)
+(151,jas_matrix_destroy(cmpts[i])
+(152,ret = -1)
+(153,cmpts)
+(154,1)
+(155,ind)
+(156,topdown)
+(157,cmptno)
+(158,1)
+(159,numcolors)
+(160,if (jas_image_writecmpt(image, cmptno, 0, y, info->width,\\n\\t\\t\\t  1, cmpts[cmptno])
+(161,)
+(162,width)
+(163,numpad)
+(164,info)
+(165,width)
+(166,(grn = jas_stream_getc(in)
+(167,y)
+(168,0)
+(169,goto bmp_getdata_done;)
+(170,grn = ind)
+(171,j)
+(172,if (jas_stream_getc(in)
+(173,if (cmpts[i])
+(174,blu)
+(175,EOF)
+(176,info)
+(177,palent)
+(178,i)
+(179,jas_image_t *image)
+(180,-1)
+(181,numcmpts)
+(182,0)
+(183,i)
+(184,cmpts)
+(185,ret)
+(186,i)
+(187,red)
+(188,j)
+(189,info)
+(190,cmptno)
+(191,ind)
+(192,)
+(193,numcmpts)
+(194,blu)
+(195,grn)
+(196,ret = -1)
+(197,cmpts)
+(198,ret = -1)
+(199,goto bmp_getdata_done;)
+(200,numpad)
+(201,assert(info->depth == 8 || info->depth == 24)
+(202,i < info->height)
+(203,red = ind)
+(204,cmpts)
+(205,cmpts)
+(206,numcmpts = bmp_numcmpts(info)
+(207,ret = -1)
+(208,bmp_haspal(info)
+(209,0)
+(210,jas_stream_getc(in)
+(211,i = 0)
+(212,blu)
+(213,++i)
+(214,in)
+(215,cmpts[i])
+(216,height)
+(217,i)
+(218,depth)
+(219,info->palents[ind])
+(220,jas_matrix_create(1, info->width)
+(221,palent)
+(222,grn = palent->grn)
+(223,)
+(224,cmpts[2])
+(225,1)
+(226,goto bmp_getdata_done;)
+(227,)
+(228,j > 0)
+(229,)
+(230,jas_image_writecmpt(image, cmptno, 0, y, info->width,\\n\\t\\t\\t  1, cmpts[cmptno])
+(231,if (ind < info->numcolors)
+(232,palent->grn)
+(233,24)
+(234,if (numcmpts == 3)
+(235,8)
+(236,jas_stream_getc(in)
+(237,1 - i)
+(238,in)
+(239,++i)
+(240,i)
+(241,4)
+(242,info->width)
+(243,bmp_numcmpts(info)
+(244,cmptno)
+(245,palent)
+(246,j)
+(247,cmpts[i])
+(248,info->height)
+(249,ret)
+(250,-1)
+(251,palents)
+(252,grn = jas_stream_getc(in)
+(253,&info->palents[ind])
+(254,ret)
+(255,numpad)
+(256,j)
+(257,in)
+(258,ret)
+(259,info)
+(260,i)
+(261,mxind)
+(262,++i)
+(263,jas_stream_getc(in)
+(264,blu)
+(265,cmpts[0])
+(266,grn)
+(267,for (j = numpad; j > 0; --j)
+(268,1)
+(269,j < info->width)
+(270,cmpts)
+(271,if (haspal)
+(272,(red = jas_stream_getc(in)
+(273,info)
+(274,info)
+(275,red)
+(276,info->numcolors)
+(277,mxind)
+(278,(numcmpts * info->width)
+(279,y)
+(280,for (j = 0; j < info->width; ++j)
+(281,numpad)
+(282,0)
+(283,-1)
+(284,numcmpts)
+(285,cmpts)
+(286,numpad = (numcmpts * info->width)
+(287,ret)
+(288,info)
+(289,palent->red)
+(290,i)
+(291,cmpts)
+(292,)
+(293,1)
+(294,--j)
+(295,if (numpad)
+(296,2)
+(297,palent = &info->palents[ind])
+(298,haspal)
+(299,bmp_getdata_done:)
+(300,ret)
+(301,red)
+(302,cmptno)
+(303,i)
+(304,1)
+(305,3)
+(306,info->width)
+(307,)
+(308,!(cmpts[i] = jas_matrix_create(1, info->width)
+(309,grn)
+(310,1)
+(311,numcmpts)
+(312,)
+(313,i < numcmpts)
+(314,EOF)
+(315,i = 0)
+(316,1)
+(317,in)
+(318,1 << info->depth)
+(319,goto bmp_getdata_done;)
+(320,j)
+(321,1)
+(322,RET)
+(323,cmpts[0])
+(324,numcmpts * info->width)
+(325,cmpts[1])
+(326,cmptno)
+(327,-1)
+(328,for (i = 0; i < numcmpts; ++i)
+(329,jas_stream_getc(in)
+(330,grn)
+(331,info)
+(332,ind)
+(333,j = 0)
+(334,ind)
+(335,ret = -1)
+(336,jas_stream_getc(in)
+(337,red)
+(338,bmp_info_t *info)
+(339,++j)
+(340,)
+(341,width)
+(342,(grn = jas_stream_getc(in)
+(343,for (i = 0; i < numcmpts; ++i)
+(344,blu = palent->blu)
+(345,in)
+(346,for (i = 0; i < numcmpts; ++i)
+(347,0)
+(348,if (!(cmpts[i] = jas_matrix_create(1, info->width)
+(349,i)
+(350,ret)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

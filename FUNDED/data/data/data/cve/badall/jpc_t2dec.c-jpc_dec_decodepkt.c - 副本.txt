@@ -1,0 +1,8348 @@
+-----label-----
+1
+-----code-----
+static int jpc_dec_decodepkt(jpc_dec_t *dec, jas_stream_t *pkthdrstream, jas_stream_t *in, int compno, int rlvlno,
+  int prcno, int lyrno)
+{
+	jpc_bitstream_t *inb;
+	jpc_dec_tcomp_t *tcomp;
+	jpc_dec_rlvl_t *rlvl;
+	jpc_dec_band_t *band;
+	jpc_dec_cblk_t *cblk;
+	int n;
+	int m;
+	int i;
+	jpc_tagtreenode_t *leaf;
+	int included;
+	int ret;
+	int numnewpasses;
+	jpc_dec_seg_t *seg;
+	int len;
+	int present;
+	int savenumnewpasses;
+	int mycounter;
+	jpc_ms_t *ms;
+	jpc_dec_tile_t *tile;
+	jpc_dec_ccp_t *ccp;
+	jpc_dec_cp_t *cp;
+	int bandno;
+	jpc_dec_prc_t *prc;
+	int usedcblkcnt;
+	int cblkno;
+	uint_fast32_t bodylen;
+	bool discard;
+	int passno;
+	int maxpasses;
+	int hdrlen;
+	int hdroffstart;
+	int hdroffend;
+
+	/* Avoid compiler warning about possible use of uninitialized
+	  variable. */
+	bodylen = 0;
+
+	discard = (lyrno >= dec->maxlyrs);
+
+	tile = dec->curtile;
+	cp = tile->cp;
+	ccp = &cp->ccps[compno];
+
+	/*
+	 * Decode the packet header.
+	 */
+
+	/* Decode the SOP marker segment if present. */
+	if (cp->csty & JPC_COD_SOP) {
+		if (jpc_dec_lookahead(in) == JPC_MS_SOP) {
+			if (!(ms = jpc_getms(in, dec->cstate))) {
+				return -1;
+			}
+			if (jpc_ms_gettype(ms) != JPC_MS_SOP) {
+				jpc_ms_destroy(ms);
+				jas_eprintf("missing SOP marker segment\n");
+				return -1;
+			}
+			jpc_ms_destroy(ms);
+		}
+	}
+
+hdroffstart = jas_stream_getrwcount(pkthdrstream);
+
+	if (!(inb = jpc_bitstream_sopen(pkthdrstream, "r"))) {
+		return -1;
+	}
+
+	if ((present = jpc_bitstream_getbit(inb)) < 0) {
+		return 1;
+	}
+	JAS_DBGLOG(10, ("\n", present));
+	JAS_DBGLOG(10, ("present=%d ", present));
+
+	/* Is the packet non-empty? */
+	if (present) {
+		/* The packet is non-empty. */
+		tcomp = &tile->tcomps[compno];
+		rlvl = &tcomp->rlvls[rlvlno];
+		bodylen = 0;
+		for (bandno = 0, band = rlvl->bands; bandno < rlvl->numbands;
+		  ++bandno, ++band) {
+			if (!band->data) {
+				continue;
+			}
+			prc = &band->prcs[prcno];
+			if (!prc->cblks) {
+				continue;
+			}
+			usedcblkcnt = 0;
+			for (cblkno = 0, cblk = prc->cblks; cblkno < prc->numcblks;
+			  ++cblkno, ++cblk) {
+				++usedcblkcnt;
+				if (!cblk->numpasses) {
+					leaf = jpc_tagtree_getleaf(prc->incltagtree, usedcblkcnt - 1);
+					if ((included = jpc_tagtree_decode(prc->incltagtree, leaf, lyrno + 1, inb)) < 0) {
+						return -1;
+					}
+				} else {
+					if ((included = jpc_bitstream_getbit(inb)) < 0) {
+						return -1;
+					}
+				}
+				JAS_DBGLOG(10, ("\n"));
+				JAS_DBGLOG(10, ("included=%d ", included));
+				if (!included) {
+					continue;
+				}
+				if (!cblk->numpasses) {
+					i = 1;
+					leaf = jpc_tagtree_getleaf(prc->numimsbstagtree, usedcblkcnt - 1);
+					for (;;) {
+						if ((ret = jpc_tagtree_decode(prc->numimsbstagtree, leaf, i, inb)) < 0) {
+							return -1;
+						}
+						if (ret) {
+							break;
+						}
+						++i;
+					}
+					cblk->numimsbs = i - 1;
+					cblk->firstpassno = cblk->numimsbs * 3;
+				}
+				if ((numnewpasses = jpc_getnumnewpasses(inb)) < 0) {
+					return -1;
+				}
+				JAS_DBGLOG(10, ("numnewpasses=%d ", numnewpasses));
+				seg = cblk->curseg;
+				savenumnewpasses = numnewpasses;
+				mycounter = 0;
+				if (numnewpasses > 0) {
+					if ((m = jpc_getcommacode(inb)) < 0) {
+						return -1;
+					}
+					cblk->numlenbits += m;
+					JAS_DBGLOG(10, ("increment=%d ", m));
+					while (numnewpasses > 0) {
+						passno = cblk->firstpassno + cblk->numpasses + mycounter;
+	/* XXX - the maxpasses is not set precisely but this doesn't matter... */
+						maxpasses = JPC_SEGPASSCNT(passno, cblk->firstpassno, 10000, (ccp->cblkctx & JPC_COX_LAZY) != 0, (ccp->cblkctx & JPC_COX_TERMALL) != 0);
+						if (!discard && !seg) {
+							if (!(seg = jpc_seg_alloc())) {
+								return -1;
+							}
+							jpc_seglist_insert(&cblk->segs, cblk->segs.tail, seg);
+							if (!cblk->curseg) {
+								cblk->curseg = seg;
+							}
+							seg->passno = passno;
+							seg->type = JPC_SEGTYPE(seg->passno, cblk->firstpassno, (ccp->cblkctx & JPC_COX_LAZY) != 0);
+							seg->maxpasses = maxpasses;
+						}
+						n = JAS_MIN(numnewpasses, maxpasses);
+						mycounter += n;
+						numnewpasses -= n;
+						if ((len = jpc_bitstream_getbits(inb, cblk->numlenbits + jpc_floorlog2(n))) < 0) {
+							return -1;
+						}
+						JAS_DBGLOG(10, ("len=%d ", len));
+						if (!discard) {
+							seg->lyrno = lyrno;
+							seg->numpasses += n;
+							seg->cnt = len;
+							seg = seg->next;
+						}
+						bodylen += len;
+					}
+				}
+				cblk->numpasses += savenumnewpasses;
+			}
+		}
+
+		jpc_bitstream_inalign(inb, 0, 0);
+
+	} else {
+		if (jpc_bitstream_inalign(inb, 0x7f, 0)) {
+			jas_eprintf("alignment failed\n");
+			return -1;
+		}
+	}
+	jpc_bitstream_close(inb);
+
+	hdroffend = jas_stream_getrwcount(pkthdrstream);
+	hdrlen = hdroffend - hdroffstart;
+	if (jas_getdbglevel() >= 5) {
+		jas_eprintf("hdrlen=%lu bodylen=%lu \n", (unsigned long) hdrlen,
+		  (unsigned long) bodylen);
+	}
+
+	if (cp->csty & JPC_COD_EPH) {
+		if (jpc_dec_lookahead(pkthdrstream) == JPC_MS_EPH) {
+			if (!(ms = jpc_getms(pkthdrstream, dec->cstate))) {
+				jas_eprintf("cannot get (EPH) marker segment\n");
+				return -1;
+			}
+			if (jpc_ms_gettype(ms) != JPC_MS_EPH) {
+				jpc_ms_destroy(ms);
+				jas_eprintf("missing EPH marker segment\n");
+				return -1;
+			}
+			jpc_ms_destroy(ms);
+		}
+	}
+
+	/* decode the packet body. */
+
+	if (jas_getdbglevel() >= 1) {
+		jas_eprintf("packet body offset=%06ld\n", (long) jas_stream_getrwcount(in));
+	}
+
+	if (!discard) {
+		tcomp = &tile->tcomps[compno];
+		rlvl = &tcomp->rlvls[rlvlno];
+		for (bandno = 0, band = rlvl->bands; bandno < rlvl->numbands;
+		  ++bandno, ++band) {
+			if (!band->data) {
+				continue;
+			}
+			prc = &band->prcs[prcno];
+			if (!prc->cblks) {
+				continue;
+			}
+			for (cblkno = 0, cblk = prc->cblks; cblkno < prc->numcblks;
+			  ++cblkno, ++cblk) {
+				seg = cblk->curseg;
+				while (seg) {
+					if (!seg->stream) {
+						if (!(seg->stream = jas_stream_memopen(0, 0))) {
+							return -1;
+						}
+					}
+#if 0
+jas_eprintf("lyrno=%02d, compno=%02d, lvlno=%02d, prcno=%02d, bandno=%02d, cblkno=%02d, passno=%02d numpasses=%02d cnt=%d numbps=%d, numimsbs=%d\n", lyrno, compno, rlvlno, prcno, band - rlvl->bands, cblk - prc->cblks, seg->passno, seg->numpasses, seg->cnt, band->numbps, cblk->numimsbs);
+#endif
+					if (seg->cnt > 0) {
+						if (jpc_getdata(in, seg->stream, seg->cnt) < 0) {
+							return -1;
+						}
+						seg->cnt = 0;
+					}
+					if (seg->numpasses >= seg->maxpasses) {
+						cblk->curseg = seg->next;
+					}
+					seg = seg->next;
+				}
+			}
+		}
+	} else {
+		if (jas_stream_gobble(in, bodylen) != JAS_CAST(int, bodylen)) {
+			return -1;
+		}
+	}
+	return 0;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+3,6
+3,7
+3,8
+3,9
+3,10
+3,11
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+12,13
+14,15
+14,16
+17,18
+17,19
+18,19
+20,21
+20,22
+23,24
+23,25
+25,26
+27,28
+27,29
+29,30
+31,32
+31,33
+33,34
+35,36
+35,37
+37,38
+39,40
+39,41
+39,42
+39,43
+39,44
+39,45
+39,46
+39,47
+39,48
+39,49
+39,50
+39,51
+39,52
+39,53
+39,54
+39,55
+39,56
+39,57
+39,58
+39,59
+39,60
+39,61
+39,62
+39,63
+39,64
+39,65
+39,66
+39,67
+39,68
+39,69
+39,70
+39,71
+39,72
+39,73
+39,74
+39,75
+39,76
+39,77
+39,78
+39,79
+39,80
+39,81
+39,82
+39,83
+39,84
+39,85
+39,86
+39,87
+39,88
+39,89
+39,90
+39,91
+40,41
+41,42
+41,43
+42,43
+44,45
+44,46
+47,48
+48,49
+48,50
+49,50
+51,52
+51,53
+54,55
+55,56
+55,57
+56,57
+58,59
+58,60
+61,62
+62,63
+62,64
+63,64
+65,66
+65,67
+68,69
+69,70
+69,71
+70,71
+72,73
+72,74
+75,76
+76,77
+76,78
+78,79
+80,81
+81,82
+81,83
+83,84
+85,86
+86,87
+86,88
+88,89
+90,91
+91,92
+91,93
+92,93
+94,95
+94,96
+97,98
+98,99
+98,100
+100,101
+102,103
+103,104
+103,105
+105,106
+107,108
+108,109
+108,110
+110,111
+112,113
+113,114
+113,115
+114,115
+116,117
+116,118
+119,120
+120,121
+120,122
+122,123
+124,125
+125,126
+125,127
+127,128
+129,130
+130,131
+130,132
+132,133
+134,135
+135,136
+135,137
+137,138
+139,140
+140,141
+140,142
+141,142
+143,144
+143,145
+146,147
+147,148
+147,149
+148,149
+150,151
+150,152
+153,154
+154,155
+154,156
+155,156
+157,158
+157,159
+160,161
+161,162
+161,163
+162,163
+164,165
+164,166
+167,168
+168,169
+168,170
+170,171
+172,173
+173,174
+173,175
+174,175
+176,177
+176,178
+179,180
+180,181
+180,182
+182,183
+184,185
+185,186
+185,187
+187,188
+189,190
+190,191
+190,192
+191,192
+193,194
+195,196
+196,197
+196,198
+198,199
+200,201
+201,202
+201,203
+203,204
+205,206
+206,207
+206,208
+208,209
+210,211
+211,212
+211,213
+213,214
+215,216
+216,217
+216,218
+218,219
+220,221
+221,222
+221,223
+223,224
+225,226
+226,227
+226,228
+227,228
+230,231
+231,232
+231,233
+232,233
+234,235
+235,236
+235,237
+236,237
+238,239
+238,240
+239,240
+242,243
+243,244
+243,245
+244,245
+246,247
+246,248
+247,248
+250,251
+251,252
+251,253
+252,253
+254,255
+254,256
+255,256
+258,259
+259,260
+259,261
+260,261
+262,263
+263,264
+263,265
+264,265
+264,266
+265,266
+268,269
+270,271
+270,272
+271,272
+271,273
+272,273
+272,274
+273,274
+276,277
+278,279
+279,280
+279,281
+280,281
+280,282
+281,282
+281,283
+282,283
+284,285
+286,287
+288,289
+288,290
+288,291
+289,290
+289,291
+290,291
+291,292
+292,293
+292,294
+293,294
+295,296
+295,297
+295,298
+296,297
+298,299
+300,301
+300,302
+301,302
+304,305
+305,306
+306,307
+308,309
+308,310
+309,310
+309,311
+310,311
+310,312
+311,312
+313,314
+315,316
+317,318
+317,319
+317,320
+318,319
+319,320
+319,321
+320,321
+322,323
+324,325
+325,326
+325,327
+326,327
+329,330
+330,331
+332,333
+333,334
+333,335
+334,335
+336,337
+338,339
+339,340
+339,341
+340,341
+342,343
+342,344
+343,344
+345,346
+347,348
+347,349
+348,349
+349,350
+350,351
+350,352
+351,352
+353,354
+353,355
+353,356
+354,355
+356,357
+359,360
+360,361
+361,362
+363,364
+363,365
+364,365
+364,366
+365,366
+366,367
+366,368
+367,368
+369,370
+369,371
+370,371
+372,373
+375,376
+376,377
+378,379
+379,380
+379,381
+379,382
+380,381
+383,384
+384,385
+384,386
+386,387
+388,389
+389,390
+389,391
+389,392
+390,391
+393,394
+394,395
+394,396
+396,397
+398,399
+398,400
+398,401
+399,400
+401,402
+401,403
+401,404
+401,405
+401,406
+402,403
+403,404
+403,405
+404,405
+406,407
+407,408
+407,409
+408,409
+408,410
+409,410
+412,413
+414,415
+415,416
+415,417
+416,417
+418,419
+419,420
+419,421
+420,421
+420,422
+421,422
+424,425
+426,427
+427,428
+427,429
+428,429
+431,432
+431,433
+431,434
+431,435
+432,433
+433,434
+433,435
+434,435
+434,436
+435,436
+438,439
+438,440
+439,440
+441,442
+441,443
+442,443
+445,446
+445,447
+446,447
+448,449
+448,450
+449,450
+452,453
+452,454
+453,454
+454,455
+456,457
+457,458
+459,460
+459,461
+459,462
+459,463
+459,464
+460,461
+460,462
+461,462
+462,463
+462,464
+463,464
+466,467
+468,469
+469,470
+469,471
+470,471
+472,473
+473,474
+473,475
+474,475
+474,476
+475,476
+478,479
+480,481
+480,482
+481,482
+482,483
+482,484
+483,484
+486,487
+488,489
+489,490
+489,491
+490,491
+493,494
+493,495
+493,496
+493,497
+494,495
+495,496
+495,497
+496,497
+496,498
+497,498
+500,501
+500,502
+501,502
+503,504
+503,505
+504,505
+507,508
+507,509
+508,509
+510,511
+510,512
+511,512
+514,515
+514,516
+515,516
+516,517
+518,519
+519,520
+521,522
+521,523
+521,524
+521,525
+521,526
+521,527
+521,528
+521,529
+521,530
+521,531
+521,532
+521,533
+521,534
+522,523
+523,524
+524,525
+526,527
+526,528
+526,529
+527,528
+528,529
+528,530
+529,530
+532,533
+532,534
+533,534
+534,535
+534,536
+535,536
+537,538
+537,539
+537,540
+538,539
+540,541
+540,542
+541,542
+544,545
+544,546
+545,546
+548,549
+548,550
+549,550
+549,551
+550,551
+551,552
+551,553
+552,553
+554,555
+554,556
+554,557
+554,558
+554,559
+555,556
+557,558
+557,559
+558,559
+561,562
+563,564
+563,565
+564,565
+567,568
+570,571
+571,572
+572,573
+574,575
+575,576
+575,577
+576,577
+576,578
+577,578
+578,579
+578,580
+579,580
+581,582
+581,583
+582,583
+584,585
+587,588
+588,589
+589,590
+591,592
+592,593
+592,594
+592,595
+593,594
+596,597
+598,599
+599,600
+599,601
+599,602
+600,601
+603,604
+604,605
+604,606
+606,607
+608,609
+608,610
+609,610
+610,611
+612,613
+614,615
+614,616
+615,616
+616,617
+616,618
+617,618
+620,621
+620,622
+620,623
+620,624
+620,625
+621,622
+622,623
+622,624
+623,624
+626,627
+627,628
+627,629
+628,629
+630,631
+630,632
+630,633
+631,632
+633,634
+633,635
+634,635
+637,638
+637,639
+638,639
+641,642
+641,643
+643,644
+643,645
+643,646
+644,645
+644,646
+645,646
+645,647
+646,647
+647,648
+647,649
+648,649
+650,651
+650,652
+650,653
+650,654
+650,655
+651,652
+653,654
+653,655
+654,655
+657,658
+659,660
+661,662
+664,665
+665,666
+666,667
+668,669
+668,670
+669,670
+671,672
+673,674
+674,675
+675,676
+677,678
+678,679
+678,680
+679,680
+679,681
+680,681
+683,684
+683,685
+684,685
+687,688
+688,689
+688,690
+689,690
+689,691
+690,691
+693,694
+693,695
+694,695
+694,696
+695,696
+699,700
+699,701
+700,701
+700,702
+701,702
+702,703
+702,704
+703,704
+705,706
+705,707
+706,707
+708,709
+711,712
+712,713
+713,714
+715,716
+716,717
+716,718
+716,719
+717,718
+720,721
+721,722
+721,723
+723,724
+725,726
+726,727
+726,728
+727,728
+729,730
+729,731
+730,731
+733,734
+734,735
+734,736
+735,736
+737,738
+739,740
+740,741
+740,742
+741,742
+744,745
+744,746
+745,746
+745,747
+746,747
+749,750
+749,751
+749,752
+749,753
+750,751
+750,752
+751,752
+751,753
+752,753
+753,754
+753,755
+754,755
+756,757
+756,758
+757,758
+759,760
+762,763
+763,764
+764,765
+766,767
+767,768
+767,769
+768,769
+768,770
+769,770
+772,773
+774,775
+775,776
+775,777
+775,778
+776,777
+779,780
+780,781
+780,782
+782,783
+784,785
+784,786
+785,786
+785,787
+786,787
+789,790
+789,791
+789,792
+789,793
+789,794
+789,795
+789,796
+789,797
+789,798
+789,799
+790,791
+791,792
+791,793
+792,793
+794,795
+794,796
+795,796
+795,797
+796,797
+796,798
+797,798
+800,801
+800,802
+801,802
+804,805
+806,807
+807,808
+807,809
+808,809
+810,811
+810,812
+810,813
+810,814
+810,815
+810,816
+811,812
+813,814
+815,816
+815,817
+816,817
+820,821
+820,822
+821,822
+822,823
+822,824
+823,824
+823,825
+824,825
+827,828
+830,831
+830,832
+831,832
+832,833
+832,834
+833,834
+833,835
+834,835
+837,838
+840,841
+840,842
+841,842
+841,843
+842,843
+843,844
+845,846
+846,847
+848,849
+848,850
+848,851
+848,852
+848,853
+848,854
+849,850
+849,851
+850,851
+851,852
+852,853
+852,854
+853,854
+855,856
+856,857
+858,859
+859,860
+860,861
+862,863
+863,864
+863,865
+863,866
+863,867
+864,865
+866,867
+867,868
+867,869
+868,869
+871,872
+871,873
+872,873
+872,874
+873,874
+877,878
+879,880
+879,881
+880,881
+881,882
+881,883
+882,883
+885,886
+886,887
+887,888
+887,889
+888,889
+888,890
+889,890
+892,893
+894,895
+895,896
+895,897
+896,897
+896,898
+897,898
+900,901
+902,903
+903,904
+903,905
+904,905
+904,906
+905,906
+908,909
+908,910
+908,911
+908,912
+909,910
+911,912
+911,913
+912,913
+915,916
+915,917
+916,917
+919,920
+919,921
+920,921
+921,922
+921,923
+922,923
+922,924
+923,924
+926,927
+929,930
+930,931
+930,932
+931,932
+931,933
+932,933
+935,936
+937,938
+938,939
+938,940
+939,940
+941,942
+941,943
+941,944
+942,943
+944,945
+946,947
+948,949
+949,950
+949,951
+950,951
+952,953
+954,955
+955,956
+955,957
+956,957
+958,959
+960,961
+960,962
+961,962
+961,963
+962,963
+963,964
+963,965
+964,965
+966,967
+966,968
+966,969
+967,968
+969,970
+971,972
+971,973
+972,973
+972,974
+973,974
+976,977
+976,978
+977,978
+979,980
+982,983
+983,984
+984,985
+986,987
+987,988
+987,989
+987,990
+988,989
+991,992
+992,993
+992,994
+994,995
+996,997
+996,998
+997,998
+998,999
+1000,1001
+1000,1002
+1000,1003
+1000,1004
+1001,1002
+1002,1003
+1002,1004
+1003,1004
+1003,1005
+1004,1005
+1007,1008
+1009,1010
+1010,1011
+1010,1012
+1011,1012
+1011,1013
+1012,1013
+1015,1016
+1017,1018
+1018,1019
+1018,1020
+1019,1020
+1019,1021
+1020,1021
+1023,1024
+1025,1026
+1026,1027
+1026,1028
+1027,1028
+1029,1030
+1029,1031
+1030,1031
+1033,1034
+1034,1035
+1034,1036
+1035,1036
+1037,1038
+1039,1040
+1040,1041
+1040,1042
+1041,1042
+1041,1043
+1042,1043
+1045,1046
+1047,1048
+1048,1049
+1048,1050
+1048,1051
+1048,1052
+1049,1050
+1051,1052
+1055,1056
+1056,1057
+1056,1058
+1057,1058
+1057,1059
+1057,1060
+1057,1061
+1058,1059
+1060,1061
+1064,1065
+1064,1066
+1065,1066
+1066,1067
+1066,1068
+1067,1068
+1070,1071
+1071,1072
+1073,1074
+1074,1075
+1074,1076
+1075,1076
+1077,1078
+1079,1080
+1080,1081
+1080,1082
+1081,1082
+1083,1084
+1083,1085
+1084,1085
+1086,1087
+1088,1089
+1089,1090
+1089,1091
+1090,1091
+1092,1093
+1092,1094
+1093,1094
+1095,1096
+1097,1098
+1097,1099
+1098,1099
+1098,1100
+1099,1100
+1100,1101
+1103,1104
+1104,1105
+1105,1106
+1105,1107
+1105,1108
+1105,1109
+1106,1107
+1109,1110
+1109,1111
+1110,1111
+1110,1112
+1113,1114
+1115,1116
+1115,1117
+1116,1117
+1116,1118
+1119,1120
+1121,1122
+1121,1123
+1122,1123
+1122,1124
+1123,1124
+1123,1125
+1124,1125
+1127,1128
+1129,1130
+1130,1131
+1130,1132
+1131,1132
+1131,1133
+1132,1133
+1132,1134
+1133,1134
+1135,1136
+1137,1138
+1139,1140
+1139,1141
+1139,1142
+1140,1141
+1140,1142
+1141,1142
+1142,1143
+1143,1144
+1143,1145
+1144,1145
+1146,1147
+1146,1148
+1146,1149
+1147,1148
+1149,1150
+1151,1152
+1151,1153
+1152,1153
+1155,1156
+1155,1157
+1156,1157
+1157,1158
+1157,1159
+1158,1159
+1161,1162
+1162,1163
+1164,1165
+1164,1166
+1165,1166
+1165,1167
+1166,1167
+1166,1168
+1167,1168
+1169,1170
+1171,1172
+1173,1174
+1173,1175
+1173,1176
+1174,1175
+1175,1176
+1175,1177
+1176,1177
+1178,1179
+1180,1181
+1181,1182
+1181,1183
+1182,1183
+1185,1186
+1186,1187
+1188,1189
+1189,1190
+1189,1191
+1190,1191
+1192,1193
+1194,1195
+1194,1196
+1195,1196
+1195,1197
+1196,1197
+1197,1198
+1200,1201
+1201,1202
+1202,1203
+1202,1204
+1202,1205
+1203,1204
+1206,1207
+1206,1208
+1207,1208
+1207,1209
+1210,1211
+1210,1212
+1211,1212
+1213,1214
+1215,1216
+1215,1217
+1215,1218
+1216,1217
+1217,1218
+1219,1220
+1219,1221
+1219,1222
+1220,1221
+1221,1222
+1221,1223
+1222,1223
+1224,1225
+1225,1226
+1225,1227
+1226,1227
+1226,1228
+1227,1228
+1230,1231
+1232,1233
+1233,1234
+1233,1235
+1234,1235
+1236,1237
+1237,1238
+1237,1239
+1238,1239
+1238,1240
+1239,1240
+1242,1243
+1244,1245
+1244,1246
+1244,1247
+1244,1248
+1245,1246
+1246,1247
+1246,1248
+1247,1248
+1247,1249
+1248,1249
+1251,1252
+1251,1253
+1252,1253
+1254,1255
+1254,1256
+1255,1256
+1258,1259
+1258,1260
+1259,1260
+1261,1262
+1261,1263
+1262,1263
+1265,1266
+1265,1267
+1266,1267
+1267,1268
+1269,1270
+1270,1271
+1272,1273
+1272,1274
+1272,1275
+1272,1276
+1273,1274
+1273,1275
+1274,1275
+1275,1276
+1275,1277
+1276,1277
+1279,1280
+1281,1282
+1282,1283
+1282,1284
+1283,1284
+1285,1286
+1286,1287
+1286,1288
+1287,1288
+1287,1289
+1288,1289
+1291,1292
+1293,1294
+1293,1295
+1294,1295
+1295,1296
+1295,1297
+1296,1297
+1299,1300
+1301,1302
+1301,1303
+1301,1304
+1301,1305
+1302,1303
+1303,1304
+1303,1305
+1304,1305
+1304,1306
+1305,1306
+1308,1309
+1308,1310
+1309,1310
+1311,1312
+1311,1313
+1312,1313
+1315,1316
+1315,1317
+1316,1317
+1318,1319
+1318,1320
+1319,1320
+1322,1323
+1322,1324
+1323,1324
+1324,1325
+1326,1327
+1327,1328
+1329,1330
+1329,1331
+1330,1331
+1331,1332
+1331,1333
+1332,1333
+1334,1335
+1334,1336
+1335,1336
+1338,1339
+1338,1340
+1339,1340
+1341,1342
+1341,1343
+1341,1344
+1341,1345
+1342,1343
+1342,1344
+1343,1344
+1344,1345
+1344,1346
+1345,1346
+1348,1349
+1349,1350
+1349,1351
+1350,1351
+1351,1352
+1352,1353
+1352,1354
+1353,1354
+1353,1355
+1354,1355
+1357,1358
+1357,1359
+1357,1360
+1358,1359
+1362,1363
+1363,1364
+1364,1365
+1366,1367
+1366,1368
+1367,1368
+1367,1369
+1368,1369
+1368,1370
+1369,1370
+1373,1374
+1373,1375
+1374,1375
+1374,1376
+1375,1376
+1375,1377
+1376,1377
+1376,1378
+1376,1379
+1376,1380
+1377,1378
+1379,1380
+1381,1382
+1381,1383
+1382,1383
+1385,1386
+1385,1387
+1386,1387
+1390,1391
+1391,1392
+1392,1393
+1394,1395
+1395,1396
+1395,1397
+1396,1397
+1396,1398
+1397,1398
+1401,1402
+1401,1403
+1402,1403
+1402,1404
+1403,1404
+1403,1405
+1404,1405
+1407,1408
+1407,1409
+1408,1409
+1411,1412
+1412,1413
+1413,1414
+1413,1415
+1414,1415
+1414,1416
+1415,1416
+1418,1419
+1418,1420
+1419,1420
+1422,1423
+1423,1424
+1423,1425
+1424,1425
+1426,1427
+1426,1428
+1427,1428
+1430,1431
+1431,1432
+1431,1433
+1432,1433
+1433,1434
+1434,1435
+1435,1436
+1437,1438
+-----nextToken-----
+2,4,7,9,10,13,15,16,19,21,22,24,26,28,30,32,34,36,38,43,45,46,50,52,53,57,59,60,64,66,67,71,73,74,77,79,82,84,87,89,93,95,96,99,101,104,106,109,111,115,117,118,121,123,126,128,131,133,136,138,142,144,145,149,151,152,156,158,159,163,165,166,169,171,175,177,178,181,183,186,188,192,194,197,199,202,204,207,209,212,214,217,219,222,224,228,229,233,237,240,241,245,248,249,253,256,257,261,266,267,269,274,275,277,283,285,287,294,297,299,302,303,307,312,314,316,321,323,327,328,331,335,337,341,344,346,352,355,357,358,362,368,371,373,374,377,381,382,385,387,391,392,395,397,400,405,410,411,413,417,422,423,425,429,430,436,437,440,443,444,447,450,451,455,458,464,465,467,471,476,477,479,484,485,487,491,492,498,499,502,505,506,509,512,513,517,520,525,530,531,536,539,542,543,546,547,553,556,559,560,562,565,566,568,569,573,580,583,585,586,590,594,595,597,601,602,605,607,611,613,618,619,624,625,629,632,635,636,639,640,642,649,652,655,656,658,660,662,663,667,670,672,676,681,682,685,686,691,692,696,697,698,704,707,709,710,714,718,719,722,724,728,731,732,736,738,742,743,747,748,755,758,760,761,765,770,771,773,777,778,781,783,787,788,793,798,799,802,803,805,809,812,814,817,818,819,825,826,828,829,835,836,838,839,844,847,854,857,861,865,869,870,874,875,876,878,883,884,890,891,893,898,899,901,906,907,910,913,914,917,918,924,925,927,928,933,934,936,940,943,945,947,951,953,957,959,965,968,970,974,975,978,980,981,985,989,990,993,995,999,1005,1006,1008,1013,1014,1016,1021,1022,1024,1028,1031,1032,1036,1038,1043,1044,1046,1050,1052,1053,1054,1059,1061,1062,1063,1068,1069,1072,1076,1078,1082,1085,1087,1091,1094,1096,1101,1102,1107,1108,1111,1112,1114,1117,1118,1120,1125,1126,1128,1134,1136,1138,1145,1148,1150,1153,1154,1159,1160,1163,1168,1170,1172,1177,1179,1183,1184,1187,1191,1193,1198,1199,1204,1205,1208,1209,1212,1214,1218,1223,1228,1229,1231,1235,1240,1241,1243,1249,1250,1253,1256,1257,1260,1263,1264,1268,1271,1277,1278,1280,1284,1289,1290,1292,1297,1298,1300,1306,1307,1310,1313,1314,1317,1320,1321,1325,1328,1333,1336,1337,1340,1346,1347,1355,1356,1359,1360,1361,1365,1370,1371,1372,1378,1380,1383,1384,1387,1388,1389,1393,1398,1399,1400,1405,1406,1409,1410,1416,1417,1420,1421,1425,1428,1429,1436,1438
+-----computeFrom-----
+226,227
+226,228
+231,232
+231,233
+235,236
+235,237
+243,244
+243,245
+251,252
+251,253
+259,260
+259,261
+271,272
+271,273
+280,281
+280,282
+292,293
+292,294
+309,310
+309,311
+339,340
+339,341
+350,351
+350,352
+364,365
+364,366
+366,367
+366,368
+403,404
+403,405
+415,416
+415,417
+427,428
+427,429
+434,435
+434,436
+438,439
+438,440
+445,446
+445,447
+469,470
+469,471
+489,490
+489,491
+496,497
+496,498
+500,501
+500,502
+507,508
+507,509
+534,535
+534,536
+544,545
+544,546
+549,550
+549,551
+551,552
+551,553
+563,564
+563,565
+576,577
+576,578
+578,579
+578,580
+622,623
+622,624
+627,628
+627,629
+637,638
+637,639
+645,646
+645,647
+647,648
+647,649
+678,679
+678,680
+683,684
+683,685
+688,689
+688,690
+693,694
+693,695
+700,701
+700,702
+702,703
+702,704
+726,727
+726,728
+734,735
+734,736
+740,741
+740,742
+745,746
+745,747
+751,752
+751,753
+753,754
+753,755
+767,768
+767,769
+785,786
+785,787
+791,792
+791,793
+794,795
+794,796
+795,796
+795,797
+807,808
+807,809
+820,821
+820,822
+822,823
+822,824
+830,831
+830,832
+832,833
+832,834
+841,842
+841,843
+852,853
+852,854
+887,888
+887,889
+895,896
+895,897
+903,904
+903,905
+919,920
+919,921
+921,922
+921,923
+930,931
+930,932
+938,939
+938,940
+949,950
+949,951
+955,956
+955,957
+961,962
+961,963
+963,964
+963,965
+971,972
+971,973
+1002,1003
+1002,1004
+1010,1011
+1010,1012
+1018,1019
+1018,1020
+1026,1027
+1026,1028
+1034,1035
+1034,1036
+1040,1041
+1040,1042
+1080,1081
+1080,1082
+1089,1090
+1089,1091
+1092,1093
+1092,1094
+1098,1099
+1098,1100
+1122,1123
+1122,1124
+1131,1132
+1131,1133
+1143,1144
+1143,1145
+1165,1166
+1165,1167
+1195,1196
+1195,1197
+1221,1222
+1221,1223
+1233,1234
+1233,1235
+1247,1248
+1247,1249
+1251,1252
+1251,1253
+1258,1259
+1258,1260
+1282,1283
+1282,1284
+1304,1305
+1304,1306
+1308,1309
+1308,1310
+1315,1316
+1315,1317
+1331,1332
+1331,1333
+1352,1353
+1352,1354
+1367,1368
+1367,1369
+1375,1376
+1375,1377
+1395,1396
+1395,1397
+1402,1403
+1402,1404
+1413,1414
+1413,1415
+1423,1424
+1423,1425
+-----guardedBy-----
+287,316
+285,299
+314,323
+747,957
+847,933
+1136,1150
+1138,1172
+1170,1179
+1370,1398
+1371,1399
+1409,1420
+-----guardedByNegation-----
+-----lastLexicalUse-----
+-----jump-----
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;ParameterDeclaration;SimpleDeclSpecifier;Declarator;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;DeclarationStatement;SimpleDeclaration;SimpleDeclSpecifier;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ReturnStatement;UnaryExpression;LiteralExpression;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ReturnStatement;UnaryExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;CompoundStatement;ReturnStatement;UnaryExpression;LiteralExpression;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;CompoundStatement;ReturnStatement;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;UnaryExpression;ExpressionList;LiteralExpression;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;UnaryExpression;ExpressionList;LiteralExpression;IdExpression;Name;IfStatement;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ForStatement;ExpressionStatement;ExpressionList;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionList;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;IfStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;CompoundStatement;ContinueStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;CompoundStatement;ContinueStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ForStatement;ExpressionStatement;ExpressionList;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionList;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;UnaryExpression;IdExpression;Name;IfStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;LiteralExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ReturnStatement;UnaryExpression;LiteralExpression;CompoundStatement;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;CompoundStatement;ReturnStatement;UnaryExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;UnaryExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;UnaryExpression;ExpressionList;LiteralExpression;IdExpression;Name;IfStatement;UnaryExpression;IdExpression;Name;CompoundStatement;ContinueStatement;IfStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;LiteralExpression;ForStatement;NullStatement;CompoundStatement;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;LiteralExpression;CompoundStatement;ReturnStatement;UnaryExpression;LiteralExpression;IfStatement;IdExpression;Name;CompoundStatement;BreakStatement;ExpressionStatement;UnaryExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;CompoundStatement;ReturnStatement;UnaryExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;UnaryExpression;ExpressionList;LiteralExpression;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;CompoundStatement;ReturnStatement;UnaryExpression;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;UnaryExpression;ExpressionList;LiteralExpression;IdExpression;Name;WhileStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;BinaryExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;LiteralExpression;BinaryExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;LiteralExpression;IfStatement;BinaryExpression;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;CompoundStatement;ReturnStatement;UnaryExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;UnaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;FieldReference;IdExpression;Name;Name;Name;IdExpression;Name;IfStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;CompoundStatement;ReturnStatement;UnaryExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;UnaryExpression;ExpressionList;LiteralExpression;IdExpression;Name;IfStatement;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;LiteralExpression;CompoundStatement;IfStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ReturnStatement;UnaryExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;IdExpression;Name;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;IdExpression;Name;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ReturnStatement;UnaryExpression;LiteralExpression;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;ReturnStatement;UnaryExpression;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;LiteralExpression;CompoundStatement;ExpressionStatement;FunctionCallExpression;IdExpression;Name;LiteralExpression;CastExpression;TypeId;SimpleDeclSpecifier;Declarator;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ForStatement;ExpressionStatement;ExpressionList;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionList;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;IfStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;CompoundStatement;ContinueStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;UnaryExpression;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;CompoundStatement;ContinueStatement;ForStatement;ExpressionStatement;ExpressionList;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionList;UnaryExpression;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;WhileStatement;IdExpression;Name;CompoundStatement;IfStatement;UnaryExpression;FieldReference;IdExpression;Name;Name;CompoundStatement;IfStatement;UnaryExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;FunctionCallExpression;IdExpression;Name;LiteralExpression;LiteralExpression;CompoundStatement;ReturnStatement;UnaryExpression;LiteralExpression;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;CompoundStatement;IfStatement;BinaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;LiteralExpression;CompoundStatement;ReturnStatement;UnaryExpression;LiteralExpression;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;IfStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;CompoundStatement;IfStatement;ProblemExpression;CompoundStatement;ReturnStatement;UnaryExpression;LiteralExpression;ReturnStatement;LiteralExpression;
+-----ast_node-----
+static int jpc_dec_decodepkt(jpc_dec_t *dec, jas_stream_t *pkthdrstream, jas_stream_t *in, int compno, int rlvlno,  int prcno, int lyrno){	jpc_bitstream_t *inb;	jpc_dec_tcomp_t *tcomp;	jpc_dec_rlvl_t *rlvl;	jpc_dec_band_t *band;	jpc_dec_cblk_t *cblk;	int n;	int m;	int i;	jpc_tagtreenode_t *leaf;	int included;	int ret;	int numnewpasses;	jpc_dec_seg_t *seg;	int len;	int present;	int savenumnewpasses;	int mycounter;	jpc_ms_t *ms;	jpc_dec_tile_t *tile;	jpc_dec_ccp_t *ccp;	jpc_dec_cp_t *cp;	int bandno;	jpc_dec_prc_t *prc;	int usedcblkcnt;	int cblkno;	uint_fast32_t bodylen;	bool discard;	int passno;	int maxpasses;	int hdrlen;	int hdroffstart;	int hdroffend;	/* Avoid compiler warning about possible use of uninitialized	  variable. */	bodylen = 0;	discard = (lyrno >= dec->maxlyrs);	tile = dec->curtile;	cp = tile->cp;	ccp = &cp->ccps[compno];	/*	 * Decode the packet header.	 */	/* Decode the SOP marker segment if present. */	if (cp->csty & JPC_COD_SOP) {		if (jpc_dec_lookahead(in) == JPC_MS_SOP) {			if (!(ms = jpc_getms(in, dec->cstate))) {				return -1;			}			if (jpc_ms_gettype(ms) != JPC_MS_SOP) {				jpc_ms_destroy(ms);				jas_eprintf("missing SOP marker segment\n");				return -1;			}			jpc_ms_destroy(ms);		}	}hdroffstart = jas_stream_getrwcount(pkthdrstream);	if (!(inb = jpc_bitstream_sopen(pkthdrstream, "r"))) {		return -1;	}	if ((present = jpc_bitstream_getbit(inb)) < 0) {		return 1;	}	JAS_DBGLOG(10, ("\n", present));	JAS_DBGLOG(10, ("present=%d ", present));	/* Is the packet non-empty? */	if (present) {		/* The packet is non-empty. */		tcomp = &tile->tcomps[compno];		rlvl = &tcomp->rlvls[rlvlno];		bodylen = 0;		for (bandno = 0, band = rlvl->bands; bandno < rlvl->numbands;		  ++bandno, ++band) {			if (!band->data) {				continue;			}			prc = &band->prcs[prcno];			if (!prc->cblks) {				continue;			}			usedcblkcnt = 0;			for (cblkno = 0, cblk = prc->cblks; cblkno < prc->numcblks;			  ++cblkno, ++cblk) {				++usedcblkcnt;				if (!cblk->numpasses) {					leaf = jpc_tagtree_getleaf(prc->incltagtree, usedcblkcnt - 1);					if ((included = jpc_tagtree_decode(prc->incltagtree, leaf, lyrno + 1, inb)) < 0) {						return -1;					}				} else {					if ((included = jpc_bitstream_getbit(inb)) < 0) {						return -1;					}				}				JAS_DBGLOG(10, ("\n"));				JAS_DBGLOG(10, ("included=%d ", included));				if (!included) {					continue;				}				if (!cblk->numpasses) {					i = 1;					leaf = jpc_tagtree_getleaf(prc->numimsbstagtree, usedcblkcnt - 1);					for (;;) {						if ((ret = jpc_tagtree_decode(prc->numimsbstagtree, leaf, i, inb)) < 0) {							return -1;						}						if (ret) {							break;						}						++i;					}					cblk->numimsbs = i - 1;					cblk->firstpassno = cblk->numimsbs * 3;				}				if ((numnewpasses = jpc_getnumnewpasses(inb)) < 0) {					return -1;				}				JAS_DBGLOG(10, ("numnewpasses=%d ", numnewpasses));				seg = cblk->curseg;				savenumnewpasses = numnewpasses;				mycounter = 0;				if (numnewpasses > 0) {					if ((m = jpc_getcommacode(inb)) < 0) {						return -1;					}					cblk->numlenbits += m;					JAS_DBGLOG(10, ("increment=%d ", m));					while (numnewpasses > 0) {						passno = cblk->firstpassno + cblk->numpasses + mycounter;	/* XXX - the maxpasses is not set precisely but this doesn't matter... */						maxpasses = JPC_SEGPASSCNT(passno, cblk->firstpassno, 10000, (ccp->cblkctx & JPC_COX_LAZY) != 0, (ccp->cblkctx & JPC_COX_TERMALL) != 0);						if (!discard && !seg) {							if (!(seg = jpc_seg_alloc())) {								return -1;							}							jpc_seglist_insert(&cblk->segs, cblk->segs.tail, seg);							if (!cblk->curseg) {								cblk->curseg = seg;							}							seg->passno = passno;							seg->type = JPC_SEGTYPE(seg->passno, cblk->firstpassno, (ccp->cblkctx & JPC_COX_LAZY) != 0);							seg->maxpasses = maxpasses;						}						n = JAS_MIN(numnewpasses, maxpasses);						mycounter += n;						numnewpasses -= n;						if ((len = jpc_bitstream_getbits(inb, cblk->numlenbits + jpc_floorlog2(n))) < 0) {							return -1;						}						JAS_DBGLOG(10, ("len=%d ", len));						if (!discard) {							seg->lyrno = lyrno;							seg->numpasses += n;							seg->cnt = len;							seg = seg->next;						}						bodylen += len;					}				}				cblk->numpasses += savenumnewpasses;			}		}		jpc_bitstream_inalign(inb, 0, 0);	} else {		if (jpc_bitstream_inalign(inb, 0x7f, 0)) {			jas_eprintf("alignment failed\n");			return -1;		}	}	jpc_bitstream_close(inb);	hdroffend = jas_stream_getrwcount(pkthdrstream);	hdrlen = hdroffend - hdroffstart;	if (jas_getdbglevel() >= 5) {		jas_eprintf("hdrlen=%lu bodylen=%lu \n", (unsigned long) hdrlen,		  (unsigned long) bodylen);	}	if (cp->csty & JPC_COD_EPH) {		if (jpc_dec_lookahead(pkthdrstream) == JPC_MS_EPH) {			if (!(ms = jpc_getms(pkthdrstream, dec->cstate))) {				jas_eprintf("cannot get (EPH) marker segment\n");				return -1;			}			if (jpc_ms_gettype(ms) != JPC_MS_EPH) {				jpc_ms_destroy(ms);				jas_eprintf("missing EPH marker segment\n");				return -1;			}			jpc_ms_destroy(ms);		}	}	/* decode the packet body. */	if (jas_getdbglevel() >= 1) {		jas_eprintf("packet body offset=%06ld\n", (long) jas_stream_getrwcount(in));	}	if (!discard) {		tcomp = &tile->tcomps[compno];		rlvl = &tcomp->rlvls[rlvlno];		for (bandno = 0, band = rlvl->bands; bandno < rlvl->numbands;		  ++bandno, ++band) {			if (!band->data) {				continue;			}			prc = &band->prcs[prcno];			if (!prc->cblks) {				continue;			}			for (cblkno = 0, cblk = prc->cblks; cblkno < prc->numcblks;			  ++cblkno, ++cblk) {				seg = cblk->curseg;				while (seg) {					if (!seg->stream) {						if (!(seg->stream = jas_stream_memopen(0, 0))) {							return -1;						}					}#if 0jas_eprintf("lyrno=%02d, compno=%02d, lvlno=%02d, prcno=%02d, bandno=%02d, cblkno=%02d, passno=%02d numpasses=%02d cnt=%d numbps=%d, numimsbs=%d\n", lyrno, compno, rlvlno, prcno, band - rlvl->bands, cblk - prc->cblks, seg->passno, seg->numpasses, seg->cnt, band->numbps, cblk->numimsbs);#endif					if (seg->cnt > 0) {						if (jpc_getdata(in, seg->stream, seg->cnt) < 0) {							return -1;						}						seg->cnt = 0;					}					if (seg->numpasses >= seg->maxpasses) {						cblk->curseg = seg->next;					}					seg = seg->next;				}			}		}	} else {		if (jas_stream_gobble(in, bodylen) != JAS_CAST(int, bodylen)) {			return -1;		}	}	return 0;}
+static int
+jpc_dec_decodepkt(jpc_dec_t *dec, jas_stream_t *pkthdrstream, jas_stream_t *in, int compno, int rlvlno,  int prcno, int lyrno)
+jpc_dec_decodepkt
+jpc_dec_t *dec
+jpc_dec_t
+jpc_dec_t
+*dec
+*
+dec
+jas_stream_t *pkthdrstream
+jas_stream_t
+jas_stream_t
+*pkthdrstream
+*
+pkthdrstream
+jas_stream_t *in
+jas_stream_t
+jas_stream_t
+*in
+*
+in
+int compno
+int
+compno
+compno
+int rlvlno
+int
+rlvlno
+rlvlno
+int prcno
+int
+prcno
+prcno
+int lyrno
+int
+lyrno
+lyrno
+{	jpc_bitstream_t *inb;	jpc_dec_tcomp_t *tcomp;	jpc_dec_rlvl_t *rlvl;	jpc_dec_band_t *band;	jpc_dec_cblk_t *cblk;	int n;	int m;	int i;	jpc_tagtreenode_t *leaf;	int included;	int ret;	int numnewpasses;	jpc_dec_seg_t *seg;	int len;	int present;	int savenumnewpasses;	int mycounter;	jpc_ms_t *ms;	jpc_dec_tile_t *tile;	jpc_dec_ccp_t *ccp;	jpc_dec_cp_t *cp;	int bandno;	jpc_dec_prc_t *prc;	int usedcblkcnt;	int cblkno;	uint_fast32_t bodylen;	bool discard;	int passno;	int maxpasses;	int hdrlen;	int hdroffstart;	int hdroffend;	/* Avoid compiler warning about possible use of uninitialized	  variable. */	bodylen = 0;	discard = (lyrno >= dec->maxlyrs);	tile = dec->curtile;	cp = tile->cp;	ccp = &cp->ccps[compno];	/*	 * Decode the packet header.	 */	/* Decode the SOP marker segment if present. */	if (cp->csty & JPC_COD_SOP) {		if (jpc_dec_lookahead(in) == JPC_MS_SOP) {			if (!(ms = jpc_getms(in, dec->cstate))) {				return -1;			}			if (jpc_ms_gettype(ms) != JPC_MS_SOP) {				jpc_ms_destroy(ms);				jas_eprintf("missing SOP marker segment\n");				return -1;			}			jpc_ms_destroy(ms);		}	}hdroffstart = jas_stream_getrwcount(pkthdrstream);	if (!(inb = jpc_bitstream_sopen(pkthdrstream, "r"))) {		return -1;	}	if ((present = jpc_bitstream_getbit(inb)) < 0) {		return 1;	}	JAS_DBGLOG(10, ("\n", present));	JAS_DBGLOG(10, ("present=%d ", present));	/* Is the packet non-empty? */	if (present) {		/* The packet is non-empty. */		tcomp = &tile->tcomps[compno];		rlvl = &tcomp->rlvls[rlvlno];		bodylen = 0;		for (bandno = 0, band = rlvl->bands; bandno < rlvl->numbands;		  ++bandno, ++band) {			if (!band->data) {				continue;			}			prc = &band->prcs[prcno];			if (!prc->cblks) {				continue;			}			usedcblkcnt = 0;			for (cblkno = 0, cblk = prc->cblks; cblkno < prc->numcblks;			  ++cblkno, ++cblk) {				++usedcblkcnt;				if (!cblk->numpasses) {					leaf = jpc_tagtree_getleaf(prc->incltagtree, usedcblkcnt - 1);					if ((included = jpc_tagtree_decode(prc->incltagtree, leaf, lyrno + 1, inb)) < 0) {						return -1;					}				} else {					if ((included = jpc_bitstream_getbit(inb)) < 0) {						return -1;					}				}				JAS_DBGLOG(10, ("\n"));				JAS_DBGLOG(10, ("included=%d ", included));				if (!included) {					continue;				}				if (!cblk->numpasses) {					i = 1;					leaf = jpc_tagtree_getleaf(prc->numimsbstagtree, usedcblkcnt - 1);					for (;;) {						if ((ret = jpc_tagtree_decode(prc->numimsbstagtree, leaf, i, inb)) < 0) {							return -1;						}						if (ret) {							break;						}						++i;					}					cblk->numimsbs = i - 1;					cblk->firstpassno = cblk->numimsbs * 3;				}				if ((numnewpasses = jpc_getnumnewpasses(inb)) < 0) {					return -1;				}				JAS_DBGLOG(10, ("numnewpasses=%d ", numnewpasses));				seg = cblk->curseg;				savenumnewpasses = numnewpasses;				mycounter = 0;				if (numnewpasses > 0) {					if ((m = jpc_getcommacode(inb)) < 0) {						return -1;					}					cblk->numlenbits += m;					JAS_DBGLOG(10, ("increment=%d ", m));					while (numnewpasses > 0) {						passno = cblk->firstpassno + cblk->numpasses + mycounter;	/* XXX - the maxpasses is not set precisely but this doesn't matter... */						maxpasses = JPC_SEGPASSCNT(passno, cblk->firstpassno, 10000, (ccp->cblkctx & JPC_COX_LAZY) != 0, (ccp->cblkctx & JPC_COX_TERMALL) != 0);						if (!discard && !seg) {							if (!(seg = jpc_seg_alloc())) {								return -1;							}							jpc_seglist_insert(&cblk->segs, cblk->segs.tail, seg);							if (!cblk->curseg) {								cblk->curseg = seg;							}							seg->passno = passno;							seg->type = JPC_SEGTYPE(seg->passno, cblk->firstpassno, (ccp->cblkctx & JPC_COX_LAZY) != 0);							seg->maxpasses = maxpasses;						}						n = JAS_MIN(numnewpasses, maxpasses);						mycounter += n;						numnewpasses -= n;						if ((len = jpc_bitstream_getbits(inb, cblk->numlenbits + jpc_floorlog2(n))) < 0) {							return -1;						}						JAS_DBGLOG(10, ("len=%d ", len));						if (!discard) {							seg->lyrno = lyrno;							seg->numpasses += n;							seg->cnt = len;							seg = seg->next;						}						bodylen += len;					}				}				cblk->numpasses += savenumnewpasses;			}		}		jpc_bitstream_inalign(inb, 0, 0);	} else {		if (jpc_bitstream_inalign(inb, 0x7f, 0)) {			jas_eprintf("alignment failed\n");			return -1;		}	}	jpc_bitstream_close(inb);	hdroffend = jas_stream_getrwcount(pkthdrstream);	hdrlen = hdroffend - hdroffstart;	if (jas_getdbglevel() >= 5) {		jas_eprintf("hdrlen=%lu bodylen=%lu \n", (unsigned long) hdrlen,		  (unsigned long) bodylen);	}	if (cp->csty & JPC_COD_EPH) {		if (jpc_dec_lookahead(pkthdrstream) == JPC_MS_EPH) {			if (!(ms = jpc_getms(pkthdrstream, dec->cstate))) {				jas_eprintf("cannot get (EPH) marker segment\n");				return -1;			}			if (jpc_ms_gettype(ms) != JPC_MS_EPH) {				jpc_ms_destroy(ms);				jas_eprintf("missing EPH marker segment\n");				return -1;			}			jpc_ms_destroy(ms);		}	}	/* decode the packet body. */	if (jas_getdbglevel() >= 1) {		jas_eprintf("packet body offset=%06ld\n", (long) jas_stream_getrwcount(in));	}	if (!discard) {		tcomp = &tile->tcomps[compno];		rlvl = &tcomp->rlvls[rlvlno];		for (bandno = 0, band = rlvl->bands; bandno < rlvl->numbands;		  ++bandno, ++band) {			if (!band->data) {				continue;			}			prc = &band->prcs[prcno];			if (!prc->cblks) {				continue;			}			for (cblkno = 0, cblk = prc->cblks; cblkno < prc->numcblks;			  ++cblkno, ++cblk) {				seg = cblk->curseg;				while (seg) {					if (!seg->stream) {						if (!(seg->stream = jas_stream_memopen(0, 0))) {							return -1;						}					}#if 0jas_eprintf("lyrno=%02d, compno=%02d, lvlno=%02d, prcno=%02d, bandno=%02d, cblkno=%02d, passno=%02d numpasses=%02d cnt=%d numbps=%d, numimsbs=%d\n", lyrno, compno, rlvlno, prcno, band - rlvl->bands, cblk - prc->cblks, seg->passno, seg->numpasses, seg->cnt, band->numbps, cblk->numimsbs);#endif					if (seg->cnt > 0) {						if (jpc_getdata(in, seg->stream, seg->cnt) < 0) {							return -1;						}						seg->cnt = 0;					}					if (seg->numpasses >= seg->maxpasses) {						cblk->curseg = seg->next;					}					seg = seg->next;				}			}		}	} else {		if (jas_stream_gobble(in, bodylen) != JAS_CAST(int, bodylen)) {			return -1;		}	}	return 0;}
+jpc_bitstream_t *inb;
+jpc_bitstream_t *inb;
+jpc_bitstream_t
+jpc_bitstream_t
+*inb
+*
+inb
+jpc_dec_tcomp_t *tcomp;
+jpc_dec_tcomp_t *tcomp;
+jpc_dec_tcomp_t
+jpc_dec_tcomp_t
+*tcomp
+*
+tcomp
+jpc_dec_rlvl_t *rlvl;
+jpc_dec_rlvl_t *rlvl;
+jpc_dec_rlvl_t
+jpc_dec_rlvl_t
+*rlvl
+*
+rlvl
+jpc_dec_band_t *band;
+jpc_dec_band_t *band;
+jpc_dec_band_t
+jpc_dec_band_t
+*band
+*
+band
+jpc_dec_cblk_t *cblk;
+jpc_dec_cblk_t *cblk;
+jpc_dec_cblk_t
+jpc_dec_cblk_t
+*cblk
+*
+cblk
+int n;
+int n;
+int
+n
+n
+int m;
+int m;
+int
+m
+m
+int i;
+int i;
+int
+i
+i
+jpc_tagtreenode_t *leaf;
+jpc_tagtreenode_t *leaf;
+jpc_tagtreenode_t
+jpc_tagtreenode_t
+*leaf
+*
+leaf
+int included;
+int included;
+int
+included
+included
+int ret;
+int ret;
+int
+ret
+ret
+int numnewpasses;
+int numnewpasses;
+int
+numnewpasses
+numnewpasses
+jpc_dec_seg_t *seg;
+jpc_dec_seg_t *seg;
+jpc_dec_seg_t
+jpc_dec_seg_t
+*seg
+*
+seg
+int len;
+int len;
+int
+len
+len
+int present;
+int present;
+int
+present
+present
+int savenumnewpasses;
+int savenumnewpasses;
+int
+savenumnewpasses
+savenumnewpasses
+int mycounter;
+int mycounter;
+int
+mycounter
+mycounter
+jpc_ms_t *ms;
+jpc_ms_t *ms;
+jpc_ms_t
+jpc_ms_t
+*ms
+*
+ms
+jpc_dec_tile_t *tile;
+jpc_dec_tile_t *tile;
+jpc_dec_tile_t
+jpc_dec_tile_t
+*tile
+*
+tile
+jpc_dec_ccp_t *ccp;
+jpc_dec_ccp_t *ccp;
+jpc_dec_ccp_t
+jpc_dec_ccp_t
+*ccp
+*
+ccp
+jpc_dec_cp_t *cp;
+jpc_dec_cp_t *cp;
+jpc_dec_cp_t
+jpc_dec_cp_t
+*cp
+*
+cp
+int bandno;
+int bandno;
+int
+bandno
+bandno
+jpc_dec_prc_t *prc;
+jpc_dec_prc_t *prc;
+jpc_dec_prc_t
+jpc_dec_prc_t
+*prc
+*
+prc
+int usedcblkcnt;
+int usedcblkcnt;
+int
+usedcblkcnt
+usedcblkcnt
+int cblkno;
+int cblkno;
+int
+cblkno
+cblkno
+uint_fast32_t bodylen;
+uint_fast32_t bodylen;
+uint_fast32_t
+uint_fast32_t
+bodylen
+bodylen
+bool discard;
+bool discard;
+bool
+discard
+discard
+int passno;
+int passno;
+int
+passno
+passno
+int maxpasses;
+int maxpasses;
+int
+maxpasses
+maxpasses
+int hdrlen;
+int hdrlen;
+int
+hdrlen
+hdrlen
+int hdroffstart;
+int hdroffstart;
+int
+hdroffstart
+hdroffstart
+int hdroffend;
+int hdroffend;
+int
+hdroffend
+hdroffend
+bodylen = 0;
+bodylen = 0
+bodylen
+bodylen
+0
+discard = (lyrno >= dec->maxlyrs);
+discard = (lyrno >= dec->maxlyrs)
+discard
+discard
+(lyrno >= dec->maxlyrs)
+lyrno >= dec->maxlyrs
+lyrno
+lyrno
+dec->maxlyrs
+dec
+dec
+maxlyrs
+tile = dec->curtile;
+tile = dec->curtile
+tile
+tile
+dec->curtile
+dec
+dec
+curtile
+cp = tile->cp;
+cp = tile->cp
+cp
+cp
+tile->cp
+tile
+tile
+cp
+ccp = &cp->ccps[compno];
+ccp = &cp->ccps[compno]
+ccp
+ccp
+&cp->ccps[compno]
+cp->ccps[compno]
+cp->ccps
+cp
+cp
+ccps
+compno
+compno
+if (cp->csty & JPC_COD_SOP) {		if (jpc_dec_lookahead(in) == JPC_MS_SOP) {			if (!(ms = jpc_getms(in, dec->cstate))) {				return -1;			}			if (jpc_ms_gettype(ms) != JPC_MS_SOP) {				jpc_ms_destroy(ms);				jas_eprintf("missing SOP marker segment\n");				return -1;			}			jpc_ms_destroy(ms);		}	}
+cp->csty & JPC_COD_SOP
+cp->csty
+cp
+cp
+csty
+JPC_COD_SOP
+JPC_COD_SOP
+{		if (jpc_dec_lookahead(in) == JPC_MS_SOP) {			if (!(ms = jpc_getms(in, dec->cstate))) {				return -1;			}			if (jpc_ms_gettype(ms) != JPC_MS_SOP) {				jpc_ms_destroy(ms);				jas_eprintf("missing SOP marker segment\n");				return -1;			}			jpc_ms_destroy(ms);		}	}
+if (jpc_dec_lookahead(in) == JPC_MS_SOP) {			if (!(ms = jpc_getms(in, dec->cstate))) {				return -1;			}			if (jpc_ms_gettype(ms) != JPC_MS_SOP) {				jpc_ms_destroy(ms);				jas_eprintf("missing SOP marker segment\n");				return -1;			}			jpc_ms_destroy(ms);		}
+jpc_dec_lookahead(in) == JPC_MS_SOP
+jpc_dec_lookahead(in)
+jpc_dec_lookahead
+jpc_dec_lookahead
+in
+in
+JPC_MS_SOP
+JPC_MS_SOP
+{			if (!(ms = jpc_getms(in, dec->cstate))) {				return -1;			}			if (jpc_ms_gettype(ms) != JPC_MS_SOP) {				jpc_ms_destroy(ms);				jas_eprintf("missing SOP marker segment\n");				return -1;			}			jpc_ms_destroy(ms);		}
+if (!(ms = jpc_getms(in, dec->cstate))) {				return -1;			}
+!(ms = jpc_getms(in, dec->cstate))
+(ms = jpc_getms(in, dec->cstate))
+ms = jpc_getms(in, dec->cstate)
+ms
+ms
+jpc_getms(in, dec->cstate)
+jpc_getms
+jpc_getms
+in
+in
+dec->cstate
+dec
+dec
+cstate
+{				return -1;			}
+return -1;
+-1
+1
+if (jpc_ms_gettype(ms) != JPC_MS_SOP) {				jpc_ms_destroy(ms);				jas_eprintf("missing SOP marker segment\n");				return -1;			}
+jpc_ms_gettype(ms) != JPC_MS_SOP
+jpc_ms_gettype(ms)
+jpc_ms_gettype
+jpc_ms_gettype
+ms
+ms
+JPC_MS_SOP
+JPC_MS_SOP
+{				jpc_ms_destroy(ms);				jas_eprintf("missing SOP marker segment\n");				return -1;			}
+jpc_ms_destroy(ms);
+jpc_ms_destroy(ms)
+jpc_ms_destroy
+jpc_ms_destroy
+ms
+ms
+jas_eprintf("missing SOP marker segment\n");
+jas_eprintf("missing SOP marker segment\n")
+jas_eprintf
+jas_eprintf
+"missing SOP marker segment\n"
+return -1;
+-1
+1
+jpc_ms_destroy(ms);
+jpc_ms_destroy(ms)
+jpc_ms_destroy
+jpc_ms_destroy
+ms
+ms
+hdroffstart = jas_stream_getrwcount(pkthdrstream);
+hdroffstart = jas_stream_getrwcount(pkthdrstream)
+hdroffstart
+hdroffstart
+jas_stream_getrwcount(pkthdrstream)
+jas_stream_getrwcount
+jas_stream_getrwcount
+pkthdrstream
+pkthdrstream
+if (!(inb = jpc_bitstream_sopen(pkthdrstream, "r"))) {		return -1;	}
+!(inb = jpc_bitstream_sopen(pkthdrstream, "r"))
+(inb = jpc_bitstream_sopen(pkthdrstream, "r"))
+inb = jpc_bitstream_sopen(pkthdrstream, "r")
+inb
+inb
+jpc_bitstream_sopen(pkthdrstream, "r")
+jpc_bitstream_sopen
+jpc_bitstream_sopen
+pkthdrstream
+pkthdrstream
+"r"
+{		return -1;	}
+return -1;
+-1
+1
+if ((present = jpc_bitstream_getbit(inb)) < 0) {		return 1;	}
+(present = jpc_bitstream_getbit(inb)) < 0
+(present = jpc_bitstream_getbit(inb))
+present = jpc_bitstream_getbit(inb)
+present
+present
+jpc_bitstream_getbit(inb)
+jpc_bitstream_getbit
+jpc_bitstream_getbit
+inb
+inb
+0
+{		return 1;	}
+return 1;
+1
+JAS_DBGLOG(10, ("\n", present));
+JAS_DBGLOG(10, ("\n", present))
+JAS_DBGLOG
+JAS_DBGLOG
+10
+("\n", present)
+"\n", present
+"\n"
+present
+present
+JAS_DBGLOG(10, ("present=%d ", present));
+JAS_DBGLOG(10, ("present=%d ", present))
+JAS_DBGLOG
+JAS_DBGLOG
+10
+("present=%d ", present)
+"present=%d ", present
+"present=%d "
+present
+present
+if (present) {		/* The packet is non-empty. */		tcomp = &tile->tcomps[compno];		rlvl = &tcomp->rlvls[rlvlno];		bodylen = 0;		for (bandno = 0, band = rlvl->bands; bandno < rlvl->numbands;		  ++bandno, ++band) {			if (!band->data) {				continue;			}			prc = &band->prcs[prcno];			if (!prc->cblks) {				continue;			}			usedcblkcnt = 0;			for (cblkno = 0, cblk = prc->cblks; cblkno < prc->numcblks;			  ++cblkno, ++cblk) {				++usedcblkcnt;				if (!cblk->numpasses) {					leaf = jpc_tagtree_getleaf(prc->incltagtree, usedcblkcnt - 1);					if ((included = jpc_tagtree_decode(prc->incltagtree, leaf, lyrno + 1, inb)) < 0) {						return -1;					}				} else {					if ((included = jpc_bitstream_getbit(inb)) < 0) {						return -1;					}				}				JAS_DBGLOG(10, ("\n"));				JAS_DBGLOG(10, ("included=%d ", included));				if (!included) {					continue;				}				if (!cblk->numpasses) {					i = 1;					leaf = jpc_tagtree_getleaf(prc->numimsbstagtree, usedcblkcnt - 1);					for (;;) {						if ((ret = jpc_tagtree_decode(prc->numimsbstagtree, leaf, i, inb)) < 0) {							return -1;						}						if (ret) {							break;						}						++i;					}					cblk->numimsbs = i - 1;					cblk->firstpassno = cblk->numimsbs * 3;				}				if ((numnewpasses = jpc_getnumnewpasses(inb)) < 0) {					return -1;				}				JAS_DBGLOG(10, ("numnewpasses=%d ", numnewpasses));				seg = cblk->curseg;				savenumnewpasses = numnewpasses;				mycounter = 0;				if (numnewpasses > 0) {					if ((m = jpc_getcommacode(inb)) < 0) {						return -1;					}					cblk->numlenbits += m;					JAS_DBGLOG(10, ("increment=%d ", m));					while (numnewpasses > 0) {						passno = cblk->firstpassno + cblk->numpasses + mycounter;	/* XXX - the maxpasses is not set precisely but this doesn't matter... */						maxpasses = JPC_SEGPASSCNT(passno, cblk->firstpassno, 10000, (ccp->cblkctx & JPC_COX_LAZY) != 0, (ccp->cblkctx & JPC_COX_TERMALL) != 0);						if (!discard && !seg) {							if (!(seg = jpc_seg_alloc())) {								return -1;							}							jpc_seglist_insert(&cblk->segs, cblk->segs.tail, seg);							if (!cblk->curseg) {								cblk->curseg = seg;							}							seg->passno = passno;							seg->type = JPC_SEGTYPE(seg->passno, cblk->firstpassno, (ccp->cblkctx & JPC_COX_LAZY) != 0);							seg->maxpasses = maxpasses;						}						n = JAS_MIN(numnewpasses, maxpasses);						mycounter += n;						numnewpasses -= n;						if ((len = jpc_bitstream_getbits(inb, cblk->numlenbits + jpc_floorlog2(n))) < 0) {							return -1;						}						JAS_DBGLOG(10, ("len=%d ", len));						if (!discard) {							seg->lyrno = lyrno;							seg->numpasses += n;							seg->cnt = len;							seg = seg->next;						}						bodylen += len;					}				}				cblk->numpasses += savenumnewpasses;			}		}		jpc_bitstream_inalign(inb, 0, 0);	} else {		if (jpc_bitstream_inalign(inb, 0x7f, 0)) {			jas_eprintf("alignment failed\n");			return -1;		}	}
+present
+present
+{		/* The packet is non-empty. */		tcomp = &tile->tcomps[compno];		rlvl = &tcomp->rlvls[rlvlno];		bodylen = 0;		for (bandno = 0, band = rlvl->bands; bandno < rlvl->numbands;		  ++bandno, ++band) {			if (!band->data) {				continue;			}			prc = &band->prcs[prcno];			if (!prc->cblks) {				continue;			}			usedcblkcnt = 0;			for (cblkno = 0, cblk = prc->cblks; cblkno < prc->numcblks;			  ++cblkno, ++cblk) {				++usedcblkcnt;				if (!cblk->numpasses) {					leaf = jpc_tagtree_getleaf(prc->incltagtree, usedcblkcnt - 1);					if ((included = jpc_tagtree_decode(prc->incltagtree, leaf, lyrno + 1, inb)) < 0) {						return -1;					}				} else {					if ((included = jpc_bitstream_getbit(inb)) < 0) {						return -1;					}				}				JAS_DBGLOG(10, ("\n"));				JAS_DBGLOG(10, ("included=%d ", included));				if (!included) {					continue;				}				if (!cblk->numpasses) {					i = 1;					leaf = jpc_tagtree_getleaf(prc->numimsbstagtree, usedcblkcnt - 1);					for (;;) {						if ((ret = jpc_tagtree_decode(prc->numimsbstagtree, leaf, i, inb)) < 0) {							return -1;						}						if (ret) {							break;						}						++i;					}					cblk->numimsbs = i - 1;					cblk->firstpassno = cblk->numimsbs * 3;				}				if ((numnewpasses = jpc_getnumnewpasses(inb)) < 0) {					return -1;				}				JAS_DBGLOG(10, ("numnewpasses=%d ", numnewpasses));				seg = cblk->curseg;				savenumnewpasses = numnewpasses;				mycounter = 0;				if (numnewpasses > 0) {					if ((m = jpc_getcommacode(inb)) < 0) {						return -1;					}					cblk->numlenbits += m;					JAS_DBGLOG(10, ("increment=%d ", m));					while (numnewpasses > 0) {						passno = cblk->firstpassno + cblk->numpasses + mycounter;	/* XXX - the maxpasses is not set precisely but this doesn't matter... */						maxpasses = JPC_SEGPASSCNT(passno, cblk->firstpassno, 10000, (ccp->cblkctx & JPC_COX_LAZY) != 0, (ccp->cblkctx & JPC_COX_TERMALL) != 0);						if (!discard && !seg) {							if (!(seg = jpc_seg_alloc())) {								return -1;							}							jpc_seglist_insert(&cblk->segs, cblk->segs.tail, seg);							if (!cblk->curseg) {								cblk->curseg = seg;							}							seg->passno = passno;							seg->type = JPC_SEGTYPE(seg->passno, cblk->firstpassno, (ccp->cblkctx & JPC_COX_LAZY) != 0);							seg->maxpasses = maxpasses;						}						n = JAS_MIN(numnewpasses, maxpasses);						mycounter += n;						numnewpasses -= n;						if ((len = jpc_bitstream_getbits(inb, cblk->numlenbits + jpc_floorlog2(n))) < 0) {							return -1;						}						JAS_DBGLOG(10, ("len=%d ", len));						if (!discard) {							seg->lyrno = lyrno;							seg->numpasses += n;							seg->cnt = len;							seg = seg->next;						}						bodylen += len;					}				}				cblk->numpasses += savenumnewpasses;			}		}		jpc_bitstream_inalign(inb, 0, 0);	}
+tcomp = &tile->tcomps[compno];
+tcomp = &tile->tcomps[compno]
+tcomp
+tcomp
+&tile->tcomps[compno]
+tile->tcomps[compno]
+tile->tcomps
+tile
+tile
+tcomps
+compno
+compno
+rlvl = &tcomp->rlvls[rlvlno];
+rlvl = &tcomp->rlvls[rlvlno]
+rlvl
+rlvl
+&tcomp->rlvls[rlvlno]
+tcomp->rlvls[rlvlno]
+tcomp->rlvls
+tcomp
+tcomp
+rlvls
+rlvlno
+rlvlno
+bodylen = 0;
+bodylen = 0
+bodylen
+bodylen
+0
+for (bandno = 0, band = rlvl->bands; bandno < rlvl->numbands;		  ++bandno, ++band) {			if (!band->data) {				continue;			}			prc = &band->prcs[prcno];			if (!prc->cblks) {				continue;			}			usedcblkcnt = 0;			for (cblkno = 0, cblk = prc->cblks; cblkno < prc->numcblks;			  ++cblkno, ++cblk) {				++usedcblkcnt;				if (!cblk->numpasses) {					leaf = jpc_tagtree_getleaf(prc->incltagtree, usedcblkcnt - 1);					if ((included = jpc_tagtree_decode(prc->incltagtree, leaf, lyrno + 1, inb)) < 0) {						return -1;					}				} else {					if ((included = jpc_bitstream_getbit(inb)) < 0) {						return -1;					}				}				JAS_DBGLOG(10, ("\n"));				JAS_DBGLOG(10, ("included=%d ", included));				if (!included) {					continue;				}				if (!cblk->numpasses) {					i = 1;					leaf = jpc_tagtree_getleaf(prc->numimsbstagtree, usedcblkcnt - 1);					for (;;) {						if ((ret = jpc_tagtree_decode(prc->numimsbstagtree, leaf, i, inb)) < 0) {							return -1;						}						if (ret) {							break;						}						++i;					}					cblk->numimsbs = i - 1;					cblk->firstpassno = cblk->numimsbs * 3;				}				if ((numnewpasses = jpc_getnumnewpasses(inb)) < 0) {					return -1;				}				JAS_DBGLOG(10, ("numnewpasses=%d ", numnewpasses));				seg = cblk->curseg;				savenumnewpasses = numnewpasses;				mycounter = 0;				if (numnewpasses > 0) {					if ((m = jpc_getcommacode(inb)) < 0) {						return -1;					}					cblk->numlenbits += m;					JAS_DBGLOG(10, ("increment=%d ", m));					while (numnewpasses > 0) {						passno = cblk->firstpassno + cblk->numpasses + mycounter;	/* XXX - the maxpasses is not set precisely but this doesn't matter... */						maxpasses = JPC_SEGPASSCNT(passno, cblk->firstpassno, 10000, (ccp->cblkctx & JPC_COX_LAZY) != 0, (ccp->cblkctx & JPC_COX_TERMALL) != 0);						if (!discard && !seg) {							if (!(seg = jpc_seg_alloc())) {								return -1;							}							jpc_seglist_insert(&cblk->segs, cblk->segs.tail, seg);							if (!cblk->curseg) {								cblk->curseg = seg;							}							seg->passno = passno;							seg->type = JPC_SEGTYPE(seg->passno, cblk->firstpassno, (ccp->cblkctx & JPC_COX_LAZY) != 0);							seg->maxpasses = maxpasses;						}						n = JAS_MIN(numnewpasses, maxpasses);						mycounter += n;						numnewpasses -= n;						if ((len = jpc_bitstream_getbits(inb, cblk->numlenbits + jpc_floorlog2(n))) < 0) {							return -1;						}						JAS_DBGLOG(10, ("len=%d ", len));						if (!discard) {							seg->lyrno = lyrno;							seg->numpasses += n;							seg->cnt = len;							seg = seg->next;						}						bodylen += len;					}				}				cblk->numpasses += savenumnewpasses;			}		}
+bandno = 0, band = rlvl->bands;
+bandno = 0, band = rlvl->bands
+bandno = 0
+bandno
+bandno
+0
+band = rlvl->bands
+band
+band
+rlvl->bands
+rlvl
+rlvl
+bands
+bandno < rlvl->numbands
+bandno
+bandno
+rlvl->numbands
+rlvl
+rlvl
+numbands
+++bandno, ++band
+++bandno
+bandno
+bandno
+++band
+band
+band
+{			if (!band->data) {				continue;			}			prc = &band->prcs[prcno];			if (!prc->cblks) {				continue;			}			usedcblkcnt = 0;			for (cblkno = 0, cblk = prc->cblks; cblkno < prc->numcblks;			  ++cblkno, ++cblk) {				++usedcblkcnt;				if (!cblk->numpasses) {					leaf = jpc_tagtree_getleaf(prc->incltagtree, usedcblkcnt - 1);					if ((included = jpc_tagtree_decode(prc->incltagtree, leaf, lyrno + 1, inb)) < 0) {						return -1;					}				} else {					if ((included = jpc_bitstream_getbit(inb)) < 0) {						return -1;					}				}				JAS_DBGLOG(10, ("\n"));				JAS_DBGLOG(10, ("included=%d ", included));				if (!included) {					continue;				}				if (!cblk->numpasses) {					i = 1;					leaf = jpc_tagtree_getleaf(prc->numimsbstagtree, usedcblkcnt - 1);					for (;;) {						if ((ret = jpc_tagtree_decode(prc->numimsbstagtree, leaf, i, inb)) < 0) {							return -1;						}						if (ret) {							break;						}						++i;					}					cblk->numimsbs = i - 1;					cblk->firstpassno = cblk->numimsbs * 3;				}				if ((numnewpasses = jpc_getnumnewpasses(inb)) < 0) {					return -1;				}				JAS_DBGLOG(10, ("numnewpasses=%d ", numnewpasses));				seg = cblk->curseg;				savenumnewpasses = numnewpasses;				mycounter = 0;				if (numnewpasses > 0) {					if ((m = jpc_getcommacode(inb)) < 0) {						return -1;					}					cblk->numlenbits += m;					JAS_DBGLOG(10, ("increment=%d ", m));					while (numnewpasses > 0) {						passno = cblk->firstpassno + cblk->numpasses + mycounter;	/* XXX - the maxpasses is not set precisely but this doesn't matter... */						maxpasses = JPC_SEGPASSCNT(passno, cblk->firstpassno, 10000, (ccp->cblkctx & JPC_COX_LAZY) != 0, (ccp->cblkctx & JPC_COX_TERMALL) != 0);						if (!discard && !seg) {							if (!(seg = jpc_seg_alloc())) {								return -1;							}							jpc_seglist_insert(&cblk->segs, cblk->segs.tail, seg);							if (!cblk->curseg) {								cblk->curseg = seg;							}							seg->passno = passno;							seg->type = JPC_SEGTYPE(seg->passno, cblk->firstpassno, (ccp->cblkctx & JPC_COX_LAZY) != 0);							seg->maxpasses = maxpasses;						}						n = JAS_MIN(numnewpasses, maxpasses);						mycounter += n;						numnewpasses -= n;						if ((len = jpc_bitstream_getbits(inb, cblk->numlenbits + jpc_floorlog2(n))) < 0) {							return -1;						}						JAS_DBGLOG(10, ("len=%d ", len));						if (!discard) {							seg->lyrno = lyrno;							seg->numpasses += n;							seg->cnt = len;							seg = seg->next;						}						bodylen += len;					}				}				cblk->numpasses += savenumnewpasses;			}		}
+if (!band->data) {				continue;			}
+!band->data
+band->data
+band
+band
+data
+{				continue;			}
+continue;
+prc = &band->prcs[prcno];
+prc = &band->prcs[prcno]
+prc
+prc
+&band->prcs[prcno]
+band->prcs[prcno]
+band->prcs
+band
+band
+prcs
+prcno
+prcno
+if (!prc->cblks) {				continue;			}
+!prc->cblks
+prc->cblks
+prc
+prc
+cblks
+{				continue;			}
+continue;
+usedcblkcnt = 0;
+usedcblkcnt = 0
+usedcblkcnt
+usedcblkcnt
+0
+for (cblkno = 0, cblk = prc->cblks; cblkno < prc->numcblks;			  ++cblkno, ++cblk) {				++usedcblkcnt;				if (!cblk->numpasses) {					leaf = jpc_tagtree_getleaf(prc->incltagtree, usedcblkcnt - 1);					if ((included = jpc_tagtree_decode(prc->incltagtree, leaf, lyrno + 1, inb)) < 0) {						return -1;					}				} else {					if ((included = jpc_bitstream_getbit(inb)) < 0) {						return -1;					}				}				JAS_DBGLOG(10, ("\n"));				JAS_DBGLOG(10, ("included=%d ", included));				if (!included) {					continue;				}				if (!cblk->numpasses) {					i = 1;					leaf = jpc_tagtree_getleaf(prc->numimsbstagtree, usedcblkcnt - 1);					for (;;) {						if ((ret = jpc_tagtree_decode(prc->numimsbstagtree, leaf, i, inb)) < 0) {							return -1;						}						if (ret) {							break;						}						++i;					}					cblk->numimsbs = i - 1;					cblk->firstpassno = cblk->numimsbs * 3;				}				if ((numnewpasses = jpc_getnumnewpasses(inb)) < 0) {					return -1;				}				JAS_DBGLOG(10, ("numnewpasses=%d ", numnewpasses));				seg = cblk->curseg;				savenumnewpasses = numnewpasses;				mycounter = 0;				if (numnewpasses > 0) {					if ((m = jpc_getcommacode(inb)) < 0) {						return -1;					}					cblk->numlenbits += m;					JAS_DBGLOG(10, ("increment=%d ", m));					while (numnewpasses > 0) {						passno = cblk->firstpassno + cblk->numpasses + mycounter;	/* XXX - the maxpasses is not set precisely but this doesn't matter... */						maxpasses = JPC_SEGPASSCNT(passno, cblk->firstpassno, 10000, (ccp->cblkctx & JPC_COX_LAZY) != 0, (ccp->cblkctx & JPC_COX_TERMALL) != 0);						if (!discard && !seg) {							if (!(seg = jpc_seg_alloc())) {								return -1;							}							jpc_seglist_insert(&cblk->segs, cblk->segs.tail, seg);							if (!cblk->curseg) {								cblk->curseg = seg;							}							seg->passno = passno;							seg->type = JPC_SEGTYPE(seg->passno, cblk->firstpassno, (ccp->cblkctx & JPC_COX_LAZY) != 0);							seg->maxpasses = maxpasses;						}						n = JAS_MIN(numnewpasses, maxpasses);						mycounter += n;						numnewpasses -= n;						if ((len = jpc_bitstream_getbits(inb, cblk->numlenbits + jpc_floorlog2(n))) < 0) {							return -1;						}						JAS_DBGLOG(10, ("len=%d ", len));						if (!discard) {							seg->lyrno = lyrno;							seg->numpasses += n;							seg->cnt = len;							seg = seg->next;						}						bodylen += len;					}				}				cblk->numpasses += savenumnewpasses;			}
+cblkno = 0, cblk = prc->cblks;
+cblkno = 0, cblk = prc->cblks
+cblkno = 0
+cblkno
+cblkno
+0
+cblk = prc->cblks
+cblk
+cblk
+prc->cblks
+prc
+prc
+cblks
+cblkno < prc->numcblks
+cblkno
+cblkno
+prc->numcblks
+prc
+prc
+numcblks
+++cblkno, ++cblk
+++cblkno
+cblkno
+cblkno
+++cblk
+cblk
+cblk
+{				++usedcblkcnt;				if (!cblk->numpasses) {					leaf = jpc_tagtree_getleaf(prc->incltagtree, usedcblkcnt - 1);					if ((included = jpc_tagtree_decode(prc->incltagtree, leaf, lyrno + 1, inb)) < 0) {						return -1;					}				} else {					if ((included = jpc_bitstream_getbit(inb)) < 0) {						return -1;					}				}				JAS_DBGLOG(10, ("\n"));				JAS_DBGLOG(10, ("included=%d ", included));				if (!included) {					continue;				}				if (!cblk->numpasses) {					i = 1;					leaf = jpc_tagtree_getleaf(prc->numimsbstagtree, usedcblkcnt - 1);					for (;;) {						if ((ret = jpc_tagtree_decode(prc->numimsbstagtree, leaf, i, inb)) < 0) {							return -1;						}						if (ret) {							break;						}						++i;					}					cblk->numimsbs = i - 1;					cblk->firstpassno = cblk->numimsbs * 3;				}				if ((numnewpasses = jpc_getnumnewpasses(inb)) < 0) {					return -1;				}				JAS_DBGLOG(10, ("numnewpasses=%d ", numnewpasses));				seg = cblk->curseg;				savenumnewpasses = numnewpasses;				mycounter = 0;				if (numnewpasses > 0) {					if ((m = jpc_getcommacode(inb)) < 0) {						return -1;					}					cblk->numlenbits += m;					JAS_DBGLOG(10, ("increment=%d ", m));					while (numnewpasses > 0) {						passno = cblk->firstpassno + cblk->numpasses + mycounter;	/* XXX - the maxpasses is not set precisely but this doesn't matter... */						maxpasses = JPC_SEGPASSCNT(passno, cblk->firstpassno, 10000, (ccp->cblkctx & JPC_COX_LAZY) != 0, (ccp->cblkctx & JPC_COX_TERMALL) != 0);						if (!discard && !seg) {							if (!(seg = jpc_seg_alloc())) {								return -1;							}							jpc_seglist_insert(&cblk->segs, cblk->segs.tail, seg);							if (!cblk->curseg) {								cblk->curseg = seg;							}							seg->passno = passno;							seg->type = JPC_SEGTYPE(seg->passno, cblk->firstpassno, (ccp->cblkctx & JPC_COX_LAZY) != 0);							seg->maxpasses = maxpasses;						}						n = JAS_MIN(numnewpasses, maxpasses);						mycounter += n;						numnewpasses -= n;						if ((len = jpc_bitstream_getbits(inb, cblk->numlenbits + jpc_floorlog2(n))) < 0) {							return -1;						}						JAS_DBGLOG(10, ("len=%d ", len));						if (!discard) {							seg->lyrno = lyrno;							seg->numpasses += n;							seg->cnt = len;							seg = seg->next;						}						bodylen += len;					}				}				cblk->numpasses += savenumnewpasses;			}
+++usedcblkcnt;
+++usedcblkcnt
+usedcblkcnt
+usedcblkcnt
+if (!cblk->numpasses) {					leaf = jpc_tagtree_getleaf(prc->incltagtree, usedcblkcnt - 1);					if ((included = jpc_tagtree_decode(prc->incltagtree, leaf, lyrno + 1, inb)) < 0) {						return -1;					}				} else {					if ((included = jpc_bitstream_getbit(inb)) < 0) {						return -1;					}				}
+!cblk->numpasses
+cblk->numpasses
+cblk
+cblk
+numpasses
+{					leaf = jpc_tagtree_getleaf(prc->incltagtree, usedcblkcnt - 1);					if ((included = jpc_tagtree_decode(prc->incltagtree, leaf, lyrno + 1, inb)) < 0) {						return -1;					}				}
+leaf = jpc_tagtree_getleaf(prc->incltagtree, usedcblkcnt - 1);
+leaf = jpc_tagtree_getleaf(prc->incltagtree, usedcblkcnt - 1)
+leaf
+leaf
+jpc_tagtree_getleaf(prc->incltagtree, usedcblkcnt - 1)
+jpc_tagtree_getleaf
+jpc_tagtree_getleaf
+prc->incltagtree
+prc
+prc
+incltagtree
+usedcblkcnt - 1
+usedcblkcnt
+usedcblkcnt
+1
+if ((included = jpc_tagtree_decode(prc->incltagtree, leaf, lyrno + 1, inb)) < 0) {						return -1;					}
+(included = jpc_tagtree_decode(prc->incltagtree, leaf, lyrno + 1, inb)) < 0
+(included = jpc_tagtree_decode(prc->incltagtree, leaf, lyrno + 1, inb))
+included = jpc_tagtree_decode(prc->incltagtree, leaf, lyrno + 1, inb)
+included
+included
+jpc_tagtree_decode(prc->incltagtree, leaf, lyrno + 1, inb)
+jpc_tagtree_decode
+jpc_tagtree_decode
+prc->incltagtree
+prc
+prc
+incltagtree
+leaf
+leaf
+lyrno + 1
+lyrno
+lyrno
+1
+inb
+inb
+0
+{						return -1;					}
+return -1;
+-1
+1
+{					if ((included = jpc_bitstream_getbit(inb)) < 0) {						return -1;					}				}
+if ((included = jpc_bitstream_getbit(inb)) < 0) {						return -1;					}
+(included = jpc_bitstream_getbit(inb)) < 0
+(included = jpc_bitstream_getbit(inb))
+included = jpc_bitstream_getbit(inb)
+included
+included
+jpc_bitstream_getbit(inb)
+jpc_bitstream_getbit
+jpc_bitstream_getbit
+inb
+inb
+0
+{						return -1;					}
+return -1;
+-1
+1
+JAS_DBGLOG(10, ("\n"));
+JAS_DBGLOG(10, ("\n"))
+JAS_DBGLOG
+JAS_DBGLOG
+10
+("\n")
+"\n"
+JAS_DBGLOG(10, ("included=%d ", included));
+JAS_DBGLOG(10, ("included=%d ", included))
+JAS_DBGLOG
+JAS_DBGLOG
+10
+("included=%d ", included)
+"included=%d ", included
+"included=%d "
+included
+included
+if (!included) {					continue;				}
+!included
+included
+included
+{					continue;				}
+continue;
+if (!cblk->numpasses) {					i = 1;					leaf = jpc_tagtree_getleaf(prc->numimsbstagtree, usedcblkcnt - 1);					for (;;) {						if ((ret = jpc_tagtree_decode(prc->numimsbstagtree, leaf, i, inb)) < 0) {							return -1;						}						if (ret) {							break;						}						++i;					}					cblk->numimsbs = i - 1;					cblk->firstpassno = cblk->numimsbs * 3;				}
+!cblk->numpasses
+cblk->numpasses
+cblk
+cblk
+numpasses
+{					i = 1;					leaf = jpc_tagtree_getleaf(prc->numimsbstagtree, usedcblkcnt - 1);					for (;;) {						if ((ret = jpc_tagtree_decode(prc->numimsbstagtree, leaf, i, inb)) < 0) {							return -1;						}						if (ret) {							break;						}						++i;					}					cblk->numimsbs = i - 1;					cblk->firstpassno = cblk->numimsbs * 3;				}
+i = 1;
+i = 1
+i
+i
+1
+leaf = jpc_tagtree_getleaf(prc->numimsbstagtree, usedcblkcnt - 1);
+leaf = jpc_tagtree_getleaf(prc->numimsbstagtree, usedcblkcnt - 1)
+leaf
+leaf
+jpc_tagtree_getleaf(prc->numimsbstagtree, usedcblkcnt - 1)
+jpc_tagtree_getleaf
+jpc_tagtree_getleaf
+prc->numimsbstagtree
+prc
+prc
+numimsbstagtree
+usedcblkcnt - 1
+usedcblkcnt
+usedcblkcnt
+1
+for (;;) {						if ((ret = jpc_tagtree_decode(prc->numimsbstagtree, leaf, i, inb)) < 0) {							return -1;						}						if (ret) {							break;						}						++i;					}
+;
+{						if ((ret = jpc_tagtree_decode(prc->numimsbstagtree, leaf, i, inb)) < 0) {							return -1;						}						if (ret) {							break;						}						++i;					}
+if ((ret = jpc_tagtree_decode(prc->numimsbstagtree, leaf, i, inb)) < 0) {							return -1;						}
+(ret = jpc_tagtree_decode(prc->numimsbstagtree, leaf, i, inb)) < 0
+(ret = jpc_tagtree_decode(prc->numimsbstagtree, leaf, i, inb))
+ret = jpc_tagtree_decode(prc->numimsbstagtree, leaf, i, inb)
+ret
+ret
+jpc_tagtree_decode(prc->numimsbstagtree, leaf, i, inb)
+jpc_tagtree_decode
+jpc_tagtree_decode
+prc->numimsbstagtree
+prc
+prc
+numimsbstagtree
+leaf
+leaf
+i
+i
+inb
+inb
+0
+{							return -1;						}
+return -1;
+-1
+1
+if (ret) {							break;						}
+ret
+ret
+{							break;						}
+break;
+++i;
+++i
+i
+i
+cblk->numimsbs = i - 1;
+cblk->numimsbs = i - 1
+cblk->numimsbs
+cblk
+cblk
+numimsbs
+i - 1
+i
+i
+1
+cblk->firstpassno = cblk->numimsbs * 3;
+cblk->firstpassno = cblk->numimsbs * 3
+cblk->firstpassno
+cblk
+cblk
+firstpassno
+cblk->numimsbs * 3
+cblk->numimsbs
+cblk
+cblk
+numimsbs
+3
+if ((numnewpasses = jpc_getnumnewpasses(inb)) < 0) {					return -1;				}
+(numnewpasses = jpc_getnumnewpasses(inb)) < 0
+(numnewpasses = jpc_getnumnewpasses(inb))
+numnewpasses = jpc_getnumnewpasses(inb)
+numnewpasses
+numnewpasses
+jpc_getnumnewpasses(inb)
+jpc_getnumnewpasses
+jpc_getnumnewpasses
+inb
+inb
+0
+{					return -1;				}
+return -1;
+-1
+1
+JAS_DBGLOG(10, ("numnewpasses=%d ", numnewpasses));
+JAS_DBGLOG(10, ("numnewpasses=%d ", numnewpasses))
+JAS_DBGLOG
+JAS_DBGLOG
+10
+("numnewpasses=%d ", numnewpasses)
+"numnewpasses=%d ", numnewpasses
+"numnewpasses=%d "
+numnewpasses
+numnewpasses
+seg = cblk->curseg;
+seg = cblk->curseg
+seg
+seg
+cblk->curseg
+cblk
+cblk
+curseg
+savenumnewpasses = numnewpasses;
+savenumnewpasses = numnewpasses
+savenumnewpasses
+savenumnewpasses
+numnewpasses
+numnewpasses
+mycounter = 0;
+mycounter = 0
+mycounter
+mycounter
+0
+if (numnewpasses > 0) {					if ((m = jpc_getcommacode(inb)) < 0) {						return -1;					}					cblk->numlenbits += m;					JAS_DBGLOG(10, ("increment=%d ", m));					while (numnewpasses > 0) {						passno = cblk->firstpassno + cblk->numpasses + mycounter;	/* XXX - the maxpasses is not set precisely but this doesn't matter... */						maxpasses = JPC_SEGPASSCNT(passno, cblk->firstpassno, 10000, (ccp->cblkctx & JPC_COX_LAZY) != 0, (ccp->cblkctx & JPC_COX_TERMALL) != 0);						if (!discard && !seg) {							if (!(seg = jpc_seg_alloc())) {								return -1;							}							jpc_seglist_insert(&cblk->segs, cblk->segs.tail, seg);							if (!cblk->curseg) {								cblk->curseg = seg;							}							seg->passno = passno;							seg->type = JPC_SEGTYPE(seg->passno, cblk->firstpassno, (ccp->cblkctx & JPC_COX_LAZY) != 0);							seg->maxpasses = maxpasses;						}						n = JAS_MIN(numnewpasses, maxpasses);						mycounter += n;						numnewpasses -= n;						if ((len = jpc_bitstream_getbits(inb, cblk->numlenbits + jpc_floorlog2(n))) < 0) {							return -1;						}						JAS_DBGLOG(10, ("len=%d ", len));						if (!discard) {							seg->lyrno = lyrno;							seg->numpasses += n;							seg->cnt = len;							seg = seg->next;						}						bodylen += len;					}				}
+numnewpasses > 0
+numnewpasses
+numnewpasses
+0
+{					if ((m = jpc_getcommacode(inb)) < 0) {						return -1;					}					cblk->numlenbits += m;					JAS_DBGLOG(10, ("increment=%d ", m));					while (numnewpasses > 0) {						passno = cblk->firstpassno + cblk->numpasses + mycounter;	/* XXX - the maxpasses is not set precisely but this doesn't matter... */						maxpasses = JPC_SEGPASSCNT(passno, cblk->firstpassno, 10000, (ccp->cblkctx & JPC_COX_LAZY) != 0, (ccp->cblkctx & JPC_COX_TERMALL) != 0);						if (!discard && !seg) {							if (!(seg = jpc_seg_alloc())) {								return -1;							}							jpc_seglist_insert(&cblk->segs, cblk->segs.tail, seg);							if (!cblk->curseg) {								cblk->curseg = seg;							}							seg->passno = passno;							seg->type = JPC_SEGTYPE(seg->passno, cblk->firstpassno, (ccp->cblkctx & JPC_COX_LAZY) != 0);							seg->maxpasses = maxpasses;						}						n = JAS_MIN(numnewpasses, maxpasses);						mycounter += n;						numnewpasses -= n;						if ((len = jpc_bitstream_getbits(inb, cblk->numlenbits + jpc_floorlog2(n))) < 0) {							return -1;						}						JAS_DBGLOG(10, ("len=%d ", len));						if (!discard) {							seg->lyrno = lyrno;							seg->numpasses += n;							seg->cnt = len;							seg = seg->next;						}						bodylen += len;					}				}
+if ((m = jpc_getcommacode(inb)) < 0) {						return -1;					}
+(m = jpc_getcommacode(inb)) < 0
+(m = jpc_getcommacode(inb))
+m = jpc_getcommacode(inb)
+m
+m
+jpc_getcommacode(inb)
+jpc_getcommacode
+jpc_getcommacode
+inb
+inb
+0
+{						return -1;					}
+return -1;
+-1
+1
+cblk->numlenbits += m;
+cblk->numlenbits += m
+cblk->numlenbits
+cblk
+cblk
+numlenbits
+m
+m
+JAS_DBGLOG(10, ("increment=%d ", m));
+JAS_DBGLOG(10, ("increment=%d ", m))
+JAS_DBGLOG
+JAS_DBGLOG
+10
+("increment=%d ", m)
+"increment=%d ", m
+"increment=%d "
+m
+m
+while (numnewpasses > 0) {						passno = cblk->firstpassno + cblk->numpasses + mycounter;	/* XXX - the maxpasses is not set precisely but this doesn't matter... */						maxpasses = JPC_SEGPASSCNT(passno, cblk->firstpassno, 10000, (ccp->cblkctx & JPC_COX_LAZY) != 0, (ccp->cblkctx & JPC_COX_TERMALL) != 0);						if (!discard && !seg) {							if (!(seg = jpc_seg_alloc())) {								return -1;							}							jpc_seglist_insert(&cblk->segs, cblk->segs.tail, seg);							if (!cblk->curseg) {								cblk->curseg = seg;							}							seg->passno = passno;							seg->type = JPC_SEGTYPE(seg->passno, cblk->firstpassno, (ccp->cblkctx & JPC_COX_LAZY) != 0);							seg->maxpasses = maxpasses;						}						n = JAS_MIN(numnewpasses, maxpasses);						mycounter += n;						numnewpasses -= n;						if ((len = jpc_bitstream_getbits(inb, cblk->numlenbits + jpc_floorlog2(n))) < 0) {							return -1;						}						JAS_DBGLOG(10, ("len=%d ", len));						if (!discard) {							seg->lyrno = lyrno;							seg->numpasses += n;							seg->cnt = len;							seg = seg->next;						}						bodylen += len;					}
+numnewpasses > 0
+numnewpasses
+numnewpasses
+0
+{						passno = cblk->firstpassno + cblk->numpasses + mycounter;	/* XXX - the maxpasses is not set precisely but this doesn't matter... */						maxpasses = JPC_SEGPASSCNT(passno, cblk->firstpassno, 10000, (ccp->cblkctx & JPC_COX_LAZY) != 0, (ccp->cblkctx & JPC_COX_TERMALL) != 0);						if (!discard && !seg) {							if (!(seg = jpc_seg_alloc())) {								return -1;							}							jpc_seglist_insert(&cblk->segs, cblk->segs.tail, seg);							if (!cblk->curseg) {								cblk->curseg = seg;							}							seg->passno = passno;							seg->type = JPC_SEGTYPE(seg->passno, cblk->firstpassno, (ccp->cblkctx & JPC_COX_LAZY) != 0);							seg->maxpasses = maxpasses;						}						n = JAS_MIN(numnewpasses, maxpasses);						mycounter += n;						numnewpasses -= n;						if ((len = jpc_bitstream_getbits(inb, cblk->numlenbits + jpc_floorlog2(n))) < 0) {							return -1;						}						JAS_DBGLOG(10, ("len=%d ", len));						if (!discard) {							seg->lyrno = lyrno;							seg->numpasses += n;							seg->cnt = len;							seg = seg->next;						}						bodylen += len;					}
+passno = cblk->firstpassno + cblk->numpasses + mycounter;
+passno = cblk->firstpassno + cblk->numpasses + mycounter
+passno
+passno
+cblk->firstpassno + cblk->numpasses + mycounter
+cblk->firstpassno + cblk->numpasses
+cblk->firstpassno
+cblk
+cblk
+firstpassno
+cblk->numpasses
+cblk
+cblk
+numpasses
+mycounter
+mycounter
+maxpasses = JPC_SEGPASSCNT(passno, cblk->firstpassno, 10000, (ccp->cblkctx & JPC_COX_LAZY) != 0, (ccp->cblkctx & JPC_COX_TERMALL) != 0);
+maxpasses = JPC_SEGPASSCNT(passno, cblk->firstpassno, 10000, (ccp->cblkctx & JPC_COX_LAZY) != 0, (ccp->cblkctx & JPC_COX_TERMALL) != 0)
+maxpasses
+maxpasses
+JPC_SEGPASSCNT(passno, cblk->firstpassno, 10000, (ccp->cblkctx & JPC_COX_LAZY) != 0, (ccp->cblkctx & JPC_COX_TERMALL) != 0)
+JPC_SEGPASSCNT
+JPC_SEGPASSCNT
+passno
+passno
+cblk->firstpassno
+cblk
+cblk
+firstpassno
+10000
+(ccp->cblkctx & JPC_COX_LAZY) != 0
+(ccp->cblkctx & JPC_COX_LAZY)
+ccp->cblkctx & JPC_COX_LAZY
+ccp->cblkctx
+ccp
+ccp
+cblkctx
+JPC_COX_LAZY
+JPC_COX_LAZY
+0
+(ccp->cblkctx & JPC_COX_TERMALL) != 0
+(ccp->cblkctx & JPC_COX_TERMALL)
+ccp->cblkctx & JPC_COX_TERMALL
+ccp->cblkctx
+ccp
+ccp
+cblkctx
+JPC_COX_TERMALL
+JPC_COX_TERMALL
+0
+if (!discard && !seg) {							if (!(seg = jpc_seg_alloc())) {								return -1;							}							jpc_seglist_insert(&cblk->segs, cblk->segs.tail, seg);							if (!cblk->curseg) {								cblk->curseg = seg;							}							seg->passno = passno;							seg->type = JPC_SEGTYPE(seg->passno, cblk->firstpassno, (ccp->cblkctx & JPC_COX_LAZY) != 0);							seg->maxpasses = maxpasses;						}
+!discard && !seg
+!discard
+discard
+discard
+!seg
+seg
+seg
+{							if (!(seg = jpc_seg_alloc())) {								return -1;							}							jpc_seglist_insert(&cblk->segs, cblk->segs.tail, seg);							if (!cblk->curseg) {								cblk->curseg = seg;							}							seg->passno = passno;							seg->type = JPC_SEGTYPE(seg->passno, cblk->firstpassno, (ccp->cblkctx & JPC_COX_LAZY) != 0);							seg->maxpasses = maxpasses;						}
+if (!(seg = jpc_seg_alloc())) {								return -1;							}
+!(seg = jpc_seg_alloc())
+(seg = jpc_seg_alloc())
+seg = jpc_seg_alloc()
+seg
+seg
+jpc_seg_alloc()
+jpc_seg_alloc
+jpc_seg_alloc
+{								return -1;							}
+return -1;
+-1
+1
+jpc_seglist_insert(&cblk->segs, cblk->segs.tail, seg);
+jpc_seglist_insert(&cblk->segs, cblk->segs.tail, seg)
+jpc_seglist_insert
+jpc_seglist_insert
+&cblk->segs
+cblk->segs
+cblk
+cblk
+segs
+cblk->segs.tail
+cblk->segs
+cblk
+cblk
+segs
+tail
+seg
+seg
+if (!cblk->curseg) {								cblk->curseg = seg;							}
+!cblk->curseg
+cblk->curseg
+cblk
+cblk
+curseg
+{								cblk->curseg = seg;							}
+cblk->curseg = seg;
+cblk->curseg = seg
+cblk->curseg
+cblk
+cblk
+curseg
+seg
+seg
+seg->passno = passno;
+seg->passno = passno
+seg->passno
+seg
+seg
+passno
+passno
+passno
+seg->type = JPC_SEGTYPE(seg->passno, cblk->firstpassno, (ccp->cblkctx & JPC_COX_LAZY) != 0);
+seg->type = JPC_SEGTYPE(seg->passno, cblk->firstpassno, (ccp->cblkctx & JPC_COX_LAZY) != 0)
+seg->type
+seg
+seg
+type
+JPC_SEGTYPE(seg->passno, cblk->firstpassno, (ccp->cblkctx & JPC_COX_LAZY) != 0)
+JPC_SEGTYPE
+JPC_SEGTYPE
+seg->passno
+seg
+seg
+passno
+cblk->firstpassno
+cblk
+cblk
+firstpassno
+(ccp->cblkctx & JPC_COX_LAZY) != 0
+(ccp->cblkctx & JPC_COX_LAZY)
+ccp->cblkctx & JPC_COX_LAZY
+ccp->cblkctx
+ccp
+ccp
+cblkctx
+JPC_COX_LAZY
+JPC_COX_LAZY
+0
+seg->maxpasses = maxpasses;
+seg->maxpasses = maxpasses
+seg->maxpasses
+seg
+seg
+maxpasses
+maxpasses
+maxpasses
+n = JAS_MIN(numnewpasses, maxpasses);
+n = JAS_MIN(numnewpasses, maxpasses)
+n
+n
+JAS_MIN(numnewpasses, maxpasses)
+JAS_MIN
+JAS_MIN
+numnewpasses
+numnewpasses
+maxpasses
+maxpasses
+mycounter += n;
+mycounter += n
+mycounter
+mycounter
+n
+n
+numnewpasses -= n;
+numnewpasses -= n
+numnewpasses
+numnewpasses
+n
+n
+if ((len = jpc_bitstream_getbits(inb, cblk->numlenbits + jpc_floorlog2(n))) < 0) {							return -1;						}
+(len = jpc_bitstream_getbits(inb, cblk->numlenbits + jpc_floorlog2(n))) < 0
+(len = jpc_bitstream_getbits(inb, cblk->numlenbits + jpc_floorlog2(n)))
+len = jpc_bitstream_getbits(inb, cblk->numlenbits + jpc_floorlog2(n))
+len
+len
+jpc_bitstream_getbits(inb, cblk->numlenbits + jpc_floorlog2(n))
+jpc_bitstream_getbits
+jpc_bitstream_getbits
+inb
+inb
+cblk->numlenbits + jpc_floorlog2(n)
+cblk->numlenbits
+cblk
+cblk
+numlenbits
+jpc_floorlog2(n)
+jpc_floorlog2
+jpc_floorlog2
+n
+n
+0
+{							return -1;						}
+return -1;
+-1
+1
+JAS_DBGLOG(10, ("len=%d ", len));
+JAS_DBGLOG(10, ("len=%d ", len))
+JAS_DBGLOG
+JAS_DBGLOG
+10
+("len=%d ", len)
+"len=%d ", len
+"len=%d "
+len
+len
+if (!discard) {							seg->lyrno = lyrno;							seg->numpasses += n;							seg->cnt = len;							seg = seg->next;						}
+!discard
+discard
+discard
+{							seg->lyrno = lyrno;							seg->numpasses += n;							seg->cnt = len;							seg = seg->next;						}
+seg->lyrno = lyrno;
+seg->lyrno = lyrno
+seg->lyrno
+seg
+seg
+lyrno
+lyrno
+lyrno
+seg->numpasses += n;
+seg->numpasses += n
+seg->numpasses
+seg
+seg
+numpasses
+n
+n
+seg->cnt = len;
+seg->cnt = len
+seg->cnt
+seg
+seg
+cnt
+len
+len
+seg = seg->next;
+seg = seg->next
+seg
+seg
+seg->next
+seg
+seg
+next
+bodylen += len;
+bodylen += len
+bodylen
+bodylen
+len
+len
+cblk->numpasses += savenumnewpasses;
+cblk->numpasses += savenumnewpasses
+cblk->numpasses
+cblk
+cblk
+numpasses
+savenumnewpasses
+savenumnewpasses
+jpc_bitstream_inalign(inb, 0, 0);
+jpc_bitstream_inalign(inb, 0, 0)
+jpc_bitstream_inalign
+jpc_bitstream_inalign
+inb
+inb
+0
+0
+{		if (jpc_bitstream_inalign(inb, 0x7f, 0)) {			jas_eprintf("alignment failed\n");			return -1;		}	}
+if (jpc_bitstream_inalign(inb, 0x7f, 0)) {			jas_eprintf("alignment failed\n");			return -1;		}
+jpc_bitstream_inalign(inb, 0x7f, 0)
+jpc_bitstream_inalign
+jpc_bitstream_inalign
+inb
+inb
+0x7f
+0
+{			jas_eprintf("alignment failed\n");			return -1;		}
+jas_eprintf("alignment failed\n");
+jas_eprintf("alignment failed\n")
+jas_eprintf
+jas_eprintf
+"alignment failed\n"
+return -1;
+-1
+1
+jpc_bitstream_close(inb);
+jpc_bitstream_close(inb)
+jpc_bitstream_close
+jpc_bitstream_close
+inb
+inb
+hdroffend = jas_stream_getrwcount(pkthdrstream);
+hdroffend = jas_stream_getrwcount(pkthdrstream)
+hdroffend
+hdroffend
+jas_stream_getrwcount(pkthdrstream)
+jas_stream_getrwcount
+jas_stream_getrwcount
+pkthdrstream
+pkthdrstream
+hdrlen = hdroffend - hdroffstart;
+hdrlen = hdroffend - hdroffstart
+hdrlen
+hdrlen
+hdroffend - hdroffstart
+hdroffend
+hdroffend
+hdroffstart
+hdroffstart
+if (jas_getdbglevel() >= 5) {		jas_eprintf("hdrlen=%lu bodylen=%lu \n", (unsigned long) hdrlen,		  (unsigned long) bodylen);	}
+jas_getdbglevel() >= 5
+jas_getdbglevel()
+jas_getdbglevel
+jas_getdbglevel
+5
+{		jas_eprintf("hdrlen=%lu bodylen=%lu \n", (unsigned long) hdrlen,		  (unsigned long) bodylen);	}
+jas_eprintf("hdrlen=%lu bodylen=%lu \n", (unsigned long) hdrlen,		  (unsigned long) bodylen);
+jas_eprintf("hdrlen=%lu bodylen=%lu \n", (unsigned long) hdrlen,		  (unsigned long) bodylen)
+jas_eprintf
+jas_eprintf
+"hdrlen=%lu bodylen=%lu \n"
+(unsigned long) hdrlen
+unsigned long
+unsigned long
+
+hdrlen
+hdrlen
+(unsigned long) bodylen
+unsigned long
+unsigned long
+
+bodylen
+bodylen
+if (cp->csty & JPC_COD_EPH) {		if (jpc_dec_lookahead(pkthdrstream) == JPC_MS_EPH) {			if (!(ms = jpc_getms(pkthdrstream, dec->cstate))) {				jas_eprintf("cannot get (EPH) marker segment\n");				return -1;			}			if (jpc_ms_gettype(ms) != JPC_MS_EPH) {				jpc_ms_destroy(ms);				jas_eprintf("missing EPH marker segment\n");				return -1;			}			jpc_ms_destroy(ms);		}	}
+cp->csty & JPC_COD_EPH
+cp->csty
+cp
+cp
+csty
+JPC_COD_EPH
+JPC_COD_EPH
+{		if (jpc_dec_lookahead(pkthdrstream) == JPC_MS_EPH) {			if (!(ms = jpc_getms(pkthdrstream, dec->cstate))) {				jas_eprintf("cannot get (EPH) marker segment\n");				return -1;			}			if (jpc_ms_gettype(ms) != JPC_MS_EPH) {				jpc_ms_destroy(ms);				jas_eprintf("missing EPH marker segment\n");				return -1;			}			jpc_ms_destroy(ms);		}	}
+if (jpc_dec_lookahead(pkthdrstream) == JPC_MS_EPH) {			if (!(ms = jpc_getms(pkthdrstream, dec->cstate))) {				jas_eprintf("cannot get (EPH) marker segment\n");				return -1;			}			if (jpc_ms_gettype(ms) != JPC_MS_EPH) {				jpc_ms_destroy(ms);				jas_eprintf("missing EPH marker segment\n");				return -1;			}			jpc_ms_destroy(ms);		}
+jpc_dec_lookahead(pkthdrstream) == JPC_MS_EPH
+jpc_dec_lookahead(pkthdrstream)
+jpc_dec_lookahead
+jpc_dec_lookahead
+pkthdrstream
+pkthdrstream
+JPC_MS_EPH
+JPC_MS_EPH
+{			if (!(ms = jpc_getms(pkthdrstream, dec->cstate))) {				jas_eprintf("cannot get (EPH) marker segment\n");				return -1;			}			if (jpc_ms_gettype(ms) != JPC_MS_EPH) {				jpc_ms_destroy(ms);				jas_eprintf("missing EPH marker segment\n");				return -1;			}			jpc_ms_destroy(ms);		}
+if (!(ms = jpc_getms(pkthdrstream, dec->cstate))) {				jas_eprintf("cannot get (EPH) marker segment\n");				return -1;			}
+!(ms = jpc_getms(pkthdrstream, dec->cstate))
+(ms = jpc_getms(pkthdrstream, dec->cstate))
+ms = jpc_getms(pkthdrstream, dec->cstate)
+ms
+ms
+jpc_getms(pkthdrstream, dec->cstate)
+jpc_getms
+jpc_getms
+pkthdrstream
+pkthdrstream
+dec->cstate
+dec
+dec
+cstate
+{				jas_eprintf("cannot get (EPH) marker segment\n");				return -1;			}
+jas_eprintf("cannot get (EPH) marker segment\n");
+jas_eprintf("cannot get (EPH) marker segment\n")
+jas_eprintf
+jas_eprintf
+"cannot get (EPH) marker segment\n"
+return -1;
+-1
+1
+if (jpc_ms_gettype(ms) != JPC_MS_EPH) {				jpc_ms_destroy(ms);				jas_eprintf("missing EPH marker segment\n");				return -1;			}
+jpc_ms_gettype(ms) != JPC_MS_EPH
+jpc_ms_gettype(ms)
+jpc_ms_gettype
+jpc_ms_gettype
+ms
+ms
+JPC_MS_EPH
+JPC_MS_EPH
+{				jpc_ms_destroy(ms);				jas_eprintf("missing EPH marker segment\n");				return -1;			}
+jpc_ms_destroy(ms);
+jpc_ms_destroy(ms)
+jpc_ms_destroy
+jpc_ms_destroy
+ms
+ms
+jas_eprintf("missing EPH marker segment\n");
+jas_eprintf("missing EPH marker segment\n")
+jas_eprintf
+jas_eprintf
+"missing EPH marker segment\n"
+return -1;
+-1
+1
+jpc_ms_destroy(ms);
+jpc_ms_destroy(ms)
+jpc_ms_destroy
+jpc_ms_destroy
+ms
+ms
+if (jas_getdbglevel() >= 1) {		jas_eprintf("packet body offset=%06ld\n", (long) jas_stream_getrwcount(in));	}
+jas_getdbglevel() >= 1
+jas_getdbglevel()
+jas_getdbglevel
+jas_getdbglevel
+1
+{		jas_eprintf("packet body offset=%06ld\n", (long) jas_stream_getrwcount(in));	}
+jas_eprintf("packet body offset=%06ld\n", (long) jas_stream_getrwcount(in));
+jas_eprintf("packet body offset=%06ld\n", (long) jas_stream_getrwcount(in))
+jas_eprintf
+jas_eprintf
+"packet body offset=%06ld\n"
+(long) jas_stream_getrwcount(in)
+long
+long
+
+jas_stream_getrwcount(in)
+jas_stream_getrwcount
+jas_stream_getrwcount
+in
+in
+if (!discard) {		tcomp = &tile->tcomps[compno];		rlvl = &tcomp->rlvls[rlvlno];		for (bandno = 0, band = rlvl->bands; bandno < rlvl->numbands;		  ++bandno, ++band) {			if (!band->data) {				continue;			}			prc = &band->prcs[prcno];			if (!prc->cblks) {				continue;			}			for (cblkno = 0, cblk = prc->cblks; cblkno < prc->numcblks;			  ++cblkno, ++cblk) {				seg = cblk->curseg;				while (seg) {					if (!seg->stream) {						if (!(seg->stream = jas_stream_memopen(0, 0))) {							return -1;						}					}#if 0jas_eprintf("lyrno=%02d, compno=%02d, lvlno=%02d, prcno=%02d, bandno=%02d, cblkno=%02d, passno=%02d numpasses=%02d cnt=%d numbps=%d, numimsbs=%d\n", lyrno, compno, rlvlno, prcno, band - rlvl->bands, cblk - prc->cblks, seg->passno, seg->numpasses, seg->cnt, band->numbps, cblk->numimsbs);#endif					if (seg->cnt > 0) {						if (jpc_getdata(in, seg->stream, seg->cnt) < 0) {							return -1;						}						seg->cnt = 0;					}					if (seg->numpasses >= seg->maxpasses) {						cblk->curseg = seg->next;					}					seg = seg->next;				}			}		}	} else {		if (jas_stream_gobble(in, bodylen) != JAS_CAST(int, bodylen)) {			return -1;		}	}
+!discard
+discard
+discard
+{		tcomp = &tile->tcomps[compno];		rlvl = &tcomp->rlvls[rlvlno];		for (bandno = 0, band = rlvl->bands; bandno < rlvl->numbands;		  ++bandno, ++band) {			if (!band->data) {				continue;			}			prc = &band->prcs[prcno];			if (!prc->cblks) {				continue;			}			for (cblkno = 0, cblk = prc->cblks; cblkno < prc->numcblks;			  ++cblkno, ++cblk) {				seg = cblk->curseg;				while (seg) {					if (!seg->stream) {						if (!(seg->stream = jas_stream_memopen(0, 0))) {							return -1;						}					}#if 0jas_eprintf("lyrno=%02d, compno=%02d, lvlno=%02d, prcno=%02d, bandno=%02d, cblkno=%02d, passno=%02d numpasses=%02d cnt=%d numbps=%d, numimsbs=%d\n", lyrno, compno, rlvlno, prcno, band - rlvl->bands, cblk - prc->cblks, seg->passno, seg->numpasses, seg->cnt, band->numbps, cblk->numimsbs);#endif					if (seg->cnt > 0) {						if (jpc_getdata(in, seg->stream, seg->cnt) < 0) {							return -1;						}						seg->cnt = 0;					}					if (seg->numpasses >= seg->maxpasses) {						cblk->curseg = seg->next;					}					seg = seg->next;				}			}		}	}
+tcomp = &tile->tcomps[compno];
+tcomp = &tile->tcomps[compno]
+tcomp
+tcomp
+&tile->tcomps[compno]
+tile->tcomps[compno]
+tile->tcomps
+tile
+tile
+tcomps
+compno
+compno
+rlvl = &tcomp->rlvls[rlvlno];
+rlvl = &tcomp->rlvls[rlvlno]
+rlvl
+rlvl
+&tcomp->rlvls[rlvlno]
+tcomp->rlvls[rlvlno]
+tcomp->rlvls
+tcomp
+tcomp
+rlvls
+rlvlno
+rlvlno
+for (bandno = 0, band = rlvl->bands; bandno < rlvl->numbands;		  ++bandno, ++band) {			if (!band->data) {				continue;			}			prc = &band->prcs[prcno];			if (!prc->cblks) {				continue;			}			for (cblkno = 0, cblk = prc->cblks; cblkno < prc->numcblks;			  ++cblkno, ++cblk) {				seg = cblk->curseg;				while (seg) {					if (!seg->stream) {						if (!(seg->stream = jas_stream_memopen(0, 0))) {							return -1;						}					}#if 0jas_eprintf("lyrno=%02d, compno=%02d, lvlno=%02d, prcno=%02d, bandno=%02d, cblkno=%02d, passno=%02d numpasses=%02d cnt=%d numbps=%d, numimsbs=%d\n", lyrno, compno, rlvlno, prcno, band - rlvl->bands, cblk - prc->cblks, seg->passno, seg->numpasses, seg->cnt, band->numbps, cblk->numimsbs);#endif					if (seg->cnt > 0) {						if (jpc_getdata(in, seg->stream, seg->cnt) < 0) {							return -1;						}						seg->cnt = 0;					}					if (seg->numpasses >= seg->maxpasses) {						cblk->curseg = seg->next;					}					seg = seg->next;				}			}		}
+bandno = 0, band = rlvl->bands;
+bandno = 0, band = rlvl->bands
+bandno = 0
+bandno
+bandno
+0
+band = rlvl->bands
+band
+band
+rlvl->bands
+rlvl
+rlvl
+bands
+bandno < rlvl->numbands
+bandno
+bandno
+rlvl->numbands
+rlvl
+rlvl
+numbands
+++bandno, ++band
+++bandno
+bandno
+bandno
+++band
+band
+band
+{			if (!band->data) {				continue;			}			prc = &band->prcs[prcno];			if (!prc->cblks) {				continue;			}			for (cblkno = 0, cblk = prc->cblks; cblkno < prc->numcblks;			  ++cblkno, ++cblk) {				seg = cblk->curseg;				while (seg) {					if (!seg->stream) {						if (!(seg->stream = jas_stream_memopen(0, 0))) {							return -1;						}					}#if 0jas_eprintf("lyrno=%02d, compno=%02d, lvlno=%02d, prcno=%02d, bandno=%02d, cblkno=%02d, passno=%02d numpasses=%02d cnt=%d numbps=%d, numimsbs=%d\n", lyrno, compno, rlvlno, prcno, band - rlvl->bands, cblk - prc->cblks, seg->passno, seg->numpasses, seg->cnt, band->numbps, cblk->numimsbs);#endif					if (seg->cnt > 0) {						if (jpc_getdata(in, seg->stream, seg->cnt) < 0) {							return -1;						}						seg->cnt = 0;					}					if (seg->numpasses >= seg->maxpasses) {						cblk->curseg = seg->next;					}					seg = seg->next;				}			}		}
+if (!band->data) {				continue;			}
+!band->data
+band->data
+band
+band
+data
+{				continue;			}
+continue;
+prc = &band->prcs[prcno];
+prc = &band->prcs[prcno]
+prc
+prc
+&band->prcs[prcno]
+band->prcs[prcno]
+band->prcs
+band
+band
+prcs
+prcno
+prcno
+if (!prc->cblks) {				continue;			}
+!prc->cblks
+prc->cblks
+prc
+prc
+cblks
+{				continue;			}
+continue;
+for (cblkno = 0, cblk = prc->cblks; cblkno < prc->numcblks;			  ++cblkno, ++cblk) {				seg = cblk->curseg;				while (seg) {					if (!seg->stream) {						if (!(seg->stream = jas_stream_memopen(0, 0))) {							return -1;						}					}#if 0jas_eprintf("lyrno=%02d, compno=%02d, lvlno=%02d, prcno=%02d, bandno=%02d, cblkno=%02d, passno=%02d numpasses=%02d cnt=%d numbps=%d, numimsbs=%d\n", lyrno, compno, rlvlno, prcno, band - rlvl->bands, cblk - prc->cblks, seg->passno, seg->numpasses, seg->cnt, band->numbps, cblk->numimsbs);#endif					if (seg->cnt > 0) {						if (jpc_getdata(in, seg->stream, seg->cnt) < 0) {							return -1;						}						seg->cnt = 0;					}					if (seg->numpasses >= seg->maxpasses) {						cblk->curseg = seg->next;					}					seg = seg->next;				}			}
+cblkno = 0, cblk = prc->cblks;
+cblkno = 0, cblk = prc->cblks
+cblkno = 0
+cblkno
+cblkno
+0
+cblk = prc->cblks
+cblk
+cblk
+prc->cblks
+prc
+prc
+cblks
+cblkno < prc->numcblks
+cblkno
+cblkno
+prc->numcblks
+prc
+prc
+numcblks
+++cblkno, ++cblk
+++cblkno
+cblkno
+cblkno
+++cblk
+cblk
+cblk
+{				seg = cblk->curseg;				while (seg) {					if (!seg->stream) {						if (!(seg->stream = jas_stream_memopen(0, 0))) {							return -1;						}					}#if 0jas_eprintf("lyrno=%02d, compno=%02d, lvlno=%02d, prcno=%02d, bandno=%02d, cblkno=%02d, passno=%02d numpasses=%02d cnt=%d numbps=%d, numimsbs=%d\n", lyrno, compno, rlvlno, prcno, band - rlvl->bands, cblk - prc->cblks, seg->passno, seg->numpasses, seg->cnt, band->numbps, cblk->numimsbs);#endif					if (seg->cnt > 0) {						if (jpc_getdata(in, seg->stream, seg->cnt) < 0) {							return -1;						}						seg->cnt = 0;					}					if (seg->numpasses >= seg->maxpasses) {						cblk->curseg = seg->next;					}					seg = seg->next;				}			}
+seg = cblk->curseg;
+seg = cblk->curseg
+seg
+seg
+cblk->curseg
+cblk
+cblk
+curseg
+while (seg) {					if (!seg->stream) {						if (!(seg->stream = jas_stream_memopen(0, 0))) {							return -1;						}					}#if 0jas_eprintf("lyrno=%02d, compno=%02d, lvlno=%02d, prcno=%02d, bandno=%02d, cblkno=%02d, passno=%02d numpasses=%02d cnt=%d numbps=%d, numimsbs=%d\n", lyrno, compno, rlvlno, prcno, band - rlvl->bands, cblk - prc->cblks, seg->passno, seg->numpasses, seg->cnt, band->numbps, cblk->numimsbs);#endif					if (seg->cnt > 0) {						if (jpc_getdata(in, seg->stream, seg->cnt) < 0) {							return -1;						}						seg->cnt = 0;					}					if (seg->numpasses >= seg->maxpasses) {						cblk->curseg = seg->next;					}					seg = seg->next;				}
+seg
+seg
+{					if (!seg->stream) {						if (!(seg->stream = jas_stream_memopen(0, 0))) {							return -1;						}					}#if 0jas_eprintf("lyrno=%02d, compno=%02d, lvlno=%02d, prcno=%02d, bandno=%02d, cblkno=%02d, passno=%02d numpasses=%02d cnt=%d numbps=%d, numimsbs=%d\n", lyrno, compno, rlvlno, prcno, band - rlvl->bands, cblk - prc->cblks, seg->passno, seg->numpasses, seg->cnt, band->numbps, cblk->numimsbs);#endif					if (seg->cnt > 0) {						if (jpc_getdata(in, seg->stream, seg->cnt) < 0) {							return -1;						}						seg->cnt = 0;					}					if (seg->numpasses >= seg->maxpasses) {						cblk->curseg = seg->next;					}					seg = seg->next;				}
+if (!seg->stream) {						if (!(seg->stream = jas_stream_memopen(0, 0))) {							return -1;						}					}
+!seg->stream
+seg->stream
+seg
+seg
+stream
+{						if (!(seg->stream = jas_stream_memopen(0, 0))) {							return -1;						}					}
+if (!(seg->stream = jas_stream_memopen(0, 0))) {							return -1;						}
+!(seg->stream = jas_stream_memopen(0, 0))
+(seg->stream = jas_stream_memopen(0, 0))
+seg->stream = jas_stream_memopen(0, 0)
+seg->stream
+seg
+seg
+stream
+jas_stream_memopen(0, 0)
+jas_stream_memopen
+jas_stream_memopen
+0
+0
+{							return -1;						}
+return -1;
+-1
+1
+if (seg->cnt > 0) {						if (jpc_getdata(in, seg->stream, seg->cnt) < 0) {							return -1;						}						seg->cnt = 0;					}
+seg->cnt > 0
+seg->cnt
+seg
+seg
+cnt
+0
+{						if (jpc_getdata(in, seg->stream, seg->cnt) < 0) {							return -1;						}						seg->cnt = 0;					}
+if (jpc_getdata(in, seg->stream, seg->cnt) < 0) {							return -1;						}
+jpc_getdata(in, seg->stream, seg->cnt) < 0
+jpc_getdata(in, seg->stream, seg->cnt)
+jpc_getdata
+jpc_getdata
+in
+in
+seg->stream
+seg
+seg
+stream
+seg->cnt
+seg
+seg
+cnt
+0
+{							return -1;						}
+return -1;
+-1
+1
+seg->cnt = 0;
+seg->cnt = 0
+seg->cnt
+seg
+seg
+cnt
+0
+if (seg->numpasses >= seg->maxpasses) {						cblk->curseg = seg->next;					}
+seg->numpasses >= seg->maxpasses
+seg->numpasses
+seg
+seg
+numpasses
+seg->maxpasses
+seg
+seg
+maxpasses
+{						cblk->curseg = seg->next;					}
+cblk->curseg = seg->next;
+cblk->curseg = seg->next
+cblk->curseg
+cblk
+cblk
+curseg
+seg->next
+seg
+seg
+next
+seg = seg->next;
+seg = seg->next
+seg
+seg
+seg->next
+seg
+seg
+next
+{		if (jas_stream_gobble(in, bodylen) != JAS_CAST(int, bodylen)) {			return -1;		}	}
+if (jas_stream_gobble(in, bodylen) != JAS_CAST(int, bodylen)) {			return -1;		}
+jas_stream_gobble(in, bodylen) != JAS_CAST(int, bodylen)
+{			return -1;		}
+return -1;
+-1
+1
+return 0;
+0
+-----joern-----
+(687,22,0)
+(372,816,0)
+(107,834,0)
+(22,792,0)
+(549,834,0)
+(620,232,0)
+(157,389,0)
+(678,848,0)
+(303,680,0)
+(607,412,0)
+(112,164,0)
+(752,603,0)
+(796,846,0)
+(177,419,0)
+(25,732,0)
+(108,741,0)
+(857,676,0)
+(98,722,0)
+(648,586,0)
+(9,212,0)
+(826,601,0)
+(258,621,0)
+(288,98,0)
+(292,575,0)
+(229,721,0)
+(353,59,0)
+(95,253,0)
+(732,287,0)
+(592,539,0)
+(587,273,0)
+(571,680,0)
+(304,575,0)
+(550,747,0)
+(348,412,0)
+(572,765,0)
+(826,539,0)
+(684,35,0)
+(625,784,0)
+(445,101,0)
+(837,490,0)
+(457,541,0)
+(216,400,0)
+(18,780,0)
+(610,667,0)
+(413,319,0)
+(494,834,0)
+(807,834,0)
+(704,520,0)
+(188,322,0)
+(686,67,0)
+(190,588,0)
+(48,363,0)
+(784,19,0)
+(228,421,0)
+(432,272,0)
+(738,387,0)
+(22,520,0)
+(690,690,0)
+(810,610,0)
+(416,577,0)
+(857,11,0)
+(783,575,0)
+(186,552,0)
+(518,634,0)
+(312,507,0)
+(779,91,0)
+(449,255,0)
+(11,642,0)
+(106,323,0)
+(395,692,0)
+(496,532,0)
+(114,553,0)
+(785,95,0)
+(762,377,0)
+(161,304,0)
+(76,715,0)
+(714,747,0)
+(859,744,0)
+(765,505,0)
+(255,619,0)
+(410,508,0)
+(113,755,0)
+(492,689,0)
+(713,847,0)
+(470,771,0)
+(302,226,0)
+(328,498,0)
+(397,853,0)
+(592,575,0)
+(815,539,0)
+(653,374,0)
+(847,363,0)
+(749,680,0)
+(680,303,0)
+(831,245,0)
+(88,666,0)
+(498,353,0)
+(381,652,0)
+(606,839,0)
+(815,164,0)
+(192,277,0)
+(592,164,0)
+(621,1,0)
+(581,142,0)
+(83,371,0)
+(542,212,0)
+(95,19,0)
+(380,678,0)
+(312,25,0)
+(791,343,0)
+(234,295,0)
+(826,749,0)
+(354,375,0)
+(765,48,0)
+(534,406,0)
+(670,569,0)
+(226,552,0)
+(792,647,0)
+(286,833,0)
+(591,322,0)
+(175,834,0)
+(456,779,0)
+(675,839,0)
+(135,253,0)
+(410,642,0)
+(450,310,0)
+(341,155,0)
+(83,254,0)
+(709,161,0)
+(721,833,0)
+(391,310,0)
+(793,432,0)
+(710,593,0)
+(635,489,0)
+(326,60,0)
+(741,803,0)
+(136,310,0)
+(826,324,0)
+(22,749,0)
+(803,633,0)
+(571,3,0)
+(826,412,0)
+(592,733,0)
+(453,25,0)
+(112,792,0)
+(57,323,0)
+(181,345,0)
+(419,766,0)
+(277,803,0)
+(152,261,0)
+(14,834,0)
+(319,413,0)
+(136,46,0)
+(262,839,0)
+(469,621,0)
+(697,792,0)
+(299,539,0)
+(196,150,0)
+(490,1,0)
+(304,539,0)
+(142,241,0)
+(441,496,0)
+(472,655,0)
+(666,200,0)
+(555,187,0)
+(35,353,0)
+(499,155,0)
+(25,798,0)
+(548,438,0)
+(826,520,0)
+(756,634,0)
+(723,69,0)
+(376,766,0)
+(840,335,0)
+(153,407,0)
+(405,639,0)
+(341,765,0)
+(540,833,0)
+(205,564,0)
+(451,793,0)
+(584,558,0)
+(642,56,0)
+(532,74,0)
+(847,346,0)
+(763,834,0)
+(775,628,0)
+(806,710,0)
+(159,824,0)
+(736,834,0)
+(823,519,0)
+(213,10,0)
+(136,553,0)
+(476,495,0)
+(322,824,0)
+(594,588,0)
+(677,484,0)
+(74,532,0)
+(607,575,0)
+(114,136,0)
+(356,324,0)
+(607,749,0)
+(705,470,0)
+(199,815,0)
+(104,165,0)
+(171,571,0)
+(739,355,0)
+(401,644,0)
+(301,544,0)
+(143,790,0)
+(381,505,0)
+(832,834,0)
+(133,834,0)
+(750,834,0)
+(145,164,0)
+(651,666,0)
+(814,265,0)
+(284,232,0)
+(697,749,0)
+(655,472,0)
+(178,595,0)
+(371,345,0)
+(162,687,0)
+(249,803,0)
+(508,18,0)
+(845,426,0)
+(525,419,0)
+(628,775,0)
+(721,155,0)
+(455,675,0)
+(530,803,0)
+(607,539,0)
+(82,287,0)
+(283,87,0)
+(87,3,0)
+(826,164,0)
+(312,803,0)
+(856,29,0)
+(60,739,0)
+(275,67,0)
+(375,354,0)
+(245,608,0)
+(30,563,0)
+(637,56,0)
+(534,405,0)
+(608,552,0)
+(498,803,0)
+(228,666,0)
+(595,261,0)
+(304,784,0)
+(59,803,0)
+(649,803,0)
+(783,474,0)
+(742,827,0)
+(835,804,0)
+(593,803,0)
+(392,680,0)
+(621,376,0)
+(375,132,0)
+(417,834,0)
+(815,642,0)
+(389,804,0)
+(16,569,0)
+(797,593,0)
+(561,359,0)
+(419,798,0)
+(76,630,0)
+(733,213,0)
+(410,280,0)
+(22,733,0)
+(376,16,0)
+(383,834,0)
+(646,67,0)
+(553,46,0)
+(538,540,0)
+(697,575,0)
+(592,792,0)
+(159,477,0)
+(792,496,0)
+(603,792,0)
+(619,255,0)
+(812,81,0)
+(630,76,0)
+(718,19,0)
+(711,859,0)
+(17,350,0)
+(594,508,0)
+(628,699,0)
+(817,319,0)
+(857,783,0)
+(410,741,0)
+(576,335,0)
+(861,115,0)
+(310,391,0)
+(256,728,0)
+(357,516,0)
+(339,128,0)
+(304,520,0)
+(212,381,0)
+(594,520,0)
+(779,88,0)
+(401,770,0)
+(112,520,0)
+(17,304,0)
+(161,21,0)
+(112,474,0)
+(509,796,0)
+(809,21,0)
+(111,19,0)
+(359,561,0)
+(412,21,0)
+(293,227,0)
+(537,132,0)
+(545,143,0)
+(603,539,0)
+(665,474,0)
+(558,128,0)
+(424,209,0)
+(359,28,0)
+(858,749,0)
+(11,733,0)
+(6,579,0)
+(810,287,0)
+(266,405,0)
+(564,355,0)
+(212,115,0)
+(410,474,0)
+(776,319,0)
+(747,804,0)
+(568,188,0)
+(483,492,0)
+(232,284,0)
+(376,621,0)
+(866,790,0)
+(132,272,0)
+(421,228,0)
+(854,723,0)
+(708,375,0)
+(290,733,0)
+(728,256,0)
+(387,744,0)
+(608,245,0)
+(190,733,0)
+(245,831,0)
+(636,733,0)
+(826,642,0)
+(783,164,0)
+(475,19,0)
+(569,19,0)
+(431,718,0)
+(746,324,0)
+(783,792,0)
+(603,412,0)
+(607,164,0)
+(652,381,0)
+(525,680,0)
+(270,387,0)
+(477,159,0)
+(508,692,0)
+(774,275,0)
+(259,866,0)
+(582,836,0)
+(52,808,0)
+(207,867,0)
+(93,566,0)
+(595,165,0)
+(634,115,0)
+(624,594,0)
+(759,677,0)
+(552,608,0)
+(230,136,0)
+(573,154,0)
+(500,11,0)
+(13,719,0)
+(21,195,0)
+(735,13,0)
+(182,21,0)
+(45,132,0)
+(836,681,0)
+(779,98,0)
+(29,28,0)
+(275,630,0)
+(446,784,0)
+(460,132,0)
+(410,601,0)
+(22,539,0)
+(282,334,0)
+(543,834,0)
+(3,571,0)
+(602,787,0)
+(448,588,0)
+(697,164,0)
+(235,588,0)
+(829,577,0)
+(561,848,0)
+(319,323,0)
+(857,233,0)
+(468,834,0)
+(857,145,0)
+(410,539,0)
+(696,222,0)
+(112,733,0)
+(794,715,0)
+(626,804,0)
+(59,353,0)
+(436,397,0)
+(396,732,0)
+(300,46,0)
+(540,489,0)
+(853,397,0)
+(463,4,0)
+(132,45,0)
+(347,822,0)
+(489,490,0)
+(397,702,0)
+(690,569,0)
+(661,790,0)
+(571,213,0)
+(202,333,0)
+(223,575,0)
+(651,532,0)
+(115,30,0)
+(338,788,0)
+(112,642,0)
+(204,834,0)
+(39,834,0)
+(749,635,0)
+(21,809,0)
+(124,37,0)
+(155,341,0)
+(489,525,0)
+(345,371,0)
+(190,474,0)
+(179,721,0)
+(784,310,0)
+(394,491,0)
+(190,792,0)
+(816,830,0)
+(333,19,0)
+(30,115,0)
+(15,112,0)
+(185,312,0)
+(663,227,0)
+(515,624,0)
+(599,442,0)
+(481,426,0)
+(611,834,0)
+(872,601,0)
+(676,411,0)
+(77,834,0)
+(352,312,0)
+(531,15,0)
+(853,101,0)
+(257,150,0)
+(765,341,0)
+(796,421,0)
+(844,282,0)
+(793,203,0)
+(403,753,0)
+(697,539,0)
+(687,18,0)
+(592,535,0)
+(859,630,0)
+(115,834,0)
+(0,792,0)
+(410,575,0)
+(144,770,0)
+(56,680,0)
+(354,664,0)
+(311,287,0)
+(489,540,0)
+(269,407,0)
+(176,209,0)
+(813,834,0)
+(822,222,0)
+(467,233,0)
+(753,299,0)
+(815,575,0)
+(62,354,0)
+(508,803,0)
+(384,685,0)
+(34,277,0)
+(371,598,0)
+(255,354,0)
+(190,539,0)
+(53,136,0)
+(180,834,0)
+(387,295,0)
+(622,834,0)
+(731,48,0)
+(700,160,0)
+(353,35,0)
+(284,846,0)
+(697,474,0)
+(281,1,0)
+(261,152,0)
+(806,56,0)
+(758,335,0)
+(607,719,0)
+(539,826,0)
+(253,95,0)
+(733,22,0)
+(480,405,0)
+(16,690,0)
+(56,5,0)
+(145,412,0)
+(537,761,0)
+(28,359,0)
+(319,76,0)
+(560,266,0)
+(365,599,0)
+(630,859,0)
+(67,646,0)
+(694,114,0)
+(22,575,0)
+(11,474,0)
+(218,525,0)
+(22,601,0)
+(410,749,0)
+(331,772,0)
+(145,546,0)
+(61,490,0)
+(174,89,0)
+(579,834,0)
+(506,241,0)
+(592,474,0)
+(399,754,0)
+(588,710,0)
+(783,601,0)
+(11,575,0)
+(668,847,0)
+(402,190,0)
+(530,339,0)
+(276,67,0)
+(410,792,0)
+(38,46,0)
+(741,401,0)
+(838,570,0)
+(263,649,0)
+(656,281,0)
+(145,474,0)
+(241,363,0)
+(473,438,0)
+(339,440,0)
+(827,429,0)
+(145,520,0)
+(803,32,0)
+(156,558,0)
+(89,639,0)
+(236,520,0)
+(78,716,0)
+(366,101,0)
+(522,632,0)
+(539,21,0)
+(766,376,0)
+(287,810,0)
+(250,586,0)
+(219,315,0)
+(88,523,0)
+(778,246,0)
+(678,646,0)
+(66,739,0)
+(642,21,0)
+(734,221,0)
+(377,128,0)
+(772,60,0)
+(754,327,0)
+(674,83,0)
+(438,339,0)
+(148,354,0)
+(265,213,0)
+(291,17,0)
+(22,412,0)
+(739,60,0)
+(190,741,0)
+(432,652,0)
+(260,226,0)
+(481,261,0)
+(864,28,0)
+(370,593,0)
+(530,419,0)
+(130,442,0)
+(150,257,0)
+(498,401,0)
+(299,520,0)
+(497,534,0)
+(507,312,0)
+(697,520,0)
+(427,120,0)
+(796,666,0)
+(276,129,0)
+(804,60,0)
+(815,792,0)
+(190,575,0)
+(410,164,0)
+(231,187,0)
+(404,642,0)
+(294,343,0)
+(32,803,0)
+(400,227,0)
+(744,109,0)
+(209,261,0)
+(299,792,0)
+(615,687,0)
+(610,810,0)
+(726,164,0)
+(251,642,0)
+(287,766,0)
+(613,655,0)
+(105,601,0)
+(697,412,0)
+(657,104,0)
+(160,188,0)
+(233,604,0)
+(343,195,0)
+(741,18,0)
+(140,80,0)
+(88,779,0)
+(663,355,0)
+(730,834,0)
+(689,492,0)
+(857,190,0)
+(337,429,0)
+(410,588,0)
+(450,60,0)
+(795,413,0)
+(667,155,0)
+(655,187,0)
+(65,516,0)
+(514,339,0)
+(767,109,0)
+(652,432,0)
+(826,474,0)
+(617,834,0)
+(342,491,0)
+(717,651,0)
+(804,747,0)
+(339,633,0)
+(651,46,0)
+(374,653,0)
+(314,304,0)
+(516,132,0)
+(220,339,0)
+(802,32,0)
+(472,287,0)
+(866,60,0)
+(191,695,0)
+(643,508,0)
+(64,834,0)
+(406,534,0)
+(410,412,0)
+(459,553,0)
+(855,834,0)
+(681,355,0)
+(787,257,0)
+(145,575,0)
+(811,28,0)
+(769,541,0)
+(631,374,0)
+(743,450,0)
+(335,28,0)
+(339,856,0)
+(607,601,0)
+(733,647,0)
+(339,848,0)
+(806,18,0)
+(783,749,0)
+(190,642,0)
+(571,647,0)
+(673,834,0)
+(54,811,0)
+(400,736,0)
+(304,733,0)
+(11,520,0)
+(718,744,0)
+(598,371,0)
+(33,16,0)
+(126,678,0)
+(712,115,0)
+(299,164,0)
+(826,575,0)
+(123,666,0)
+(607,792,0)
+(733,680,0)
+(614,834,0)
+(374,397,0)
+(641,380,0)
+(112,539,0)
+(11,539,0)
+(557,443,0)
+(92,343,0)
+(190,508,0)
+(871,124,0)
+(443,491,0)
+(36,690,0)
+(805,534,0)
+(139,744,0)
+(690,553,0)
+(796,579,0)
+(332,834,0)
+(447,740,0)
+(816,89,0)
+(852,353,0)
+(22,642,0)
+(603,749,0)
+(720,151,0)
+(11,412,0)
+(81,604,0)
+(528,257,0)
+(783,737,0)
+(751,7,0)
+(697,268,0)
+(297,253,0)
+(498,18,0)
+(492,56,0)
+(88,651,0)
+(371,83,0)
+(716,354,0)
+(716,561,0)
+(637,647,0)
+(766,46,0)
+(226,21,0)
+(656,21,0)
+(671,275,0)
+(841,329,0)
+(317,417,0)
+(388,148,0)
+(490,21,0)
+(561,716,0)
+(307,400,0)
+(437,287,0)
+(558,491,0)
+(801,809,0)
+(423,412,0)
+(541,417,0)
+(237,584,0)
+(815,601,0)
+(458,647,0)
+(23,651,0)
+(386,250,0)
+(418,827,0)
+(304,642,0)
+(129,276,0)
+(187,155,0)
+(698,380,0)
+(339,438,0)
+(438,18,0)
+(477,470,0)
+(271,522,0)
+(40,22,0)
+(692,138,0)
+(729,472,0)
+(44,859,0)
+(480,830,0)
+(697,642,0)
+(783,733,0)
+(551,525,0)
+(313,834,0)
+(672,333,0)
+(155,834,0)
+(815,474,0)
+(592,520,0)
+(267,806,0)
+(461,792,0)
+(330,834,0)
+(806,751,0)
+(559,346,0)
+(590,834,0)
+(857,778,0)
+(339,660,0)
+(137,360,0)
+(281,656,0)
+(345,846,0)
+(562,498,0)
+(168,33,0)
+(299,316,0)
+(308,114,0)
+(112,575,0)
+(518,771,0)
+(211,16,0)
+(112,707,0)
+(782,339,0)
+(495,783,0)
+(777,17,0)
+(775,826,0)
+(594,792,0)
+(55,716,0)
+(48,765,0)
+(420,32,0)
+(137,751,0)
+(736,400,0)
+(294,327,0)
+(675,323,0)
+(853,355,0)
+(2,834,0)
+(600,834,0)
+(567,834,0)
+(781,488,0)
+(190,749,0)
+(651,651,0)
+(131,33,0)
+(339,137,0)
+(424,563,0)
+(589,539,0)
+(22,474,0)
+(532,699,0)
+(623,397,0)
+(198,751,0)
+(870,667,0)
+(634,518,0)
+(336,834,0)
+(295,387,0)
+(4,136,0)
+(772,834,0)
+(340,484,0)
+(645,48,0)
+(306,638,0)
+(117,29,0)
+(161,147,0)
+(289,319,0)
+(353,498,0)
+(27,786,0)
+(299,749,0)
+(609,164,0)
+(101,853,0)
+(159,440,0)
+(58,834,0)
+(145,601,0)
+(520,680,0)
+(594,601,0)
+(92,428,0)
+(592,412,0)
+(241,142,0)
+(464,659,0)
+(849,56,0)
+(349,637,0)
+(745,426,0)
+(287,472,0)
+(298,752,0)
+(761,537,0)
+(415,277,0)
+(22,164,0)
+(659,310,0)
+(621,21,0)
+(809,67,0)
+(409,633,0)
+(616,766,0)
+(529,834,0)
+(680,50,0)
+(339,761,0)
+(299,575,0)
+(329,356,0)
+(127,276,0)
+(360,715,0)
+(102,285,0)
+(826,733,0)
+(304,412,0)
+(868,681,0)
+(228,579,0)
+(547,82,0)
+(98,736,0)
+(37,664,0)
+(214,744,0)
+(28,63,0)
+(681,836,0)
+(278,834,0)
+(783,539,0)
+(575,680,0)
+(11,601,0)
+(400,77,0)
+(725,323,0)
+(190,164,0)
+(203,45,0)
+(860,532,0)
+(596,265,0)
+(84,339,0)
+(827,742,0)
+(857,697,0)
+(454,728,0)
+(112,601,0)
+(22,553,0)
+(649,18,0)
+(628,865,0)
+(702,397,0)
+(121,699,0)
+(857,632,0)
+(646,678,0)
+(250,19,0)
+(691,301,0)
+(687,507,0)
+(482,37,0)
+(145,733,0)
+(842,80,0)
+(856,751,0)
+(502,586,0)
+(59,496,0)
+(583,234,0)
+(190,412,0)
+(325,276,0)
+(382,480,0)
+(669,690,0)
+(792,213,0)
+(647,637,0)
+(521,667,0)
+(379,834,0)
+(405,266,0)
+(173,831,0)
+(649,263,0)
+(4,310,0)
+(728,261,0)
+(265,647,0)
+(710,362,0)
+(660,692,0)
+(51,222,0)
+(304,749,0)
+(310,450,0)
+(59,692,0)
+(85,649,0)
+(33,304,0)
+(773,284,0)
+(695,811,0)
+(693,188,0)
+(865,628,0)
+(414,49,0)
+(599,295,0)
+(429,827,0)
+(586,250,0)
+(640,775,0)
+(825,19,0)
+(32,18,0)
+(408,46,0)
+(50,680,0)
+(73,256,0)
+(603,601,0)
+(88,579,0)
+(630,275,0)
+(488,7,0)
+(637,21,0)
+(322,200,0)
+(511,375,0)
+(304,601,0)
+(79,633,0)
+(100,120,0)
+(699,532,0)
+(158,138,0)
+(757,88,0)
+(706,488,0)
+(377,10,0)
+(501,725,0)
+(234,67,0)
+(635,798,0)
+(514,354,0)
+(503,161,0)
+(358,213,0)
+(533,63,0)
+(594,526,0)
+(339,514,0)
+(439,266,0)
+(697,601,0)
+(490,489,0)
+(124,172,0)
+(523,88,0)
+(101,563,0)
+(96,310,0)
+(201,93,0)
+(558,584,0)
+(203,440,0)
+(828,82,0)
+(309,77,0)
+(660,18,0)
+(612,811,0)
+(361,407,0)
+(592,642,0)
+(68,60,0)
+(787,842,0)
+(296,530,0)
+(789,856,0)
+(856,339,0)
+(722,98,0)
+(136,136,0)
+(594,539,0)
+(530,18,0)
+(169,120,0)
+(188,160,0)
+(863,324,0)
+(603,164,0)
+(148,172,0)
+(601,21,0)
+(197,537,0)
+(69,165,0)
+(12,861,0)
+(413,67,0)
+(603,474,0)
+(496,10,0)
+(417,541,0)
+(299,733,0)
+(594,474,0)
+(857,69,0)
+(593,710,0)
+(790,866,0)
+(603,733,0)
+(312,18,0)
+(350,17,0)
+(99,741,0)
+(603,520,0)
+(824,322,0)
+(593,18,0)
+(771,518,0)
+(184,154,0)
+(578,778,0)
+(80,842,0)
+(697,733,0)
+(299,642,0)
+(59,18,0)
+(518,505,0)
+(607,642,0)
+(261,209,0)
+(252,261,0)
+(82,1,0)
+(11,749,0)
+(474,680,0)
+(804,599,0)
+(154,60,0)
+(818,780,0)
+(215,92,0)
+(112,749,0)
+(82,21,0)
+(493,584,0)
+(1,281,0)
+(266,322,0)
+(434,363,0)
+(842,786,0)
+(428,67,0)
+(683,255,0)
+(299,601,0)
+(242,63,0)
+(339,505,0)
+(160,89,0)
+(815,520,0)
+(77,564,0)
+(857,112,0)
+(42,809,0)
+(862,37,0)
+(227,663,0)
+(203,793,0)
+(210,391,0)
+(43,29,0)
+(594,733,0)
+(649,496,0)
+(72,405,0)
+(492,21,0)
+(594,412,0)
+(786,842,0)
+(607,520,0)
+(238,775,0)
+(644,401,0)
+(367,649,0)
+(516,65,0)
+(732,46,0)
+(786,60,0)
+(125,592,0)
+(512,819,0)
+(565,154,0)
+(295,599,0)
+(116,697,0)
+(608,798,0)
+(112,412,0)
+(751,577,0)
+(163,853,0)
+(701,199,0)
+(584,563,0)
+(209,846,0)
+(688,424,0)
+(385,428,0)
+(724,294,0)
+(145,749,0)
+(16,376,0)
+(865,553,0)
+(149,339,0)
+(667,610,0)
+(748,610,0)
+(277,34,0)
+(47,125,0)
+(239,432,0)
+(16,33,0)
+(679,381,0)
+(373,109,0)
+(638,867,0)
+(277,18,0)
+(319,484,0)
+(831,21,0)
+(489,635,0)
+(768,725,0)
+(833,721,0)
+(465,424,0)
+(363,861,0)
+(264,831,0)
+(438,803,0)
+(594,749,0)
+(422,861,0)
+(761,354,0)
+(783,520,0)
+(478,234,0)
+(209,424,0)
+(601,1,0)
+(11,792,0)
+(334,282,0)
+(452,660,0)
+(412,360,0)
+(662,659,0)
+(594,164,0)
+(491,558,0)
+(656,360,0)
+(24,736,0)
+(381,212,0)
+(164,304,0)
+(588,751,0)
+(775,21,0)
+(361,46,0)
+(857,410,0)
+(166,656,0)
+(608,680,0)
+(771,470,0)
+(225,842,0)
+(594,575,0)
+(339,530,0)
+(484,677,0)
+(187,655,0)
+(564,77,0)
+(485,537,0)
+(536,578,0)
+(682,633,0)
+(301,751,0)
+(597,798,0)
+(430,761,0)
+(790,143,0)
+(304,19,0)
+(217,518,0)
+(98,779,0)
+(594,642,0)
+(687,803,0)
+(580,666,0)
+(826,790,0)
+(410,733,0)
+(318,820,0)
+(690,46,0)
+(761,339,0)
+(97,826,0)
+(295,234,0)
+(60,68,0)
+(45,203,0)
+(3,87,0)
+(134,428,0)
+(315,145,0)
+(164,21,0)
+(815,398,0)
+(248,798,0)
+(346,847,0)
+(287,732,0)
+(368,569,0)
+(17,21,0)
+(319,60,0)
+(114,310,0)
+(804,257,0)
+(305,539,0)
+(344,467,0)
+(519,398,0)
+(857,607,0)
+(491,834,0)
+(183,579,0)
+(821,656,0)
+(800,389,0)
+(26,508,0)
+(41,281,0)
+(285,544,0)
+(678,380,0)
+(857,299,0)
+(660,803,0)
+(257,804,0)
+(833,540,0)
+(90,76,0)
+(783,412,0)
+(660,339,0)
+(425,413,0)
+(190,834,0)
+(507,687,0)
+(632,513,0)
+(146,742,0)
+(393,796,0)
+(654,30,0)
+(137,339,0)
+(843,634,0)
+(647,19,0)
+(33,21,0)
+(527,272,0)
+(299,474,0)
+(815,733,0)
+(167,59,0)
+(277,401,0)
+(299,412,0)
+(826,792,0)
+(87,491,0)
+(850,514,0)
+(575,25,0)
+(421,796,0)
+(369,514,0)
+(594,741,0)
+(574,749,0)
+(553,114,0)
+(147,161,0)
+(228,651,0)
+(792,680,0)
+(815,749,0)
+(110,320,0)
+(822,397,0)
+(189,561,0)
+(428,92,0)
+(190,601,0)
+(607,474,0)
+(351,793,0)
+(8,241,0)
+(389,67,0)
+(213,265,0)
+(65,37,0)
+(658,530,0)
+(627,676,0)
+(487,339,0)
+(607,733,0)
+(474,377,0)
+(390,228,0)
+(363,834,0)
+(22,10,0)
+(194,770,0)
+(436,398,0)
+(857,594,0)
+(754,21,0)
+(649,692,0)
+(504,30,0)
+(554,516,0)
+(603,642,0)
+(603,247,0)
+(479,63,0)
+(20,834,0)
+(193,477,0)
+(304,474,0)
+(747,128,0)
+(760,739,0)
+(618,806,0)
+(650,834,0)
+(466,810,0)
+(243,18,0)
+(170,474,0)
+(279,203,0)
+(29,856,0)
+(755,410,0)
+(435,329,0)
+(857,592,0)
+(727,228,0)
+(804,389,0)
+(552,226,0)
+(474,647,0)
+(287,82,0)
+(770,401,0)
+(857,815,0)
+(11,164,0)
+(145,792,0)
+(799,200,0)
+(517,4,0)
+(323,715,0)
+(851,109,0)
+(1,715,0)
+(122,492,0)
+(145,642,0)
+(75,356,0)
+(486,342,0)
+(603,575,0)
+(18,806,0)
+(462,638,0)
+(695,488,0)
+(703,500,0)
+(360,725,0)
+(470,200,0)
+(725,360,0)
+(335,758,0)
+(190,520,0)
+(811,695,0)
+(510,834,0)
+(796,651,0)
+(67,109,0)
+(433,436,0)
+(824,159,0)
+(525,489,0)
+(244,65,0)
+(208,869,0)
+(484,319,0)
+(31,137,0)
+(660,496,0)
+(407,361,0)
+(86,660,0)
+(867,638,0)
+(566,93,0)
+(224,481,0)
+(227,834,0)
+(380,405,0)
+(378,663,0)
+(685,607,0)
+(474,213,0)
+(520,419,0)
+(556,116,0)
+(605,19,0)
+(356,329,0)
+(120,60,0)
+(11,118,0)
+(524,608,0)
+(304,792,0)
+(815,412,0)
+(857,603,0)
+(592,601,0)
+(699,628,0)
+(114,732,0)
+(321,89,0)
+(471,263,0)
+(145,539,0)
+(585,137,0)
+(699,60,0)
+(764,343,0)
+(577,751,0)
+(304,164,0)
+(592,749,0)
+(71,637,0)
+(274,477,0)
+(867,834,0)
+(119,865,0)
+(141,159,0)
+(154,200,0)
+(577,28,0)
+(265,680,0)
+(353,846,0)
+(103,653,0)
+(206,19,0)
+(438,22,0)
+(742,60,0)
+(240,361,0)
+(410,520,0)
+(364,74,0)
+(783,642,0)
+(861,363,0)
+(629,59,0)
+(285,488,0)
+(228,651,1)
+(17,304,1)
+(826,412,1)
+(594,508,1)
+(350,17,1)
+(29,43,1)
+(380,641,1)
+(498,18,1)
+(136,310,1)
+(649,496,1)
+(406,534,1)
+(849,642,1)
+(594,624,1)
+(826,164,1)
+(456,282,1)
+(687,18,1)
+(603,164,1)
+(729,655,1)
+(190,412,1)
+(439,560,1)
+(311,396,1)
+(343,791,1)
+(607,539,1)
+(802,420,1)
+(353,498,1)
+(806,710,1)
+(372,208,1)
+(432,652,1)
+(11,749,1)
+(859,744,1)
+(466,610,1)
+(716,354,1)
+(711,275,1)
+(485,197,1)
+(857,594,1)
+(112,412,1)
+(610,748,1)
+(312,352,1)
+(410,755,1)
+(857,11,1)
+(449,65,1)
+(16,569,1)
+(608,680,1)
+(697,792,1)
+(553,114,1)
+(11,539,1)
+(805,497,1)
+(547,311,1)
+(658,296,1)
+(403,74,1)
+(149,487,1)
+(120,60,1)
+(629,498,1)
+(98,736,1)
+(137,751,1)
+(686,406,1)
+(116,556,1)
+(592,412,1)
+(792,680,1)
+(508,643,1)
+(577,28,1)
+(319,817,1)
+(399,294,1)
+(59,803,1)
+(301,691,1)
+(867,462,1)
+(772,331,1)
+(815,733,1)
+(108,34,1)
+(651,651,1)
+(660,496,1)
+(497,160,1)
+(233,467,1)
+(216,307,1)
+(655,613,1)
+(16,33,1)
+(236,56,1)
+(727,390,1)
+(503,787,1)
+(822,347,1)
+(735,702,1)
+(166,821,1)
+(796,579,1)
+(739,66,1)
+(197,430,1)
+(67,646,1)
+(226,21,1)
+(190,474,1)
+(421,796,1)
+(694,459,1)
+(382,816,1)
+(663,378,1)
+(287,766,1)
+(630,859,1)
+(558,128,1)
+(457,769,1)
+(277,401,1)
+(823,436,1)
+(784,446,1)
+(749,680,1)
+(22,520,1)
+(74,364,1)
+(396,766,1)
+(148,354,1)
+(124,37,1)
+(748,667,1)
+(783,164,1)
+(810,466,1)
+(842,786,1)
+(59,496,1)
+(467,344,1)
+(22,601,1)
+(92,428,1)
+(341,765,1)
+(265,213,1)
+(145,539,1)
+(783,495,1)
+(815,474,1)
+(483,122,1)
+(821,601,1)
+(461,22,1)
+(346,847,1)
+(337,827,1)
+(50,392,1)
+(663,355,1)
+(831,264,1)
+(145,575,1)
+(73,728,1)
+(792,0,1)
+(857,676,1)
+(299,733,1)
+(615,162,1)
+(607,474,1)
+(245,831,1)
+(653,374,1)
+(141,477,1)
+(572,48,1)
+(358,496,1)
+(11,500,1)
+(859,44,1)
+(265,647,1)
+(302,260,1)
+(410,749,1)
+(486,83,1)
+(83,371,1)
+(250,648,1)
+(257,804,1)
+(390,796,1)
+(25,453,1)
+(536,68,1)
+(436,433,1)
+(112,15,1)
+(482,132,1)
+(135,297,1)
+(667,155,1)
+(712,491,1)
+(346,559,1)
+(370,797,1)
+(865,119,1)
+(84,644,1)
+(704,236,1)
+(173,303,1)
+(298,303,1)
+(520,704,1)
+(675,455,1)
+(768,412,1)
+(225,350,1)
+(462,306,1)
+(31,585,1)
+(89,321,1)
+(603,749,1)
+(410,575,1)
+(153,240,1)
+(321,174,1)
+(554,244,1)
+(481,261,1)
+(32,803,1)
+(436,397,1)
+(199,701,1)
+(98,288,1)
+(112,749,1)
+(208,129,1)
+(345,846,1)
+(741,18,1)
+(215,754,1)
+(765,572,1)
+(312,25,1)
+(594,474,1)
+(22,553,1)
+(425,795,1)
+(783,520,1)
+(123,322,1)
+(210,310,1)
+(697,164,1)
+(652,381,1)
+(348,512,1)
+(588,751,1)
+(860,136,1)
+(827,742,1)
+(458,250,1)
+(557,361,1)
+(630,275,1)
+(459,3,1)
+(134,215,1)
+(728,454,1)
+(438,18,1)
+(11,575,1)
+(865,553,1)
+(815,749,1)
+(259,661,1)
+(592,520,1)
+(710,593,1)
+(560,72,1)
+(294,724,1)
+(228,727,1)
+(226,302,1)
+(857,783,1)
+(250,586,1)
+(607,642,1)
+(868,142,1)
+(550,835,1)
+(219,143,1)
+(190,402,1)
+(779,98,1)
+(853,101,1)
+(43,117,1)
+(628,775,1)
+(381,505,1)
+(287,82,1)
+(474,647,1)
+(9,239,1)
+(11,601,1)
+(112,164,1)
+(288,456,1)
+(41,656,1)
+(594,520,1)
+(241,8,1)
+(263,471,1)
+(299,164,1)
+(667,521,1)
+(34,277,1)
+(264,173,1)
+(81,812,1)
+(203,440,1)
+(833,286,1)
+(417,457,1)
+(303,680,1)
+(17,21,1)
+(815,412,1)
+(556,421,1)
+(714,550,1)
+(385,134,1)
+(692,395,1)
+(516,357,1)
+(744,139,1)
+(717,23,1)
+(607,575,1)
+(104,657,1)
+(674,93,1)
+(244,354,1)
+(540,833,1)
+(277,803,1)
+(354,375,1)
+(647,637,1)
+(190,741,1)
+(22,40,1)
+(429,827,1)
+(229,179,1)
+(97,539,1)
+(40,733,1)
+(56,680,1)
+(187,555,1)
+(853,355,1)
+(539,305,1)
+(112,601,1)
+(438,22,1)
+(77,564,1)
+(492,483,1)
+(588,235,1)
+(858,574,1)
+(480,405,1)
+(806,56,1)
+(627,429,1)
+(304,314,1)
+(344,81,1)
+(413,425,1)
+(112,733,1)
+(190,575,1)
+(518,505,1)
+(603,601,1)
+(469,616,1)
+(431,92,1)
+(561,189,1)
+(301,751,1)
+(481,224,1)
+(783,642,1)
+(404,689,1)
+(168,131,1)
+(410,412,1)
+(433,653,1)
+(804,60,1)
+(122,608,1)
+(190,733,1)
+(239,342,1)
+(795,340,1)
+(299,412,1)
+(4,136,1)
+(129,276,1)
+(376,16,1)
+(637,71,1)
+(142,241,1)
+(566,836,1)
+(477,470,1)
+(80,842,1)
+(697,575,1)
+(33,21,1)
+(637,56,1)
+(413,67,1)
+(806,751,1)
+(857,592,1)
+(115,30,1)
+(542,9,1)
+(791,764,1)
+(367,85,1)
+(672,150,1)
+(631,702,1)
+(295,387,1)
+(61,837,1)
+(854,104,1)
+(831,21,1)
+(26,35,1)
+(190,642,1)
+(738,234,1)
+(274,193,1)
+(700,480,1)
+(592,539,1)
+(235,448,1)
+(92,343,1)
+(255,354,1)
+(637,21,1)
+(613,187,1)
+(741,99,1)
+(387,270,1)
+(292,223,1)
+(419,766,1)
+(601,21,1)
+(131,621,1)
+(651,717,1)
+(537,485,1)
+(228,666,1)
+(159,477,1)
+(594,588,1)
+(328,852,1)
+(56,849,1)
+(161,709,1)
+(811,54,1)
+(271,152,1)
+(684,353,1)
+(339,438,1)
+(783,792,1)
+(218,749,1)
+(110,406,1)
+(781,758,1)
+(444,18,1)
+(391,210,1)
+(8,506,1)
+(448,507,1)
+(747,714,1)
+(720,787,1)
+(775,21,1)
+(733,680,1)
+(616,4,1)
+(761,537,1)
+(594,749,1)
+(721,155,1)
+(445,163,1)
+(154,60,1)
+(460,432,1)
+(649,803,1)
+(112,539,1)
+(304,749,1)
+(322,824,1)
+(23,443,1)
+(54,612,1)
+(679,212,1)
+(803,32,1)
+(601,872,1)
+(309,772,1)
+(400,216,1)
+(708,511,1)
+(331,120,1)
+(840,576,1)
+(48,731,1)
+(582,681,1)
+(844,334,1)
+(564,355,1)
+(770,144,1)
+(339,505,1)
+(287,472,1)
+(161,21,1)
+(847,363,1)
+(437,82,1)
+(739,355,1)
+(594,792,1)
+(361,407,1)
+(857,145,1)
+(185,687,1)
+(603,792,1)
+(787,842,1)
+(857,632,1)
+(381,212,1)
+(136,53,1)
+(137,360,1)
+(474,680,1)
+(726,609,1)
+(428,385,1)
+(150,196,1)
+(11,520,1)
+(340,76,1)
+(797,588,1)
+(145,601,1)
+(675,323,1)
+(178,256,1)
+(583,365,1)
+(101,366,1)
+(17,291,1)
+(160,89,1)
+(783,474,1)
+(724,304,1)
+(721,229,1)
+(592,642,1)
+(786,60,1)
+(299,539,1)
+(319,413,1)
+(508,18,1)
+(743,96,1)
+(11,412,1)
+(430,149,1)
+(659,662,1)
+(671,774,1)
+(282,334,1)
+(232,284,1)
+(695,488,1)
+(829,416,1)
+(530,18,1)
+(438,803,1)
+(688,465,1)
+(826,733,1)
+(477,274,1)
+(761,354,1)
+(339,761,1)
+(212,115,1)
+(345,181,1)
+(393,509,1)
+(78,864,1)
+(251,404,1)
+(524,552,1)
+(765,48,1)
+(662,464,1)
+(742,60,1)
+(76,630,1)
+(561,716,1)
+(190,164,1)
+(360,725,1)
+(525,551,1)
+(815,199,1)
+(490,61,1)
+(736,400,1)
+(754,21,1)
+(484,319,1)
+(618,243,1)
+(143,545,1)
+(357,554,1)
+(486,93,1)
+(463,517,1)
+(492,21,1)
+(518,634,1)
+(783,733,1)
+(809,67,1)
+(592,164,1)
+(564,205,1)
+(826,749,1)
+(668,713,1)
+(286,721,1)
+(377,762,1)
+(698,686,1)
+(594,601,1)
+(238,121,1)
+(816,372,1)
+(65,516,1)
+(697,539,1)
+(94,677,1)
+(105,360,1)
+(531,80,1)
+(234,67,1)
+(150,257,1)
+(607,164,1)
+(656,166,1)
+(145,733,1)
+(634,756,1)
+(520,680,1)
+(13,735,1)
+(159,141,1)
+(815,642,1)
+(530,419,1)
+(237,493,1)
+(258,469,1)
+(365,350,1)
+(88,651,1)
+(609,659,1)
+(607,749,1)
+(757,98,1)
+(60,739,1)
+(545,790,1)
+(833,721,1)
+(304,520,1)
+(192,415,1)
+(389,800,1)
+(517,356,1)
+(381,679,1)
+(182,343,1)
+(656,360,1)
+(59,167,1)
+(732,287,1)
+(93,566,1)
+(277,192,1)
+(420,249,1)
+(424,688,1)
+(621,1,1)
+(753,403,1)
+(183,6,1)
+(571,213,1)
+(389,67,1)
+(472,729,1)
+(811,28,1)
+(304,474,1)
+(376,621,1)
+(194,741,1)
+(224,256,1)
+(371,345,1)
+(244,148,1)
+(705,70,1)
+(317,867,1)
+(102,444,1)
+(856,29,1)
+(296,856,1)
+(866,259,1)
+(88,666,1)
+(857,697,1)
+(528,599,1)
+(724,720,1)
+(132,45,1)
+(856,751,1)
+(555,231,1)
+(607,685,1)
+(576,28,1)
+(502,386,1)
+(522,271,1)
+(561,848,1)
+(190,749,1)
+(850,369,1)
+(687,615,1)
+(270,738,1)
+(170,443,1)
+(677,484,1)
+(339,514,1)
+(269,153,1)
+(312,18,1)
+(660,86,1)
+(88,523,1)
+(691,285,1)
+(566,822,1)
+(371,598,1)
+(112,575,1)
+(82,1,1)
+(656,21,1)
+(733,647,1)
+(443,557,1)
+(495,476,1)
+(775,640,1)
+(276,325,1)
+(752,298,1)
+(113,35,1)
+(68,60,1)
+(783,575,1)
+(649,692,1)
+(608,524,1)
+(826,792,1)
+(621,21,1)
+(603,733,1)
+(836,582,1)
+(351,451,1)
+(11,164,1)
+(162,692,1)
+(145,474,1)
+(103,374,1)
+(619,255,1)
+(774,90,1)
+(86,452,1)
+(422,12,1)
+(651,666,1)
+(568,693,1)
+(287,810,1)
+(595,178,1)
+(697,733,1)
+(11,642,1)
+(140,842,1)
+(733,290,1)
+(375,132,1)
+(796,666,1)
+(339,856,1)
+(124,871,1)
+(152,261,1)
+(815,539,1)
+(474,213,1)
+(552,186,1)
+(571,647,1)
+(499,363,1)
+(465,176,1)
+(814,596,1)
+(602,95,1)
+(493,156,1)
+(181,674,1)
+(179,490,1)
+(29,28,1)
+(142,581,1)
+(871,338,1)
+(657,595,1)
+(592,792,1)
+(648,502,1)
+(147,161,1)
+(697,412,1)
+(857,603,1)
+(386,391,1)
+(492,56,1)
+(415,444,1)
+(304,601,1)
+(256,73,1)
+(157,528,1)
+(847,668,1)
+(114,308,1)
+(190,792,1)
+(265,814,1)
+(380,405,1)
+(451,460,1)
+(826,474,1)
+(203,793,1)
+(65,37,1)
+(609,4,1)
+(335,840,1)
+(59,18,1)
+(452,438,1)
+(634,115,1)
+(232,620,1)
+(22,412,1)
+(751,577,1)
+(815,792,1)
+(220,84,1)
+(410,741,1)
+(35,353,1)
+(299,601,1)
+(518,217,1)
+(145,315,1)
+(275,67,1)
+(35,684,1)
+(866,60,1)
+(267,618,1)
+(758,335,1)
+(18,806,1)
+(22,733,1)
+(281,656,1)
+(120,169,1)
+(490,1,1)
+(372,110,1)
+(22,474,1)
+(112,792,1)
+(114,732,1)
+(378,293,1)
+(16,690,1)
+(290,636,1)
+(455,94,1)
+(478,583,1)
+(125,47,1)
+(815,601,1)
+(82,828,1)
+(592,601,1)
+(435,841,1)
+(792,213,1)
+(28,359,1)
+(642,21,1)
+(836,681,1)
+(387,744,1)
+(412,423,1)
+(356,329,1)
+(773,346,1)
+(816,89,1)
+(212,542,1)
+(607,792,1)
+(665,170,1)
+(775,826,1)
+(559,847,1)
+(507,312,1)
+(516,132,1)
+(690,569,1)
+(578,536,1)
+(687,803,1)
+(841,75,1)
+(796,651,1)
+(312,803,1)
+(74,532,1)
+(4,310,1)
+(228,579,1)
+(792,647,1)
+(862,482,1)
+(304,575,1)
+(594,741,1)
+(817,776,1)
+(161,304,1)
+(281,41,1)
+(489,540,1)
+(685,384,1)
+(530,658,1)
+(11,733,1)
+(607,733,1)
+(429,337,1)
+(186,226,1)
+(852,263,1)
+(203,279,1)
+(112,474,1)
+(591,470,1)
+(575,680,1)
+(234,478,1)
+(347,653,1)
+(359,561,1)
+(184,573,1)
+(697,749,1)
+(474,665,1)
+(1,281,1)
+(470,771,1)
+(826,575,1)
+(164,726,1)
+(299,753,1)
+(507,687,1)
+(137,31,1)
+(594,539,1)
+(402,421,1)
+(23,213,1)
+(319,76,1)
+(826,539,1)
+(596,358,1)
+(401,770,1)
+(756,843,1)
+(410,520,1)
+(760,326,1)
+(660,18,1)
+(53,230,1)
+(777,718,1)
+(169,100,1)
+(193,591,1)
+(310,450,1)
+(593,18,1)
+(534,805,1)
+(453,575,1)
+(809,42,1)
+(304,733,1)
+(540,538,1)
+(826,790,1)
+(402,65,1)
+(785,333,1)
+(446,625,1)
+(117,789,1)
+(793,432,1)
+(352,185,1)
+(857,69,1)
+(702,397,1)
+(400,227,1)
+(412,21,1)
+(681,868,1)
+(319,323,1)
+(279,793,1)
+(593,803,1)
+(256,728,1)
+(95,135,1)
+(697,520,1)
+(410,588,1)
+(511,62,1)
+(789,761,1)
+(569,368,1)
+(815,164,1)
+(689,492,1)
+(85,339,1)
+(603,575,1)
+(678,126,1)
+(143,790,1)
+(293,232,1)
+(299,575,1)
+(592,575,1)
+(806,267,1)
+(498,401,1)
+(857,410,1)
+(472,655,1)
+(595,261,1)
+(361,269,1)
+(190,588,1)
+(145,412,1)
+(289,413,1)
+(676,627,1)
+(584,237,1)
+(783,601,1)
+(190,508,1)
+(423,348,1)
+(476,391,1)
+(154,565,1)
+(340,675,1)
+(326,227,1)
+(308,694,1)
+(294,343,1)
+(400,77,1)
+(374,397,1)
+(424,563,1)
+(384,13,1)
+(299,474,1)
+(339,660,1)
+(319,60,1)
+(755,113,1)
+(623,836,1)
+(723,854,1)
+(366,445,1)
+(680,50,1)
+(342,486,1)
+(191,301,1)
+(299,520,1)
+(214,129,1)
+(392,3,1)
+(766,376,1)
+(603,520,1)
+(410,601,1)
+(815,520,1)
+(861,115,1)
+(21,809,1)
+(325,127,1)
+(333,202,1)
+(230,690,1)
+(450,743,1)
+(693,700,1)
+(464,569,1)
+(649,18,1)
+(156,394,1)
+(718,744,1)
+(395,508,1)
+(163,623,1)
+(349,458,1)
+(299,792,1)
+(487,782,1)
+(512,94,1)
+(857,299,1)
+(690,553,1)
+(171,87,1)
+(353,59,1)
+(241,363,1)
+(71,349,1)
+(592,125,1)
+(782,220,1)
+(263,649,1)
+(701,519,1)
+(3,571,1)
+(136,553,1)
+(22,642,1)
+(112,642,1)
+(369,660,1)
+(835,389,1)
+(661,659,1)
+(681,355,1)
+(644,401,1)
+(608,245,1)
+(577,829,1)
+(427,70,1)
+(828,547,1)
+(209,846,1)
+(11,474,1)
+(339,848,1)
+(285,488,1)
+(769,317,1)
+(501,768,1)
+(517,651,1)
+(191,751,1)
+(44,711,1)
+(607,601,1)
+(190,520,1)
+(793,351,1)
+(759,484,1)
+(388,124,1)
+(410,642,1)
+(417,541,1)
+(603,752,1)
+(626,747,1)
+(59,692,1)
+(189,716,1)
+(249,507,1)
+(581,241,1)
+(538,833,1)
+(167,629,1)
+(145,164,1)
+(227,663,1)
+(418,68,1)
+(574,419,1)
+(800,157,1)
+(697,116,1)
+(87,283,1)
+(857,607,1)
+(297,785,1)
+(374,631,1)
+(641,698,1)
+(666,580,1)
+(584,563,1)
+(260,245,1)
+(506,282,1)
+(84,34,1)
+(695,811,1)
+(660,803,1)
+(145,642,1)
+(509,342,1)
+(592,474,1)
+(24,77,1)
+(90,323,1)
+(804,626,1)
+(331,154,1)
+(306,207,1)
+(304,412,1)
+(603,474,1)
+(762,474,1)
+(649,367,1)
+(307,24,1)
+(459,25,1)
+(75,826,1)
+(88,579,1)
+(364,532,1)
+(394,579,1)
+(498,803,1)
+(96,147,1)
+(857,815,1)
+(441,792,1)
+(211,33,1)
+(119,775,1)
+(725,501,1)
+(57,106,1)
+(261,209,1)
+(784,310,1)
+(677,759,1)
+(548,473,1)
+(620,284,1)
+(558,584,1)
+(419,177,1)
+(490,21,1)
+(243,695,1)
+(112,520,1)
+(867,638,1)
+(822,397,1)
+(571,171,1)
+(857,112,1)
+(410,733,1)
+(304,784,1)
+(126,380,1)
+(338,758,1)
+(603,412,1)
+(786,27,1)
+(114,136,1)
+(575,292,1)
+(709,503,1)
+(607,412,1)
+(252,232,1)
+(500,703,1)
+(22,575,1)
+(421,228,1)
+(397,853,1)
+(489,490,1)
+(778,578,1)
+(377,128,1)
+(603,642,1)
+(496,532,1)
+(162,263,1)
+(754,399,1)
+(127,67,1)
+(690,669,1)
+(356,435,1)
+(37,862,1)
+(643,26,1)
+(635,489,1)
+(231,810,1)
+(697,474,1)
+(410,164,1)
+(608,552,1)
+(659,310,1)
+(146,418,1)
+(33,304,1)
+(249,710,1)
+(621,258,1)
+(299,749,1)
+(22,164,1)
+(826,642,1)
+(843,705,1)
+(783,412,1)
+(291,777,1)
+(594,575,1)
+(632,522,1)
+(25,732,1)
+(33,168,1)
+(579,183,1)
+(188,322,1)
+(72,89,1)
+(196,257,1)
+(190,539,1)
+(99,108,1)
+(645,499,1)
+(515,644,1)
+(593,370,1)
+(255,683,1)
+(55,78,1)
+(749,858,1)
+(205,309,1)
+(215,21,1)
+(22,792,1)
+(480,382,1)
+(804,389,1)
+(551,218,1)
+(315,219,1)
+(277,18,1)
+(15,531,1)
+(826,601,1)
+(304,539,1)
+(372,92,1)
+(498,562,1)
+(783,749,1)
+(22,539,1)
+(764,744,1)
+(438,548,1)
+(651,532,1)
+(594,642,1)
+(145,520,1)
+(293,481,1)
+(857,233,1)
+(305,589,1)
+(284,846,1)
+(276,67,1)
+(144,194,1)
+(69,723,1)
+(857,190,1)
+(410,508,1)
+(787,257,1)
+(391,310,1)
+(871,695,1)
+(190,601,1)
+(304,164,1)
+(100,427,1)
+(562,328,1)
+(804,599,1)
+(443,491,1)
+(82,21,1)
+(519,823,1)
+(106,147,1)
+(98,722,1)
+(30,563,1)
+(275,671,1)
+(48,363,1)
+(323,57,1)
+(416,198,1)
+(592,749,1)
+(566,142,1)
+(700,405,1)
+(646,678,1)
+(339,137,1)
+(594,733,1)
+(514,354,1)
+(139,214,1)
+(471,649,1)
+(625,647,1)
+(776,289,1)
+(410,539,1)
+(52,619,1)
+(405,266,1)
+(27,225,1)
+(47,677,1)
+(687,22,1)
+(779,88,1)
+(812,120,1)
+(610,667,1)
+(202,672,1)
+(491,558,1)
+(525,680,1)
+(861,422,1)
+(450,60,1)
+(101,563,1)
+(655,187,1)
+(266,322,1)
+(434,115,1)
+(713,155,1)
+(70,417,1)
+(32,18,1)
+(488,706,1)
+(669,36,1)
+(213,265,1)
+(299,642,1)
+(508,803,1)
+(506,779,1)
+(339,128,1)
+(532,699,1)
+(314,164,1)
+(552,226,1)
+(594,164,1)
+(728,261,1)
+(266,439,1)
+(815,575,1)
+(612,191,1)
+(177,520,1)
+(114,310,1)
+(599,295,1)
+(725,323,1)
+(375,708,1)
+(16,211,1)
+(339,440,1)
+(410,792,1)
+(489,525,1)
+(514,850,1)
+(159,440,1)
+(66,760,1)
+(706,781,1)
+(628,865,1)
+(30,504,1)
+(217,634,1)
+(678,380,1)
+(293,346,1)
+(4,463,1)
+(521,870,1)
+(285,102,1)
+(121,860,1)
+(3,87,1)
+(870,437,1)
+(864,619,1)
+(188,568,1)
+(454,152,1)
+(284,773,1)
+(826,520,1)
+(603,539,1)
+(295,234,1)
+(45,203,1)
+(697,601,1)
+(697,642,1)
+(640,238,1)
+(176,252,1)
+(678,848,1)
+(80,140,1)
+(223,635,1)
+(93,201,1)
+(642,251,1)
+(731,645,1)
+(580,123,1)
+(265,680,1)
+(826,97,1)
+(565,184,1)
+(42,801,1)
+(145,792,1)
+(804,747,1)
+(772,60,1)
+(96,1,1)
+(607,520,1)
+(857,778,1)
+(410,474,1)
+(871,52,1)
+(824,159,1)
+(771,518,1)
+(207,429,1)
+(335,28,1)
+(339,530,1)
+(585,514,1)
+(589,143,1)
+(95,253,1)
+(765,505,1)
+(716,55,1)
+(733,213,1)
+(428,67,1)
+(444,803,1)
+(160,188,1)
+(683,449,1)
+(872,105,1)
+(718,431,1)
+(660,692,1)
+(87,491,1)
+(594,412,1)
+(530,803,1)
+(236,689,1)
+(22,749,1)
+(209,424,1)
+(690,690,1)
+(283,732,1)
+(32,802,1)
+(187,155,1)
+(62,37,1)
+(304,642,1)
+(573,160,1)
+(703,150,1)
+(198,488,1)
+(801,182,1)
+(201,566,1)
+(699,628,1)
+(592,733,1)
+(796,393,1)
+(670,784,1)
+(787,602,1)
+(741,803,1)
+(368,670,1)
+(304,792,1)
+(148,388,1)
+(571,680,1)
+(0,461,1)
+(742,146,1)
+(837,525,1)
+(12,434,1)
+(88,757,1)
+(363,861,1)
+(11,792,1)
+(473,530,1)
+(537,132,1)
+(282,844,1)
+(653,103,1)
+(353,846,1)
+(624,515,1)
+(796,846,1)
+(672,80,1)
+(783,539,1)
+(636,377,1)
+(747,128,1)
+(174,666,1)
+(539,21,1)
+(534,405,1)
+(496,441,1)
+(342,491,1)
+(155,341,1)
+(790,866,1)
+(136,136,1)
+(240,74,1)
+(699,60,1)
+(504,654,1)
+(164,21,1)
+(36,553,1)
+(525,419,1)
+(810,610,1)
+(334,736,1)
+(654,712,1)
+(145,749,1)
+(759,94,2)
+(135,150,2)
+(131,4,2)
+(784,310,2)
+(360,725,2)
+(618,695,2)
+(656,94,2)
+(243,695,2)
+(801,129,2)
+(96,147,2)
+(787,257,2)
+(145,412,2)
+(857,607,2)
+(514,644,2)
+(867,429,2)
+(583,350,2)
+(649,496,2)
+(506,120,2)
+(857,603,2)
+(78,619,2)
+(287,4,2)
+(771,70,2)
+(680,50,2)
+(864,619,2)
+(427,70,2)
+(435,143,2)
+(166,94,2)
+(647,637,2)
+(24,120,2)
+(140,350,2)
+(307,120,2)
+(776,147,2)
+(806,751,2)
+(410,642,2)
+(353,846,2)
+(428,4,2)
+(608,303,2)
+(607,164,2)
+(299,539,2)
+(375,132,2)
+(815,539,2)
+(136,3,2)
+(826,749,2)
+(88,651,2)
+(758,335,2)
+(419,766,2)
+(507,312,2)
+(809,67,2)
+(428,787,2)
+(199,653,2)
+(257,804,2)
+(150,257,2)
+(697,421,2)
+(31,644,2)
+(297,80,2)
+(321,70,2)
+(441,443,2)
+(690,553,2)
+(490,21,2)
+(858,303,2)
+(310,147,2)
+(724,4,2)
+(251,689,2)
+(735,702,2)
+(228,651,2)
+(428,129,2)
+(420,263,2)
+(530,34,2)
+(42,129,2)
+(4,310,2)
+(340,94,2)
+(190,588,2)
+(71,391,2)
+(154,60,2)
+(227,346,2)
+(783,520,2)
+(588,751,2)
+(783,391,2)
+(400,160,2)
+(368,391,2)
+(16,33,2)
+(690,303,2)
+(44,147,2)
+(245,303,2)
+(17,304,2)
+(859,744,2)
+(274,70,2)
+(144,34,2)
+(350,17,2)
+(699,628,2)
+(413,147,2)
+(455,94,2)
+(532,3,2)
+(390,342,2)
+(637,56,2)
+(640,3,2)
+(299,575,2)
+(430,34,2)
+(733,647,2)
+(36,3,2)
+(871,619,2)
+(337,68,2)
+(537,34,2)
+(294,787,2)
+(339,514,2)
+(620,346,2)
+(857,594,2)
+(97,143,2)
+(506,160,2)
+(160,89,2)
+(0,443,2)
+(350,92,2)
+(255,354,2)
+(114,732,2)
+(817,147,2)
+(693,92,2)
+(405,70,2)
+(857,783,2)
+(121,3,2)
+(593,507,2)
+(305,143,2)
+(681,142,2)
+(489,303,2)
+(516,342,2)
+(762,443,2)
+(592,677,2)
+(431,92,2)
+(159,477,2)
+(33,4,2)
+(603,575,2)
+(498,263,2)
+(352,35,2)
+(594,164,2)
+(837,303,2)
+(644,401,2)
+(250,391,2)
+(65,516,2)
+(437,4,2)
+(219,143,2)
+(192,444,2)
+(615,35,2)
+(517,74,2)
+(631,702,2)
+(339,644,2)
+(616,4,2)
+(105,94,2)
+(852,263,2)
+(444,263,2)
+(73,152,2)
+(160,188,2)
+(857,778,2)
+(530,803,2)
+(331,160,2)
+(742,60,2)
+(134,129,2)
+(102,444,2)
+(160,70,2)
+(771,518,2)
+(234,350,2)
+(3,571,2)
+(836,142,2)
+(22,601,2)
+(283,4,2)
+(265,647,2)
+(322,70,2)
+(4,136,2)
+(566,653,2)
+(489,525,2)
+(53,3,2)
+(844,160,2)
+(540,303,2)
+(783,749,2)
+(333,80,2)
+(303,3,2)
+(188,406,2)
+(729,4,2)
+(401,34,2)
+(558,584,2)
+(61,303,2)
+(815,575,2)
+(655,4,2)
+(792,213,2)
+(147,787,2)
+(304,749,2)
+(621,4,2)
+(607,520,2)
+(647,391,2)
+(772,160,2)
+(568,129,2)
+(391,94,2)
+(322,824,2)
+(406,160,2)
+(155,341,2)
+(56,689,2)
+(593,18,2)
+(592,520,2)
+(806,710,2)
+(706,758,2)
+(452,34,2)
+(224,256,2)
+(736,400,2)
+(630,859,2)
+(515,644,2)
+(112,164,2)
+(121,303,2)
+(444,35,2)
+(178,256,2)
+(345,93,2)
+(361,74,2)
+(603,792,2)
+(833,303,2)
+(601,21,2)
+(261,232,2)
+(660,692,2)
+(636,443,2)
+(575,680,2)
+(68,346,2)
+(112,749,2)
+(603,733,2)
+(866,60,2)
+(8,160,2)
+(68,60,2)
+(480,129,2)
+(299,474,2)
+(190,749,2)
+(752,303,2)
+(25,303,2)
+(595,261,2)
+(474,647,2)
+(581,160,2)
+(607,474,2)
+(698,406,2)
+(445,836,2)
+(470,70,2)
+(60,232,2)
+(190,642,2)
+(697,164,2)
+(287,766,2)
+(339,530,2)
+(325,406,2)
+(507,687,2)
+(564,120,2)
+(189,619,2)
+(642,21,2)
+(17,21,2)
+(860,3,2)
+(185,35,2)
+(98,282,2)
+(16,569,2)
+(782,644,2)
+(721,303,2)
+(630,275,2)
+(792,647,2)
+(697,733,2)
+(238,3,2)
+(632,152,2)
+(410,588,2)
+(168,4,2)
+(62,342,2)
+(225,350,2)
+(112,792,2)
+(182,129,2)
+(348,94,2)
+(826,601,2)
+(22,733,2)
+(3,87,2)
+(516,619,2)
+(816,406,2)
+(594,474,2)
+(602,150,2)
+(190,601,2)
+(342,836,2)
+(296,644,2)
+(65,619,2)
+(738,350,2)
+(112,80,2)
+(142,160,2)
+(811,444,2)
+(669,3,2)
+(815,601,2)
+(816,129,2)
+(60,346,2)
+(304,642,2)
+(142,120,2)
+(589,143,2)
+(275,67,2)
+(842,786,2)
+(326,256,2)
+(804,747,2)
+(861,115,2)
+(250,586,2)
+(22,539,2)
+(699,60,2)
+(74,3,2)
+(66,256,2)
+(675,94,2)
+(663,232,2)
+(59,692,2)
+(293,256,2)
+(640,303,2)
+(854,256,2)
+(558,128,2)
+(284,346,2)
+(595,256,2)
+(822,397,2)
+(594,749,2)
+(59,18,2)
+(356,143,2)
+(93,142,2)
+(217,70,2)
+(304,4,2)
+(135,80,2)
+(823,653,2)
+(18,806,2)
+(689,303,2)
+(554,758,2)
+(89,70,2)
+(749,303,2)
+(592,539,2)
+(349,391,2)
+(11,733,2)
+(525,303,2)
+(314,659,2)
+(507,263,2)
+(724,787,2)
+(53,303,2)
+(714,350,2)
+(191,444,2)
+(334,120,2)
+(267,695,2)
+(649,34,2)
+(822,653,2)
+(783,575,2)
+(32,18,2)
+(112,601,2)
+(335,619,2)
+(690,3,2)
+(578,68,2)
+(385,129,2)
+(790,866,2)
+(796,651,2)
+(22,575,2)
+(164,21,2)
+(592,575,2)
+(145,601,2)
+(868,142,2)
+(629,263,2)
+(249,35,2)
+(117,644,2)
+(566,142,2)
+(705,70,2)
+(733,213,2)
+(147,161,2)
+(498,803,2)
+(635,303,2)
+(233,120,2)
+(3,4,2)
+(299,601,2)
+(653,702,2)
+(756,70,2)
+(732,4,2)
+(132,342,2)
+(271,152,2)
+(498,18,2)
+(465,232,2)
+(790,659,2)
+(145,539,2)
+(93,653,2)
+(496,443,2)
+(812,120,2)
+(372,92,2)
+(410,601,2)
+(339,440,2)
+(8,120,2)
+(460,342,2)
+(849,689,2)
+(285,488,2)
+(585,34,2)
+(92,343,2)
+(181,93,2)
+(143,659,2)
+(369,644,2)
+(451,342,2)
+(76,147,2)
+(538,303,2)
+(122,303,2)
+(244,695,2)
+(326,346,2)
+(826,474,2)
+(396,4,2)
+(55,619,2)
+(492,303,2)
+(177,303,2)
+(651,74,2)
+(197,644,2)
+(607,642,2)
+(754,21,2)
+(277,18,2)
+(662,391,2)
+(215,659,2)
+(568,406,2)
+(652,342,2)
+(607,749,2)
+(392,3,2)
+(660,34,2)
+(816,89,2)
+(117,34,2)
+(276,406,2)
+(100,70,2)
+(203,793,2)
+(136,136,2)
+(607,412,2)
+(190,474,2)
+(628,775,2)
+(753,74,2)
+(826,575,2)
+(371,598,2)
+(209,232,2)
+(815,412,2)
+(190,421,2)
+(716,619,2)
+(603,601,2)
+(93,836,2)
+(472,4,2)
+(464,391,2)
+(145,143,2)
+(112,474,2)
+(477,70,2)
+(778,68,2)
+(303,680,2)
+(561,619,2)
+(555,4,2)
+(857,145,2)
+(386,391,2)
+(173,303,2)
+(205,120,2)
+(380,405,2)
+(454,152,2)
+(402,421,2)
+(304,474,2)
+(867,638,2)
+(201,142,2)
+(603,749,2)
+(532,699,2)
+(374,702,2)
+(697,792,2)
+(711,147,2)
+(108,34,2)
+(277,444,2)
+(577,28,2)
+(83,371,2)
+(644,34,2)
+(153,74,2)
+(66,346,2)
+(356,329,2)
+(687,35,2)
+(581,120,2)
+(474,680,2)
+(592,749,2)
+(380,406,2)
+(229,303,2)
+(11,539,2)
+(29,644,2)
+(22,412,2)
+(769,429,2)
+(115,30,2)
+(381,342,2)
+(783,474,2)
+(241,160,2)
+(575,303,2)
+(54,444,2)
+(311,4,2)
+(747,128,2)
+(269,74,2)
+(190,575,2)
+(244,758,2)
+(571,647,2)
+(815,164,2)
+(98,736,2)
+(294,659,2)
+(76,630,2)
+(188,322,2)
+(28,359,2)
+(406,534,2)
+(521,4,2)
+(666,70,2)
+(739,232,2)
+(804,350,2)
+(124,695,2)
+(592,642,2)
+(747,350,2)
+(782,34,2)
+(658,34,2)
+(186,303,2)
+(256,152,2)
+(438,34,2)
+(114,136,2)
+(357,695,2)
+(594,792,2)
+(557,74,2)
+(775,826,2)
+(857,815,2)
+(764,129,2)
+(708,342,2)
+(787,842,2)
+(787,150,2)
+(853,101,2)
+(93,566,2)
+(88,579,2)
+(651,666,2)
+(749,680,2)
+(859,147,2)
+(106,147,2)
+(309,120,2)
+(560,70,2)
+(213,265,2)
+(536,68,2)
+(653,374,2)
+(137,644,2)
+(751,577,2)
+(101,836,2)
+(85,34,2)
+(694,303,2)
+(783,164,2)
+(675,323,2)
+(170,443,2)
+(857,233,2)
+(364,3,2)
+(143,790,2)
+(594,733,2)
+(516,758,2)
+(167,263,2)
+(436,653,2)
+(603,412,2)
+(476,391,2)
+(86,644,2)
+(594,575,2)
+(594,642,2)
+(410,35,2)
+(517,143,2)
+(282,334,2)
+(190,164,2)
+(571,87,2)
+(561,848,2)
+(826,790,2)
+(145,164,2)
+(333,150,2)
+(92,129,2)
+(637,21,2)
+(815,749,2)
+(857,11,2)
+(628,865,2)
+(67,646,2)
+(416,758,2)
+(263,649,2)
+(22,164,2)
+(230,303,2)
+(410,733,2)
+(145,474,2)
+(793,432,2)
+(608,552,2)
+(88,282,2)
+(226,21,2)
+(145,733,2)
+(88,666,2)
+(699,303,2)
+(287,472,2)
+(561,716,2)
+(511,342,2)
+(415,444,2)
+(410,749,2)
+(743,147,2)
+(704,303,2)
+(728,152,2)
+(743,94,2)
+(474,213,2)
+(152,261,2)
+(775,3,2)
+(693,129,2)
+(339,34,2)
+(520,303,2)
+(413,94,2)
+(124,37,2)
+(190,792,2)
+(203,440,2)
+(263,644,2)
+(697,749,2)
+(295,234,2)
+(827,68,2)
+(786,350,2)
+(228,579,2)
+(676,429,2)
+(245,831,2)
+(802,263,2)
+(136,553,2)
+(417,541,2)
+(612,444,2)
+(209,424,2)
+(308,3,2)
+(22,642,2)
+(671,147,2)
+(554,619,2)
+(718,92,2)
+(160,406,2)
+(59,496,2)
+(351,342,2)
+(11,520,2)
+(779,98,2)
+(244,619,2)
+(709,787,2)
+(482,342,2)
+(841,143,2)
+(82,4,2)
+(378,232,2)
+(792,443,2)
+(754,4,2)
+(450,94,2)
+(748,4,2)
+(191,758,2)
+(721,155,2)
+(843,70,2)
+(478,350,2)
+(294,343,2)
+(540,833,2)
+(301,444,2)
+(134,787,2)
+(678,848,2)
+(760,232,2)
+(783,642,2)
+(21,129,2)
+(761,354,2)
+(519,653,2)
+(470,771,2)
+(244,342,2)
+(724,659,2)
+(765,505,2)
+(646,406,2)
+(145,642,2)
+(113,35,2)
+(27,350,2)
+(50,3,2)
+(642,689,2)
+(400,227,2)
+(1,94,2)
+(649,803,2)
+(797,507,2)
+(571,680,2)
+(491,558,2)
+(67,406,2)
+(433,653,2)
+(43,644,2)
+(695,444,2)
+(626,350,2)
+(277,803,2)
+(240,74,2)
+(60,256,2)
+(726,659,2)
+(22,443,2)
+(148,354,2)
+(279,342,2)
+(129,406,2)
+(29,34,2)
+(601,94,2)
+(438,803,2)
+(230,3,2)
+(11,792,2)
+(74,303,2)
+(277,401,2)
+(34,444,2)
+(363,861,2)
+(652,381,2)
+(525,680,2)
+(660,803,2)
+(480,406,2)
+(443,491,2)
+(82,21,2)
+(22,749,2)
+(403,74,2)
+(530,18,2)
+(424,232,2)
+(340,147,2)
+(92,787,2)
+(68,256,2)
+(399,659,2)
+(744,129,2)
+(625,391,2)
+(190,539,2)
+(607,601,2)
+(537,132,2)
+(450,60,2)
+(21,809,2)
+(346,847,2)
+(410,474,2)
+(467,120,2)
+(207,429,2)
+(569,391,2)
+(733,680,2)
+(302,303,2)
+(621,1,2)
+(857,676,2)
+(372,129,2)
+(169,70,2)
+(304,412,2)
+(656,360,2)
+(432,342,2)
+(689,492,2)
+(584,563,2)
+(607,702,2)
+(210,147,2)
+(227,232,2)
+(306,429,2)
+(592,792,2)
+(11,164,2)
+(603,642,2)
+(736,120,2)
+(227,663,2)
+(432,652,2)
+(815,520,2)
+(623,836,2)
+(672,150,2)
+(4,74,2)
+(429,68,2)
+(90,147,2)
+(124,619,2)
+(202,150,2)
+(725,94,2)
+(197,34,2)
+(803,35,2)
+(236,303,2)
+(276,67,2)
+(700,92,2)
+(857,112,2)
+(410,792,2)
+(679,342,2)
+(742,68,2)
+(425,147,2)
+(410,508,2)
+(630,147,2)
+(697,412,2)
+(860,303,2)
+(264,303,2)
+(395,35,2)
+(339,505,2)
+(45,342,2)
+(114,3,2)
+(607,575,2)
+(865,553,2)
+(218,303,2)
+(48,363,2)
+(84,644,2)
+(202,80,2)
+(703,150,2)
+(594,508,2)
+(410,575,2)
+(463,74,2)
+(672,80,2)
+(552,226,2)
+(216,120,2)
+(870,4,2)
+(260,303,2)
+(43,34,2)
+(831,21,2)
+(774,147,2)
+(796,666,2)
+(857,697,2)
+(382,92,2)
+(866,659,2)
+(522,152,2)
+(162,263,2)
+(161,787,2)
+(765,48,2)
+(761,34,2)
+(410,412,2)
+(775,303,2)
+(690,569,2)
+(651,651,2)
+(693,70,2)
+(150,350,2)
+(54,758,2)
+(814,443,2)
+(811,758,2)
+(613,4,2)
+(339,761,2)
+(568,70,2)
+(489,540,2)
+(32,263,2)
+(1,281,2)
+(347,653,2)
+(657,256,2)
+(720,787,2)
+(163,836,2)
+(125,677,2)
+(660,644,2)
+(628,303,2)
+(553,303,2)
+(757,282,2)
+(485,644,2)
+(47,677,2)
+(805,160,2)
+(137,34,2)
+(96,94,2)
+(410,164,2)
+(594,601,2)
+(516,695,2)
+(159,70,2)
+(339,660,2)
+(697,474,2)
+(438,22,2)
+(677,484,2)
+(299,74,2)
+(481,256,2)
+(92,659,2)
+(831,303,2)
+(377,128,2)
+(850,644,2)
+(648,391,2)
+(378,256,2)
+(592,733,2)
+(759,147,2)
+(75,143,2)
+(661,659,2)
+(339,848,2)
+(92,428,2)
+(24,160,2)
+(338,758,2)
+(574,303,2)
+(32,803,2)
+(594,520,2)
+(847,363,2)
+(161,21,2)
+(388,758,2)
+(160,129,2)
+(554,342,2)
+(293,232,2)
+(871,758,2)
+(387,744,2)
+(11,150,2)
+(508,803,2)
+(789,644,2)
+(25,732,2)
+(389,350,2)
+(871,695,2)
+(739,256,2)
+(739,355,2)
+(304,520,2)
+(660,496,2)
+(119,3,2)
+(802,35,2)
+(367,644,2)
+(315,143,2)
+(700,406,2)
+(304,659,2)
+(37,342,2)
+(610,667,2)
+(104,256,2)
+(483,303,2)
+(815,733,2)
+(95,150,2)
+(171,87,2)
+(31,34,2)
+(88,523,2)
+(310,94,2)
+(796,579,2)
+(502,391,2)
+(203,342,2)
+(492,56,2)
+(387,350,2)
+(501,94,2)
+(471,644,2)
+(766,4,2)
+(112,575,2)
+(353,498,2)
+(667,4,2)
+(174,70,2)
+(761,537,2)
+(697,520,2)
+(127,406,2)
+(382,406,2)
+(393,342,2)
+(603,164,2)
+(530,644,2)
+(862,342,2)
+(365,350,2)
+(11,575,2)
+(783,539,2)
+(840,619,2)
+(815,653,2)
+(57,147,2)
+(388,619,2)
+(289,147,2)
+(700,129,2)
+(532,303,2)
+(856,644,2)
+(695,488,2)
+(550,350,2)
+(462,429,2)
+(853,836,2)
+(815,642,2)
+(114,303,2)
+(760,346,2)
+(439,70,2)
+(288,282,2)
+(310,450,2)
+(593,803,2)
+(850,34,2)
+(484,94,2)
+(328,263,2)
+(710,593,2)
+(576,619,2)
+(603,474,2)
+(528,350,2)
+(508,18,2)
+(488,758,2)
+(80,350,2)
+(803,32,2)
+(594,588,2)
+(573,160,2)
+(331,120,2)
+(856,34,2)
+(345,846,2)
+(255,65,2)
+(718,744,2)
+(627,429,2)
+(553,114,2)
+(304,539,2)
+(149,34,2)
+(815,792,2)
+(176,232,2)
+(768,94,2)
+(594,412,2)
+(564,355,2)
+(485,34,2)
+(86,34,2)
+(389,67,2)
+(72,70,2)
+(498,401,2)
+(525,419,2)
+(208,129,2)
+(674,93,2)
+(449,65,2)
+(691,444,2)
+(211,4,2)
+(824,159,2)
+(227,256,2)
+(615,263,2)
+(486,836,2)
+(568,92,2)
+(770,34,2)
+(319,76,2)
+(687,803,2)
+(811,28,2)
+(385,787,2)
+(785,80,2)
+(65,342,2)
+(607,792,2)
+(239,342,2)
+(741,34,2)
+(553,3,2)
+(548,644,2)
+(359,561,2)
+(659,310,2)
+(241,120,2)
+(592,601,2)
+(120,60,2)
+(77,564,2)
+(235,507,2)
+(388,695,2)
+(594,741,2)
+(339,137,2)
+(733,443,2)
+(503,787,2)
+(152,232,2)
+(70,429,2)
+(281,94,2)
+(741,18,2)
+(215,4,2)
+(585,644,2)
+(755,35,2)
+(36,303,2)
+(68,232,2)
+(509,342,2)
+(194,34,2)
+(783,601,2)
+(456,282,2)
+(391,310,2)
+(670,391,2)
+(215,129,2)
+(296,34,2)
+(610,4,2)
+(554,695,2)
+(319,147,2)
+(787,80,2)
+(565,160,2)
+(681,355,2)
+(81,120,2)
+(646,678,2)
+(223,303,2)
+(190,520,2)
+(123,70,2)
+(725,323,2)
+(564,160,2)
+(381,505,2)
+(815,474,2)
+(619,65,2)
+(179,303,2)
+(551,303,2)
+(727,342,2)
+(796,342,2)
+(592,164,2)
+(599,295,2)
+(299,749,2)
+(376,16,2)
+(556,421,2)
+(766,376,2)
+(312,18,2)
+(424,563,2)
+(159,440,2)
+(314,4,2)
+(376,621,2)
+(809,129,2)
+(826,520,2)
+(602,80,2)
+(781,758,2)
+(342,142,2)
+(312,803,2)
+(342,653,2)
+(145,749,2)
+(124,758,2)
+(448,507,2)
+(486,653,2)
+(232,284,2)
+(500,150,2)
+(353,59,2)
+(193,70,2)
+(257,350,2)
+(804,599,2)
+(641,406,2)
+(693,406,2)
+(791,129,2)
+(309,160,2)
+(695,758,2)
+(52,619,2)
+(215,787,2)
+(95,80,2)
+(352,263,2)
+(77,160,2)
+(649,18,2)
+(190,741,2)
+(473,34,2)
+(634,70,2)
+(490,303,2)
+(469,4,2)
+(256,728,2)
+(185,263,2)
+(697,539,2)
+(304,792,2)
+(844,120,2)
+(369,34,2)
+(157,350,2)
+(188,129,2)
+(420,35,2)
+(252,232,2)
+(112,412,2)
+(635,489,2)
+(516,132,2)
+(508,35,2)
+(22,520,2)
+(291,92,2)
+(164,659,2)
+(539,143,2)
+(56,680,2)
+(686,406,2)
+(231,4,2)
+(65,695,2)
+(87,491,2)
+(11,474,2)
+(11,412,2)
+(793,342,2)
+(26,35,2)
+(29,28,2)
+(537,644,2)
+(162,35,2)
+(299,520,2)
+(188,70,2)
+(700,70,2)
+(326,232,2)
+(660,18,2)
+(459,303,2)
+(148,619,2)
+(795,94,2)
+(304,733,2)
+(284,846,2)
+(184,160,2)
+(856,29,2)
+(33,304,2)
+(397,836,2)
+(827,742,2)
+(295,350,2)
+(710,507,2)
+(792,680,2)
+(187,4,2)
+(137,360,2)
+(65,37,2)
+(417,429,2)
+(366,836,2)
+(548,34,2)
+(354,342,2)
+(421,342,2)
+(401,770,2)
+(270,350,2)
+(480,405,2)
+(65,758,2)
+(773,346,2)
+(80,842,2)
+(265,213,2)
+(212,342,2)
+(429,827,2)
+(374,397,2)
+(772,60,2)
+(297,150,2)
+(307,160,2)
+(120,70,2)
+(292,303,2)
+(649,644,2)
+(857,592,2)
+(471,34,2)
+(518,70,2)
+(562,263,2)
+(603,520,2)
+(360,94,2)
+(507,35,2)
+(607,733,2)
+(804,389,2)
+(619,255,2)
+(758,619,2)
+(518,505,2)
+(304,575,2)
+(187,155,2)
+(34,277,2)
+(60,739,2)
+(142,241,2)
+(481,261,2)
+(534,405,2)
+(282,120,2)
+(16,690,2)
+(148,695,2)
+(783,412,2)
+(45,203,2)
+(258,4,2)
+(287,810,2)
+(317,429,2)
+(530,419,2)
+(214,129,2)
+(826,642,2)
+(265,680,2)
+(83,93,2)
+(857,190,2)
+(23,74,2)
+(402,65,2)
+(370,507,2)
+(385,659,2)
+(263,34,2)
+(495,391,2)
+(524,303,2)
+(607,539,2)
+(592,412,2)
+(760,256,2)
+(643,35,2)
+(772,120,2)
+(472,655,2)
+(381,212,2)
+(678,406,2)
+(702,836,2)
+(282,160,2)
+(857,299,2)
+(190,412,2)
+(789,34,2)
+(826,412,2)
+(677,94,2)
+(238,303,2)
+(695,811,2)
+(754,787,2)
+(85,644,2)
+(836,681,2)
+(11,601,2)
+(694,3,2)
+(232,346,2)
+(372,406,2)
+(592,474,2)
+(304,784,2)
+(201,653,2)
+(116,421,2)
+(112,520,2)
+(450,147,2)
+(512,94,2)
+(826,164,2)
+(816,92,2)
+(323,147,2)
+(739,346,2)
+(463,143,2)
+(582,142,2)
+(9,342,2)
+(353,263,2)
+(382,129,2)
+(164,4,2)
+(112,539,2)
+(13,702,2)
+(354,375,2)
+(101,563,2)
+(220,34,2)
+(428,67,2)
+(856,751,2)
+(359,619,2)
+(126,406,2)
+(775,21,2)
+(810,610,2)
+(677,147,2)
+(114,310,2)
+(425,94,2)
+(196,350,2)
+(299,733,2)
+(444,695,2)
+(371,93,2)
+(312,263,2)
+(717,74,2)
+(833,721,2)
+(423,94,2)
+(299,412,2)
+(15,80,2)
+(484,319,2)
+(552,303,2)
+(341,765,2)
+(776,94,2)
+(443,74,2)
+(865,3,2)
+(376,4,2)
+(484,147,2)
+(446,391,2)
+(399,787,2)
+(339,128,2)
+(69,256,2)
+(145,575,2)
+(334,160,2)
+(486,142,2)
+(77,120,2)
+(293,346,2)
+(145,792,2)
+(319,413,2)
+(319,94,2)
+(685,702,2)
+(663,256,2)
+(367,34,2)
+(188,92,2)
+(842,350,2)
+(146,68,2)
+(667,155,2)
+(761,644,2)
+(658,644,2)
+(683,65,2)
+(779,282,2)
+(35,353,2)
+(669,303,2)
+(41,94,2)
+(810,4,2)
+(384,702,2)
+(16,4,2)
+(141,70,2)
+(304,601,2)
+(358,443,2)
+(410,741,2)
+(577,758,2)
+(651,532,2)
+(375,342,2)
+(205,160,2)
+(824,70,2)
+(480,92,2)
+(826,792,2)
+(603,539,2)
+(82,1,2)
+(136,310,2)
+(339,438,2)
+(697,601,2)
+(319,323,2)
+(609,4,2)
+(716,354,2)
+(487,644,2)
+(40,443,2)
+(139,129,2)
+(397,853,2)
+(826,143,2)
+(497,160,2)
+(275,147,2)
+(299,642,2)
+(492,21,2)
+(405,266,2)
+(344,120,2)
+(285,444,2)
+(542,342,2)
+(692,35,2)
+(319,60,2)
+(4,143,2)
+(294,4,2)
+(751,758,2)
+(286,303,2)
+(103,702,2)
+(621,21,2)
+(160,92,2)
+(18,695,2)
+(624,644,2)
+(741,803,2)
+(299,792,2)
+(98,722,2)
+(301,751,2)
+(496,532,2)
+(421,796,2)
+(726,4,2)
+(241,363,2)
+(453,303,2)
+(129,276,2)
+(701,653,2)
+(385,4,2)
+(474,443,2)
+(596,443,2)
+(588,507,2)
+(22,553,2)
+(410,520,2)
+(828,4,2)
+(723,256,2)
+(872,94,2)
+(112,642,2)
+(22,474,2)
+(786,60,2)
+(198,758,2)
+(357,758,2)
+(534,160,2)
+(817,94,2)
+(680,3,2)
+(201,836,2)
+(487,34,2)
+(266,70,2)
+(594,644,2)
+(112,733,2)
+(514,34,2)
+(342,491,2)
+(400,77,2)
+(28,619,2)
+(289,94,2)
+(687,22,2)
+(312,35,2)
+(295,387,2)
+(545,659,2)
+(259,659,2)
+(580,70,2)
+(228,342,2)
+(466,4,2)
+(800,350,2)
+(826,733,2)
+(421,228,2)
+(190,508,2)
+(806,695,2)
+(134,659,2)
+(212,115,2)
+(312,25,2)
+(87,4,2)
+(796,846,2)
+(161,304,2)
+(699,3,2)
+(835,350,2)
+(134,4,2)
+(281,656,2)
+(74,532,2)
+(637,391,2)
+(857,632,2)
+(304,164,2)
+(94,677,2)
+(436,397,2)
+(410,539,2)
+(690,690,2)
+(829,758,2)
+(473,644,2)
+(520,680,2)
+(591,70,2)
+(136,303,2)
+(457,429,2)
+(547,4,2)
+(35,263,2)
+(412,94,2)
+(378,346,2)
+(33,21,2)
+(371,345,2)
+(190,65,2)
+(339,856,2)
+(213,443,2)
+(32,35,2)
+(190,733,2)
+(137,751,2)
+(266,322,2)
+(391,147,2)
+(66,232,2)
+(728,261,2)
+(783,792,2)
+(594,539,2)
+(438,644,2)
+(608,245,2)
+(804,60,2)
+(687,18,2)
+(539,21,2)
+(634,115,2)
+(853,355,2)
+(821,94,2)
+(357,342,2)
+(438,18,2)
+(659,391,2)
+(119,303,2)
+(22,792,2)
+(599,350,2)
+(687,263,2)
+(531,80,2)
+(220,644,2)
+(697,575,2)
+(490,1,2)
+(154,160,2)
+(84,34,2)
+(754,659,2)
+(95,253,2)
+(784,391,2)
+(688,232,2)
+(308,303,2)
+(777,92,2)
+(404,689,2)
+(655,187,2)
+(571,213,2)
+(857,69,2)
+(399,4,2)
+(663,346,2)
+(357,619,2)
+(489,490,2)
+(377,443,2)
+(697,642,2)
+(514,354,2)
+(11,642,2)
+(209,846,2)
+(11,749,2)
+(430,644,2)
+(461,443,2)
+(298,303,2)
+(145,520,2)
+(428,659,2)
+(779,88,2)
+(59,263,2)
+(400,120,2)
+(226,303,2)
+(702,397,2)
+(684,263,2)
+(210,94,2)
+(649,692,2)
+(261,209,2)
+(518,634,2)
+(865,303,2)
+(99,34,2)
+(566,836,2)
+(419,303,2)
+(216,160,2)
+(92,4,2)
+(110,406,2)
+(656,21,2)
+(361,407,2)
+(609,659,2)
+(59,803,2)
+(265,443,2)
+(678,380,2)
+(612,758,2)
+(665,443,2)
+(608,680,2)
+(132,45,2)
+(149,644,2)
+(663,355,2)
+(806,56,2)
+(418,68,2)
+(413,67,2)
+(785,150,2)
+(603,303,2)
+(803,263,2)
+(364,303,2)
+(290,443,2)
+(826,539,2)
+(459,3,2)
+(234,67,2)
+(412,21,2)
+(17,92,2)
+(148,758,2)
+(795,147,2)
+(452,644,2)
+(458,391,2)
+(249,263,2)
+(857,410,2)
+(736,160,2)
+(783,733,2)
+(335,28,2)
+(343,129,2)
+(228,666,2)
+(30,563,2)
+(287,82,2)
+(299,164,2)
+(477,470,2)
+(628,3,2)
+(732,287,2)
+-----------------------------------
+(0,cnt)
+(1,cblk->firstpassno = cblk->numimsbs * 3)
+(2,if ((present = jpc_bitstream_getbit(inb)
+(3,!discard && !seg)
+(4,numnewpasses > 0)
+(5,)
+(6,bodylen)
+(7,)
+(8,csty)
+(9,tile)
+(10,)
+(11,return -1;)
+(12,tile)
+(13,jas_eprintf("cannot get (EPH)
+(14,numnewpasses)
+(15,-1)
+(16,cblk->numpasses + mycounter)
+(17,cblk->numpasses)
+(18,seg = cblk->curseg)
+(19,)
+(20,if (!(inb = jpc_bitstream_sopen(pkthdrstream, "r")
+(21,cblk = prc->cblks)
+(22,seg->numpasses += n)
+(23,bodylen)
+(24,hdrlen)
+(25,seg->maxpasses = maxpasses)
+(26,seg)
+(27,inb)
+(28,prc = &band->prcs[prcno])
+(29,prc->cblks)
+(30,dec->curtile)
+(31,numimsbs)
+(32,seg->next)
+(33,cblk->numpasses)
+(34,!seg->stream)
+(35,jpc_getdata(in, seg->stream, seg->cnt)
+(36,mycounter)
+(37,bandno = 0)
+(38,if (!discard && !seg)
+(39,cblk)
+(40,n)
+(41,3)
+(42,cblks)
+(43,cblks)
+(44,1)
+(45,&tcomp->rlvls[rlvlno])
+(46,)
+(47,1)
+(48,cp->ccps)
+(49,)
+(50,jpc_seg_alloc()
+(51,if (jpc_ms_gettype(ms)
+(52,continue;)
+(53,n)
+(54,numcblks)
+(55,prcs)
+(56,cblk->curseg = seg)
+(57,1)
+(58,if (jas_getdbglevel()
+(59,seg->cnt)
+(60,inb = jpc_bitstream_sopen(pkthdrstream, "r")
+(61,firstpassno)
+(62,band)
+(63,)
+(64,discard)
+(65,bandno < rlvl->numbands)
+(66,"r")
+(67,prc = &band->prcs[prcno])
+(68,!(inb = jpc_bitstream_sopen(pkthdrstream, "r")
+(69,return -1;)
+(70,present)
+(71,curseg)
+(72,band)
+(73,JPC_MS_SOP)
+(74,(len = jpc_bitstream_getbits(inb, cblk->numlenbits + jpc_floorlog2(n)
+(75,10)
+(76,leaf = jpc_tagtree_getleaf(prc->numimsbstagtree, usedcblkcnt - 1)
+(77,hdroffend = jas_stream_getrwcount(pkthdrstream)
+(78,band)
+(79,if (seg->numpasses >= seg->maxpasses)
+(80,(included = jpc_bitstream_getbit(inb)
+(81,jas_eprintf("alignment failed\\n")
+(82,cblk->firstpassno)
+(83,jas_eprintf("packet body offset=%06ld\\n", (long)
+(84,"lyrno=%02d, compno=%02d, lvlno=%02d, prcno=%02d, bandno=%02d, cblkno=%02d, passno=%02d numpasses=%02d cnt=%d numbps=%d, numimsbs=%d\\n")
+(85,seg)
+(86,cnt)
+(87,!discard)
+(88,(unsigned long)
+(89,bandno = 0)
+(90,leaf)
+(91,)
+(92,cblkno < prc->numcblks)
+(93,jas_getdbglevel()
+(94,ret)
+(95,JAS_DBGLOG(10, ("included=%d ", included)
+(96,numnewpasses)
+(97,m)
+(98,(unsigned long)
+(99,stream)
+(100,0x7f)
+(101,dec->cstate)
+(102,cblkno)
+(103,JPC_MS_EPH)
+(104,jas_eprintf("missing SOP marker segment\\n")
+(105,cblk)
+(106,i)
+(107,if (present)
+(108,seg)
+(109,)
+(110,continue;)
+(111,if (!cblk->numpasses)
+(112,return -1;)
+(113,1)
+(114,JAS_MIN(numnewpasses, maxpasses)
+(115,tile = dec->curtile)
+(116,-1)
+(117,prc)
+(118,)
+(119,n)
+(120,jpc_bitstream_inalign(inb, 0x7f, 0)
+(121,inb)
+(122,cblk)
+(123,bodylen)
+(124,++bandno)
+(125,-1)
+(126,prcno)
+(127,prc)
+(128,int lyrno)
+(129,!prc->cblks)
+(130,if ((included = jpc_tagtree_decode(prc->incltagtree, leaf, lyrno + 1, inb)
+(131,cblk)
+(132,rlvl = &tcomp->rlvls[rlvlno])
+(133,if (cp->csty & JPC_COD_EPH)
+(134,prc)
+(135,included)
+(136,numnewpasses -= n)
+(137,cblk->numimsbs)
+(138,)
+(139,0)
+(140,0)
+(141,rlvlno)
+(142,cp->csty & JPC_COD_EPH)
+(143,(m = jpc_getcommacode(inb)
+(144,0)
+(145,return -1;)
+(146,inb)
+(147,!cblk->numpasses)
+(148,++band)
+(149,prcno)
+(150,(included = jpc_tagtree_decode(prc->incltagtree, leaf, lyrno + 1, inb)
+(151,)
+(152,!(ms = jpc_getms(in, dec->cstate)
+(153,"len=%d ")
+(154,jpc_bitstream_inalign(inb, 0, 0)
+(155,ccp = &cp->ccps[compno])
+(156,lyrno)
+(157,prc)
+(158,if (jpc_getdata(in, seg->stream, seg->cnt)
+(159,tcomp->rlvls[rlvlno])
+(160,bandno < rlvl->numbands)
+(161,cblk->numpasses)
+(162,seg)
+(163,pkthdrstream)
+(164,cblk->numpasses)
+(165,)
+(166,numimsbs)
+(167,cnt)
+(168,numpasses)
+(169,0)
+(170,seg)
+(171,seg)
+(172,)
+(173,cblk)
+(174,bandno)
+(175,cp)
+(176,in)
+(177,passno)
+(178,ms)
+(179,ccp)
+(180,inb)
+(181,in)
+(182,cblk)
+(183,0)
+(184,0)
+(185,seg)
+(186,tail)
+(187,ccp->cblkctx)
+(188,rlvl->numbands)
+(189,prcno)
+(190,return 0;)
+(191,cblkno)
+(192,stream)
+(193,tcomp)
+(194,0)
+(195,)
+(196,0)
+(197,rlvl)
+(198,cblk)
+(199,-1)
+(200,)
+(201,1)
+(202,"\\n")
+(203,tcomp->rlvls[rlvlno])
+(204,bodylen)
+(205,pkthdrstream)
+(206,if (!cblk->numpasses)
+(207,10)
+(208,continue;)
+(209,jpc_getms(in, dec->cstate)
+(210,0)
+(211,mycounter)
+(212,tile->tcomps)
+(213,seg = seg->next)
+(214,usedcblkcnt)
+(215,cblkno)
+(216,hdroffstart)
+(217,compno)
+(218,seg)
+(219,1)
+(220,lyrno)
+(221,)
+(222,)
+(223,seg)
+(224,ms)
+(225,included)
+(226,cblk->segs)
+(227,hdroffstart = jas_stream_getrwcount(pkthdrstream)
+(228,JAS_CAST(int, bodylen)
+(229,cblkctx)
+(230,numnewpasses)
+(231,ccp)
+(232,jpc_dec_lookahead(in)
+(233,return -1;)
+(234,prc->incltagtree)
+(235,curseg)
+(236,seg)
+(237,maxlyrs)
+(238,cblk)
+(239,tcomp)
+(240,10)
+(241,cp->csty)
+(242,if (!band->data)
+(243,seg)
+(244,bandno)
+(245,&cblk->segs)
+(246,)
+(247,)
+(248,if (!(seg = jpc_seg_alloc()
+(249,seg)
+(250,JAS_DBGLOG(10, ("numnewpasses=%d ", numnewpasses)
+(251,curseg)
+(252,ms)
+(253,)
+(254,)
+(255,band->data)
+(256,jpc_ms_gettype(ms)
+(257,included = jpc_tagtree_decode(prc->incltagtree, leaf, lyrno + 1, inb)
+(258,firstpassno)
+(259,inb)
+(260,cblk)
+(261,ms = jpc_getms(in, dec->cstate)
+(262,if (ret)
+(263,seg->cnt > 0)
+(264,segs)
+(265,seg->next)
+(266,rlvl->bands)
+(267,curseg)
+(268,)
+(269,len)
+(270,1)
+(271,1)
+(272,)
+(273,)
+(274,rlvls)
+(275,prc->numimsbstagtree)
+(276,prc->cblks)
+(277,seg->stream)
+(278,hdrlen)
+(279,rlvlno)
+(280,)
+(281,cblk->numimsbs * 3)
+(282,jas_getdbglevel()
+(283,discard)
+(284,jpc_dec_lookahead(in)
+(285,++cblkno)
+(286,JPC_COX_LAZY)
+(287,JPC_SEGPASSCNT(passno, cblk->firstpassno, 10000, (ccp->cblkctx & JPC_COX_LAZY)
+(288,hdrlen)
+(289,leaf)
+(290,numpasses)
+(291,numpasses)
+(292,maxpasses)
+(293,hdroffstart)
+(294,++cblkno)
+(295,jpc_tagtree_getleaf(prc->incltagtree, usedcblkcnt - 1)
+(296,seg)
+(297,"included=%d ")
+(298,1)
+(299,return -1;)
+(300,if ((len = jpc_bitstream_getbits(inb, cblk->numlenbits + jpc_floorlog2(n)
+(301,++cblk)
+(302,segs)
+(303,!(seg = jpc_seg_alloc()
+(304,cblk->numpasses += savenumnewpasses)
+(305,numlenbits)
+(306,"\\n")
+(307,hdroffend)
+(308,maxpasses)
+(309,hdroffend)
+(310,numnewpasses = jpc_getnumnewpasses(inb)
+(311,passno)
+(312,seg->maxpasses)
+(313,savenumnewpasses)
+(314,savenumnewpasses)
+(315,-1)
+(316,)
+(317,10)
+(318,if (jas_stream_gobble(in, bodylen)
+(319,jpc_tagtree_decode(prc->numimsbstagtree, leaf, i, inb)
+(320,)
+(321,0)
+(322,rlvl = &tcomp->rlvls[rlvlno])
+(323,i = 1)
+(324,)
+(325,cblks)
+(326,inb)
+(327,)
+(328,seg)
+(329,)
+(330,if (cp->csty & JPC_COD_SOP)
+(331,inb)
+(332,prc)
+(333,JAS_DBGLOG(10, ("\\n")
+(334,jas_getdbglevel()
+(335,prc->cblks)
+(336,passno)
+(337,0)
+(338,continue;)
+(339,jas_eprintf("lyrno=%02d, compno=%02d, lvlno=%02d, prcno=%02d, bandno=%02d, cblkno=%02d, passno=%02d numpasses=%02d cnt=%d numbps=%d, numimsbs=%d\\n", lyrno, compno, rlvlno, prcno, band - rlvl->bands, cblk - prc->cblks, seg->passno, seg->numpasses, seg->cnt, band->numbps, cblk->numimsbs)
+(340,ret)
+(341,&cp->ccps[compno])
+(342,!discard)
+(343,cblkno = 0)
+(344,1)
+(345,jas_stream_getrwcount(in)
+(346,cp->csty & JPC_COD_SOP)
+(347,ms)
+(348,cblk)
+(349,cblk)
+(350,!cblk->numpasses)
+(351,rlvls)
+(352,maxpasses)
+(353,jpc_getdata(in, seg->stream, seg->cnt)
+(354,band = rlvl->bands)
+(355,jas_stream_t *pkthdrstream)
+(356,JAS_DBGLOG(10, ("increment=%d ", m)
+(357,numbands)
+(358,seg)
+(359,&band->prcs[prcno])
+(360,cblk->numimsbs = i - 1)
+(361,JAS_DBGLOG(10, ("len=%d ", len)
+(362,)
+(363,cp = tile->cp)
+(364,0)
+(365,leaf)
+(366,cstate)
+(367,cnt)
+(368,0)
+(369,band)
+(370,next)
+(371,(long)
+(372,bandno)
+(373,for (cblkno = 0, cblk = prc->cblks; cblkno < prc->numcblks;\\n\\t\\t\\t  ++cblkno, ++cblk)
+(374,jpc_ms_gettype(ms)
+(375,rlvl->bands)
+(376,cblk->firstpassno + cblk->numpasses + mycounter)
+(377,seg->lyrno = lyrno)
+(378,pkthdrstream)
+(379,if (!discard)
+(380,band->prcs)
+(381,tile->tcomps[compno])
+(382,band)
+(383,i)
+(384,1)
+(385,numcblks)
+(386,10)
+(387,usedcblkcnt - 1)
+(388,band)
+(389,prc->incltagtree)
+(390,int)
+(391,(numnewpasses = jpc_getnumnewpasses(inb)
+(392,seg)
+(393,bodylen)
+(394,discard)
+(395,0)
+(396,maxpasses)
+(397,ms = jpc_getms(pkthdrstream, dec->cstate)
+(398,)
+(399,cblk)
+(400,hdroffend - hdroffstart)
+(401,seg->stream = jas_stream_memopen(0, 0)
+(402,0)
+(403,1)
+(404,cblk)
+(405,band = rlvl->bands)
+(406,!band->data)
+(407,)
+(408,if (!discard)
+(409,if (seg->cnt > 0)
+(410,return -1;)
+(411,)
+(412,cblk->numimsbs)
+(413,prc->numimsbstagtree)
+(414,if (!(seg->stream = jas_stream_memopen(0, 0)
+(415,seg)
+(416,prc)
+(417,JAS_DBGLOG(10, ("present=%d ", present)
+(418,present)
+(419,seg->passno = passno)
+(420,seg)
+(421,jas_stream_gobble(in, bodylen)
+(422,cp)
+(423,numimsbs)
+(424,dec->cstate)
+(425,numimsbstagtree)
+(426,)
+(427,inb)
+(428,prc->numcblks)
+(429,(present = jpc_bitstream_getbit(inb)
+(430,band)
+(431,usedcblkcnt)
+(432,tcomp = &tile->tcomps[compno])
+(433,ms)
+(434,cp)
+(435,m)
+(436,jpc_ms_destroy(ms)
+(437,10000)
+(438,seg->numpasses)
+(439,bands)
+(440,int rlvlno)
+(441,len)
+(442,)
+(443,!discard)
+(444,seg)
+(445,dec)
+(446,numnewpasses)
+(447,if (jpc_dec_lookahead(in)
+(448,cblk)
+(449,band)
+(450,jpc_getnumnewpasses(inb)
+(451,tcomp)
+(452,seg)
+(453,maxpasses)
+(454,ms)
+(455,i)
+(456,"hdrlen=%lu bodylen=%lu \\n")
+(457,present)
+(458,seg)
+(459,n)
+(460,rlvl)
+(461,seg)
+(462,present)
+(463,0)
+(464,numnewpasses)
+(465,dec)
+(466,0)
+(467,-1)
+(468,len)
+(469,cblk)
+(470,tcomp = &tile->tcomps[compno])
+(471,0)
+(472,(ccp->cblkctx & JPC_COX_TERMALL)
+(473,seg)
+(474,seg->lyrno)
+(475,if (numnewpasses > 0)
+(476,1)
+(477,tcomp->rlvls)
+(478,incltagtree)
+(479,if (!prc->cblks)
+(480,++band)
+(481,jpc_ms_destroy(ms)
+(482,bandno)
+(483,curseg)
+(484,ret = jpc_tagtree_decode(prc->numimsbstagtree, leaf, i, inb)
+(485,bands)
+(486,discard)
+(487,rlvlno)
+(488,cblkno = 0)
+(489,JPC_SEGTYPE(seg->passno, cblk->firstpassno, (ccp->cblkctx & JPC_COX_LAZY)
+(490,cblk->firstpassno)
+(491,discard = (lyrno >= dec->maxlyrs)
+(492,cblk->curseg)
+(493,dec)
+(494,n)
+(495,-1)
+(496,seg->cnt = len)
+(497,band)
+(498,seg->stream)
+(499,ccp)
+(500,-1)
+(501,1)
+(502,"numnewpasses=%d ")
+(503,cblk)
+(504,curtile)
+(505,int compno)
+(506,cp)
+(507,seg->numpasses >= seg->maxpasses)
+(508,seg->cnt)
+(509,in)
+(510,tcomp)
+(511,rlvl)
+(512,break;)
+(513,)
+(514,band->numbps)
+(515,1)
+(516,rlvl->numbands)
+(517,numnewpasses)
+(518,tile->tcomps[compno])
+(519,jas_eprintf("missing EPH marker segment\\n")
+(520,seg->passno)
+(521,cblkctx)
+(522,-1)
+(523,unsigned long)
+(524,seg)
+(525,seg->passno)
+(526,)
+(527,for (bandno = 0, band = rlvl->bands; bandno < rlvl->numbands;\\n\\t\\t  ++bandno, ++band)
+(528,included)
+(529,ccp)
+(530,seg->passno)
+(531,1)
+(532,len = jpc_bitstream_getbits(inb, cblk->numlenbits + jpc_floorlog2(n)
+(533,for (cblkno = 0, cblk = prc->cblks; cblkno < prc->numcblks;\\n\\t\\t\\t  ++cblkno, ++cblk)
+(534,band->data)
+(535,)
+(536,1)
+(537,rlvl->bands)
+(538,0)
+(539,cblk->numlenbits)
+(540,(ccp->cblkctx & JPC_COX_LAZY)
+(541,)
+(542,tcomps)
+(543,present)
+(544,)
+(545,0)
+(546,)
+(547,cblk)
+(548,numpasses)
+(549,m)
+(550,lyrno)
+(551,passno)
+(552,cblk->segs.tail)
+(553,n = JAS_MIN(numnewpasses, maxpasses)
+(554,rlvl)
+(555,cblkctx)
+(556,1)
+(557,discard)
+(558,lyrno >= dec->maxlyrs)
+(559,JPC_COD_SOP)
+(560,rlvl)
+(561,band->prcs[prcno])
+(562,stream)
+(563,jpc_dec_t *dec)
+(564,jas_stream_getrwcount(pkthdrstream)
+(565,0)
+(566,jas_getdbglevel()
+(567,hdroffend)
+(568,numbands)
+(569,mycounter = 0)
+(570,)
+(571,!seg)
+(572,compno)
+(573,inb)
+(574,seg)
+(575,seg->maxpasses)
+(576,prc)
+(577,prc->cblks)
+(578,-1)
+(579,bodylen = 0)
+(580,0)
+(581,JPC_COD_EPH)
+(582,JPC_MS_EPH)
+(583,prc)
+(584,dec->maxlyrs)
+(585,cblk)
+(586,)
+(587,if ((included = jpc_bitstream_getbit(inb)
+(588,cblk->curseg)
+(589,cblk)
+(590,cblkno)
+(591,rlvl)
+(592,return -1;)
+(593,seg->next)
+(594,return -1;)
+(595,jpc_ms_destroy(ms)
+(596,seg)
+(597,if (!cblk->curseg)
+(598,long)
+(599,leaf = jpc_tagtree_getleaf(prc->incltagtree, usedcblkcnt - 1)
+(600,if (jas_getdbglevel()
+(601,cblk->firstpassno)
+(602,included)
+(603,return -1;)
+(604,)
+(605,if (!included)
+(606,if ((ret = jpc_tagtree_decode(prc->numimsbstagtree, leaf, i, inb)
+(607,return -1;)
+(608,jpc_seglist_insert(&cblk->segs, cblk->segs.tail, seg)
+(609,cblk)
+(610,ccp->cblkctx & JPC_COX_LAZY)
+(611,ret)
+(612,prc)
+(613,JPC_COX_TERMALL)
+(614,mycounter)
+(615,numpasses)
+(616,passno)
+(617,usedcblkcnt)
+(618,cblk)
+(619,!band->data)
+(620,JPC_MS_SOP)
+(621,cblk->firstpassno)
+(622,maxpasses)
+(623,ms)
+(624,-1)
+(625,savenumnewpasses)
+(626,inb)
+(627,1)
+(628,cblk->numlenbits + jpc_floorlog2(n)
+(629,seg)
+(630,jpc_tagtree_getleaf(prc->numimsbstagtree, usedcblkcnt - 1)
+(631,ms)
+(632,return -1;)
+(633,)
+(634,tile->tcomps)
+(635,seg->type = JPC_SEGTYPE(seg->passno, cblk->firstpassno, (ccp->cblkctx & JPC_COX_LAZY)
+(636,seg)
+(637,cblk->curseg)
+(638,)
+(639,)
+(640,numlenbits)
+(641,prcs)
+(642,cblk->curseg)
+(643,cnt)
+(644,!(seg->stream = jas_stream_memopen(0, 0)
+(645,cp)
+(646,&band->prcs[prcno])
+(647,seg = cblk->curseg)
+(648,numnewpasses)
+(649,seg->cnt)
+(650,included)
+(651,bodylen += len)
+(652,&tile->tcomps[compno])
+(653,jpc_ms_gettype(ms)
+(654,dec)
+(655,ccp->cblkctx & JPC_COX_TERMALL)
+(656,cblk->numimsbs)
+(657,"missing SOP marker segment\\n")
+(658,passno)
+(659,numnewpasses > 0)
+(660,seg->cnt)
+(661,m)
+(662,0)
+(663,jas_stream_getrwcount(pkthdrstream)
+(664,)
+(665,lyrno)
+(666,bodylen = 0)
+(667,ccp->cblkctx)
+(668,csty)
+(669,n)
+(670,mycounter)
+(671,numimsbstagtree)
+(672,10)
+(673,ms)
+(674,"packet body offset=%06ld\\n")
+(675,++i)
+(676,return 1;)
+(677,(ret = jpc_tagtree_decode(prc->numimsbstagtree, leaf, i, inb)
+(678,band->prcs[prcno])
+(679,compno)
+(680,seg = jpc_seg_alloc()
+(681,jpc_dec_lookahead(pkthdrstream)
+(682,if (!seg->stream)
+(683,data)
+(684,0)
+(685,-1)
+(686,prc)
+(687,seg->numpasses)
+(688,cstate)
+(689,!cblk->curseg)
+(690,mycounter += n)
+(691,cblk)
+(692,seg->cnt = 0)
+(693,rlvl)
+(694,numnewpasses)
+(695,cblkno < prc->numcblks)
+(696,if (!(ms = jpc_getms(pkthdrstream, dec->cstate)
+(697,return -1;)
+(698,band)
+(699,jpc_bitstream_getbits(inb, cblk->numlenbits + jpc_floorlog2(n)
+(700,bandno)
+(701,1)
+(702,!(ms = jpc_getms(pkthdrstream, dec->cstate)
+(703,1)
+(704,passno)
+(705,tcomp)
+(706,0)
+(707,)
+(708,bands)
+(709,numpasses)
+(710,cblk->curseg = seg->next)
+(711,usedcblkcnt)
+(712,tile)
+(713,cp)
+(714,1)
+(715,)
+(716,band->prcs)
+(717,len)
+(718,++usedcblkcnt)
+(719,)
+(720,continue;)
+(721,ccp->cblkctx)
+(722,unsigned long)
+(723,-1)
+(724,cblkno)
+(725,i - 1)
+(726,numpasses)
+(727,bodylen)
+(728,jpc_ms_gettype(ms)
+(729,0)
+(730,leaf)
+(731,ccps)
+(732,maxpasses = JPC_SEGPASSCNT(passno, cblk->firstpassno, 10000, (ccp->cblkctx & JPC_COX_LAZY)
+(733,seg->numpasses)
+(734,if (jpc_dec_lookahead(pkthdrstream)
+(735,"cannot get (EPH)
+(736,hdrlen = hdroffend - hdroffstart)
+(737,)
+(738,usedcblkcnt)
+(739,jpc_bitstream_sopen(pkthdrstream, "r")
+(740,)
+(741,seg->stream)
+(742,jpc_bitstream_getbit(inb)
+(743,inb)
+(744,usedcblkcnt = 0)
+(745,if (!(ms = jpc_getms(in, dec->cstate)
+(746,while (numnewpasses > 0)
+(747,lyrno + 1)
+(748,JPC_COX_LAZY)
+(749,seg->type)
+(750,seg)
+(751,cblk = prc->cblks)
+(752,-1)
+(753,-1)
+(754,++cblk)
+(755,-1)
+(756,tcomps)
+(757,bodylen)
+(758,!prc->cblks)
+(759,0)
+(760,pkthdrstream)
+(761,band - rlvl->bands)
+(762,lyrno)
+(763,hdroffstart)
+(764,cblkno)
+(765,cp->ccps[compno])
+(766,passno = cblk->firstpassno + cblk->numpasses + mycounter)
+(767,if (!band->data)
+(768,i)
+(769,"present=%d ")
+(770,jas_stream_memopen(0, 0)
+(771,&tile->tcomps[compno])
+(772,jpc_bitstream_close(inb)
+(773,in)
+(774,prc)
+(775,cblk->numlenbits)
+(776,i)
+(777,cblk)
+(778,return -1;)
+(779,jas_eprintf("hdrlen=%lu bodylen=%lu \\n", (unsigned long)
+(780,)
+(781,cblkno)
+(782,compno)
+(783,return -1;)
+(784,savenumnewpasses = numnewpasses)
+(785,10)
+(786,jpc_bitstream_getbit(inb)
+(787,!included)
+(788,)
+(789,cblk)
+(790,m = jpc_getcommacode(inb)
+(791,0)
+(792,seg->cnt)
+(793,tcomp->rlvls)
+(794,for (;;)
+(795,prc)
+(796,jas_stream_gobble(in, bodylen)
+(797,seg)
+(798,)
+(799,for (bandno = 0, band = rlvl->bands; bandno < rlvl->numbands;\\n\\t\\t  ++bandno, ++band)
+(800,incltagtree)
+(801,prc)
+(802,next)
+(803,seg = seg->next)
+(804,jpc_tagtree_decode(prc->incltagtree, leaf, lyrno + 1, inb)
+(805,data)
+(806,cblk->curseg)
+(807,rlvl)
+(808,)
+(809,prc->cblks)
+(810,(ccp->cblkctx & JPC_COX_LAZY)
+(811,prc->numcblks)
+(812,"alignment failed\\n")
+(813,tile)
+(814,next)
+(815,return -1;)
+(816,++bandno)
+(817,inb)
+(818,while (seg)
+(819,)
+(820,)
+(821,cblk)
+(822,jpc_ms_destroy(ms)
+(823,"missing EPH marker segment\\n")
+(824,&tcomp->rlvls[rlvlno])
+(825,if ((numnewpasses = jpc_getnumnewpasses(inb)
+(826,cblk->numlenbits += m)
+(827,present = jpc_bitstream_getbit(inb)
+(828,firstpassno)
+(829,cblks)
+(830,)
+(831,cblk->segs)
+(832,bandno)
+(833,ccp->cblkctx & JPC_COX_LAZY)
+(834,)
+(835,leaf)
+(836,jpc_dec_lookahead(pkthdrstream)
+(837,cblk)
+(838,if (jpc_bitstream_inalign(inb, 0x7f, 0)
+(839,)
+(840,cblks)
+(841,"increment=%d ")
+(842,included = jpc_bitstream_getbit(inb)
+(843,tile)
+(844,5)
+(845,if (jpc_ms_gettype(ms)
+(846,jas_stream_t *in)
+(847,cp->csty)
+(848,int prcno)
+(849,seg)
+(850,numbps)
+(851,if (!prc->cblks)
+(852,in)
+(853,jpc_getms(pkthdrstream, dec->cstate)
+(854,1)
+(855,band)
+(856,cblk - prc->cblks)
+(857,RET)
+(858,type)
+(859,usedcblkcnt - 1)
+(860,len)
+(861,tile->cp)
+(862,0)
+(863,if ((m = jpc_getcommacode(inb)
+(864,prc)
+(865,jpc_floorlog2(n)
+(866,jpc_getcommacode(inb)
+(867,JAS_DBGLOG(10, ("\\n", present)
+(868,pkthdrstream)
+(869,)
+(870,ccp)
+(871,bandno)
+(872,firstpassno)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

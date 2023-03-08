@@ -1,0 +1,2397 @@
+-----label-----
+1
+-----code-----
+static void
+ChopUpSingleUncompressedStrip(TIFF* tif)
+{
+	register TIFFDirectory *td = &tif->tif_dir;
+	uint64 bytecount;
+	uint64 offset;
+	uint32 rowblock;
+	uint64 rowblockbytes;
+	uint64 stripbytes;
+	uint32 strip;
+	uint32 nstrips;
+	uint32 rowsperstrip;
+	uint64* newcounts;
+	uint64* newoffsets;
+
+	bytecount = td->td_stripbytecount[0];
+        /* On a newly created file, just re-opened to be filled, we */
+        /* don't want strip chop to trigger as it is going to cause issues */
+        /* later ( StripOffsets and StripByteCounts improperly filled) . */
+        if( bytecount == 0 && tif->tif_mode != O_RDONLY )
+            return;
+	offset = td->td_stripoffset[0];
+	assert(td->td_planarconfig == PLANARCONFIG_CONTIG);
+	if ((td->td_photometric == PHOTOMETRIC_YCBCR)&&
+	    (!isUpSampled(tif)))
+		rowblock = td->td_ycbcrsubsampling[1];
+	else
+		rowblock = 1;
+	rowblockbytes = TIFFVTileSize64(tif, rowblock);
+	/*
+	 * Make the rows hold at least one scanline, but fill specified amount
+	 * of data if possible.
+	 */
+	if (rowblockbytes > STRIP_SIZE_DEFAULT) {
+		stripbytes = rowblockbytes;
+		rowsperstrip = rowblock;
+	} else if (rowblockbytes > 0 ) {
+		uint32 rowblocksperstrip;
+		rowblocksperstrip = (uint32) (STRIP_SIZE_DEFAULT / rowblockbytes);
+		rowsperstrip = rowblocksperstrip * rowblock;
+		stripbytes = rowblocksperstrip * rowblockbytes;
+	}
+	else
+	    return;
+
+	/*
+	 * never increase the number of rows per strip
+	 */
+	if (rowsperstrip >= td->td_rowsperstrip)
+		return;
+        nstrips = TIFFhowmany_32(td->td_imagelength, rowsperstrip);
+        if( nstrips == 0 )
+            return;
+
+	newcounts = (uint64*) _TIFFCheckMalloc(tif, nstrips, sizeof (uint64),
+				"for chopped \"StripByteCounts\" array");
+	newoffsets = (uint64*) _TIFFCheckMalloc(tif, nstrips, sizeof (uint64),
+				"for chopped \"StripOffsets\" array");
+	if (newcounts == NULL || newoffsets == NULL) {
+		/*
+		 * Unable to allocate new strip information, give up and use
+		 * the original one strip information.
+		 */
+		if (newcounts != NULL)
+			_TIFFfree(newcounts);
+		if (newoffsets != NULL)
+			_TIFFfree(newoffsets);
+		return;
+	}
+	/*
+	 * Fill the strip information arrays with new bytecounts and offsets
+	 * that reflect the broken-up format.
+	 */
+	for (strip = 0; strip < nstrips; strip++) {
+		if (stripbytes > bytecount)
+			stripbytes = bytecount;
+		newcounts[strip] = stripbytes;
+		newoffsets[strip] = stripbytes ? offset : 0;
+		offset += stripbytes;
+		bytecount -= stripbytes;
+	}
+	/*
+	 * Replace old single strip info with multi-strip info.
+	 */
+	td->td_stripsperimage = td->td_nstrips = nstrips;
+	TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, rowsperstrip);
+
+	_TIFFfree(td->td_stripbytecount);
+	_TIFFfree(td->td_stripoffset);
+	td->td_stripbytecount = newcounts;
+	td->td_stripoffset = newoffsets;
+	td->td_stripbytecountsorted = 1;
+}
+-----children-----
+1,2
+1,3
+1,4
+3,4
+3,5
+5,6
+5,7
+6,7
+8,9
+8,10
+11,12
+11,13
+11,14
+11,15
+11,16
+11,17
+11,18
+11,19
+11,20
+11,21
+11,22
+11,23
+11,24
+11,25
+11,26
+11,27
+11,28
+11,29
+11,30
+11,31
+11,32
+11,33
+11,34
+11,35
+11,36
+11,37
+11,38
+11,39
+11,40
+11,41
+11,42
+11,43
+12,13
+13,14
+13,15
+14,15
+16,17
+16,18
+16,19
+19,20
+20,21
+21,22
+21,23
+22,23
+25,26
+26,27
+26,28
+27,28
+29,30
+31,32
+32,33
+32,34
+33,34
+35,36
+37,38
+38,39
+38,40
+39,40
+41,42
+43,44
+44,45
+44,46
+45,46
+47,48
+49,50
+50,51
+50,52
+51,52
+53,54
+55,56
+56,57
+56,58
+57,58
+59,60
+61,62
+62,63
+62,64
+63,64
+65,66
+67,68
+68,69
+68,70
+69,70
+71,72
+73,74
+74,75
+74,76
+75,76
+77,78
+77,79
+80,81
+81,82
+81,83
+82,83
+84,85
+84,86
+87,88
+88,89
+88,90
+89,90
+91,92
+91,93
+92,93
+92,94
+93,94
+97,98
+97,99
+98,99
+98,100
+99,100
+99,101
+100,101
+103,104
+103,105
+104,105
+104,106
+105,106
+108,109
+111,112
+112,113
+112,114
+113,114
+115,116
+115,117
+116,117
+116,118
+117,118
+121,122
+122,123
+122,124
+123,124
+125,126
+125,127
+126,127
+126,128
+127,128
+130,131
+132,133
+132,134
+132,135
+133,134
+133,135
+134,135
+135,136
+135,137
+136,137
+136,138
+137,138
+140,141
+142,143
+143,144
+144,145
+144,146
+145,146
+147,148
+149,150
+150,151
+150,152
+151,152
+153,154
+153,155
+154,155
+154,156
+155,156
+159,160
+160,161
+160,162
+161,162
+164,165
+165,166
+165,167
+166,167
+168,169
+168,170
+168,171
+169,170
+171,172
+173,174
+175,176
+175,177
+175,178
+176,177
+176,178
+177,178
+179,180
+181,182
+181,183
+182,183
+183,184
+183,185
+184,185
+186,187
+188,189
+189,190
+189,191
+190,191
+192,193
+194,195
+194,196
+194,197
+195,196
+195,197
+196,197
+199,200
+199,201
+199,202
+199,203
+200,201
+201,202
+201,203
+202,203
+204,205
+206,207
+207,208
+207,209
+208,209
+210,211
+210,212
+211,212
+212,213
+214,215
+214,216
+215,216
+217,218
+219,220
+220,221
+220,222
+221,222
+223,224
+223,225
+224,225
+226,227
+228,229
+229,230
+229,231
+230,231
+232,233
+232,234
+233,234
+235,236
+238,239
+238,240
+239,240
+239,241
+240,241
+242,243
+242,244
+243,244
+247,248
+248,249
+248,250
+249,250
+251,252
+251,253
+251,254
+252,253
+254,255
+254,256
+255,256
+258,259
+260,261
+260,262
+261,262
+261,263
+262,263
+266,267
+267,268
+267,269
+268,269
+270,271
+270,272
+271,272
+271,273
+272,273
+274,275
+276,277
+276,278
+276,279
+276,280
+276,281
+277,278
+279,280
+281,282
+283,284
+284,285
+284,286
+285,286
+289,290
+290,291
+290,292
+291,292
+293,294
+293,295
+294,295
+294,296
+295,296
+297,298
+299,300
+299,301
+299,302
+299,303
+299,304
+300,301
+302,303
+304,305
+306,307
+307,308
+307,309
+308,309
+312,313
+312,314
+313,314
+313,315
+314,315
+314,316
+315,316
+317,318
+319,320
+319,321
+320,321
+322,323
+324,325
+324,326
+324,327
+325,326
+325,327
+326,327
+326,328
+327,328
+329,330
+331,332
+332,333
+332,334
+333,334
+335,336
+337,338
+337,339
+338,339
+338,340
+339,340
+341,342
+343,344
+344,345
+344,346
+345,346
+347,348
+350,351
+350,352
+350,353
+350,354
+351,352
+352,353
+352,354
+353,354
+356,357
+356,358
+357,358
+359,360
+361,362
+362,363
+364,365
+364,366
+364,367
+364,368
+364,369
+365,366
+365,367
+366,367
+366,368
+367,368
+369,370
+371,372
+372,373
+372,374
+373,374
+375,376
+377,378
+378,379
+378,380
+379,380
+379,381
+380,381
+382,383
+384,385
+386,387
+387,388
+387,389
+388,389
+388,390
+389,390
+391,392
+393,394
+393,395
+393,396
+394,395
+396,397
+399,400
+400,401
+400,402
+401,402
+403,404
+405,406
+406,407
+406,408
+407,408
+409,410
+411,412
+412,413
+412,414
+413,414
+413,415
+414,415
+417,418
+417,419
+418,419
+418,420
+419,420
+422,423
+424,425
+425,426
+425,427
+425,428
+425,429
+426,427
+428,429
+430,431
+432,433
+434,435
+435,436
+435,437
+436,437
+438,439
+438,440
+439,440
+442,443
+443,444
+443,445
+444,445
+446,447
+446,448
+447,448
+450,451
+451,452
+451,453
+452,453
+452,454
+453,454
+456,457
+458,459
+459,460
+459,461
+460,461
+460,462
+461,462
+464,465
+466,467
+467,468
+467,469
+468,469
+468,470
+469,470
+-----nextToken-----
+2,4,7,9,10,15,17,18,23,24,28,30,34,36,40,42,46,48,52,54,58,60,64,66,70,72,76,78,79,83,85,86,90,94,95,96,101,102,106,107,109,110,114,118,119,120,124,128,129,131,138,139,141,146,148,152,156,157,158,162,163,167,170,172,174,178,180,185,187,191,193,197,198,203,205,209,213,216,218,222,225,227,231,234,236,237,241,244,245,246,250,253,256,257,259,263,264,265,269,273,275,278,280,282,286,287,288,292,296,298,301,303,305,309,310,311,316,318,321,323,328,330,334,336,340,342,346,348,349,354,355,358,360,363,368,370,374,376,381,383,385,390,392,395,397,398,402,404,408,410,415,416,420,421,423,427,429,431,433,437,440,441,445,448,449,454,455,457,462,463,465,470,471,472
+-----computeFrom-----
+88,89
+88,90
+98,99
+98,100
+99,100
+99,101
+103,104
+103,105
+112,113
+112,114
+125,126
+125,127
+133,134
+133,135
+135,136
+135,137
+150,151
+150,152
+160,161
+160,162
+165,166
+165,167
+176,177
+176,178
+183,184
+183,185
+189,190
+189,191
+195,196
+195,197
+207,208
+207,209
+214,215
+214,216
+220,221
+220,222
+223,224
+223,225
+229,230
+229,231
+232,233
+232,234
+239,240
+239,241
+248,249
+248,250
+261,262
+261,263
+267,268
+267,269
+290,291
+290,292
+313,314
+313,315
+314,315
+314,316
+319,320
+319,321
+326,327
+326,328
+338,339
+338,340
+352,353
+352,354
+356,357
+356,358
+366,367
+366,368
+372,373
+372,374
+378,379
+378,380
+387,388
+387,389
+400,401
+400,402
+406,407
+406,408
+412,413
+412,414
+417,418
+417,419
+451,452
+451,453
+459,460
+459,461
+467,468
+467,469
+-----guardedBy-----
+138,156
+178,187
+197,236
+316,336
+323,342
+321,348
+328,336
+340,348
+368,374
+370,376
+-----guardedByNegation-----
+178,236
+180,216
+-----lastLexicalUse-----
+178,236
+-----jump-----
+178,236
+-----attribute-----
+FunctionDefinition;SimpleDeclSpecifier;FunctionDeclarator;Name;ParameterDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;EqualsInitializer;UnaryExpression;FieldReference;IdExpression;Name;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Pointer;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ReturnStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;FunctionCallExpression;IdExpression;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;BinaryExpression;UnaryExpression;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;UnaryExpression;UnaryExpression;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;ArraySubscriptExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;CompoundStatement;DeclarationStatement;SimpleDeclaration;NamedTypeSpecifier;Name;Declarator;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;UnaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;IfStatement;BinaryExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ReturnStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;LiteralExpression;ReturnStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;Pointer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;TypeIdExpression;TypeId;NamedTypeSpecifier;Name;Declarator;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;CastExpression;TypeId;NamedTypeSpecifier;Name;Declarator;Pointer;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;TypeIdExpression;TypeId;NamedTypeSpecifier;Name;Declarator;LiteralExpression;IfStatement;BinaryExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;BinaryExpression;IdExpression;Name;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;ReturnStatement;ForStatement;ExpressionStatement;BinaryExpression;IdExpression;Name;LiteralExpression;BinaryExpression;IdExpression;Name;IdExpression;Name;UnaryExpression;IdExpression;Name;CompoundStatement;IfStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;ArraySubscriptExpression;IdExpression;Name;IdExpression;Name;ConditionalExpression;IdExpression;Name;IdExpression;Name;LiteralExpression;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;IdExpression;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;IdExpression;Name;IdExpression;Name;IdExpression;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;FunctionCallExpression;IdExpression;Name;FieldReference;IdExpression;Name;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;IdExpression;Name;ExpressionStatement;BinaryExpression;FieldReference;IdExpression;Name;Name;LiteralExpression;
+-----ast_node-----
+static voidChopUpSingleUncompressedStrip(TIFF* tif){	register TIFFDirectory *td = &tif->tif_dir;	uint64 bytecount;	uint64 offset;	uint32 rowblock;	uint64 rowblockbytes;	uint64 stripbytes;	uint32 strip;	uint32 nstrips;	uint32 rowsperstrip;	uint64* newcounts;	uint64* newoffsets;	bytecount = td->td_stripbytecount[0];        /* On a newly created file, just re-opened to be filled, we */        /* don't want strip chop to trigger as it is going to cause issues */        /* later ( StripOffsets and StripByteCounts improperly filled) . */        if( bytecount == 0 && tif->tif_mode != O_RDONLY )            return;	offset = td->td_stripoffset[0];	assert(td->td_planarconfig == PLANARCONFIG_CONTIG);	if ((td->td_photometric == PHOTOMETRIC_YCBCR)&&	    (!isUpSampled(tif)))		rowblock = td->td_ycbcrsubsampling[1];	else		rowblock = 1;	rowblockbytes = TIFFVTileSize64(tif, rowblock);	/*	 * Make the rows hold at least one scanline, but fill specified amount	 * of data if possible.	 */	if (rowblockbytes > STRIP_SIZE_DEFAULT) {		stripbytes = rowblockbytes;		rowsperstrip = rowblock;	} else if (rowblockbytes > 0 ) {		uint32 rowblocksperstrip;		rowblocksperstrip = (uint32) (STRIP_SIZE_DEFAULT / rowblockbytes);		rowsperstrip = rowblocksperstrip * rowblock;		stripbytes = rowblocksperstrip * rowblockbytes;	}	else	    return;	/*	 * never increase the number of rows per strip	 */	if (rowsperstrip >= td->td_rowsperstrip)		return;        nstrips = TIFFhowmany_32(td->td_imagelength, rowsperstrip);        if( nstrips == 0 )            return;	newcounts = (uint64*) _TIFFCheckMalloc(tif, nstrips, sizeof (uint64),				"for chopped \"StripByteCounts\" array");	newoffsets = (uint64*) _TIFFCheckMalloc(tif, nstrips, sizeof (uint64),				"for chopped \"StripOffsets\" array");	if (newcounts == NULL || newoffsets == NULL) {		/*		 * Unable to allocate new strip information, give up and use		 * the original one strip information.		 */		if (newcounts != NULL)			_TIFFfree(newcounts);		if (newoffsets != NULL)			_TIFFfree(newoffsets);		return;	}	/*	 * Fill the strip information arrays with new bytecounts and offsets	 * that reflect the broken-up format.	 */	for (strip = 0; strip < nstrips; strip++) {		if (stripbytes > bytecount)			stripbytes = bytecount;		newcounts[strip] = stripbytes;		newoffsets[strip] = stripbytes ? offset : 0;		offset += stripbytes;		bytecount -= stripbytes;	}	/*	 * Replace old single strip info with multi-strip info.	 */	td->td_stripsperimage = td->td_nstrips = nstrips;	TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, rowsperstrip);	_TIFFfree(td->td_stripbytecount);	_TIFFfree(td->td_stripoffset);	td->td_stripbytecount = newcounts;	td->td_stripoffset = newoffsets;	td->td_stripbytecountsorted = 1;}
+static void
+ChopUpSingleUncompressedStrip(TIFF* tif)
+ChopUpSingleUncompressedStrip
+TIFF* tif
+TIFF
+TIFF
+* tif
+*
+tif
+{	register TIFFDirectory *td = &tif->tif_dir;	uint64 bytecount;	uint64 offset;	uint32 rowblock;	uint64 rowblockbytes;	uint64 stripbytes;	uint32 strip;	uint32 nstrips;	uint32 rowsperstrip;	uint64* newcounts;	uint64* newoffsets;	bytecount = td->td_stripbytecount[0];        /* On a newly created file, just re-opened to be filled, we */        /* don't want strip chop to trigger as it is going to cause issues */        /* later ( StripOffsets and StripByteCounts improperly filled) . */        if( bytecount == 0 && tif->tif_mode != O_RDONLY )            return;	offset = td->td_stripoffset[0];	assert(td->td_planarconfig == PLANARCONFIG_CONTIG);	if ((td->td_photometric == PHOTOMETRIC_YCBCR)&&	    (!isUpSampled(tif)))		rowblock = td->td_ycbcrsubsampling[1];	else		rowblock = 1;	rowblockbytes = TIFFVTileSize64(tif, rowblock);	/*	 * Make the rows hold at least one scanline, but fill specified amount	 * of data if possible.	 */	if (rowblockbytes > STRIP_SIZE_DEFAULT) {		stripbytes = rowblockbytes;		rowsperstrip = rowblock;	} else if (rowblockbytes > 0 ) {		uint32 rowblocksperstrip;		rowblocksperstrip = (uint32) (STRIP_SIZE_DEFAULT / rowblockbytes);		rowsperstrip = rowblocksperstrip * rowblock;		stripbytes = rowblocksperstrip * rowblockbytes;	}	else	    return;	/*	 * never increase the number of rows per strip	 */	if (rowsperstrip >= td->td_rowsperstrip)		return;        nstrips = TIFFhowmany_32(td->td_imagelength, rowsperstrip);        if( nstrips == 0 )            return;	newcounts = (uint64*) _TIFFCheckMalloc(tif, nstrips, sizeof (uint64),				"for chopped \"StripByteCounts\" array");	newoffsets = (uint64*) _TIFFCheckMalloc(tif, nstrips, sizeof (uint64),				"for chopped \"StripOffsets\" array");	if (newcounts == NULL || newoffsets == NULL) {		/*		 * Unable to allocate new strip information, give up and use		 * the original one strip information.		 */		if (newcounts != NULL)			_TIFFfree(newcounts);		if (newoffsets != NULL)			_TIFFfree(newoffsets);		return;	}	/*	 * Fill the strip information arrays with new bytecounts and offsets	 * that reflect the broken-up format.	 */	for (strip = 0; strip < nstrips; strip++) {		if (stripbytes > bytecount)			stripbytes = bytecount;		newcounts[strip] = stripbytes;		newoffsets[strip] = stripbytes ? offset : 0;		offset += stripbytes;		bytecount -= stripbytes;	}	/*	 * Replace old single strip info with multi-strip info.	 */	td->td_stripsperimage = td->td_nstrips = nstrips;	TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, rowsperstrip);	_TIFFfree(td->td_stripbytecount);	_TIFFfree(td->td_stripoffset);	td->td_stripbytecount = newcounts;	td->td_stripoffset = newoffsets;	td->td_stripbytecountsorted = 1;}
+register TIFFDirectory *td = &tif->tif_dir;
+register TIFFDirectory *td = &tif->tif_dir;
+register TIFFDirectory
+TIFFDirectory
+*td = &tif->tif_dir
+*
+td
+= &tif->tif_dir
+&tif->tif_dir
+tif->tif_dir
+tif
+tif
+tif_dir
+uint64 bytecount;
+uint64 bytecount;
+uint64
+uint64
+bytecount
+bytecount
+uint64 offset;
+uint64 offset;
+uint64
+uint64
+offset
+offset
+uint32 rowblock;
+uint32 rowblock;
+uint32
+uint32
+rowblock
+rowblock
+uint64 rowblockbytes;
+uint64 rowblockbytes;
+uint64
+uint64
+rowblockbytes
+rowblockbytes
+uint64 stripbytes;
+uint64 stripbytes;
+uint64
+uint64
+stripbytes
+stripbytes
+uint32 strip;
+uint32 strip;
+uint32
+uint32
+strip
+strip
+uint32 nstrips;
+uint32 nstrips;
+uint32
+uint32
+nstrips
+nstrips
+uint32 rowsperstrip;
+uint32 rowsperstrip;
+uint32
+uint32
+rowsperstrip
+rowsperstrip
+uint64* newcounts;
+uint64* newcounts;
+uint64
+uint64
+* newcounts
+*
+newcounts
+uint64* newoffsets;
+uint64* newoffsets;
+uint64
+uint64
+* newoffsets
+*
+newoffsets
+bytecount = td->td_stripbytecount[0];
+bytecount = td->td_stripbytecount[0]
+bytecount
+bytecount
+td->td_stripbytecount[0]
+td->td_stripbytecount
+td
+td
+td_stripbytecount
+0
+if( bytecount == 0 && tif->tif_mode != O_RDONLY )            return;
+bytecount == 0 && tif->tif_mode != O_RDONLY
+bytecount == 0
+bytecount
+bytecount
+0
+tif->tif_mode != O_RDONLY
+tif->tif_mode
+tif
+tif
+tif_mode
+O_RDONLY
+O_RDONLY
+return;
+offset = td->td_stripoffset[0];
+offset = td->td_stripoffset[0]
+offset
+offset
+td->td_stripoffset[0]
+td->td_stripoffset
+td
+td
+td_stripoffset
+0
+assert(td->td_planarconfig == PLANARCONFIG_CONTIG);
+assert(td->td_planarconfig == PLANARCONFIG_CONTIG)
+assert
+assert
+td->td_planarconfig == PLANARCONFIG_CONTIG
+td->td_planarconfig
+td
+td
+td_planarconfig
+PLANARCONFIG_CONTIG
+PLANARCONFIG_CONTIG
+if ((td->td_photometric == PHOTOMETRIC_YCBCR)&&	    (!isUpSampled(tif)))		rowblock = td->td_ycbcrsubsampling[1];	else		rowblock = 1;
+(td->td_photometric == PHOTOMETRIC_YCBCR)&&	    (!isUpSampled(tif))
+(td->td_photometric == PHOTOMETRIC_YCBCR)
+td->td_photometric == PHOTOMETRIC_YCBCR
+td->td_photometric
+td
+td
+td_photometric
+PHOTOMETRIC_YCBCR
+PHOTOMETRIC_YCBCR
+(!isUpSampled(tif))
+!isUpSampled(tif)
+isUpSampled(tif)
+isUpSampled
+isUpSampled
+tif
+tif
+rowblock = td->td_ycbcrsubsampling[1];
+rowblock = td->td_ycbcrsubsampling[1]
+rowblock
+rowblock
+td->td_ycbcrsubsampling[1]
+td->td_ycbcrsubsampling
+td
+td
+td_ycbcrsubsampling
+1
+rowblock = 1;
+rowblock = 1
+rowblock
+rowblock
+1
+rowblockbytes = TIFFVTileSize64(tif, rowblock);
+rowblockbytes = TIFFVTileSize64(tif, rowblock)
+rowblockbytes
+rowblockbytes
+TIFFVTileSize64(tif, rowblock)
+TIFFVTileSize64
+TIFFVTileSize64
+tif
+tif
+rowblock
+rowblock
+if (rowblockbytes > STRIP_SIZE_DEFAULT) {		stripbytes = rowblockbytes;		rowsperstrip = rowblock;	} else if (rowblockbytes > 0 ) {		uint32 rowblocksperstrip;		rowblocksperstrip = (uint32) (STRIP_SIZE_DEFAULT / rowblockbytes);		rowsperstrip = rowblocksperstrip * rowblock;		stripbytes = rowblocksperstrip * rowblockbytes;	}	else	    return;
+rowblockbytes > STRIP_SIZE_DEFAULT
+rowblockbytes
+rowblockbytes
+STRIP_SIZE_DEFAULT
+STRIP_SIZE_DEFAULT
+{		stripbytes = rowblockbytes;		rowsperstrip = rowblock;	}
+stripbytes = rowblockbytes;
+stripbytes = rowblockbytes
+stripbytes
+stripbytes
+rowblockbytes
+rowblockbytes
+rowsperstrip = rowblock;
+rowsperstrip = rowblock
+rowsperstrip
+rowsperstrip
+rowblock
+rowblock
+if (rowblockbytes > 0 ) {		uint32 rowblocksperstrip;		rowblocksperstrip = (uint32) (STRIP_SIZE_DEFAULT / rowblockbytes);		rowsperstrip = rowblocksperstrip * rowblock;		stripbytes = rowblocksperstrip * rowblockbytes;	}	else	    return;
+rowblockbytes > 0
+rowblockbytes
+rowblockbytes
+0
+{		uint32 rowblocksperstrip;		rowblocksperstrip = (uint32) (STRIP_SIZE_DEFAULT / rowblockbytes);		rowsperstrip = rowblocksperstrip * rowblock;		stripbytes = rowblocksperstrip * rowblockbytes;	}
+uint32 rowblocksperstrip;
+uint32 rowblocksperstrip;
+uint32
+uint32
+rowblocksperstrip
+rowblocksperstrip
+rowblocksperstrip = (uint32) (STRIP_SIZE_DEFAULT / rowblockbytes);
+rowblocksperstrip = (uint32) (STRIP_SIZE_DEFAULT / rowblockbytes)
+rowblocksperstrip
+rowblocksperstrip
+(uint32) (STRIP_SIZE_DEFAULT / rowblockbytes)
+(uint32)
+uint32
+uint32
+STRIP_SIZE_DEFAULT / rowblockbytes
+STRIP_SIZE_DEFAULT
+STRIP_SIZE_DEFAULT
+rowblockbytes
+rowblockbytes
+rowsperstrip = rowblocksperstrip * rowblock;
+rowsperstrip = rowblocksperstrip * rowblock
+rowsperstrip
+rowsperstrip
+rowblocksperstrip * rowblock
+rowblocksperstrip
+rowblocksperstrip
+rowblock
+rowblock
+stripbytes = rowblocksperstrip * rowblockbytes;
+stripbytes = rowblocksperstrip * rowblockbytes
+stripbytes
+stripbytes
+rowblocksperstrip * rowblockbytes
+rowblocksperstrip
+rowblocksperstrip
+rowblockbytes
+rowblockbytes
+return;
+if (rowsperstrip >= td->td_rowsperstrip)		return;
+rowsperstrip >= td->td_rowsperstrip
+rowsperstrip
+rowsperstrip
+td->td_rowsperstrip
+td
+td
+td_rowsperstrip
+return;
+nstrips = TIFFhowmany_32(td->td_imagelength, rowsperstrip);
+nstrips = TIFFhowmany_32(td->td_imagelength, rowsperstrip)
+nstrips
+nstrips
+TIFFhowmany_32(td->td_imagelength, rowsperstrip)
+TIFFhowmany_32
+TIFFhowmany_32
+td->td_imagelength
+td
+td
+td_imagelength
+rowsperstrip
+rowsperstrip
+if( nstrips == 0 )            return;
+nstrips == 0
+nstrips
+nstrips
+0
+return;
+newcounts = (uint64*) _TIFFCheckMalloc(tif, nstrips, sizeof (uint64),				"for chopped \"StripByteCounts\" array");
+newcounts = (uint64*) _TIFFCheckMalloc(tif, nstrips, sizeof (uint64),				"for chopped \"StripByteCounts\" array")
+newcounts
+newcounts
+(uint64*) _TIFFCheckMalloc(tif, nstrips, sizeof (uint64),				"for chopped \"StripByteCounts\" array")
+uint64*
+uint64
+uint64
+*
+*
+_TIFFCheckMalloc(tif, nstrips, sizeof (uint64),				"for chopped \"StripByteCounts\" array")
+_TIFFCheckMalloc
+_TIFFCheckMalloc
+tif
+tif
+nstrips
+nstrips
+sizeof (uint64)
+uint64
+uint64
+uint64
+
+"for chopped \"StripByteCounts\" array"
+newoffsets = (uint64*) _TIFFCheckMalloc(tif, nstrips, sizeof (uint64),				"for chopped \"StripOffsets\" array");
+newoffsets = (uint64*) _TIFFCheckMalloc(tif, nstrips, sizeof (uint64),				"for chopped \"StripOffsets\" array")
+newoffsets
+newoffsets
+(uint64*) _TIFFCheckMalloc(tif, nstrips, sizeof (uint64),				"for chopped \"StripOffsets\" array")
+uint64*
+uint64
+uint64
+*
+*
+_TIFFCheckMalloc(tif, nstrips, sizeof (uint64),				"for chopped \"StripOffsets\" array")
+_TIFFCheckMalloc
+_TIFFCheckMalloc
+tif
+tif
+nstrips
+nstrips
+sizeof (uint64)
+uint64
+uint64
+uint64
+
+"for chopped \"StripOffsets\" array"
+if (newcounts == NULL || newoffsets == NULL) {		/*		 * Unable to allocate new strip information, give up and use		 * the original one strip information.		 */		if (newcounts != NULL)			_TIFFfree(newcounts);		if (newoffsets != NULL)			_TIFFfree(newoffsets);		return;	}
+newcounts == NULL || newoffsets == NULL
+newcounts == NULL
+newcounts
+newcounts
+NULL
+NULL
+newoffsets == NULL
+newoffsets
+newoffsets
+NULL
+NULL
+{		/*		 * Unable to allocate new strip information, give up and use		 * the original one strip information.		 */		if (newcounts != NULL)			_TIFFfree(newcounts);		if (newoffsets != NULL)			_TIFFfree(newoffsets);		return;	}
+if (newcounts != NULL)			_TIFFfree(newcounts);
+newcounts != NULL
+newcounts
+newcounts
+NULL
+NULL
+_TIFFfree(newcounts);
+_TIFFfree(newcounts)
+_TIFFfree
+_TIFFfree
+newcounts
+newcounts
+if (newoffsets != NULL)			_TIFFfree(newoffsets);
+newoffsets != NULL
+newoffsets
+newoffsets
+NULL
+NULL
+_TIFFfree(newoffsets);
+_TIFFfree(newoffsets)
+_TIFFfree
+_TIFFfree
+newoffsets
+newoffsets
+return;
+for (strip = 0; strip < nstrips; strip++) {		if (stripbytes > bytecount)			stripbytes = bytecount;		newcounts[strip] = stripbytes;		newoffsets[strip] = stripbytes ? offset : 0;		offset += stripbytes;		bytecount -= stripbytes;	}
+strip = 0;
+strip = 0
+strip
+strip
+0
+strip < nstrips
+strip
+strip
+nstrips
+nstrips
+strip++
+strip
+strip
+{		if (stripbytes > bytecount)			stripbytes = bytecount;		newcounts[strip] = stripbytes;		newoffsets[strip] = stripbytes ? offset : 0;		offset += stripbytes;		bytecount -= stripbytes;	}
+if (stripbytes > bytecount)			stripbytes = bytecount;
+stripbytes > bytecount
+stripbytes
+stripbytes
+bytecount
+bytecount
+stripbytes = bytecount;
+stripbytes = bytecount
+stripbytes
+stripbytes
+bytecount
+bytecount
+newcounts[strip] = stripbytes;
+newcounts[strip] = stripbytes
+newcounts[strip]
+newcounts
+newcounts
+strip
+strip
+stripbytes
+stripbytes
+newoffsets[strip] = stripbytes ? offset : 0;
+newoffsets[strip] = stripbytes ? offset : 0
+newoffsets[strip]
+newoffsets
+newoffsets
+strip
+strip
+stripbytes ? offset : 0
+stripbytes
+stripbytes
+offset
+offset
+0
+offset += stripbytes;
+offset += stripbytes
+offset
+offset
+stripbytes
+stripbytes
+bytecount -= stripbytes;
+bytecount -= stripbytes
+bytecount
+bytecount
+stripbytes
+stripbytes
+td->td_stripsperimage = td->td_nstrips = nstrips;
+td->td_stripsperimage = td->td_nstrips = nstrips
+td->td_stripsperimage
+td
+td
+td_stripsperimage
+td->td_nstrips = nstrips
+td->td_nstrips
+td
+td
+td_nstrips
+nstrips
+nstrips
+TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, rowsperstrip);
+TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, rowsperstrip)
+TIFFSetField
+TIFFSetField
+tif
+tif
+TIFFTAG_ROWSPERSTRIP
+TIFFTAG_ROWSPERSTRIP
+rowsperstrip
+rowsperstrip
+_TIFFfree(td->td_stripbytecount);
+_TIFFfree(td->td_stripbytecount)
+_TIFFfree
+_TIFFfree
+td->td_stripbytecount
+td
+td
+td_stripbytecount
+_TIFFfree(td->td_stripoffset);
+_TIFFfree(td->td_stripoffset)
+_TIFFfree
+_TIFFfree
+td->td_stripoffset
+td
+td
+td_stripoffset
+td->td_stripbytecount = newcounts;
+td->td_stripbytecount = newcounts
+td->td_stripbytecount
+td
+td
+td_stripbytecount
+newcounts
+newcounts
+td->td_stripoffset = newoffsets;
+td->td_stripoffset = newoffsets
+td->td_stripoffset
+td
+td
+td_stripoffset
+newoffsets
+newoffsets
+td->td_stripbytecountsorted = 1;
+td->td_stripbytecountsorted = 1
+td->td_stripbytecountsorted
+td
+td
+td_stripbytecountsorted
+1
+-----joern-----
+(56,99,0)
+(222,36,0)
+(122,56,0)
+(226,146,0)
+(58,38,0)
+(6,208,0)
+(209,19,0)
+(145,150,0)
+(107,20,0)
+(146,16,0)
+(51,167,0)
+(164,193,0)
+(218,205,0)
+(9,99,0)
+(0,215,0)
+(81,233,0)
+(118,36,0)
+(159,112,0)
+(120,50,0)
+(164,19,0)
+(100,95,0)
+(150,20,0)
+(231,214,0)
+(7,111,0)
+(209,74,0)
+(204,12,0)
+(204,74,0)
+(33,12,0)
+(187,233,0)
+(171,16,0)
+(132,5,0)
+(167,115,0)
+(133,226,0)
+(91,99,0)
+(191,19,0)
+(127,99,0)
+(128,215,0)
+(178,239,0)
+(176,217,0)
+(169,208,0)
+(41,30,0)
+(220,26,0)
+(128,223,0)
+(128,38,0)
+(26,223,0)
+(40,212,0)
+(205,190,0)
+(234,45,0)
+(160,99,0)
+(179,214,0)
+(109,207,0)
+(14,19,0)
+(224,103,0)
+(95,46,0)
+(213,222,0)
+(225,170,0)
+(216,133,0)
+(76,55,0)
+(178,116,0)
+(83,95,0)
+(15,38,0)
+(143,150,0)
+(142,175,0)
+(127,152,0)
+(181,191,0)
+(94,170,0)
+(207,19,0)
+(208,12,0)
+(202,233,0)
+(21,5,0)
+(167,215,0)
+(66,191,0)
+(173,204,0)
+(189,106,0)
+(237,200,0)
+(167,170,0)
+(26,195,0)
+(210,19,0)
+(55,103,0)
+(207,109,0)
+(6,19,0)
+(183,95,0)
+(39,103,0)
+(195,5,0)
+(26,170,0)
+(121,210,0)
+(49,5,0)
+(86,190,0)
+(75,210,0)
+(150,12,0)
+(214,19,0)
+(144,43,0)
+(114,207,0)
+(4,91,0)
+(113,219,0)
+(74,5,0)
+(208,6,0)
+(226,219,0)
+(190,5,0)
+(212,40,0)
+(44,170,0)
+(130,121,0)
+(101,146,0)
+(215,239,0)
+(167,223,0)
+(106,19,0)
+(178,219,0)
+(158,225,0)
+(72,45,0)
+(8,198,0)
+(216,20,0)
+(159,28,0)
+(229,5,0)
+(240,19,0)
+(121,219,0)
+(93,5,0)
+(27,38,0)
+(126,150,0)
+(206,113,0)
+(165,40,0)
+(240,107,0)
+(197,90,0)
+(182,215,0)
+(198,8,0)
+(194,115,0)
+(36,19,0)
+(210,121,0)
+(232,37,0)
+(81,149,0)
+(39,12,0)
+(58,215,0)
+(150,126,0)
+(92,6,0)
+(69,226,0)
+(61,216,0)
+(233,145,0)
+(162,9,0)
+(184,56,0)
+(117,116,0)
+(43,144,0)
+(228,29,0)
+(99,127,0)
+(214,204,0)
+(225,146,0)
+(29,19,0)
+(3,58,0)
+(70,198,0)
+(163,205,0)
+(175,90,0)
+(37,190,0)
+(155,53,0)
+(24,233,0)
+(19,5,0)
+(16,146,0)
+(53,12,0)
+(154,81,0)
+(108,91,0)
+(17,216,0)
+(205,16,0)
+(213,5,0)
+(68,5,0)
+(52,150,0)
+(55,27,0)
+(216,5,0)
+(58,223,0)
+(97,5,0)
+(238,8,0)
+(34,50,0)
+(177,116,0)
+(109,5,0)
+(138,5,0)
+(145,233,0)
+(79,164,0)
+(78,103,0)
+(170,148,0)
+(16,171,0)
+(156,14,0)
+(215,190,0)
+(111,195,0)
+(141,223,0)
+(32,98,0)
+(57,44,0)
+(230,167,0)
+(226,133,0)
+(223,195,0)
+(98,144,0)
+(149,81,0)
+(200,237,0)
+(2,5,0)
+(90,175,0)
+(13,207,0)
+(222,213,0)
+(98,20,0)
+(85,210,0)
+(104,44,0)
+(71,19,0)
+(144,98,0)
+(140,150,0)
+(157,106,0)
+(212,178,0)
+(241,5,0)
+(159,131,0)
+(216,178,0)
+(99,5,0)
+(174,195,0)
+(115,8,0)
+(192,81,0)
+(18,5,0)
+(193,5,0)
+(145,84,0)
+(110,209,0)
+(111,106,0)
+(48,30,0)
+(134,107,0)
+(225,190,0)
+(55,233,0)
+(46,95,0)
+(54,90,0)
+(196,29,0)
+(168,5,0)
+(113,20,0)
+(88,226,0)
+(170,225,0)
+(90,20,0)
+(151,133,0)
+(31,5,0)
+(11,198,0)
+(16,205,0)
+(65,24,0)
+(28,30,0)
+(161,55,0)
+(147,167,0)
+(95,12,0)
+(26,215,0)
+(95,127,0)
+(96,225,0)
+(73,223,0)
+(195,111,0)
+(44,215,0)
+(149,45,0)
+(62,113,0)
+(43,181,0)
+(127,95,0)
+(190,113,0)
+(56,58,0)
+(136,46,0)
+(36,222,0)
+(208,178,0)
+(200,195,0)
+(12,208,0)
+(59,124,0)
+(152,127,0)
+(227,5,0)
+(119,26,0)
+(8,115,0)
+(166,5,0)
+(208,133,0)
+(212,133,0)
+(95,20,0)
+(199,128,0)
+(159,105,0)
+(188,212,0)
+(125,128,0)
+(87,164,0)
+(159,80,0)
+(198,19,0)
+(201,103,0)
+(223,128,0)
+(221,178,0)
+(35,14,0)
+(167,27,0)
+(128,170,0)
+(47,37,0)
+(172,5,0)
+(63,191,0)
+(27,167,0)
+(22,126,0)
+(181,43,0)
+(180,6,0)
+(24,5,0)
+(123,5,0)
+(77,178,0)
+(44,115,0)
+(74,204,0)
+(106,111,0)
+(235,200,0)
+(82,200,0)
+(25,29,0)
+(129,216,0)
+(150,145,0)
+(185,40,0)
+(153,193,0)
+(89,39,0)
+(228,5,0)
+(211,53,0)
+(219,121,0)
+(45,149,0)
+(217,99,0)
+(67,148,0)
+(58,170,0)
+(45,99,0)
+(50,9,0)
+(44,44,0)
+(84,145,0)
+(137,139,0)
+(113,116,0)
+(113,190,0)
+(40,19,0)
+(56,103,0)
+(60,107,0)
+(146,148,0)
+(64,124,0)
+(44,223,0)
+(19,240,0)
+(133,148,0)
+(9,5,0)
+(12,5,0)
+(29,228,0)
+(226,116,0)
+(26,128,0)
+(128,128,0)
+(237,175,0)
+(236,209,0)
+(175,237,0)
+(42,39,0)
+(50,19,0)
+(102,202,0)
+(242,5,0)
+(139,233,0)
+(107,240,0)
+(186,202,0)
+(233,5,0)
+(135,219,0)
+(14,24,0)
+(191,181,0)
+(128,195,0)
+(44,38,0)
+(10,181,0)
+(115,5,0)
+(124,190,0)
+(167,44,0)
+(1,36,0)
+(203,201,0)
+(23,222,0)
+(220,39,1)
+(58,215,1)
+(95,20,1)
+(216,133,1)
+(215,190,1)
+(178,221,1)
+(56,122,1)
+(94,133,1)
+(223,128,1)
+(39,89,1)
+(159,80,1)
+(149,45,1)
+(91,99,1)
+(167,223,1)
+(89,42,1)
+(203,128,1)
+(16,205,1)
+(43,144,1)
+(101,37,1)
+(226,88,1)
+(23,36,1)
+(187,99,1)
+(29,19,1)
+(163,101,1)
+(77,215,1)
+(91,108,1)
+(44,223,1)
+(216,20,1)
+(44,215,1)
+(39,12,1)
+(80,37,1)
+(7,106,1)
+(9,162,1)
+(8,238,1)
+(184,26,1)
+(235,82,1)
+(136,83,1)
+(26,119,1)
+(222,23,1)
+(164,19,1)
+(225,146,1)
+(192,154,1)
+(118,1,1)
+(95,12,1)
+(128,223,1)
+(236,110,1)
+(167,215,1)
+(56,99,1)
+(205,190,1)
+(207,19,1)
+(50,19,1)
+(26,170,1)
+(165,185,1)
+(37,47,1)
+(140,187,1)
+(90,197,1)
+(134,71,1)
+(9,99,1)
+(131,237,1)
+(185,188,1)
+(44,115,1)
+(237,200,1)
+(208,133,1)
+(122,184,1)
+(60,134,1)
+(16,171,1)
+(210,75,1)
+(178,116,1)
+(45,234,1)
+(98,20,1)
+(116,177,1)
+(45,99,1)
+(201,103,1)
+(231,179,1)
+(159,193,1)
+(208,6,1)
+(217,99,1)
+(127,152,1)
+(223,141,1)
+(124,59,1)
+(105,53,1)
+(200,195,1)
+(28,202,1)
+(179,209,1)
+(177,117,1)
+(44,44,1)
+(117,43,1)
+(83,183,1)
+(14,35,1)
+(72,233,1)
+(37,190,1)
+(61,129,1)
+(107,60,1)
+(157,174,1)
+(226,116,1)
+(125,44,1)
+(19,240,1)
+(226,146,1)
+(212,40,1)
+(110,39,1)
+(36,118,1)
+(22,52,1)
+(78,224,1)
+(153,164,1)
+(103,78,1)
+(208,178,1)
+(92,180,1)
+(183,160,1)
+(59,64,1)
+(114,216,1)
+(167,51,1)
+(104,57,1)
+(199,125,1)
+(144,98,1)
+(135,43,1)
+(191,66,1)
+(173,214,1)
+(188,170,1)
+(141,73,1)
+(26,195,1)
+(119,220,1)
+(202,233,1)
+(35,156,1)
+(205,218,1)
+(130,210,1)
+(213,222,1)
+(55,76,1)
+(139,137,1)
+(180,33,1)
+(181,10,1)
+(238,198,1)
+(209,236,1)
+(65,14,1)
+(150,126,1)
+(58,3,1)
+(228,29,1)
+(223,195,1)
+(26,215,1)
+(87,24,1)
+(107,20,1)
+(207,13,1)
+(102,217,1)
+(90,20,1)
+(186,102,1)
+(159,112,1)
+(42,201,1)
+(137,202,1)
+(62,86,1)
+(121,210,1)
+(17,74,1)
+(204,12,1)
+(225,190,1)
+(210,19,1)
+(159,105,1)
+(127,95,1)
+(99,127,1)
+(206,62,1)
+(204,173,1)
+(26,223,1)
+(108,4,1)
+(149,81,1)
+(197,54,1)
+(75,85,1)
+(189,157,1)
+(81,233,1)
+(167,115,1)
+(113,206,1)
+(211,155,1)
+(25,109,1)
+(42,103,1)
+(121,130,1)
+(10,191,1)
+(24,233,1)
+(212,178,1)
+(98,32,1)
+(156,9,1)
+(11,70,1)
+(182,0,1)
+(175,142,1)
+(0,124,1)
+(51,230,1)
+(191,19,1)
+(226,219,1)
+(225,158,1)
+(128,199,1)
+(86,116,1)
+(115,8,1)
+(3,56,1)
+(126,22,1)
+(106,19,1)
+(200,235,1)
+(151,146,1)
+(150,143,1)
+(128,215,1)
+(128,128,1)
+(4,149,1)
+(50,120,1)
+(214,231,1)
+(55,103,1)
+(216,178,1)
+(81,192,1)
+(53,12,1)
+(167,147,1)
+(224,149,1)
+(96,94,1)
+(57,27,1)
+(133,226,1)
+(120,34,1)
+(201,203,1)
+(145,84,1)
+(160,53,1)
+(113,116,1)
+(198,19,1)
+(154,45,1)
+(128,195,1)
+(188,178,1)
+(219,121,1)
+(167,44,1)
+(150,12,1)
+(54,200,1)
+(8,198,1)
+(234,72,1)
+(82,195,1)
+(208,169,1)
+(74,204,1)
+(112,212,1)
+(167,170,1)
+(106,189,1)
+(6,19,1)
+(64,190,1)
+(43,181,1)
+(209,19,1)
+(215,182,1)
+(212,133,1)
+(232,124,1)
+(198,11,1)
+(95,46,1)
+(100,46,1)
+(39,103,1)
+(128,170,1)
+(111,106,1)
+(159,28,1)
+(174,19,1)
+(155,12,1)
+(202,186,1)
+(58,170,1)
+(36,19,1)
+(221,77,1)
+(169,6,1)
+(139,233,1)
+(194,237,1)
+(176,91,1)
+(193,153,1)
+(113,20,1)
+(240,107,1)
+(158,96,1)
+(147,230,1)
+(14,19,1)
+(12,208,1)
+(170,225,1)
+(1,115,1)
+(145,150,1)
+(40,19,1)
+(159,131,1)
+(111,7,1)
+(46,136,1)
+(230,55,1)
+(28,139,1)
+(181,191,1)
+(85,135,1)
+(175,90,1)
+(24,65,1)
+(79,87,1)
+(40,165,1)
+(142,90,1)
+(95,100,1)
+(86,219,1)
+(13,114,1)
+(73,26,1)
+(214,19,1)
+(190,113,1)
+(178,219,1)
+(129,17,1)
+(26,128,1)
+(44,104,1)
+(69,151,1)
+(33,212,1)
+(88,69,1)
+(143,126,1)
+(162,50,1)
+(27,167,1)
+(222,36,1)
+(161,58,1)
+(47,232,1)
+(55,233,1)
+(76,161,1)
+(63,213,1)
+(150,20,1)
+(6,92,1)
+(233,145,1)
+(216,61,1)
+(58,223,1)
+(102,91,1)
+(196,25,1)
+(56,103,1)
+(195,111,1)
+(29,196,1)
+(109,207,1)
+(70,194,1)
+(237,175,1)
+(66,63,1)
+(34,228,1)
+(124,190,1)
+(32,181,1)
+(184,223,1)
+(164,79,1)
+(218,163,1)
+(53,211,1)
+(113,219,1)
+(146,16,1)
+(44,170,1)
+(52,140,1)
+(217,176,1)
+(70,237,2)
+(222,237,2)
+(40,37,2)
+(45,53,2)
+(113,219,2)
+(115,237,2)
+(27,167,2)
+(234,53,2)
+(167,39,2)
+(202,149,2)
+(109,207,2)
+(185,37,2)
+(121,210,2)
+(147,230,2)
+(11,237,2)
+(69,37,2)
+(126,53,2)
+(58,215,2)
+(79,149,2)
+(29,149,2)
+(237,175,2)
+(96,37,2)
+(8,198,2)
+(164,19,2)
+(144,98,2)
+(159,112,2)
+(232,124,2)
+(215,124,2)
+(149,45,2)
+(149,81,2)
+(178,124,2)
+(118,237,2)
+(140,53,2)
+(169,212,2)
+(198,19,2)
+(204,12,2)
+(149,53,2)
+(197,200,2)
+(124,190,2)
+(43,144,2)
+(165,124,2)
+(185,124,2)
+(188,37,2)
+(212,133,2)
+(66,237,2)
+(113,20,2)
+(167,115,2)
+(142,200,2)
+(154,45,2)
+(127,95,2)
+(217,99,2)
+(75,43,2)
+(135,43,2)
+(216,178,2)
+(212,124,2)
+(181,191,2)
+(64,237,2)
+(95,53,2)
+(222,36,2)
+(34,149,2)
+(95,20,2)
+(170,225,2)
+(127,53,2)
+(145,84,2)
+(133,37,2)
+(210,19,2)
+(230,39,2)
+(39,12,2)
+(23,237,2)
+(56,103,2)
+(85,43,2)
+(16,205,2)
+(206,237,2)
+(209,19,2)
+(191,237,2)
+(19,240,2)
+(6,19,2)
+(198,237,2)
+(98,20,2)
+(94,37,2)
+(216,133,2)
+(44,44,2)
+(226,146,2)
+(43,181,2)
+(128,170,2)
+(212,40,2)
+(188,124,2)
+(59,237,2)
+(181,237,2)
+(220,39,2)
+(195,111,2)
+(42,149,2)
+(100,53,2)
+(187,53,2)
+(42,39,2)
+(175,90,2)
+(214,149,2)
+(137,202,2)
+(200,195,2)
+(58,223,2)
+(54,200,2)
+(191,19,2)
+(76,39,2)
+(179,149,2)
+(105,53,2)
+(158,37,2)
+(57,39,2)
+(159,28,2)
+(44,223,2)
+(26,223,2)
+(26,170,2)
+(237,200,2)
+(122,39,2)
+(160,53,2)
+(180,212,2)
+(50,149,2)
+(14,19,2)
+(178,116,2)
+(194,237,2)
+(214,19,2)
+(128,128,2)
+(164,149,2)
+(74,204,2)
+(86,237,2)
+(47,124,2)
+(90,20,2)
+(109,149,2)
+(98,181,2)
+(50,19,2)
+(129,149,2)
+(14,149,2)
+(55,233,2)
+(159,105,2)
+(208,6,2)
+(89,39,2)
+(6,212,2)
+(145,150,2)
+(204,149,2)
+(53,212,2)
+(228,29,2)
+(156,149,2)
+(167,223,2)
+(107,20,2)
+(16,171,2)
+(95,12,2)
+(203,39,2)
+(226,219,2)
+(33,212,2)
+(218,37,2)
+(159,80,2)
+(167,215,2)
+(16,37,2)
+(223,128,2)
+(101,37,2)
+(87,149,2)
+(103,149,2)
+(44,39,2)
+(13,149,2)
+(161,39,2)
+(26,195,2)
+(219,43,2)
+(40,124,2)
+(91,99,2)
+(24,233,2)
+(215,190,2)
+(226,116,2)
+(1,237,2)
+(37,124,2)
+(208,178,2)
+(99,53,2)
+(240,107,2)
+(238,237,2)
+(24,149,2)
+(150,126,2)
+(108,149,2)
+(205,37,2)
+(224,149,2)
+(150,12,2)
+(3,39,2)
+(89,149,2)
+(127,152,2)
+(55,39,2)
+(150,53,2)
+(128,215,2)
+(202,233,2)
+(207,19,2)
+(36,237,2)
+(81,45,2)
+(155,212,2)
+(74,149,2)
+(216,149,2)
+(231,149,2)
+(12,208,2)
+(226,37,2)
+(193,149,2)
+(63,237,2)
+(22,53,2)
+(233,53,2)
+(39,149,2)
+(40,19,2)
+(211,212,2)
+(92,212,2)
+(77,124,2)
+(72,53,2)
+(8,237,2)
+(46,53,2)
+(216,20,2)
+(9,99,2)
+(113,237,2)
+(90,200,2)
+(0,124,2)
+(56,39,2)
+(44,215,2)
+(225,190,2)
+(205,190,2)
+(139,233,2)
+(139,202,2)
+(124,237,2)
+(212,178,2)
+(25,149,2)
+(37,190,2)
+(45,99,2)
+(170,37,2)
+(131,237,2)
+(130,43,2)
+(201,103,2)
+(104,39,2)
+(56,99,2)
+(223,26,2)
+(144,181,2)
+(115,8,2)
+(162,149,2)
+(102,149,2)
+(26,39,2)
+(29,19,2)
+(228,149,2)
+(173,149,2)
+(153,149,2)
+(184,39,2)
+(192,45,2)
+(151,37,2)
+(44,115,2)
+(83,53,2)
+(213,222,2)
+(163,37,2)
+(145,53,2)
+(10,237,2)
+(32,181,2)
+(146,16,2)
+(167,170,2)
+(112,212,2)
+(212,37,2)
+(196,149,2)
+(225,37,2)
+(35,149,2)
+(182,124,2)
+(58,170,2)
+(117,43,2)
+(36,19,2)
+(209,149,2)
+(208,212,2)
+(223,195,2)
+(28,149,2)
+(178,219,2)
+(17,149,2)
+(210,43,2)
+(62,237,2)
+(80,37,2)
+(177,43,2)
+(219,121,2)
+(51,230,2)
+(55,103,2)
+(190,237,2)
+(176,91,2)
+(186,149,2)
+(167,44,2)
+(199,39,2)
+(4,149,2)
+(26,128,2)
+(136,53,2)
+(27,39,2)
+(9,149,2)
+(52,53,2)
+(208,133,2)
+(207,149,2)
+(143,53,2)
+(78,149,2)
+(221,124,2)
+(53,12,2)
+(12,212,2)
+(146,37,2)
+(225,146,2)
+(116,43,2)
+(43,237,2)
+(61,149,2)
+(128,39,2)
+(233,145,2)
+(128,195,2)
+(159,131,2)
+(73,26,2)
+(114,149,2)
+(111,106,2)
+(106,19,2)
+(95,46,2)
+(165,37,2)
+(119,39,2)
+(88,37,2)
+(120,149,2)
+(133,226,2)
+(44,170,2)
+(183,53,2)
+(175,200,2)
+(91,149,2)
+(141,26,2)
+(39,39,2)
+(201,39,2)
+(236,149,2)
+(150,20,2)
+(121,43,2)
+(113,116,2)
+(65,149,2)
+(81,233,2)
+(99,127,2)
+(128,223,2)
+(190,113,2)
+(213,237,2)
+(125,39,2)
+(26,215,2)
+(39,103,2)
+(110,149,2)
+(217,91,2)
+(58,39,2)
+-----------------------------------
+(0,stripbytes)
+(1,td)
+(2,if (newcounts == NULL || newoffsets == NULL)
+(3,stripbytes)
+(4,newcounts)
+(5,)
+(6,td->td_imagelength)
+(7,0)
+(8,td->td_stripoffset[0])
+(9,td->td_stripbytecount = newcounts)
+(10,PHOTOMETRIC_YCBCR)
+(11,td_stripoffset)
+(12,nstrips = TIFFhowmany_32(td->td_imagelength, rowsperstrip)
+(13,td_stripbytecount)
+(14,td->td_stripoffset)
+(15,if (stripbytes > bytecount)
+(16,(uint32)
+(17,tif)
+(18,if ((td->td_photometric == PHOTOMETRIC_YCBCR)
+(19,*td = &tif->tif_dir)
+(20,TIFF* tif)
+(21,rowblockbytes)
+(22,uint64)
+(23,PLANARCONFIG_CONTIG)
+(24,td->td_stripoffset = newoffsets)
+(25,td)
+(26,stripbytes > bytecount)
+(27,newoffsets[strip] = stripbytes ? offset : 0)
+(28,return;)
+(29,td->td_stripoffset)
+(30,)
+(31,if( nstrips == 0 )
+(32,tif)
+(33,nstrips)
+(34,td)
+(35,td_stripoffset)
+(36,td->td_planarconfig)
+(37,rowblockbytes > 0)
+(38,)
+(39,strip < nstrips)
+(40,td->td_rowsperstrip)
+(41,if (newcounts != NULL)
+(42,strip)
+(43,(td->td_photometric == PHOTOMETRIC_YCBCR)
+(44,offset += stripbytes)
+(45,newcounts == NULL)
+(46,sizeof (uint64)
+(47,0)
+(48,if (newoffsets != NULL)
+(49,nstrips)
+(50,td->td_stripbytecount)
+(51,offset)
+(52,nstrips)
+(53,nstrips == 0)
+(54,tif)
+(55,newoffsets[strip])
+(56,newcounts[strip])
+(57,offset)
+(58,newcounts[strip] = stripbytes)
+(59,STRIP_SIZE_DEFAULT)
+(60,tif_dir)
+(61,rowsperstrip)
+(62,tif)
+(63,td)
+(64,rowblockbytes)
+(65,newoffsets)
+(66,td_photometric)
+(67,rowblocksperstrip)
+(68,newoffsets)
+(69,rowblocksperstrip)
+(70,td)
+(71,td)
+(72,newcounts)
+(73,stripbytes)
+(74,td->td_stripsperimage = td->td_nstrips = nstrips)
+(75,td_ycbcrsubsampling)
+(76,strip)
+(77,rowsperstrip)
+(78,0)
+(79,td_stripbytecountsorted)
+(80,return;)
+(81,newoffsets == NULL)
+(82,bytecount)
+(83,nstrips)
+(84,uint64*)
+(85,td)
+(86,rowblockbytes)
+(87,td)
+(88,rowblock)
+(89,nstrips)
+(90,tif->tif_mode)
+(91,newcounts != NULL)
+(92,td_imagelength)
+(93,rowsperstrip)
+(94,stripbytes)
+(95,_TIFFCheckMalloc(tif, nstrips, sizeof (uint64)
+(96,rowblocksperstrip)
+(97,stripbytes)
+(98,isUpSampled(tif)
+(99,newcounts = (uint64*)
+(100,"for chopped \\"StripByteCounts\\" array")
+(101,rowblocksperstrip)
+(102,newoffsets)
+(103,strip = 0)
+(104,stripbytes)
+(105,return;)
+(106,td->td_stripbytecount)
+(107,tif->tif_dir)
+(108,NULL)
+(109,_TIFFfree(td->td_stripbytecount)
+(110,td)
+(111,td->td_stripbytecount[0])
+(112,return;)
+(113,TIFFVTileSize64(tif, rowblock)
+(114,td)
+(115,offset = td->td_stripoffset[0])
+(116,rowblock = 1)
+(117,rowblock)
+(118,td_planarconfig)
+(119,bytecount)
+(120,td_stripbytecount)
+(121,td->td_ycbcrsubsampling[1])
+(122,strip)
+(123,newcounts)
+(124,rowblockbytes > STRIP_SIZE_DEFAULT)
+(125,bytecount)
+(126,sizeof (uint64)
+(127,(uint64*)
+(128,bytecount -= stripbytes)
+(129,TIFFTAG_ROWSPERSTRIP)
+(130,1)
+(131,return;)
+(132,for (strip = 0; strip < nstrips; strip++)
+(133,rowsperstrip = rowblocksperstrip * rowblock)
+(134,tif)
+(135,rowblock)
+(136,uint64)
+(137,newoffsets)
+(138,td)
+(139,_TIFFfree(newoffsets)
+(140,tif)
+(141,bytecount)
+(142,O_RDONLY)
+(143,"for chopped \\"StripOffsets\\" array")
+(144,!isUpSampled(tif)
+(145,(uint64*)
+(146,rowblocksperstrip = (uint32)
+(147,0)
+(148,)
+(149,newcounts == NULL || newoffsets == NULL)
+(150,_TIFFCheckMalloc(tif, nstrips, sizeof (uint64)
+(151,rowsperstrip)
+(152,uint64*)
+(153,1)
+(154,newoffsets)
+(155,nstrips)
+(156,td)
+(157,td)
+(158,rowblockbytes)
+(159,RET)
+(160,newcounts)
+(161,newoffsets)
+(162,newcounts)
+(163,STRIP_SIZE_DEFAULT)
+(164,td->td_stripbytecountsorted)
+(165,td_rowsperstrip)
+(166,if( bytecount == 0 && tif->tif_mode != O_RDONLY )
+(167,stripbytes ? offset : 0)
+(168,offset)
+(169,rowsperstrip)
+(170,stripbytes = rowblocksperstrip * rowblockbytes)
+(171,uint32)
+(172,bytecount)
+(173,nstrips)
+(174,bytecount)
+(175,tif->tif_mode != O_RDONLY)
+(176,newcounts)
+(177,1)
+(178,rowsperstrip = rowblock)
+(179,td)
+(180,td)
+(181,td->td_photometric == PHOTOMETRIC_YCBCR)
+(182,rowblockbytes)
+(183,tif)
+(184,newcounts)
+(185,td)
+(186,NULL)
+(187,newoffsets)
+(188,rowsperstrip)
+(189,td_stripbytecount)
+(190,rowblockbytes = TIFFVTileSize64(tif, rowblock)
+(191,td->td_photometric)
+(192,NULL)
+(193,td->td_stripbytecountsorted = 1)
+(194,offset)
+(195,bytecount = td->td_stripbytecount[0])
+(196,td_stripoffset)
+(197,tif_mode)
+(198,td->td_stripoffset)
+(199,stripbytes)
+(200,bytecount == 0)
+(201,strip++)
+(202,newoffsets != NULL)
+(203,strip)
+(204,td->td_nstrips = nstrips)
+(205,STRIP_SIZE_DEFAULT / rowblockbytes)
+(206,rowblock)
+(207,td->td_stripbytecount)
+(208,TIFFhowmany_32(td->td_imagelength, rowsperstrip)
+(209,td->td_stripsperimage)
+(210,td->td_ycbcrsubsampling)
+(211,0)
+(212,rowsperstrip >= td->td_rowsperstrip)
+(213,assert(td->td_planarconfig == PLANARCONFIG_CONTIG)
+(214,td->td_nstrips)
+(215,stripbytes = rowblockbytes)
+(216,TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, rowsperstrip)
+(217,_TIFFfree(newcounts)
+(218,rowblockbytes)
+(219,rowblock = td->td_ycbcrsubsampling[1])
+(220,stripbytes)
+(221,rowblock)
+(222,td->td_planarconfig == PLANARCONFIG_CONTIG)
+(223,stripbytes = bytecount)
+(224,strip)
+(225,rowblocksperstrip * rowblockbytes)
+(226,rowblocksperstrip * rowblock)
+(227,strip)
+(228,_TIFFfree(td->td_stripoffset)
+(229,if (rowblockbytes > STRIP_SIZE_DEFAULT)
+(230,stripbytes)
+(231,td_nstrips)
+(232,rowblockbytes)
+(233,newoffsets = (uint64*)
+(234,NULL)
+(235,0)
+(236,td_stripsperimage)
+(237,bytecount == 0 && tif->tif_mode != O_RDONLY)
+(238,0)
+(239,)
+(240,&tif->tif_dir)
+(241,rowblock)
+(242,if (rowsperstrip >= td->td_rowsperstrip)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

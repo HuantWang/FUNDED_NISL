@@ -6,6 +6,7 @@ import numpy as np
 import json
 from sklearn import decomposition
 import os
+from shutil import copyfile
 
 
 def filterNodes(list, num):
@@ -61,6 +62,7 @@ def w2v(filename, cwetype):
                         # if not None
                         if re.search('(?<=,).*', line):
                             word.append(re.search('(?<=,).*', line).group().split(')')[0].split(" "))  # 将token加入数组
+    print(f'this is words: {words}')
     model = Word2Vec(words, min_count=1, size=100, sg=1, window=5,
                      negative=3, sample=0.001, hs=1, workers=4)
 
@@ -257,6 +259,7 @@ def GetInfor(filename):
 
             # vectors of ast
             vectors_ast = []
+            print(f"this is our_map_all {os.path.split(filename)[0] }/our_map_all.txt ")
             with open(os.path.split(filename)[0] + "/our_map_all.txt", "r") as f:
                 s = f.read()
                 s = s.replace('\'', '\"')
@@ -300,6 +303,75 @@ def GetInfor(filename):
 
 # spilt and zip
 # warning: samples cant be less than 200, otherwise spliting process will occur errors.
+
+#将所有ast以及cdfg数据全部放入test.jsonl.gz 并将test.jsonl.gz复制到train.jsonl.gz和valid.jsonl.gz  predict只输入test.json数据即可
+def Split_predict(path):
+    print("\nbegin to split files...")
+
+    """
+    -------------AST---------------
+    """
+    tem_ast = []
+    mkdir(os.path.split(path)[0] + '/' + 'tem_' + os.path.split(path)[1] + '/ast')
+    with open(os.path.split(path)[0] + '/' + str(os.path.split(path)[1]) + '_ast.jsonl', "r+", encoding="utf8") as f:
+        for item in jsonlines.Reader(f):
+            tem_ast.append(item)
+    tem_test=tem_ast
+    path_tem = os.path.split(path)[0] + '/' + 'tem_' + os.path.split(path)[1] + '/ast/ast.jsonl'
+
+    for i in tem_test:
+        with jsonlines.open(path_tem,
+                            mode='a') as writer:
+            writer.write(i)
+    # zip
+    f_in = open(path_tem, 'rb')
+    f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_' + os.path.split(path)[1] + '/ast/test.jsonl.gz', 'wb')
+    f_out.writelines(f_in)
+    f_out.close()
+    f_in.close()
+    os.remove(path_tem)
+
+    testPath=os.path.split(path)[0] + '/' + 'tem_' + os.path.split(path)[1] + '/ast/test.jsonl.gz'
+    trainPath=os.path.split(path)[0] + '/' + 'tem_' + os.path.split(path)[1] + '/ast/train.jsonl.gz'
+    validPath=os.path.split(path)[0] + '/' + 'tem_' + os.path.split(path)[1] + '/ast/valid.jsonl.gz'
+    copyfile(testPath, trainPath)
+    copyfile(testPath, validPath)
+
+
+    """
+    -------------CDFG---------------
+    """
+
+    tem_cdfg = []
+    mkdir(os.path.split(path)[0] + '/' + 'tem_' + os.path.split(path)[1] + '/cdfg')
+
+    with open(os.path.split(path)[0] + '/' + str(os.path.split(path)[1]) + '_cdfg.jsonl', "r+", encoding="utf8") as f:
+        for item in jsonlines.Reader(f):
+            tem_cdfg.append(item)
+
+    tem_test=tem_cdfg
+    path_tem = os.path.split(path)[0] + '/' + 'tem_' + os.path.split(path)[1] + '/cdfg/cdfg.jsonl'
+
+    for i in tem_test:
+        with jsonlines.open(path_tem,
+                            mode='a') as writer:
+            writer.write(i)
+
+    # zip
+    f_in = open(path_tem, 'rb')
+    # print(os.getcwd())
+    f_out = gzip.open(os.path.split(path)[0] + '/' + 'tem_' + os.path.split(path)[1] + '/cdfg/test.jsonl.gz', 'wb')
+    f_out.writelines(f_in)
+    f_out.close()
+    f_in.close()
+    os.remove(path_tem)
+
+    testPath = os.path.split(path)[0] + '/' + 'tem_' + os.path.split(path)[1] + '/cdfg/test.jsonl.gz'
+    trainPath = os.path.split(path)[0] + '/' + 'tem_' + os.path.split(path)[1] + '/cdfg/train.jsonl.gz'
+    validPath = os.path.split(path)[0] + '/' + 'tem_' + os.path.split(path)[1] + '/cdfg/valid.jsonl.gz'
+    copyfile(testPath, trainPath)
+    copyfile(testPath, validPath)
+
 def Split(train, valid, test, path):
     print("\nbegin to split files...")
 
@@ -452,7 +524,6 @@ def Split(train, valid, test, path):
 
     print("data ready")
 
-
 def Preprocess(path):
     # os.path.split() return path and file's name. remember to use '/' rather than '\'
     cwetype = os.path.split(path)[1]
@@ -469,3 +540,23 @@ def Preprocess(path):
     else:
         GetInfor(path)
         Split(0.8, 0.1, 0.1, path)
+
+def Preprocess_predict(path):
+    # os.path.split() return path and file's name. remember to use '/' rather than '\'
+    cwetype = os.path.split(path)[1]
+    # check if vocabulary exists
+    w2v(path, cwetype)
+
+    # split
+    astJsonl = os.path.split(path)[0] + '/' + str(os.path.split(path)[1]) + '_ast.jsonl'
+    cdfgJsonl = os.path.split(path)[0] + '/' + str(os.path.split(path)[1]) + '_cdfg.jsonl'
+    print(f"this is astJson: {astJsonl} ")
+    # auxiliaryInputJsonl = os.path.split(path)[0] + '/' + str(os.path.split(path)[1]) + '_auxiliaryInput.jsonl'
+
+    if os.path.exists(astJsonl) and os.path.exists(cdfgJsonl) :
+        Split_predict(path)
+        print(11111)
+    else:
+        print(22222)
+        GetInfor(path)
+        Split_predict(path)

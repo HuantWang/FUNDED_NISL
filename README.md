@@ -78,7 +78,7 @@ $ CUDA_VISIBLE_DEVICES=2 python train.py GGNN GraphBinaryClassification ../data/
 #### 4) load trained model and predict
 ``` console
 $ cd NISL_TIFS2021/FUNDED/cli
-$ CUDA_VISIBLE_DEVICES=2 python train.py GGNN GraphBinaryClassification ../data/data/data/cve/badall --storedModel_path "./trained_model/GGNN_GraphBinaryClassification__2023-02-01_05-36-00_f1 = 0.800_best.pkl"
+$ CUDA_VISIBLE_DEVICES=2 python test.py GGNN GraphBinaryClassification ../data/data/data/cve/badall --storedModel_path "./trained_model/GGNN_GraphBinaryClassification__2023-02-01_05-36-00_f1 = 0.800_best.pkl"
 ```
 
 <br/><br/>
