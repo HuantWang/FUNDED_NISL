@@ -680,3 +680,92 @@ def get_train_cli_arg_parser():
     )
 
     return parser
+
+def loadModuleAndPredict(args, hyperdrive_hyperparameter_overrides: Dict[str, str] = {}) -> None:
+    print(f"this is loadModuleAndPredict-----")
+    #loadmoduel地址
+    trained_model_path=r"/home/funded/fund/FUNDED/cli/trained_model/GGNN_GraphBinaryClassification__2023-02-01_05-36-00_f1 = 0.800_best.pkl"
+    os.makedirs(args.save_dir, exist_ok=True)
+    run_id = make_run_id(args.model, args.task)
+    log_file = os.path.join(args.save_dir, f"{run_id}.log")
+    def log(msg):
+        log_line(log_file, msg)
+    log(f"Setting random seed {args.random_seed}.")
+    random.seed(args.random_seed)
+    np.random.seed(args.random_seed)
+    tf.random.set_seed(args.random_seed)
+    #data split
+    DataSplit.Preprocess(args.data_path)
+    data_path = RichPath.create(os.path.split(args.data_path)[0]+'/tem_'+os.path.split(args.data_path)[1]+'/ast', args.azure_info)
+    #second path
+    data_path_2 = RichPath.create(os.path.split(args.data_path)[0]+'/tem_'+os.path.split(args.data_path)[1]+'/cdfg', args.azure_info)
+    print(f"this is args.load_saved_model:{args.load_saved_model} ")
+    print(f"this is data_path:{data_path},data_path_2:{data_path_2}")
+    print(f"this is args.model:{args.model}")
+    try:
+        dataset, model = get_model_and_dataset(
+            msg_passing_implementation=args.model,
+            task_name=args.task,
+            data_path=data_path,
+            trained_model_file=args.load_saved_model,
+            cli_data_hyperparameter_overrides=args.data_param_override,
+            cli_model_hyperparameter_overrides=args.model_param_override,
+            hyperdrive_hyperparameter_overrides=hyperdrive_hyperparameter_overrides,
+            folds_to_load={DataFold.TRAIN, DataFold.VALIDATION},
+            load_weights_only=args.load_weights_only,
+        )
+        #second
+        dataset2, model_2 = get_model_and_dataset(
+            msg_passing_implementation=args.model,
+            task_name=args.task,
+            data_path=data_path_2,
+            trained_model_file=args.load_saved_model,
+            cli_data_hyperparameter_overrides=args.data_param_override,
+            cli_model_hyperparameter_overrides=args.model_param_override,
+            hyperdrive_hyperparameter_overrides=hyperdrive_hyperparameter_overrides,
+            folds_to_load={DataFold.TRAIN, DataFold.VALIDATION},
+            load_weights_only=args.load_weights_only,
+        )
+    except ValueError as err:
+        print("error! in traububg_utils.py line199")
+        print(err.args)
+    log(f"Restoring best model state from {trained_model_path}.")
+    load_weights_verbosely(trained_model_path, model)
+    
+    data_path = RichPath.create(
+            os.path.split(args.data_path)[0] + '/tem_' + os.path.split(args.data_path)[1] + '/ast', args.azure_info)
+    data_path_2 = RichPath.create(
+            os.path.split(args.data_path)[0] + '/tem_' + os.path.split(args.data_path)[1] + '/cdfg', args.azure_info)
+    print(f"this is data_path:{data_path},data_path_2:{data_path_2} ")
+    log("== Running on test dataset")
+    log(f"Loading data from {data_path}.")
+    results=[]
+    dataset.load_data(data_path, {DataFold.TRAIN})
+    dataset2.load_data(data_path_2, {DataFold.TRAIN})
+    test_data_1 = dataset.get_tensorflow_dataset(DataFold.TRAIN)
+    test_data_2 = dataset2.get_tensorflow_dataset(DataFold.TRAIN)
+    results=results+model.prediction(test_data_1, test_data_2)
+    # print(f"result in training_utlis.py 222:{results}")
+
+    dataset.load_data(data_path, {DataFold.VALIDATION})
+    dataset2.load_data(data_path_2, {DataFold.VALIDATION})
+    test_data_1 = dataset.get_tensorflow_dataset(DataFold.VALIDATION)
+    test_data_2 = dataset2.get_tensorflow_dataset(DataFold.VALIDATION)
+    results=results+model.prediction(test_data_1, test_data_2)
+    # print(f"result in training_utlis.py 229:{results}")
+    
+
+    dataset.load_data(data_path, {DataFold.TEST})
+    dataset2.load_data(data_path_2, {DataFold.TEST})
+    test_data_1 = dataset.get_tensorflow_dataset(DataFold.TEST)
+    test_data_2 = dataset2.get_tensorflow_dataset(DataFold.TEST)
+    results=results+model.prediction(test_data_1, test_data_2)
+
+    print(f"result in training_utlis.py 238:{results}")
+    count=0
+    pos=0
+    for i in results:
+        count=count+1
+        if i==1:
+            pos=pos+1
+    print(f"positive/all={pos}/{count}")
