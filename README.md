@@ -10,7 +10,7 @@ Check [our paper](https://ieeexplore.ieee.org/document/9293321) for detailed inf
 
 **November 2020** - The paper was accepted to [IEEE TIFS](https://ieeexplore.ieee.org/document/9293321)!
 
-**Dataset** are available at [here](https://drive.google.com/drive/folders/1WFFV8uGi8oXpzYORyiqRCYyqJGiHSbZL?usp=sharing), include C, Java and Php!
+**Dataset** are available at [here](https://drive.google.com/drive/folders/1WFFV8uGi8oXpzYORyiqRCYyqJGiHSbZL?usp=sharing), include C, Java and Php! As shown in [Liu's work](https://peerj.com/articles/cs-975/), our dataset had the highest complexity, the largest sample size, and the most subroutine calls compared to other public vulnerability datasets.
 
 
 
