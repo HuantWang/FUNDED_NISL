@@ -16,7 +16,7 @@ def filterNodes(list, num):
     for i in range(len(list)):
         l1 = list[i][0]
         l2 = list[i][1]
-        if （l1 < num） & （l2 < num）:
+        if (l1 < num) & (l2 < num):
             list_new.append(list[i])
 
     return list_new
