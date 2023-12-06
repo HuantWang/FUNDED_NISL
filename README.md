@@ -13,16 +13,14 @@
 # Introduction
 
 Using graph neural networks and open-source repositories to detect code vulnerabilities. This is an implementation of the model described in:
-
-[Huanting Wang](https://scholar.google.com.hk/citations?user=inrTk6cAAAAJ&hl=zh-CN&oi=sra), [Guixin Ye](https://dblp.uni-trier.de/pid/125/3245.html), [Zhanyong Tang](https://scholar.google.com.hk/citations?user=SgNEtJwAAAAJ&hl=zh-CN&oi=sra), [Shin Hwei Tan](https://www.shinhwei.com/), [Songfang Huang](https://dblp.uni-trier.de/pid/05/4919.html), [Dingyi Fang](https://dblp.uni-trier.de/pid/80/3909.html), [Yansong Feng](https://scholar.google.com.hk/citations?user=67qAw_wAAAAJ&hl=zh-CN), Lizhong Bian and [Zheng Wang](https://zwang4.github.io/), "Combining Graph-based Learning with Automated Data Collection for Code Vulnerability Detection"
+["Combining Graph-based Learning with Automated Data Collection for Code Vulnerability Detection"](https://ieeexplore.ieee.org/document/9293321)
 
 FUNDED is a novel learning framework for building vulnerability detection models, which leverages the advances in graph neural networks (GNNs) to develop a novel graph-based learning method to capture and reason about the program’s control, data, and call dependencies.
 
-Check [our paper](https://ieeexplore.ieee.org/document/9293321) for detailed information.
-
 **November 2020** - The paper was accepted to [IEEE TIFS](https://ieeexplore.ieee.org/document/9293321)!
 
-**Dataset** are available at [here](https://drive.google.com/drive/folders/1WFFV8uGi8oXpzYORyiqRCYyqJGiHSbZL?usp=sharing), include C, Java and Php! As shown in [Liu's work](https://peerj.com/articles/cs-975/), our dataset had the highest complexity, the largest sample size, and the most subroutine calls compared to other public vulnerability datasets.
+**Dataset** are available at [here](https://drive.google.com/drive/folders/1WFFV8uGi8oXpzYORyiqRCYyqJGiHSbZL?usp=sharing), include C, Java and Php! 
+As shown in [Lili's work](https://peerj.com/articles/cs-975/), our dataset had the highest complexity, the largest sample size, and the most subroutine calls compared to other public vulnerability datasets.
 
 
 
